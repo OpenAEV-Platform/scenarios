@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+mutants/
+.hypothesis/
+
+# Local configuration and secrets — never committed
+.env
+.env.*
+
+# Editors
+.idea/
+.vscode/
+*.iml
