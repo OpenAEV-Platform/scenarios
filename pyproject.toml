@@ -1,0 +1,65 @@
+[project]
+name = "openaev-scenario-tools"
+dynamic = ["version"]
+description = "Tools to prepare, check, release and verify OpenAEV scenarios."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "click>=8.1,<9",
+]
+
+[project.scripts]
+scenario-tools = "scenario_tools.interface.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+required-version = "==0.12.23"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/scenario_tools/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scenario_tools"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "PT", "N", "C4", "PTH", "ERA", "BLE", "A",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+
+[tool.coverage.run]
+branch = true
+source = ["scenario_tools"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
