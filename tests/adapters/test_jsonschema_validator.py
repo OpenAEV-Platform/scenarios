@@ -96,7 +96,7 @@ def test_valid_documents_have_no_violation(validator: JsonSchemaValidator) -> No
     ("change", "pointer"),
     [
         (lambda d: d.pop("name"), ""),
-        (lambda d: d.update(unexpected=1), ""),
+        (lambda d: d.update(unexpected=1), "/unexpected"),
         (lambda d: d.update(schema_version=2), "/schema_version"),
         (lambda d: d.update(external_id="not-a-uuid"), "/external_id"),
         (lambda d: d.update(version="1.0"), "/version"),
@@ -153,6 +153,70 @@ def test_manifest_violations_name_the_offending_value(
     violations = validator.validate("manifest", _changed(MANIFEST, change))
 
     assert [violation.pointer for violation in violations] == [pointer]
+
+
+@pytest.mark.parametrize("constraint", [">=3.261005", "==3.261005.0", "~=3.26", ">3"])
+def test_well_formed_platform_version_constraints_pass(
+    validator: JsonSchemaValidator, constraint: str
+) -> None:
+    document = _changed(SCENARIO, lambda d: d["requires"].update(openaev=constraint))
+
+    assert validator.validate("scenario", document) == ()
+
+
+@pytest.mark.parametrize("constraint", [">=1.", ">=1..2", "==3...", ">=", ">=.1", "3.26"])
+def test_malformed_platform_version_constraints_are_refused(
+    validator: JsonSchemaValidator, constraint: str
+) -> None:
+    document = _changed(SCENARIO, lambda d: d["requires"].update(openaev=constraint))
+
+    assert [v.pointer for v in validator.validate("scenario", document)] == ["/requires/openaev"]
+
+
+@pytest.mark.parametrize("login", ["alice", "a-b", "a-b-c", "A1", "a" * 39])
+def test_valid_github_logins_pass(validator: JsonSchemaValidator, login: str) -> None:
+    document = _changed(MANIFEST, lambda d: d.update(release_approver=login))
+
+    assert validator.validate("manifest", document) == ()
+
+
+@pytest.mark.parametrize("login", ["alice-", "-alice", "a--b", "a" * 40, "al ice", ""])
+def test_impossible_github_logins_are_refused(validator: JsonSchemaValidator, login: str) -> None:
+    document = _changed(MANIFEST, lambda d: d.update(release_approver=login))
+    approvers = _changed(
+        MANIFEST, lambda d: d["items"][0]["approvals"].update(approvers=["bob", login])
+    )
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == ["/release_approver"]
+    assert [v.pointer for v in validator.validate("manifest", approvers)] == [
+        "/items/0/approvals/approvers/1"
+    ]
+
+
+def test_each_unexpected_property_is_reported_where_it_is(validator: JsonSchemaValidator) -> None:
+    document = _changed(SCENARIO, lambda d: d.update({"zeta": 1, "a/b~c": 2}))
+    nested = _changed(MANIFEST, lambda d: d["items"][0].update({"extra": True}))
+
+    assert [v.pointer for v in validator.validate("scenario", document)] == ["/a~1b~0c", "/zeta"]
+    assert [v.pointer for v in validator.validate("manifest", nested)] == ["/items/0/extra"]
+
+
+def test_properties_allowed_by_a_pattern_are_not_unexpected(tmp_path: Path) -> None:
+    (tmp_path / "extensible.schema.json").write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {"a": {}},
+                "patternProperties": {"^x-": {}},
+                "additionalProperties": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    violations = JsonSchemaValidator(tmp_path).validate("extensible", {"a": 1, "x-1": 2, "b": 3})
+
+    assert [violation.pointer for violation in violations] == ["/b"]
 
 
 def test_every_violation_is_reported_in_a_stable_order(validator: JsonSchemaValidator) -> None:
