@@ -20,10 +20,17 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT = 0, 1, 3
 
 
+def _printable(text: str) -> str:
+    """Escape every non-printable character (control, line break, undecodable byte) as Python
+    writes it in a string literal, so contributor content can neither break a line nor be read
+    as a CI workflow command."""
+    return "".join(char if char.isprintable() else repr(char)[1:-1] for char in text)
+
+
 def _line(finding: Finding) -> str:
     where = " ".join(part for part in (finding.path, finding.field) if part)
     location = f" {where}" if where else ""
-    return f"{finding.severity.name} {finding.code}{location}: {finding.message}"
+    return _printable(f"{finding.severity.name} {finding.code}{location}: {finding.message}")
 
 
 def _text(report: Report) -> str:
@@ -47,11 +54,11 @@ def execute(
     except EnvironmentProblemError as error:
         if output_format == "json":
             document = {"command": command, "ok": False, "findings": [], "error": str(error)}
-            return json.dumps(document, ensure_ascii=False), EXIT_ENVIRONMENT
-        return f"{command}: environment error: {error}", EXIT_ENVIRONMENT
+            return json.dumps(document), EXIT_ENVIRONMENT
+        return _printable(f"{command}: environment error: {error}"), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     if output_format == "json":
-        return json.dumps(report.document(), ensure_ascii=False), code
+        return json.dumps(report.document()), code
     return _text(report), code
 
 

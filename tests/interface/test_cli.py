@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from hypothesis import given
+from hypothesis import strategies as st
 
 import scenario_tools
 from scenario_tools.domain.shared.finding import Finding, Report, Severity
@@ -155,3 +157,67 @@ def test_an_environment_problem_exits_three_and_is_never_a_finding(output_format
         }
     else:
         assert output == "demo: environment error: the test tenant is unreachable"
+
+
+# Paths and messages carry contributor content: the output never echoes it raw
+
+_HOSTILE = Finding(
+    "IO-002",
+    Severity.BLOCKING,
+    "bad\udcff.yaml\n::error::injected",
+    "/caf\u00e9\u2028",
+    "not valid \x1b[31m\r\n::add-mask::secret",
+)
+
+
+def test_json_output_is_ascii_and_keeps_every_value() -> None:
+    output, code = execute("demo", _report(_HOSTILE), "json")
+
+    assert code == 1
+    assert output.isascii()
+    finding = json.loads(output)["findings"][0]
+    assert (finding["path"], finding["field"], finding["message"]) == (
+        _HOSTILE.path,
+        _HOSTILE.field,
+        _HOSTILE.message,
+    )
+
+
+def test_text_output_escapes_non_printable_characters_and_keeps_one_line_per_finding() -> None:
+    output, _ = execute("demo", _report(_HOSTILE), "text")
+
+    assert output.splitlines() == [
+        "BLOCKING IO-002 bad\\udcff.yaml\\n::error::injected /caf\u00e9\\u2028: "
+        "not valid \\x1b[31m\\r\\n::add-mask::secret",
+        "demo: 1 blocking finding",
+    ]
+    output.encode("utf-8")
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+def test_an_environment_error_is_rendered_safely(output_format: str) -> None:
+    def produce() -> Report:
+        raise EnvironmentProblemError("cannot reach bad\udcff\n::error::injected")
+
+    output, code = execute("demo", produce, output_format)
+
+    assert code == 3
+    output.encode("utf-8")
+    assert len(output.splitlines()) == 1
+    if output_format == "json":
+        assert json.loads(output)["error"] == "cannot reach bad\udcff\n::error::injected"
+    else:
+        assert output == "demo: environment error: cannot reach bad\\udcff\\n::error::injected"
+
+
+@given(st.text(min_size=1))
+def test_any_message_is_rendered_on_one_line_and_encodes_as_utf8(message: str) -> None:
+    finding = Finding("IO-002", Severity.BLOCKING, "a.yaml", "", message)
+
+    text, _ = execute("demo", _report(finding), "text")
+    document, _ = execute("demo", _report(finding), "json")
+
+    assert len(text.splitlines()) == 2
+    text.encode("utf-8")
+    assert document.isascii()
+    assert json.loads(document)["findings"][0]["message"] == message
