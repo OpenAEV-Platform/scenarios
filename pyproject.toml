@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1,<9",
+    "jsonschema>=4.26,<5",
     "pyyaml>=6.0.3,<7",
+    "rfc3339-validator>=0.1.4,<0.2",
+    "rfc3986-validator>=0.1.1,<0.2",
     "rfc8785>=0.1.4,<0.2",
 ]
 
@@ -25,6 +28,7 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.8",
+    "types-jsonschema>=4.25",
     "types-pyyaml>=6.0.12",
 ]
 

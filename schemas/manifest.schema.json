@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/manifest.schema.json",
+  "title": "OpenAEV content release manifest",
+  "description": "Signed list of the items of one release on one channel (RFC 0004 §4.2). Serialised in RFC 8785 canonical form.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "channel",
+    "sequence",
+    "issued_at",
+    "expires_at",
+    "release",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "repository": {
+      "const": "OpenAEV-Platform/scenarios"
+    },
+    "channel": {
+      "enum": [
+        "edge",
+        "stable"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "release": {
+      "type": "string",
+      "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+$"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "release_approver": {
+      "$ref": "#/$defs/github_login",
+      "description": "Added by the signing job after approval. Absent from the unsigned build output; required by the verifier in a signed manifest."
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "github_login": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_id",
+        "version",
+        "status",
+        "name",
+        "type",
+        "tabletop",
+        "requires",
+        "archive",
+        "payloads",
+        "test_report",
+        "approvals"
+      ],
+      "properties": {
+        "external_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "DEPRECATED",
+            "REVOKED"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "type": {
+          "enum": [
+            "time-based",
+            "chained"
+          ]
+        },
+        "requires": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "openaev",
+            "edition",
+            "injectors",
+            "executors"
+          ],
+          "properties": {
+            "openaev": {
+              "type": "string"
+            },
+            "edition": {
+              "enum": [
+                "CE",
+                "EE"
+              ]
+            },
+            "injectors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "executors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "sha256",
+            "size"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[0-9a-f-]{36}-[0-9.]+\\.zip$"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "payloads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "$ref": "#/$defs/semver"
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        "test_report": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "release"
+          ],
+          "properties": {
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "release": {
+              "type": "string",
+              "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+$"
+            }
+          }
+        },
+        "tabletop": {
+          "type": "boolean"
+        },
+        "approvals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pull_request",
+            "approvers"
+          ],
+          "properties": {
+            "pull_request": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "approvers": {
+              "type": "array",
+              "minItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/github_login"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
