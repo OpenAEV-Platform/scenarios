@@ -18,3 +18,23 @@ def test_help_names_the_tool() -> None:
 
     assert result.exit_code == 0
     assert "scenario-tools" in result.output
+
+
+def test_check_title_accepts_a_valid_title() -> None:
+    result = CliRunner().invoke(main, ["check-title", "feat(api): add login endpoint (#42)"])
+
+    assert result.exit_code == 0
+    assert "valid" in result.output
+
+
+def test_check_title_rejects_an_invalid_title_with_its_reason() -> None:
+    result = CliRunner().invoke(main, ["check-title", "feat: add login endpoint"])
+
+    assert result.exit_code == 1
+    assert "issue reference" in result.output
+
+
+def test_check_title_needs_a_title() -> None:
+    result = CliRunner().invoke(main, ["check-title"])
+
+    assert result.exit_code == 2
