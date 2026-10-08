@@ -9,3 +9,8 @@ class UnsafeInputError(Exception):
         self.code = code
         self.message = message
         self.path = path
+
+
+class EnvironmentProblemError(Exception):
+    """The environment cannot be used: a missing credential, an unreachable service. This is
+    never the input's fault, so it is never reported as a finding (exit code 3)."""
