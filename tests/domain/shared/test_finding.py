@@ -42,10 +42,15 @@ def test_a_path_outside_the_repository_form_is_refused(path: str) -> None:
         _finding(path=path)
 
 
-@pytest.mark.parametrize("field", ["version", "#/version"])
+@pytest.mark.parametrize("field", ["version", "#/version", "/name~2x", "/name~", "/a~/b"])
 def test_a_field_that_is_not_a_json_pointer_is_refused(field: str) -> None:
     with pytest.raises(ValueError, match="field"):
         _finding(field=field)
+
+
+@pytest.mark.parametrize("field", ["", "/", "//", "/name", "/a~0b", "/a~1b", "/items/0/name"])
+def test_rfc_6901_pointers_are_accepted(field: str) -> None:
+    assert _finding(field=field).field == field
 
 
 def test_an_empty_message_is_refused() -> None:

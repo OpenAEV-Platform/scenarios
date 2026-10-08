@@ -7,6 +7,7 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used.
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 
 import click
 
@@ -34,12 +35,15 @@ def _text(report: Report) -> str:
     return "\n".join([*lines, f"{report.command}: {blocking} blocking finding{plural}"])
 
 
-def execute(command: str, produce: Callable[[], Report], output_format: str) -> tuple[str, int]:
-    """Run ``produce`` and return what to print and the exit code."""
+def execute(
+    command: str, produce: Callable[[], Report], output_format: str, root: Path | None = None
+) -> tuple[str, int]:
+    """Run ``produce`` and return what to print and the exit code. Paths in findings are made
+    relative to ``root``, the repository root, which is the working directory by default."""
     try:
         report = produce()
     except UnsafeInputError as error:
-        report = Report(command, (finding_from_unsafe_input(error),))
+        report = Report(command, (finding_from_unsafe_input(error, root or Path.cwd()),))
     except EnvironmentProblemError as error:
         if output_format == "json":
             document = {"command": command, "ok": False, "findings": [], "error": str(error)}

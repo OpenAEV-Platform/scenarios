@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -109,6 +110,16 @@ def test_an_unsafe_input_becomes_an_io_finding_and_exits_one() -> None:
 
     assert code == 1
     assert json.loads(output)["findings"][0]["code"] == "IO-001"
+
+
+def test_an_unsafe_input_read_by_absolute_path_is_reported_not_raised(tmp_path: Path) -> None:
+    def produce() -> Report:
+        raise UnsafeInputError("IO-001", "larger than 10 bytes", str(tmp_path / "a" / "b.json"))
+
+    output, code = execute("demo", produce, "json", root=tmp_path)
+
+    assert code == 1
+    assert json.loads(output)["findings"][0]["path"] == "a/b.json"
 
 
 @pytest.mark.parametrize("output_format", ["text", "json"])

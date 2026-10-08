@@ -13,6 +13,7 @@ from typing import Any
 
 _CODE = re.compile(r"[A-Z]{2,3}-[0-9]{3}")
 _DRIVE = re.compile(r"[A-Za-z]:")
+_POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")  # RFC 6901: "~" only as "~0" or "~1"
 
 
 class Severity(Enum):
@@ -38,7 +39,7 @@ class Finding:
             or ".." in self.path.split("/")
         ):
             raise ValueError(f"finding path {self.path!r} is not relative to the repository")
-        if self.field and not self.field.startswith("/"):
+        if not _POINTER.fullmatch(self.field):
             raise ValueError(f"finding field {self.field!r} is not a JSON pointer")
         if not self.message:
             raise ValueError("finding message is empty")
