@@ -489,10 +489,11 @@ def test_every_format_used_by_the_schemas_is_really_checked(tmp_path: Path) -> N
 
 
 # A pattern must mean the same in Python, which checks it here, and in ECMA-262, which other
-# consumers of the schemas use: constructs whose meaning differs, or that only one supports, are
-# refused (\d matches every Unicode digit in Python, only 0-9 in ECMA-262).
-_ESCAPE_OR_GROUP = re.compile(r"\\(.)|\(\?(.)")
-_NON_PORTABLE_ESCAPES = frozenset("dDwWsSbBpPkAZz123456789")
+# consumers of the schemas use. Only escapes and groups known to agree are allowed; anything else
+# is refused, whether it means something else in one of them (\d matches every Unicode digit in
+# Python, only 0-9 in ECMA-262) or exists in only one (\cA, \u{41}, \Z, lookbehind).
+_ESCAPE_OR_GROUP = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|.)|\(\?(.)", re.DOTALL)
+_PORTABLE_ESCAPES = frozenset("tnrfv.\\/-^$*+?()[]{}|")
 _PORTABLE_GROUPS = frozenset(":=!")
 
 
@@ -500,7 +501,10 @@ def _non_portable(pattern: str) -> list[str]:
     found = []
     for match in _ESCAPE_OR_GROUP.finditer(pattern):
         escaped, group = match.groups()
-        if escaped in _NON_PORTABLE_ESCAPES or group not in (None, *_PORTABLE_GROUPS):
+        # A two-character or longer escape is \xHH or \uHHHH, the same in both.
+        portable_escape = escaped is None or escaped in _PORTABLE_ESCAPES or len(escaped) > 1
+        portable_group = group is None or group in _PORTABLE_GROUPS
+        if not (portable_escape and portable_group):
             found.append(match.group())
     return found
 
@@ -533,6 +537,10 @@ def _patterns(node: object) -> Iterator[str]:
         r"\p{L}",
         r"(?i)abc",
         r"abc\Z",
+        r"\cA",
+        r"\u{41}",
+        r"\x4",
+        r"\q",
     ],
 )
 def test_the_guard_refuses_non_portable_constructs(pattern: str) -> None:
@@ -541,7 +549,17 @@ def test_the_guard_refuses_non_portable_constructs(pattern: str) -> None:
 
 @pytest.mark.parametrize(
     "pattern",
-    [r"^[0-9]{4}$", r"^(?=.{1,39}$)[a-z]+(?:-[a-z]+)*$", r"(?!x)y", r"a\\d", r"\.", r"^https://"],
+    [
+        r"^[0-9]{4}$",
+        r"^(?=.{1,39}$)[a-z]+(?:-[a-z]+)*$",
+        r"(?!x)y",
+        r"a\\d",
+        r"\.",
+        r"^https://",
+        r"\x41\u00e9",
+        r"\t\n\r\f\v",
+        r"\/\-\^\$\*\+\?\(\)\[\]\{\}\|",
+    ],
 )
 def test_the_guard_accepts_portable_constructs(pattern: str) -> None:
     assert _non_portable(pattern) == []
@@ -565,3 +583,5 @@ def test_every_pattern_of_the_schemas_means_the_same_in_python_and_ecma_262() ->
     ]
     assert patterns
     assert {pattern: _non_portable(pattern) for pattern in patterns if _non_portable(pattern)} == {}
+    for pattern in patterns:
+        re.compile(ecma_to_python(pattern))
