@@ -60,15 +60,23 @@ def test_a_stable_id_is_the_uuid5_of_type_and_source_id() -> None:
     assert stable_id(NS, "inject", "abc") == str(uuid.uuid5(NS, "inject:abc"))
 
 
-@given(st.text(min_size=1), st.text(min_size=1), st.text(min_size=1), st.text(min_size=1))
+_types = st.text(min_size=1).filter(lambda text: ":" not in text)
+
+
+@given(_types, st.text(), _types, st.text())
 def test_stable_ids_differ_when_type_or_source_differ(
     type_a: str, source_a: str, type_b: str, source_b: str
 ) -> None:
-    same = (type_a, source_a) == (
-        type_b,
-        source_b,
-    ) or f"{type_a}:{source_a}" == f"{type_b}:{source_b}"
-    assert (stable_id(NS, type_a, source_a) == stable_id(NS, type_b, source_b)) == same
+    same_object = (type_a, source_a) == (type_b, source_b)
+
+    assert (stable_id(NS, type_a, source_a) == stable_id(NS, type_b, source_b)) == same_object
+
+
+def test_types_that_would_make_two_objects_share_an_id_are_refused() -> None:
+    assert stable_id(NS, "a", "b:c") != stable_id(NS, "b", "c")
+    for object_type in ["a:b", ":", ""]:
+        with pytest.raises(ValueError, match="object type"):
+            stable_id(NS, object_type, "c")
 
 
 # Matching
@@ -157,6 +165,8 @@ def test_two_new_injects_competing_for_one_candidate_are_ambiguous() -> None:
     with pytest.raises(AmbiguousInjectError) as error:
         match_injects(NS, [_sig("s1"), _sig("s2")], [_sig("p")])
     assert error.value.candidates == ("p",)
+    assert "several" not in str(error.value)
+    assert "cannot be matched unambiguously" in str(error.value)
 
 
 def test_the_mapping_resolves_an_ambiguity() -> None:

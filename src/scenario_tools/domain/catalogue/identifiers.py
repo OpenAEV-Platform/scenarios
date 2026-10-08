@@ -28,7 +28,13 @@ def scenario_namespace(external_id: str) -> uuid.UUID:
 
 
 def stable_id(namespace: uuid.UUID, object_type: str, source_id: str) -> str:
-    """The stable ID of an object, from its type and its ID in the source export."""
+    """The stable ID of an object, from its type and its ID in the source export.
+
+    The type is a fixed name, never empty and without ``:``, so that ``type:source`` splits only
+    one way and two objects can never share an ID.
+    """
+    if not object_type or ":" in object_type:
+        raise ValueError(f"object type {object_type!r} must be a non-empty name without ':'")
     return str(uuid.uuid5(namespace, f"{object_type}:{source_id}"))
 
 
@@ -68,8 +74,8 @@ class AmbiguousInjectError(InjectMatchingError):
 
     def __init__(self, source_id: str, candidates: Sequence[str]) -> None:
         super().__init__(
-            f"inject {source_id!r} matches several injects of the previous version: "
-            + ", ".join(candidates)
+            f"inject {source_id!r} cannot be matched unambiguously with the previous version; "
+            f"candidates: {', '.join(candidates)}"
         )
         self.source_id = source_id
         self.candidates = tuple(candidates)
