@@ -193,6 +193,47 @@ def test_impossible_github_logins_are_refused(validator: JsonSchemaValidator, lo
     ]
 
 
+@pytest.mark.parametrize(
+    ("change", "pointer"),
+    [
+        (lambda i: i["requires"].update(openaev=">=1."), "/items/0/requires/openaev"),
+        (lambda i: i["requires"].update(injectors=[""]), "/items/0/requires/injectors/0"),
+        (lambda i: i["requires"].update(executors=["a", "a"]), "/items/0/requires/executors"),
+        (
+            lambda i: i.update(payloads=[{"id": "-bad", "version": "1.0.0", "sha256": SHA}]),
+            "/items/0/payloads/0/id",
+        ),
+    ],
+    ids=["version constraint", "empty injector", "duplicate executor", "payload id"],
+)
+def test_the_manifest_is_as_strict_as_the_scenario_metadata(
+    validator: JsonSchemaValidator, change: Callable[[dict[str, Any]], object], pointer: str
+) -> None:
+    document = _changed(MANIFEST, lambda d: change(d["items"][0]))
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [pointer]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "-" * 36 + "-1..zip",
+        "5B9A2C84-3A0E-4C55-9A8C-2A6F0D7E1B42-1.0.0.zip",
+        "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42-1.0.zip",
+        "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42-01.0.0.zip",
+        "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42-1.0.0.tar",
+        "5b9a2c843a0e4c559a8c2a6f0d7e1b42-1.0.0.zip",
+    ],
+    ids=["dashes", "uppercase", "two-part version", "leading zero", "extension", "no hyphens"],
+)
+def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, name: str) -> None:
+    document = _changed(MANIFEST, lambda d: d["items"][0]["archive"].update(name=name))
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [
+        "/items/0/archive/name"
+    ]
+
+
 def test_each_unexpected_property_is_reported_where_it_is(validator: JsonSchemaValidator) -> None:
     document = _changed(SCENARIO, lambda d: d.update({"zeta": 1, "a/b~c": 2}))
     nested = _changed(MANIFEST, lambda d: d["items"][0].update({"extra": True}))
