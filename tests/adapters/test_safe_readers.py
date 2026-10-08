@@ -15,6 +15,7 @@ from hypothesis import strategies as st
 
 from scenario_tools.adapters.safe_readers import (
     MAX_DEPTH,
+    _Loader,
     parse_json,
     parse_yaml,
     read_json_file,
@@ -160,10 +161,32 @@ def test_yaml_dates_stay_text() -> None:
         (b"h: 0x1F\n", "0x1F"),
         (b"u: 1_000\n", "1_000"),
         (b"e: =\n", "="),
+        (b"z: 01234\n", "01234"),
+        (b"p: +4\n", "+4"),
+        (b"d: .5\n", ".5"),
+        (b"t: 1.\n", "1."),
+        (b"f: 01.5\n", "01.5"),
+        (b"b: True\n", "True"),
+        (b"c: FALSE\n", "FALSE"),
     ],
-    ids=["sexagesimal", "NO", "on", "yes", "hexadecimal", "underscore", "equals"],
+    ids=[
+        "sexagesimal",
+        "NO",
+        "on",
+        "yes",
+        "hexadecimal",
+        "underscore",
+        "equals",
+        "leading zero",
+        "plus sign",
+        "no integer part",
+        "no fraction",
+        "leading zero float",
+        "capitalised true",
+        "upper-case false",
+    ],
 )
-def test_yaml_1_1_forms_stay_text(text: bytes, expected: str) -> None:
+def test_scalars_outside_json_types_stay_text(text: bytes, expected: str) -> None:
     assert list(parse_yaml(text).values()) == [expected]
 
 
@@ -171,16 +194,15 @@ def test_yaml_1_1_forms_stay_text(text: bytes, expected: str) -> None:
     ("text", "expected"),
     [
         (b"v: true\n", True),
-        (b"v: False\n", False),
-        (b"v: TRUE\n", True),
-        (b"v: !!bool True\n", True),
+        (b"v: false\n", False),
+        (b"v: !!bool false\n", False),
         (b"v: 10\n", 10),
         (b"v: -3\n", -3),
-        (b"v: 010\n", 10),  # YAML 1.2: decimal, no longer octal
-        (b"v: +4\n", 4),
         (b"v: 1.5\n", 1.5),
         (b"v: -2e3\n", -2000.0),
-        (b"v: .5\n", 0.5),
+        (b"v: 0\n", 0),
+        (b"v: -0.25\n", -0.25),
+        (b"v: 1E+3\n", 1000.0),
         (b"v: ~\n", None),
         (b"v: !!int 12\n", 12),
         (b"v: !!float 1.5\n", 1.5),
@@ -207,6 +229,10 @@ def test_a_long_sexagesimal_scalar_stays_cheap_text() -> None:
         b"a: !!float x\n",
         b"a: !!float 1_000.5\n",
         b"a: !!bool yes\n",
+        b"a: !!bool True\n",
+        b"a: !!int +4\n",
+        b"a: !!int 010\n",
+        b"a: !!float .5\n",
         b"a: " + b"1" * 5000 + b"\n",
     ],
     ids=[
@@ -216,10 +242,14 @@ def test_a_long_sexagesimal_scalar_stays_cheap_text() -> None:
         "explicit float x",
         "explicit underscore",
         "explicit yes",
+        "explicit capitalised true",
+        "explicit plus sign",
+        "explicit leading zero",
+        "explicit no integer part",
         "integer of 5000 digits",
     ],
 )
-def test_yaml_numbers_and_booleans_outside_the_core_schema_are_refused(data: bytes) -> None:
+def test_explicit_tags_outside_json_types_are_refused(data: bytes) -> None:
     with pytest.raises(UnsafeInputError) as error:
         parse_yaml(data)
     assert _code(error) == "IO-002"
@@ -318,11 +348,25 @@ def test_yaml_nesting_bomb_is_refused_cleanly() -> None:
     assert _code(error) == "IO-004"
 
 
+class _SameRulesDumper(yaml.SafeDumper):
+    """Writes YAML with the reader's own resolution rules, so it quotes every string that the
+    reader would otherwise type, such as "0E0" under the JSON number grammar."""
+
+
+_SameRulesDumper.yaml_implicit_resolvers = _Loader.yaml_implicit_resolvers
+
+
 @given(json_values)
 def test_any_json_value_written_as_yaml_round_trips(value: Any) -> None:
-    # Escaped output: unescaped, PyYAML writes characters such as U+0085 that YAML 1.1 reads
-    # as line breaks, a writer limitation that says nothing about the reader.
-    assert parse_yaml(yaml.safe_dump(value, allow_unicode=False).encode()) == value
+    # Escaped output: unescaped, PyYAML writes characters such as U+0085 that YAML reads as line
+    # breaks, a writer limitation that says nothing about the reader.
+    written = yaml.dump(value, Dumper=_SameRulesDumper, allow_unicode=False)
+
+    assert parse_yaml(written.encode()) == value
+
+
+def test_a_string_that_looks_like_a_json_number_round_trips_once_quoted() -> None:
+    assert parse_yaml(yaml.dump({"0E0": "1e3"}, Dumper=_SameRulesDumper).encode()) == {"0E0": "1e3"}
 
 
 @given(st.binary(max_size=200))

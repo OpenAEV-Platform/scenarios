@@ -161,19 +161,21 @@ class _Loader(yaml.SafeLoader):
         return mapping
 
 
-# YAML 1.2 core schema instead of YAML 1.1: only true/false, decimal numbers and null are
-# typed, so dates, yes/no/on/off and sexagesimal, octal or hexadecimal forms stay text. The merge
-# resolver is kept so that merge keys can be refused.
-_BOOL = re.compile(r"true|True|TRUE|false|False|FALSE")
-_INT = re.compile(r"[-+]?[0-9]+")
-_FLOAT = re.compile(r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?")
+# YAML 1.2 core schema instead of YAML 1.1, with booleans and numbers in the JSON grammar: only
+# true and false in lower case, JSON numbers and null are typed. Dates, True, yes/no/on/off,
+# sexagesimal, octal, hexadecimal and leading-zero forms stay text, so a value is never changed
+# silently: at worst, the schema reports a text where a boolean or a number is expected. The
+# merge resolver is kept so that merge keys can be refused.
+_BOOL = re.compile(r"true|false")
+_INT = re.compile(r"-?(?:0|[1-9][0-9]*)")
+_FLOAT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?")
 _NON_FINITE = re.compile(r"[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)")
 _NULL = re.compile(r"~|null|Null|NULL|")
 
 _Loader.yaml_implicit_resolvers = {}
 for _tag, _pattern, _first in (
-    ("tag:yaml.org,2002:bool", _BOOL, "tTfF"),
-    ("tag:yaml.org,2002:int", _INT, "-+0123456789"),
+    ("tag:yaml.org,2002:bool", _BOOL, "tf"),
+    ("tag:yaml.org,2002:int", _INT, "-0123456789"),
     (
         "tag:yaml.org,2002:float",
         re.compile(f"{_FLOAT.pattern}|{_NON_FINITE.pattern}"),
@@ -188,14 +190,14 @@ for _tag, _pattern, _first in (
 def _construct_bool(loader: _Loader, node: yaml.ScalarNode) -> bool:
     text = loader.construct_scalar(node)
     if not _BOOL.fullmatch(text):
-        raise _RefusedError("IO-002", f"not a YAML 1.2 boolean: {text[:20]!r}")
-    return text.lower() == "true"
+        raise _RefusedError("IO-002", f"not a JSON boolean: {text[:20]!r}")
+    return text == "true"
 
 
 def _construct_int(loader: _Loader, node: yaml.ScalarNode) -> int:
     text = loader.construct_scalar(node)
     if not _INT.fullmatch(text):
-        raise _RefusedError("IO-002", f"not a decimal integer: {text[:20]!r}")
+        raise _RefusedError("IO-002", f"not a JSON integer: {text[:20]!r}")
     return int(text)  # beyond Python's digit limit, ValueError becomes IO-002
 
 
@@ -204,7 +206,7 @@ def _construct_float(loader: _Loader, node: yaml.ScalarNode) -> float:
     if _NON_FINITE.fullmatch(text):
         raise _RefusedError("IO-006", "non-finite number")
     if not _FLOAT.fullmatch(text):
-        raise _RefusedError("IO-002", f"not a decimal number: {text[:20]!r}")
+        raise _RefusedError("IO-002", f"not a JSON number: {text[:20]!r}")
     return float(text)
 
 
