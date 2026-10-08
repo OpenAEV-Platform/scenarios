@@ -11,6 +11,7 @@ import errno
 import json
 import math
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,6 @@ JSON_LIMIT = 20 * 1024 * 1024
 YAML_LIMIT = 256 * 1024
 MAX_DEPTH = 64
 
-_TIMESTAMP_TAG = "tag:yaml.org,2002:timestamp"
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 
 
@@ -41,6 +41,8 @@ def _read_bounded(path: Path, limit: int) -> bytes:
     except OSError as error:
         if error.errno == errno.ELOOP:
             raise UnsafeInputError("IO-013", "a symbolic link", str(path)) from error
+        if error.errno == errno.ENXIO:  # a socket fails here, before any type check
+            raise UnsafeInputError("IO-013", "not a regular file", str(path)) from error
         raise
     if not stat.S_ISREG(os.fstat(descriptor).st_mode):
         os.close(descriptor)
@@ -159,11 +161,56 @@ class _Loader(yaml.SafeLoader):
         return mapping
 
 
-# Without the timestamp resolver, a date stays text instead of becoming a non-JSON object.
-_Loader.yaml_implicit_resolvers = {
-    first: [(tag, regexp) for tag, regexp in resolvers if tag != _TIMESTAMP_TAG]
-    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
-}
+# YAML 1.2 core schema instead of YAML 1.1: only true/false, decimal numbers and null are
+# typed, so dates, yes/no/on/off and sexagesimal, octal or hexadecimal forms stay text. The merge
+# resolver is kept so that merge keys can be refused.
+_BOOL = re.compile(r"true|True|TRUE|false|False|FALSE")
+_INT = re.compile(r"[-+]?[0-9]+")
+_FLOAT = re.compile(r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?")
+_NON_FINITE = re.compile(r"[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)")
+_NULL = re.compile(r"~|null|Null|NULL|")
+
+_Loader.yaml_implicit_resolvers = {}
+for _tag, _pattern, _first in (
+    ("tag:yaml.org,2002:bool", _BOOL, "tTfF"),
+    ("tag:yaml.org,2002:int", _INT, "-+0123456789"),
+    (
+        "tag:yaml.org,2002:float",
+        re.compile(f"{_FLOAT.pattern}|{_NON_FINITE.pattern}"),
+        "-+.0123456789",
+    ),
+    ("tag:yaml.org,2002:null", _NULL, ["~", "n", "N", ""]),
+    (_MERGE_TAG, re.compile(r"<<"), "<"),
+):
+    _Loader.add_implicit_resolver(_tag, re.compile(f"^(?:{_pattern.pattern})$"), list(_first))
+
+
+def _construct_bool(loader: _Loader, node: yaml.ScalarNode) -> bool:
+    text = loader.construct_scalar(node)
+    if not _BOOL.fullmatch(text):
+        raise _RefusedError("IO-002", f"not a YAML 1.2 boolean: {text[:20]!r}")
+    return text.lower() == "true"
+
+
+def _construct_int(loader: _Loader, node: yaml.ScalarNode) -> int:
+    text = loader.construct_scalar(node)
+    if not _INT.fullmatch(text):
+        raise _RefusedError("IO-002", f"not a decimal integer: {text[:20]!r}")
+    return int(text)  # beyond Python's digit limit, ValueError becomes IO-002
+
+
+def _construct_float(loader: _Loader, node: yaml.ScalarNode) -> float:
+    text = loader.construct_scalar(node)
+    if _NON_FINITE.fullmatch(text):
+        raise _RefusedError("IO-006", "non-finite number")
+    if not _FLOAT.fullmatch(text):
+        raise _RefusedError("IO-002", f"not a decimal number: {text[:20]!r}")
+    return float(text)
+
+
+_Loader.add_constructor("tag:yaml.org,2002:bool", _construct_bool)
+_Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
+_Loader.add_constructor("tag:yaml.org,2002:float", _construct_float)
 
 
 def _parse_yaml(data: bytes, max_depth: int) -> Any:
@@ -179,6 +226,8 @@ def _parse_yaml(data: bytes, max_depth: int) -> Any:
     except yaml.constructor.ConstructorError as error:
         raise _RefusedError("IO-006", f"YAML value outside JSON: {error.problem}") from error
     except yaml.YAMLError as error:
+        raise _RefusedError("IO-002", f"not valid YAML: {error}") from error
+    except ValueError as error:
         raise _RefusedError("IO-002", f"not valid YAML: {error}") from error
     _check_json_value(value, max_depth)
     return value

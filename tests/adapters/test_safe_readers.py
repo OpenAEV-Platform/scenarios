@@ -3,6 +3,7 @@
 import contextlib
 import json
 import os
+import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,81 @@ def test_yaml_dates_stay_text() -> None:
         "published": "2026-10-08",
         "at": "2026-10-08T10:00:00Z",
     }
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (b"t: 12:30\n", "12:30"),
+        (b"c: NO\n", "NO"),
+        (b"o: on\n", "on"),
+        (b"y: yes\n", "yes"),
+        (b"h: 0x1F\n", "0x1F"),
+        (b"u: 1_000\n", "1_000"),
+        (b"e: =\n", "="),
+    ],
+    ids=["sexagesimal", "NO", "on", "yes", "hexadecimal", "underscore", "equals"],
+)
+def test_yaml_1_1_forms_stay_text(text: bytes, expected: str) -> None:
+    assert list(parse_yaml(text).values()) == [expected]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (b"v: true\n", True),
+        (b"v: False\n", False),
+        (b"v: TRUE\n", True),
+        (b"v: !!bool True\n", True),
+        (b"v: 10\n", 10),
+        (b"v: -3\n", -3),
+        (b"v: 010\n", 10),  # YAML 1.2: decimal, no longer octal
+        (b"v: +4\n", 4),
+        (b"v: 1.5\n", 1.5),
+        (b"v: -2e3\n", -2000.0),
+        (b"v: .5\n", 0.5),
+        (b"v: ~\n", None),
+        (b"v: !!int 12\n", 12),
+        (b"v: !!float 1.5\n", 1.5),
+        (b"v: !!bool true\n", True),
+        (b"v: !!str 12\n", "12"),
+    ],
+)
+def test_yaml_core_schema_values_are_typed(text: bytes, expected: Any) -> None:
+    assert parse_yaml(text) == {"v": expected}
+
+
+def test_a_long_sexagesimal_scalar_stays_cheap_text() -> None:
+    data = b"a: 1" + b":1" * 100_000 + b"\n"
+
+    assert parse_yaml(data, limit=len(data)) == {"a": data[3:-1].decode()}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"a: !!int 1:1:1\n",
+        b"a: !!int 0x1F\n",
+        b"a: !!int x\n",
+        b"a: !!float x\n",
+        b"a: !!float 1_000.5\n",
+        b"a: !!bool yes\n",
+        b"a: " + b"1" * 5000 + b"\n",
+    ],
+    ids=[
+        "explicit sexagesimal",
+        "explicit hexadecimal",
+        "explicit int x",
+        "explicit float x",
+        "explicit underscore",
+        "explicit yes",
+        "integer of 5000 digits",
+    ],
+)
+def test_yaml_numbers_and_booleans_outside_the_core_schema_are_refused(data: bytes) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(data)
+    assert _code(error) == "IO-002"
 
 
 def test_yaml_file_is_read(tmp_path: Path) -> None:
@@ -296,6 +372,18 @@ def test_a_named_pipe_is_refused_without_blocking(
 
     with pytest.raises(UnsafeInputError) as error:
         reader(pipe)
+    assert _code(error) == "IO-013"
+
+
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_a_socket_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reader: Callable[[Path], Any]
+) -> None:
+    monkeypatch.chdir(tmp_path)  # a relative name keeps the socket path short enough
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind("socket")
+        with pytest.raises(UnsafeInputError) as error:
+            reader(Path("socket"))
     assert _code(error) == "IO-013"
 
 
