@@ -2,14 +2,18 @@
 
 The archive, read from a regular file or given in memory, is within its size limit. Its entries
 are counted from the central directory headers before the ZIP library indexes them. Its declared
-decompressed size and every entry name are checked next: names as stored, before the ZIP library
-truncates them at a NUL character. Reading an entry is bounded while streaming, and its actual
-size must equal its declared size, because headers can lie; the total declared size then bounds
-what can really be decompressed. Refusals raise ``UnsafeInputError`` with an ``IO-*`` code.
+decompressed size, compression methods (stored or deflate only) and every entry name are
+checked next: names as stored, before the ZIP library truncates them at a NUL character.
+
+Entry data is read here, not by the ZIP library, which stops at the declared size and would
+accept a stream that goes on beyond it. The local header must match the central directory;
+ZipCrypto entries are decrypted with the given password; deflate output is bounded to one byte
+past the declared size; and the stream must end exactly at the declared size, with the declared
+CRC. Every tool that reads the archive therefore sees the same content. Refusals raise
+``UnsafeInputError`` with an ``IO-*`` code.
 """
 
 import io
-import lzma
 import re
 import stat
 import struct
@@ -25,20 +29,14 @@ ARCHIVE_LIMIT = 20 * 1024 * 1024
 DECOMPRESSED_LIMIT = 100 * 1024 * 1024
 ENTRY_LIMIT = 1000
 
-_CHUNK = 64 * 1024
 _DRIVE = re.compile(r"[A-Za-z]:")
-# What the ZIP library raises on malformed, unsupported or encrypted content.
-_ZIP_ERRORS = (
-    zipfile.BadZipFile,
-    zipfile.LargeZipFile,
-    NotImplementedError,
-    RuntimeError,
-    ValueError,
-    EOFError,
-    OSError,
-    zlib.error,
-    lzma.LZMAError,
-)
+# What the ZIP library raises on a malformed central directory.
+_ZIP_ERRORS = (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError, ValueError, OSError)
+_STORED, _DEFLATED = 0, 8
+_ENCRYPTED, _DATA_DESCRIPTOR, _UTF8_NAME = 0x1, 0x8, 0x800
+_LOCAL = b"PK\x03\x04"
+_LOCAL_SIZE = 30
+_ZIPCRYPTO_HEADER = 12
 
 
 _END = b"PK\x05\x06"
@@ -75,6 +73,44 @@ def _count_entries(data: bytes, stop: int) -> int:
     return count
 
 
+def _crc_table() -> tuple[int, ...]:
+    table = []
+    for byte in range(256):
+        crc = byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xEDB88320 if crc & 1 else crc >> 1
+        table.append(crc)
+    return tuple(table)
+
+
+_CRC_TABLE = _crc_table()
+
+
+def _zipcrypto_decrypt(data: bytes, password: bytes, check_byte: int) -> bytes | None:
+    """Decrypt traditional PKWARE encryption (APPNOTE 6.1), the `zip -P` convention.
+
+    Returns ``None`` when the password does not match the header's check byte. This is a
+    decoding step, not a security control: the conventional password is public.
+    """
+    keys = [0x12345678, 0x23456789, 0x34567890]
+
+    def update(byte: int) -> None:
+        keys[0] = (keys[0] >> 8) ^ _CRC_TABLE[(keys[0] ^ byte) & 0xFF]
+        keys[1] = ((keys[1] + (keys[0] & 0xFF)) * 134775813 + 1) & 0xFFFFFFFF
+        keys[2] = (keys[2] >> 8) ^ _CRC_TABLE[(keys[2] ^ (keys[1] >> 24)) & 0xFF]
+
+    for byte in password:
+        update(byte)
+    plain = bytearray(len(data))
+    for index, byte in enumerate(data):
+        temp = (keys[2] | 2) & 0xFFFF
+        plain[index] = byte ^ ((temp * (temp ^ 1)) >> 8) & 0xFF
+        update(plain[index])
+    if plain[_ZIPCRYPTO_HEADER - 1] != check_byte:
+        return None
+    return bytes(plain[_ZIPCRYPTO_HEADER:])
+
+
 def _is_unsafe_name(raw: str) -> bool:
     if not raw or "\x00" in raw or "\\" in raw or raw.startswith("/") or _DRIVE.match(raw):
         return True
@@ -84,33 +120,82 @@ def _is_unsafe_name(raw: str) -> bool:
 class CheckedArchive:
     """A ZIP archive whose structure passed every check; its entries are read on demand."""
 
-    def __init__(self, archive: zipfile.ZipFile, path: str) -> None:
-        self._archive = archive
+    def __init__(self, data: bytes, archive: zipfile.ZipFile, path: str) -> None:
+        self._data = data
         self._entries = {info.filename: info for info in archive.infolist()}
         self.path = path
         self.names = tuple(info.filename for info in archive.infolist())
 
-    def read(self, name: str, *, password: bytes | None = None) -> bytes:
-        """Read one entry, never more than its declared size, or raise ``UnsafeInputError``."""
-        info = self._entries[name]
-        chunks: list[bytes] = []
-        size = 0
+    def _refuse(self, code: str, message: str) -> UnsafeInputError:
+        return UnsafeInputError(code, message, self.path)
+
+    def _stored_data(self, info: zipfile.ZipInfo) -> bytes:
+        """The entry's bytes as stored, after a local header that matches the directory."""
+        start = info.header_offset
+        header = self._data[start : start + _LOCAL_SIZE]
+        if len(header) < _LOCAL_SIZE or header[:4] != _LOCAL:
+            raise self._refuse("IO-007", f"no local header for entry {info.filename!r}")
+        name_length, extra_length = struct.unpack_from("<HH", header, 26)
+        raw_name = self._data[start + _LOCAL_SIZE : start + _LOCAL_SIZE + name_length]
+        encoding = "utf-8" if info.flag_bits & _UTF8_NAME else "cp437"
+        if raw_name.decode(encoding, errors="replace") != info.orig_filename:
+            raise self._refuse("IO-007", f"local header names another entry than {info.filename!r}")
+        begin = start + _LOCAL_SIZE + name_length + extra_length
+        if begin + info.compress_size > len(self._data):
+            raise self._refuse("IO-007", f"entry {info.filename!r} cut short")
+        return self._data[begin : begin + info.compress_size]
+
+    def _decrypt(self, info: zipfile.ZipInfo, data: bytes, password: bytes | None) -> bytes:
+        if password is None:
+            raise self._refuse("IO-007", f"entry {info.filename!r} is encrypted, password required")
+        if len(data) < _ZIPCRYPTO_HEADER:
+            raise self._refuse("IO-007", f"entry {info.filename!r} too short for its encryption")
+        if info.flag_bits & _DATA_DESCRIPTOR:
+            hour, minute, second = info.date_time[3:]  # high byte of the DOS time
+            check_byte = ((hour << 11) | (minute << 5) | (second // 2)) >> 8
+        else:
+            check_byte = info.CRC >> 24
+        plain = _zipcrypto_decrypt(data, password, check_byte)
+        if plain is None:
+            raise self._refuse("IO-007", f"wrong password for entry {info.filename!r}")
+        return plain
+
+    def _decompress(self, info: zipfile.ZipInfo, data: bytes) -> bytes:
+        """Decompress, never more than one byte past the declared size, and require the stream
+        to end exactly there."""
+        if info.compress_type == _STORED:
+            if len(data) != info.file_size:
+                raise self._refuse(
+                    "IO-008", f"entry {info.filename!r} differs from its declared size"
+                )
+            return data
+        decompressor = zlib.decompressobj(-15)
         try:
-            with self._archive.open(info, pwd=password) as entry:
-                while chunk := entry.read(_CHUNK):
-                    size += len(chunk)
-                    if size > info.file_size:
-                        raise UnsafeInputError(
-                            "IO-008", f"entry {name!r} larger than declared", self.path
-                        )
-                    chunks.append(chunk)
-        except _ZIP_ERRORS as error:
-            raise UnsafeInputError(
-                "IO-007", f"cannot read entry {name!r}: {error}", self.path
-            ) from error
-        if size != info.file_size:
-            raise UnsafeInputError("IO-008", f"entry {name!r} smaller than declared", self.path)
-        return b"".join(chunks)
+            content = decompressor.decompress(data, info.file_size + 1)
+        except zlib.error as error:
+            raise self._refuse("IO-007", f"entry {info.filename!r}: {error}") from error
+        if len(content) > info.file_size:  # the stream goes on beyond the declared size
+            raise self._refuse("IO-008", f"entry {info.filename!r} larger than declared")
+        if not decompressor.eof:
+            raise self._refuse("IO-007", f"entry {info.filename!r}: stream cut short")
+        if decompressor.unused_data:
+            raise self._refuse(
+                "IO-007", f"entry {info.filename!r}: data after the end of the stream"
+            )
+        if len(content) != info.file_size:
+            raise self._refuse("IO-008", f"entry {info.filename!r} smaller than declared")
+        return content
+
+    def read(self, name: str, *, password: bytes | None = None) -> bytes:
+        """Read one entry exactly as declared, or raise ``UnsafeInputError``."""
+        info = self._entries[name]
+        data = self._stored_data(info)
+        if info.flag_bits & _ENCRYPTED:
+            data = self._decrypt(info, data, password)
+        content = self._decompress(info, data)
+        if zlib.crc32(content) != info.CRC:
+            raise self._refuse("IO-007", f"bad CRC for entry {info.filename!r}")
+        return content
 
 
 def archive_from_bytes(
@@ -137,6 +222,10 @@ def archive_from_bytes(
         raise UnsafeInputError("IO-008", f"declared size over {decompressed_limit} bytes", path)
     seen: set[str] = set()
     for info in infos:
+        if info.compress_type not in (_STORED, _DEFLATED):
+            raise UnsafeInputError(
+                "IO-007", f"compression method {info.compress_type} not allowed", path
+            )
         if _is_unsafe_name(info.orig_filename):
             raise UnsafeInputError("IO-010", f"unsafe entry name {info.orig_filename!r}", path)
         if stat.S_ISLNK(info.external_attr >> 16):
@@ -145,7 +234,7 @@ def archive_from_bytes(
         if key in seen:
             raise UnsafeInputError("IO-012", f"duplicate entry name {info.filename!r}", path)
         seen.add(key)
-    return CheckedArchive(archive, path)
+    return CheckedArchive(data, archive, path)
 
 
 def open_zip(

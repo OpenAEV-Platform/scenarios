@@ -5,9 +5,11 @@ import contextlib
 import io
 import stat
 import struct
+import tracemalloc
 import unicodedata
 import warnings
 import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,19 @@ from scenario_tools.adapters.safe_zip import (
 from scenario_tools.ports.errors import UnsafeInputError
 
 GOLDEN = Path(__file__).parents[1] / "golden" / "exports"
+# Made with `zip -P infected`: deflate, and deflate streamed from standard input (zip64, entry
+# "-"). Like the archive above, both use a data descriptor.
+ENCRYPTED_DEFLATED = base64.b64decode(
+    "UEsDBBQACQAIAAAIIVx2qfMqGwAAACwBAAAFAAAAZC50eHTZ2ep5tmOmUsoG0Q/KQhruN8r8hD4E5a+1oNNQSwcIdqnz"
+    "KhsAAAAsAQAAUEsBAh4DFAAJAAgAAAghXHap8yobAAAALAEAAAUAAAAAAAAAAQAAALSBAAAAAGQudHh0UEsFBgAAAAAB"
+    "AAEAMwAAAE4AAAAAAA=="
+)
+ENCRYPTED_STREAMED = base64.b64decode(
+    "UEsDBC0ACQAIAHedSF2rU7CF//////////8BABQALQEAEAA1AAAAAAAAACQAAAAAAAAAb3ElrPqfvtuajSaYwjOiIC0n"
+    "+UXGp41+zANPsfUFngj/3w5VUEsHCKtTsIUkAAAAAAAAADUAAAAAAAAAUEsBAh4DLQAJAAgAd51IXatTsIUkAAAANQAA"
+    "AAEAAAAAAAAAAQAAAIARAAAAAC1QSwYGLAAAAAAAAAAeAy0AAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAALwAAAAAAAABv"
+    "AAAAAAAAAFBLBgcAAAAAngAAAAAAAAABAAAAUEsFBgAAAAABAAEALwAAAG8AAAAAAA=="
+)
 # One entry, s.txt = b"secret\n", encrypted with the conventional password "infected".
 ENCRYPTED = base64.b64decode(
     "UEsDBAoACQAAAAAIIVyMsuviEwAAAAcAAAAFAAAAcy50eHQAOW5QRM8ewNu3RoSE1/TFyJsXUEsHCIyy6+ITAAAABw"
@@ -302,33 +317,13 @@ def test_duplicate_entry_names_are_refused(names: tuple[str, str]) -> None:
 def test_an_entry_larger_than_declared_is_refused() -> None:
     data = _patch_uint(_zip([("f", b"A" * 1000)]), central=24, local=22, value=10)
 
-    assert _refused(data) == "IO-007"  # the zip library stops at 10 bytes: bad CRC
+    assert _refused(data) == "IO-008"
 
 
 def test_an_entry_smaller_than_declared_is_refused() -> None:
     data = _patch_uint(_zip([("f", b"A" * 1000)]), central=24, local=22, value=5000)
 
     assert _refused(data) == "IO-008"
-
-
-def test_reading_stops_if_the_zip_library_returns_more_than_declared(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class Stream(io.BytesIO):
-        consumed = 0
-
-        def close(self) -> None:
-            self.consumed = self.tell()
-            super().close()
-
-    archive = archive_from_bytes(_zip([("f", b"A" * 10)]))
-    stream = Stream(b"A" * (1024 * 1024))
-    monkeypatch.setattr(archive._archive, "open", lambda info, pwd=None: stream)
-
-    with pytest.raises(UnsafeInputError) as error:
-        archive.read("f")
-    assert error.value.code == "IO-008"
-    assert stream.consumed <= 64 * 1024  # stopped at the first chunk, not at the end
 
 
 def test_an_unsupported_compression_method_is_refused() -> None:
@@ -348,6 +343,248 @@ def test_a_refusal_names_the_archive() -> None:
     with pytest.raises(UnsafeInputError) as error:
         archive_from_bytes(b"not a zip", path="in/export.zip")
     assert error.value.path == "in/export.zip"
+
+
+# Entry data, read by the tools
+
+
+def _handmade(
+    data: bytes,
+    *,
+    method: int,
+    crc: int,
+    size: int,
+    flags: int = 0,
+    name: bytes = b"f",
+    local_name: bytes | None = None,
+) -> bytes:
+    """One-entry archive built byte by byte, so that every field can be set at will."""
+    local_name = name if local_name is None else local_name
+    date = 0x21  # 1980-01-01
+    local = (
+        struct.pack(
+            "<4s5H3I2H",
+            b"PK\x03\x04",
+            20,
+            flags,
+            method,
+            0,
+            date,
+            crc,
+            len(data),
+            size,
+            len(local_name),
+            0,
+        )
+        + local_name
+        + data
+    )
+    central = (
+        struct.pack(
+            "<4s6H3I5H2I",
+            b"PK\x01\x02",
+            20,
+            20,
+            flags,
+            method,
+            0,
+            date,
+            crc,
+            len(data),
+            size,
+            len(name),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        + name
+    )
+    end = struct.pack("<4s4H2IH", b"PK\x05\x06", 0, 0, 1, 1, len(central), len(local), 0)
+    return local + central + end
+
+
+def _deflate(data: bytes) -> bytes:
+    compressor = zlib.compressobj(9, zlib.DEFLATED, -15)
+    return compressor.compress(data) + compressor.flush()
+
+
+def _crc_table() -> list[int]:
+    table = []
+    for byte in range(256):
+        crc = byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xEDB88320 if crc & 1 else crc >> 1
+        table.append(crc)
+    return table
+
+
+CRC_TABLE = _crc_table()
+
+
+def _zipcrypto(plain: bytes, password: bytes, check_byte: int) -> bytes:
+    """Encrypt as `zip -P` does (APPNOTE 6.1), for archives the tests build by hand."""
+    keys = [0x12345678, 0x23456789, 0x34567890]
+
+    def update(byte: int) -> None:
+        keys[0] = (keys[0] >> 8) ^ CRC_TABLE[(keys[0] ^ byte) & 0xFF]
+        keys[1] = ((keys[1] + (keys[0] & 0xFF)) * 134775813 + 1) & 0xFFFFFFFF
+        keys[2] = (keys[2] >> 8) ^ CRC_TABLE[(keys[2] ^ (keys[1] >> 24)) & 0xFF]
+
+    for byte in password:
+        update(byte)
+    out = bytearray()
+    for byte in bytes(11) + bytes([check_byte]) + plain:
+        temp = (keys[2] | 2) & 0xFFFF
+        out.append(byte ^ ((temp * (temp ^ 1)) >> 8) & 0xFF)
+        update(byte)
+    return bytes(out)
+
+
+VISIBLE = b'{"name": "safe"}'
+HIDDEN = b'\n{"name": "never checked"}'
+
+
+@pytest.mark.parametrize(
+    ("data", "name", "expected"),
+    [
+        (ENCRYPTED, "s.txt", b"secret\n"),
+        (ENCRYPTED_DEFLATED, "d.txt", b"aaaa bbbb " * 30),
+        (ENCRYPTED_STREAMED, "-", b"streamed content, " * 2 + b"streamed content\n"),
+    ],
+    ids=["stored", "deflate", "streamed zip64"],
+)
+def test_archives_made_by_zip_with_a_password_are_read(
+    data: bytes, name: str, expected: bytes
+) -> None:
+    assert archive_from_bytes(data).read(name, password=b"infected") == expected
+
+
+def test_a_stream_going_on_beyond_its_declared_size_is_refused() -> None:
+    data = _handmade(
+        _deflate(VISIBLE + HIDDEN), method=8, crc=zlib.crc32(VISIBLE), size=len(VISIBLE)
+    )
+
+    assert _refused(data) == "IO-008"
+
+
+def test_an_encrypted_stream_going_on_beyond_its_declared_size_is_refused() -> None:
+    crc = zlib.crc32(VISIBLE)
+    encrypted = _zipcrypto(_deflate(VISIBLE + HIDDEN), b"infected", crc >> 24)
+    data = _handmade(encrypted, method=8, crc=crc, size=len(VISIBLE), flags=1)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data).read("f", password=b"infected")
+    assert error.value.code == "IO-008"
+
+
+def test_an_encrypted_entry_made_by_hand_is_read() -> None:
+    crc = zlib.crc32(VISIBLE)
+    encrypted = _zipcrypto(_deflate(VISIBLE), b"infected", crc >> 24)
+    data = _handmade(encrypted, method=8, crc=crc, size=len(VISIBLE), flags=1)
+
+    assert archive_from_bytes(data).read("f", password=b"infected") == VISIBLE
+
+
+def test_stored_bytes_beyond_the_declared_size_are_refused() -> None:
+    data = _handmade(VISIBLE + HIDDEN, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE))
+
+    assert _refused(data) == "IO-008"
+
+
+def test_a_deflate_bomb_is_refused_with_bounded_memory() -> None:
+    compressed = _deflate(b"\0" * (50 * 1024 * 1024))
+    data = _handmade(compressed, method=8, crc=zlib.crc32(b"\0" * 10), size=10)
+    tracemalloc.start()
+    try:
+        assert _refused(data) == "IO-008"
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 1024 * 1024
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["bzip2", "lzma"])
+def test_compression_methods_other_than_stored_and_deflate_are_refused(method: int) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", method) as archive:
+        archive.writestr("f", b"x" * 100)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(buffer.getvalue())
+    assert error.value.code == "IO-007"
+
+
+def test_a_bad_crc_is_refused() -> None:
+    data = _handmade(_deflate(VISIBLE), method=8, crc=zlib.crc32(VISIBLE) ^ 1, size=len(VISIBLE))
+
+    assert _refused(data) == "IO-007"
+
+
+def test_a_local_header_naming_another_entry_is_refused() -> None:
+    data = _handmade(VISIBLE, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE), local_name=b"g")
+
+    assert _refused(data) == "IO-007"
+
+
+def test_a_missing_local_header_is_refused() -> None:
+    data = _handmade(VISIBLE, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE))
+    data = b"XX" + data[2:]
+
+    assert _refused(data) == "IO-007"
+
+
+def test_entry_data_cut_short_is_refused() -> None:
+    entry = _handmade(VISIBLE, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE))
+    data = _patch_uint(entry, central=20, local=18, value=len(VISIBLE) + 1000)
+
+    assert _refused(data) == "IO-007"
+
+
+def test_data_after_the_end_of_a_deflate_stream_is_refused() -> None:
+    data = _handmade(
+        _deflate(VISIBLE) + b"trailing", method=8, crc=zlib.crc32(VISIBLE), size=len(VISIBLE)
+    )
+
+    assert _refused(data) == "IO-007"
+
+
+def test_an_invalid_deflate_stream_is_refused() -> None:
+    data = _handmade(b"\xff\xff\xff\xff", method=8, crc=0, size=4)
+
+    assert _refused(data) == "IO-007"
+
+
+def test_a_truncated_deflate_stream_is_refused() -> None:
+    compressed = _deflate(VISIBLE * 20)
+    data = _handmade(
+        compressed[:-5], method=8, crc=zlib.crc32(VISIBLE * 20), size=len(VISIBLE) * 20
+    )
+
+    assert _refused(data) == "IO-007"
+
+
+def test_an_encrypted_entry_too_short_for_its_header_is_refused() -> None:
+    data = _handmade(b"short", method=0, crc=0, size=0, flags=1)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data).read("f", password=b"infected")
+    assert error.value.code == "IO-007"
+
+
+def test_a_wrong_password_is_reported_as_such() -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(ENCRYPTED_DEFLATED).read("d.txt", password=b"wrong")
+    assert error.value.code == "IO-007"
+    assert "wrong password" in error.value.message
+
+
+def test_a_password_is_ignored_for_an_entry_that_is_not_encrypted() -> None:
+    data = _handmade(VISIBLE, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE))
+
+    assert archive_from_bytes(data).read("f", password=b"infected") == VISIBLE
 
 
 # Hostile input in general
