@@ -14,6 +14,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import scenario_tools.adapters.safe_zip as safe_zip_module
 from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.adapters.safe_zip import (
     DECOMPRESSED_LIMIT,
@@ -134,6 +135,104 @@ def test_an_archive_through_a_symbolic_link_is_refused(tmp_path: Path) -> None:
 )
 def test_bytes_that_are_not_a_zip_are_refused(data: bytes) -> None:
     assert _refused(data) == "IO-007"
+
+
+def test_archive_bytes_over_the_size_limit_are_refused_before_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _zip([("a.txt", b"x" * 100)])
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data, archive_limit=50)
+    assert error.value.code == "IO-001"
+
+
+def _must_not_parse(*args: object, **kwargs: object) -> None:
+    raise AssertionError("the ZIP library must not parse this archive")
+
+
+@pytest.mark.parametrize("zip64", [False, True], ids=["zip", "zip64"])
+def test_entries_are_counted_before_the_zip_library_indexes_them(
+    monkeypatch: pytest.MonkeyPatch, zip64: bool
+) -> None:
+    if zip64:
+        monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 1)  # forces a zip64 directory
+    data = _zip([(f"e{index}", b"") for index in range(50)])
+    monkeypatch.undo()
+    assert (b"PK\x06\x06" in data) is zip64
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data, entry_limit=10)
+    assert error.value.code == "IO-009"
+
+
+def test_a_comment_does_not_hide_the_entry_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for index in range(20):
+            archive.writestr(f"e{index}", b"")
+        archive.comment = b"a comment"
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(buffer.getvalue(), entry_limit=10)
+    assert error.value.code == "IO-009"
+
+
+def test_a_zip64_directory_size_beyond_32_bits_is_followed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 1)
+    data = bytearray(_zip([(f"e{index}", b"") for index in range(50)]))
+    monkeypatch.undo()
+    end = data.rfind(b"PK\x05\x06")
+    struct.pack_into("<I", data, end + 12, 0xFFFFFFFF)  # as tools write once zip64 is used
+    assert len(zipfile.ZipFile(io.BytesIO(bytes(data))).infolist()) == 50
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data), entry_limit=10)
+    assert error.value.code == "IO-009"
+
+
+def test_an_end_signature_inside_an_entry_does_not_hide_the_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+        archive.writestr("decoy", b"PK\x05\x06" + b"\x00" * 18)
+        for index in range(20):
+            archive.writestr(f"e{index}", b"")
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(buffer.getvalue(), entry_limit=10)
+    assert error.value.code == "IO-009"
+
+
+def test_entry_comments_are_skipped_when_counting(monkeypatch: pytest.MonkeyPatch) -> None:
+    entries: list[tuple[str | zipfile.ZipInfo, bytes]] = []
+    for index in range(20):
+        info = zipfile.ZipInfo(f"e{index}")
+        info.comment = b"an entry comment"
+        entries.append((info, b""))
+    data = _zip(entries)
+    monkeypatch.setattr(zipfile, "ZipFile", _must_not_parse)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data, entry_limit=10)
+    assert error.value.code == "IO-009"
+
+
+def test_the_entry_count_is_checked_again_should_the_walk_miss_a_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(safe_zip_module, "_count_entries", lambda data, stop: 0)
+
+    assert len(archive_from_bytes(_zip([("a", b""), ("b", b"")]), entry_limit=2).names) == 2
+    assert _refused(_zip([("a", b""), ("b", b""), ("c", b"")]), entry_limit=2) == "IO-009"
 
 
 def test_entries_at_the_limit_pass_and_one_more_is_refused() -> None:
