@@ -30,9 +30,14 @@ def json_pointer(path: Iterable[str | int]) -> str:
     return "".join("/" + str(part).replace("~", "~0").replace("/", "~1") for part in path)
 
 
+_ECMA_WILDCARD = r"[^\n\r\u2028\u2029]"
+
+
 def ecma_to_python(pattern: str) -> str:
-    """Translate the ECMA-262 end anchor: an unescaped ``$`` outside a character class becomes
-    ``\\Z``, the absolute end, since Python's ``$`` also matches before a final newline."""
+    """Translate what Python reads differently from ECMA-262, outside a character class: an
+    unescaped ``$`` becomes ``\\Z``, the absolute end, since Python's ``$`` also matches before a
+    final newline; the wildcard ``.`` excludes every ECMA-262 line terminator, where Python's
+    excludes only ``\\n``."""
     out: list[str] = []
     in_class = False
     index = 0
@@ -48,6 +53,8 @@ def ecma_to_python(pattern: str) -> str:
             in_class = True
         elif char == "$":
             char = r"\Z"
+        elif char == ".":
+            char = _ECMA_WILDCARD
         out.append(char)
         index += 1
     return "".join(out)

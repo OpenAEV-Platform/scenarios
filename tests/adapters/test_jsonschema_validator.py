@@ -241,16 +241,24 @@ def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, nam
     ]
 
 
+# ECMA-262's wildcard matches anything but a line terminator; Python's also matches \r, U+2028
+# and U+2029.
+_DOT = r"[^\n\r\u2028\u2029]"
+
+
 @pytest.mark.parametrize(
     ("pattern", "translated"),
     [
         ("^a$", "^a\\Z"),
-        ("^(?=.{1,39}$)a$", "^(?=.{1,39}\\Z)a\\Z"),
+        ("^(?=.{1,39}$)a$", f"^(?={_DOT}{{1,39}}\\Z)a\\Z"),
         ("^a\\$$", "^a\\$\\Z"),
         ("^[$]$", "^[$]\\Z"),
         ("^[\\]$]$", "^[\\]$]\\Z"),
         ("^[a$]$", "^[a$]\\Z"),
         ("^a", "^a"),
+        ("a.b", f"a{_DOT}b"),
+        ("a\\.b", "a\\.b"),
+        ("[.]", "[.]"),
     ],
     ids=[
         "end",
@@ -260,10 +268,23 @@ def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, nam
         "escaped bracket in class",
         "dollar later in class",
         "no end",
+        "wildcard",
+        "escaped dot",
+        "dot in class",
     ],
 )
-def test_ecma_end_anchors_are_translated(pattern: str, translated: str) -> None:
+def test_ecma_anchors_and_wildcards_are_translated(pattern: str, translated: str) -> None:
     assert ecma_to_python(pattern) == translated
+
+
+@pytest.mark.parametrize("terminator", ["\n", "\r", "\u2028", "\u2029"])
+def test_the_wildcard_never_matches_a_line_terminator(tmp_path: Path, terminator: str) -> None:
+    schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "pattern": "^a.b$"}
+    (tmp_path / "dot.schema.json").write_text(json.dumps(schema), encoding="utf-8")
+    probe = JsonSchemaValidator(tmp_path)
+
+    assert probe.validate("dot", "axb") == ()
+    assert probe.validate("dot", f"a{terminator}b") != ()
 
 
 @pytest.mark.parametrize(
