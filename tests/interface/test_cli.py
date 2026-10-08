@@ -86,6 +86,22 @@ def test_an_unknown_format_is_a_usage_error() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--format", "json", "check-title"],
+        ["--format", "json", "unknown-command"],
+        ["--format", "xml", "check-title", "fix: a (#1)"],
+    ],
+)
+def test_a_usage_error_writes_nothing_to_stdout(args: list[str]) -> None:
+    result = CliRunner().invoke(main, args)
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Error:" in result.stderr
+
+
 # The command runner every command goes through
 
 
