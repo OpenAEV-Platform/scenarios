@@ -175,15 +175,19 @@ def test_malformed_platform_version_constraints_are_refused(
     assert [v.pointer for v in validator.validate("scenario", document)] == ["/requires/openaev"]
 
 
-@pytest.mark.parametrize("login", ["alice", "a-b", "a-b-c", "A1", "a" * 39])
+@pytest.mark.parametrize("login", ["alice", "a-b", "a-b-c", "a1", "a" * 39])
 def test_valid_github_logins_pass(validator: JsonSchemaValidator, login: str) -> None:
     document = _changed(MANIFEST, lambda d: d.update(release_approver=login))
 
     assert validator.validate("manifest", document) == ()
 
 
-@pytest.mark.parametrize("login", ["alice-", "-alice", "a--b", "a" * 40, "al ice", ""])
-def test_impossible_github_logins_are_refused(validator: JsonSchemaValidator, login: str) -> None:
+@pytest.mark.parametrize(
+    "login", ["alice-", "-alice", "a--b", "a" * 40, "al ice", "", "Alice", "ALICE"]
+)
+def test_impossible_or_non_canonical_github_logins_are_refused(
+    validator: JsonSchemaValidator, login: str
+) -> None:
     document = _changed(MANIFEST, lambda d: d.update(release_approver=login))
     approvers = _changed(
         MANIFEST, lambda d: d["items"][0]["approvals"].update(approvers=["bob", login])
@@ -353,6 +357,16 @@ def test_property_keywords_ignore_values_that_are_not_objects(tmp_path: Path) ->
 
     assert probe.validate("probe", ["x", 1]) == ()
     assert probe.validate("probe", "x") == ()
+
+
+def test_one_account_cannot_count_as_two_approvers(validator: JsonSchemaValidator) -> None:
+    document = _changed(
+        MANIFEST, lambda d: d["items"][0]["approvals"].update(approvers=["alice", "ALICE"])
+    )
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [
+        "/items/0/approvals/approvers/1"
+    ]
 
 
 def test_each_unexpected_property_is_reported_where_it_is(validator: JsonSchemaValidator) -> None:
