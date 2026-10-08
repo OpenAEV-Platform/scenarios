@@ -34,7 +34,7 @@ class _RefusedError(Exception):
         self.message = message
 
 
-def _read_bounded(path: Path, limit: int) -> bytes:
+def read_regular_file(path: Path, limit: int) -> bytes:
     """Read a regular file, never through a link, and never more than ``limit`` bytes."""
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -125,7 +125,9 @@ def parse_json(
 
 def read_json_file(path: Path, *, limit: int = JSON_LIMIT, max_depth: int = MAX_DEPTH) -> Any:
     """Read and parse a JSON file within the limits, or raise ``UnsafeInputError``."""
-    return parse_json(_read_bounded(path, limit), path=str(path), limit=limit, max_depth=max_depth)
+    return parse_json(
+        read_regular_file(path, limit), path=str(path), limit=limit, max_depth=max_depth
+    )
 
 
 # YAML
@@ -249,4 +251,6 @@ def parse_yaml(
 
 def read_yaml_file(path: Path, *, limit: int = YAML_LIMIT, max_depth: int = MAX_DEPTH) -> Any:
     """Read and parse a YAML file within the limits, or raise ``UnsafeInputError``."""
-    return parse_yaml(_read_bounded(path, limit), path=str(path), limit=limit, max_depth=max_depth)
+    return parse_yaml(
+        read_regular_file(path, limit), path=str(path), limit=limit, max_depth=max_depth
+    )
