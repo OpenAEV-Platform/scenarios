@@ -16,6 +16,15 @@ _DRIVE = re.compile(r"[A-Za-z]:")
 _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")  # RFC 6901: "~" only as "~0" or "~1"
 
 
+MESSAGE_LIMIT = 300
+
+
+def shorten(message: str) -> str:
+    """A message is shortened to ``MESSAGE_LIMIT`` characters, so that a long value read from the
+    content is never echoed in full."""
+    return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
+
+
 class Severity(Enum):
     BLOCKING = "blocking"
     INFO = "info"

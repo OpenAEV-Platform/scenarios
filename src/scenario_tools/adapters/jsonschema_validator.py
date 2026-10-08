@@ -19,19 +19,15 @@ import jsonschema
 from jsonschema import Draft202012Validator
 
 from scenario_tools.adapters.safe_readers import read_json_file
+from scenario_tools.domain.shared.finding import shorten
 from scenario_tools.ports.schema import SchemaViolation
 
-MESSAGE_LIMIT = 300
 _SUFFIX = ".schema.json"
 
 
 def json_pointer(path: Iterable[str | int]) -> str:
     """The RFC 6901 pointer of a path: ``~`` becomes ``~0`` and ``/`` becomes ``~1``."""
     return "".join("/" + str(part).replace("~", "~0").replace("/", "~1") for part in path)
-
-
-def _shorten(message: str) -> str:
-    return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
 
 
 def ecma_to_python(pattern: str) -> str:
@@ -117,7 +113,7 @@ def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
     """One violation per offending value. jsonschema reports unexpected properties on their
     parent object; each one is reported at its own pointer instead."""
     path = list(error.absolute_path)
-    general = [SchemaViolation(json_pointer(path), _shorten(error.message))]
+    general = [SchemaViolation(json_pointer(path), shorten(error.message))]
     if error.validator != "additionalProperties" or not isinstance(error.instance, dict):
         return general
     schema = error.schema if isinstance(error.schema, dict) else {}
