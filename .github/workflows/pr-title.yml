@@ -36,4 +36,5 @@ jobs:
       - name: Check the title
         env:
           TITLE: ${{ github.event.pull_request.title }}
-        run: uv run --frozen --no-dev scenario-tools check-title "$TITLE"
+        # "--" ends the options: a title such as "--help" is still read as a title.
+        run: uv run --frozen --no-dev scenario-tools check-title -- "$TITLE"

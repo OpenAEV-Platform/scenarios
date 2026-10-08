@@ -45,6 +45,8 @@ def test_valid_titles_pass(title: str) -> None:
         ("feat: add login endpoint (#)", TitleProblem.MISSING_ISSUE),
         ("feat: add login endpoint (#1) more", TitleProblem.MISSING_ISSUE),
         ("feat: add login endpoint #1", TitleProblem.MISSING_ISSUE),
+        ("feat: add login endpoint(#1)", TitleProblem.MISSING_ISSUE),
+        ("fix: close two issues at once(#1, #2)", TitleProblem.MISSING_ISSUE),
         ("feat: add login endpoint. (#1)", TitleProblem.TRAILING_PERIOD),
         ("chore(deps): update dependency ruff.", TitleProblem.TRAILING_PERIOD),
     ],
