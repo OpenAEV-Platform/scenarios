@@ -11,8 +11,10 @@ import pytest
 from scenario_tools.adapters.jsonschema_validator import (
     MESSAGE_LIMIT,
     JsonSchemaValidator,
+    ecma_to_python,
     json_pointer,
 )
+from scenario_tools.ports.schema import SchemaViolation
 
 SCHEMAS = Path(__file__).parents[2] / "schemas"
 SHA = "a" * 64
@@ -232,6 +234,125 @@ def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, nam
     assert [v.pointer for v in validator.validate("manifest", document)] == [
         "/items/0/archive/name"
     ]
+
+
+@pytest.mark.parametrize(
+    ("pattern", "translated"),
+    [
+        ("^a$", "^a\\Z"),
+        ("^(?=.{1,39}$)a$", "^(?=.{1,39}\\Z)a\\Z"),
+        ("^a\\$$", "^a\\$\\Z"),
+        ("^[$]$", "^[$]\\Z"),
+        ("^[\\]$]$", "^[\\]$]\\Z"),
+        ("^[a$]$", "^[a$]\\Z"),
+        ("^a", "^a"),
+    ],
+    ids=[
+        "end",
+        "lookahead",
+        "escaped dollar",
+        "class",
+        "escaped bracket in class",
+        "dollar later in class",
+        "no end",
+    ],
+)
+def test_ecma_end_anchors_are_translated(pattern: str, translated: str) -> None:
+    assert ecma_to_python(pattern) == translated
+
+
+@pytest.mark.parametrize(
+    ("schema", "change", "pointer"),
+    [
+        ("scenario", lambda d: d.update(version="1.0.0\n"), "/version"),
+        ("scenario", lambda d: d["threat"].update(cves=["CVE-2024-1234\n"]), "/threat/cves/0"),
+        ("scenario", lambda d: d["threat"].update(ttps=["T1595\n"]), "/threat/ttps/0"),
+        ("scenario", lambda d: d["requires"].update(openaev=">=3.261005\n"), "/requires/openaev"),
+        (
+            "scenario",
+            lambda d: d.update(targets=[{"placeholder": "web\n", "description": "x"}]),
+            "/targets/0/placeholder",
+        ),
+        ("scenario", lambda d: d["payloads"][0].update(sha256=SHA + "\n"), "/payloads/0/sha256"),
+        ("scenario", lambda d: d["payloads"][0].update(id="easm-scan\n"), "/payloads/0/id"),
+        ("manifest", lambda d: d.update(release="2026.10.08.1\n"), "/release"),
+        ("manifest", lambda d: d.update(release_approver="alice\n"), "/release_approver"),
+        (
+            "manifest",
+            lambda d: d["items"][0]["archive"].update(
+                name="5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42-1.0.0.zip\n"
+            ),
+            "/items/0/archive/name",
+        ),
+        (
+            "manifest",
+            lambda d: d["items"][0]["test_report"].update(release="2026.10.08.1\n"),
+            "/items/0/test_report/release",
+        ),
+    ],
+    ids=[
+        "version",
+        "cve",
+        "ttp",
+        "constraint",
+        "placeholder",
+        "sha256",
+        "payload id",
+        "release",
+        "login",
+        "archive name",
+        "report release",
+    ],
+)
+def test_a_trailing_newline_is_refused(
+    validator: JsonSchemaValidator,
+    schema: str,
+    change: Callable[[dict[str, Any]], object],
+    pointer: str,
+) -> None:
+    document = _changed(SCENARIO if schema == "scenario" else MANIFEST, change)
+
+    assert [v.pointer for v in validator.validate(schema, document)] == [pointer]
+
+
+def test_pattern_properties_also_follow_ecma_anchors(tmp_path: Path) -> None:
+    (tmp_path / "anchored.schema.json").write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "patternProperties": {"^x$": {"type": "integer"}},
+                "additionalProperties": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    probe = JsonSchemaValidator(tmp_path)
+
+    assert probe.validate("anchored", {"x": "not an integer"})[0].pointer == "/x"
+    assert probe.validate("anchored", {"x\n": "text"}) == (
+        SchemaViolation("/x\n", "unexpected property"),
+    )
+
+
+def _probe(tmp_path: Path, schema: dict[str, Any]) -> JsonSchemaValidator:
+    (tmp_path / "probe.schema.json").write_text(json.dumps(schema), encoding="utf-8")
+    return JsonSchemaValidator(tmp_path)
+
+
+def test_additional_properties_given_as_a_schema_validate_the_extra_values(tmp_path: Path) -> None:
+    probe = _probe(tmp_path, {"properties": {"a": {}}, "additionalProperties": {"type": "integer"}})
+
+    assert probe.validate("probe", {"a": "x", "b": 1}) == ()
+    assert [v.pointer for v in probe.validate("probe", {"a": "x", "b": "y"})] == ["/b"]
+
+
+def test_property_keywords_ignore_values_that_are_not_objects(tmp_path: Path) -> None:
+    probe = _probe(
+        tmp_path, {"patternProperties": {"^x$": {"type": "integer"}}, "additionalProperties": False}
+    )
+
+    assert probe.validate("probe", ["x", 1]) == ()
+    assert probe.validate("probe", "x") == ()
 
 
 def test_each_unexpected_property_is_reported_where_it_is(validator: JsonSchemaValidator) -> None:

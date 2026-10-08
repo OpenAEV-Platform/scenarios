@@ -5,12 +5,15 @@ reader and checked when loaded. Formats are checked by the standard validators; 
 silently skips a format whose validator is missing, which a test guards against. Violations are
 reported with the JSON pointer of the offending value, each unexpected property at its own
 pointer, in a stable order, and messages are shortened so that a long value is never echoed in
-full.
+full. Patterns follow ECMA-262, as JSON Schema requires: ``$`` matches only at the very end, not
+before a final newline as in Python.
 """
 
+import functools
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import jsonschema
 from jsonschema import Draft202012Validator
@@ -31,6 +34,85 @@ def _shorten(message: str) -> str:
     return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
 
 
+def ecma_to_python(pattern: str) -> str:
+    """Translate the ECMA-262 end anchor: an unescaped ``$`` outside a character class becomes
+    ``\\Z``, the absolute end, since Python's ``$`` also matches before a final newline."""
+    out: list[str] = []
+    in_class = False
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            out.append(pattern[index : index + 2])
+            index += 2
+            continue
+        if in_class:
+            in_class = char != "]"
+        elif char == "[":
+            in_class = True
+        elif char == "$":
+            char = r"\Z"
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+@functools.lru_cache(maxsize=512)
+def _regex(pattern: str) -> re.Pattern[str]:
+    return re.compile(ecma_to_python(pattern))
+
+
+def _pattern(
+    validator: Any, pattern: str, instance: object, schema: Mapping[str, Any]
+) -> Iterator[jsonschema.ValidationError]:
+    if isinstance(instance, str) and not _regex(pattern).search(instance):
+        yield jsonschema.ValidationError(f"{instance!r} does not match {pattern!r}")
+
+
+def _pattern_properties(
+    validator: Any, patterns: Mapping[str, Any], instance: object, schema: Mapping[str, Any]
+) -> Iterator[jsonschema.ValidationError]:
+    if not isinstance(instance, dict):
+        return
+    for pattern, subschema in patterns.items():
+        for name, value in instance.items():
+            if _regex(pattern).search(name):
+                yield from validator.descend(value, subschema, path=name, schema_path=pattern)
+
+
+def _unexpected(schema: Mapping[str, Any], instance: Mapping[str, Any]) -> list[str]:
+    known, patterns = schema.get("properties", {}), schema.get("patternProperties", {})
+    return [
+        name
+        for name in instance
+        if name not in known and not any(_regex(pattern).search(name) for pattern in patterns)
+    ]
+
+
+def _additional_properties(
+    validator: Any, additional: Any, instance: object, schema: Mapping[str, Any]
+) -> Iterator[jsonschema.ValidationError]:
+    if not isinstance(instance, dict):
+        return
+    extras = _unexpected(schema, instance)
+    if isinstance(additional, dict):
+        for name in extras:
+            yield from validator.descend(instance[name], additional, path=name)
+    elif additional is False and extras:
+        yield jsonschema.ValidationError(f"unexpected properties: {', '.join(map(repr, extras))}")
+
+
+# Every keyword that matches a pattern uses the ECMA-262 end anchor.
+_Validator = jsonschema.validators.extend(  # type: ignore[no-untyped-call]  # untyped stubs
+    Draft202012Validator,
+    {
+        "pattern": _pattern,
+        "patternProperties": _pattern_properties,
+        "additionalProperties": _additional_properties,
+    },
+)
+
+
 def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
     """One violation per offending value. jsonschema reports unexpected properties on their
     parent object; each one is reported at its own pointer instead."""
@@ -39,11 +121,9 @@ def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
     if error.validator != "additionalProperties" or not isinstance(error.instance, dict):
         return general
     schema = error.schema if isinstance(error.schema, dict) else {}
-    known, patterns = schema.get("properties", {}), schema.get("patternProperties", {})
     unexpected = [
         SchemaViolation(json_pointer([*path, name]), "unexpected property")
-        for name in error.instance
-        if name not in known and not any(re.search(pattern, name) for pattern in patterns)
+        for name in _unexpected(schema, error.instance)
     ]
     return unexpected or general  # never drop an error, even if no property can be named
 
@@ -52,14 +132,14 @@ class JsonSchemaValidator:
     """Validates documents against the schemas of a directory."""
 
     def __init__(self, schema_dir: Path) -> None:
-        self._validators: dict[str, Draft202012Validator] = {}
+        self._validators: dict[str, Any] = {}
         for file in sorted(schema_dir.glob(f"*{_SUFFIX}")):
             schema = read_json_file(file)
             try:
                 Draft202012Validator.check_schema(schema)
             except jsonschema.SchemaError as error:
                 raise ValueError(f"invalid schema {file.name}: {error.message}") from error
-            self._validators[file.name.removesuffix(_SUFFIX)] = Draft202012Validator(
+            self._validators[file.name.removesuffix(_SUFFIX)] = _Validator(
                 schema, format_checker=Draft202012Validator.FORMAT_CHECKER
             )
 
