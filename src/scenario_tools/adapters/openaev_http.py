@@ -7,6 +7,7 @@ within limits and a total deadline, and no error message carries the token or th
 """
 
 import http.client
+import ipaddress
 import re
 import secrets
 import time
@@ -33,12 +34,25 @@ ANSWER_LIMIT = 1024 * 1024
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _TOKEN = re.compile(r"[\x21-\x7e]+")
 _URL = _TOKEN  # printable ASCII, with no whitespace: nothing urlsplit would silently drop
+# A DNS label: letters, digits and inner hyphens; an internationalised name is written in its
+# ASCII form (xn--).
+_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _CHUNK = 64 * 1024
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None  # the redirect answer then comes back as an error
+
+
+def _is_host(host: str) -> bool:
+    """An IP address, or a host name made of DNS labels."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        labels = host.split(".")
+        return len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+    return True
 
 
 def _base_url(url: str) -> tuple[str, bool]:
@@ -49,7 +63,8 @@ def _base_url(url: str) -> tuple[str, bool]:
         parts = urllib.parse.urlsplit(url)
         host = parts.hostname
         parts.port  # noqa: B018 - raises ValueError for a port out of range
-        (host or "").encode("idna")  # raises UnicodeError, a ValueError, for a malformed host
+        if host and not _is_host(host):
+            raise ValueError("a malformed host")
     except ValueError as error:
         raise EnvironmentProblemError("OPENAEV_URL is not a URL") from error
     local = parts.scheme == "http" and host in _LOCAL_HOSTS
@@ -140,16 +155,23 @@ class HttpOpenAEV:
         """The answer until ``wanted`` bytes are in, one chunk at most beyond them, within the
         total deadline: the timeout of each network operation alone would let a platform crawl
         for ever."""
+        late = EnvironmentProblemError(
+            f"the platform did not answer within {self._timeout:g} seconds"
+        )
+        # The answer's socket: each read waits no longer than the time left, so that the total
+        # deadline holds even when a read blocks.
+        connection = answer.fp.raw._sock  # type: ignore[attr-defined]
         chunks: list[bytes] = []
         size = 0
-        while size < wanted:
-            if time.monotonic() > deadline:
-                raise EnvironmentProblemError(
-                    f"the platform did not answer within {self._timeout:g} seconds"
-                )
-            chunk = answer.read1(_CHUNK)
-            if not chunk:
-                break
+        while size < wanted and not answer.isclosed():  # closed once the whole body is in
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise late
+            connection.settimeout(left)
+            try:
+                chunk = answer.read1(_CHUNK)
+            except TimeoutError:
+                raise late from None
             chunks.append(chunk)
             size += len(chunk)
         return b"".join(chunks)

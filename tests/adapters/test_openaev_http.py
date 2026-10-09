@@ -41,6 +41,10 @@ def _client(
     [
         "https://platform.example.org",
         "https://platform.example.org:8443/openaev/",
+        "https://xn--bcher-kva.example",
+        "https://a-b.example",
+        "https://192.0.2.10",
+        "https://[2001:db8::1]:8443",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://[::1]:8080",
@@ -103,6 +107,12 @@ def test_an_encrypted_or_local_url_is_accepted(url: str) -> None:
         ({"OPENAEV_URL": "https://platform.example.org/a b", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://" + "a" * 70 + ".com", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://a..b", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://-bad.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://bad-.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://a_b.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://%65xample.com", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://example.com.", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://" + "a." * 127 + "com", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
     ],
 )
 def test_an_unusable_environment_is_an_environment_problem(
@@ -236,6 +246,33 @@ def test_a_platform_that_answers_byte_by_byte_is_cut_at_the_deadline(platform: P
     ):
         _client(platform, timeout=0.3).export_scenario(SCENARIO)
     assert time.monotonic() - start < 1.0
+
+
+def test_a_read_that_stalls_near_the_deadline_is_cut_at_the_deadline(platform: Platform) -> None:
+    # Each byte comes within the timeout of one network operation, but the third would come
+    # after the total deadline: the read waiting for it must stop at the deadline.
+    platform.answer(200, b"xyz")
+    platform.drip = 0.35
+
+    start = time.monotonic()
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 0.5 seconds$"
+    ):
+        _client(platform, timeout=0.5).export_scenario(SCENARIO)
+    assert time.monotonic() - start < 0.65
+
+
+def test_a_deadline_passed_between_two_reads_stops_the_read(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform.answer(200, b"archive")
+    clock = iter([0.0, 10.0])  # the deadline is set at 0, the first read is due at 10
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.time.monotonic", lambda: next(clock))
+
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 5 seconds$"
+    ):
+        _client(platform).export_scenario(SCENARIO)
 
 
 def test_a_local_call_never_goes_through_a_proxy(
