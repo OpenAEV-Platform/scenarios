@@ -13,6 +13,7 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 
 EXTERNAL_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 INJECT = "00000000-0000-4000-8000-000000000002"
+BUILT_IN = "2790bd39-37d4-4e39-be7e-53f3ca783f86"  # a contract that ships with the platform
 EXPORT: dict[str, Any] = {
     "scenario_information": {"scenario_id": "00000000-0000-4000-8000-000000000001"},
     "scenario_injects": [
@@ -20,7 +21,7 @@ EXPORT: dict[str, Any] = {
             "inject_id": INJECT,
             "inject_title": "Note",
             "inject_depends_on": [],
-            "inject_injector_contract": {"injector_contract_id": "c", "listened": True},
+            "inject_injector_contract": {"injector_contract_id": BUILT_IN, "listened": True},
         }
     ],
 }
@@ -85,7 +86,7 @@ def test_a_refused_mapping_names_its_file() -> None:
 
 
 def test_an_ambiguous_match_is_reported_on_the_export() -> None:
-    twin = {"inject_title": "Note", "inject_injector_contract": {"injector_contract_id": "c"}}
+    twin = {"inject_title": "Note", "inject_injector_contract": {"injector_contract_id": BUILT_IN}}
     entry = stable_id(scenario_namespace(EXTERNAL_ID), "scenario", EXTERNAL_ID)
     previous = {
         "scenario_information": {"scenario_id": entry},

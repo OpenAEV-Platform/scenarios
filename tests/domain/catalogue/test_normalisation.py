@@ -1134,3 +1134,61 @@ def test_values_with_the_same_canonical_form_are_sorted_the_same_way(values: lis
     again = _injects(normalise(reverse, EXTERNAL_ID, RULES).document)["Ransom note"]
 
     assert json.dumps(mail["inject_tags"]) == json.dumps(again["inject_tags"])
+
+
+def _with_built_in(contract_id: object) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_id"] = contract_id
+    return export
+
+
+@pytest.mark.parametrize("contract_id", [BUILT_IN.upper(), "not-a-uuid", 3, None])
+def test_a_built_in_contract_identifier_must_be_a_canonical_uuid(contract_id: object) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_with_built_in(contract_id), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_built_in_contract_identifier_reused_by_another_object_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_teams"][0]["team_id"] = BUILT_IN
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize("key", ["attack_pattern_id", "phase_id", "domain_id"])
+def test_a_catalogue_identifier_that_is_not_text_is_refused(key: str) -> None:
+    external = {
+        "attack_pattern_id": "attack_pattern_external_id",
+        "phase_id": "phase_external_id",
+        "domain_id": "domain_name",
+    }[key]
+    export = copy.deepcopy(EXPORT)
+    export["scenario_information"]["catalogue"] = {key: 3, external: "T1003"}
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize("domains", ["x", {"a": DOMAIN_A}, 1])
+def test_a_domain_list_that_is_not_a_list_is_refused(domains: object) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_domains"] = domains
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_null_domain_list_is_no_domain() -> None:
+    export = copy.deepcopy(EXPORT)
+    contract = export["scenario_injects"][0]["inject_injector_contract"]
+    contract["injector_contract_domains"] = None
+    contract["convertedContent"] = {"domains": []}
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_domains"] is None

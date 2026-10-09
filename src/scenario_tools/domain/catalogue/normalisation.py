@@ -304,12 +304,15 @@ def _identifiers(
     payloads: dict[str, str] = {}
     for inject in _objects(export, _INJECTS):
         payload = _payload(inject)
-        if (
-            payload is None
-            and (inject.get(_CONTRACT) or {}).get("injector_contract_custom") is True
-        ):
-            # Its identifier belongs to one instance, and the contract exists on no other.
-            raise _refuse("custom contracts without a payload are not supported yet")
+        contract_copy = inject.get(_CONTRACT)
+        if payload is None and isinstance(contract_copy, dict):
+            if contract_copy.get("injector_contract_custom") is True:
+                # Its identifier belongs to one instance, and the contract exists on no other.
+                raise _refuse("custom contracts without a payload are not supported yet")
+            # A built-in contract keeps its identifier: registered as it is, so that it is
+            # checked like any other and no other object can take it.
+            built_in = _text(contract_copy, "injector_contract_id", _CONTRACT)
+            identifiers.add(built_in, built_in)
         if payload is not None:
             source = _text(payload, "payload_id", _PAYLOAD)
             name = _text(payload, "payload_name", _PAYLOAD)
@@ -321,6 +324,8 @@ def _identifiers(
     for item in _catalogue_objects(export):
         for key, external_key, object_type in _CATALOGUE:
             if item.get(key) is not None:  # an identifier given: its shared key is required
+                if not isinstance(item[key], str):
+                    raise _refuse(f"{key} must be text")
                 if not isinstance(item.get(external_key), str) or not item[external_key]:
                     raise _refuse(f"{key} needs a non-empty {external_key}")
                 target = stable_id(NS_OPENAEV_SCENARIOS, object_type, item[external_key])
@@ -445,8 +450,10 @@ def _name_domains(document: Any) -> None:
     domains its copy names: each instance generates its own domain identifiers."""
     for item in _dicts(document):
         bare = item.get(_DOMAINS)
-        if not isinstance(bare, list):
+        if bare is None:  # absent or null: no domain
             continue
+        if not isinstance(bare, list):
+            raise _refuse(f"{_DOMAINS} must be a list")
         if not bare:  # no domain: its copy, if any, must name none either
             if _declared_domains(item):
                 raise _refuse(f"{_DOMAINS} is empty, but the contract's copy names domains")
