@@ -267,12 +267,19 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
         raise click.UsageError("SCENARIO_ID must be a UUID in lower case with hyphens")
     out = Path(os.path.normpath(out.absolute()))  # without "..", links left as they are
 
+    def check(data: bytes) -> None:
+        try:
+            check_export_archive(data, str(out))
+        except UnsafeInputError as error:  # the archive names what the platform chose
+            message = error.message.replace(os.environ["OPENAEV_TOKEN"], "<OPENAEV_TOKEN>")
+            raise UnsafeInputError(error.code, message, error.path) from error
+
     def produce() -> Report:
         return export_scenario(
             HttpOpenAEV.from_environment(os.environ),
             scenario_id,
             str(out),
-            check=lambda data: check_export_archive(data, str(out)),
+            check=check,
             write=lambda data: write_output(out, data),
         )
 

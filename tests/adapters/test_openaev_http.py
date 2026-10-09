@@ -1,6 +1,7 @@
 """The OpenAEV client over HTTP: credentials from the environment, fixed export options, local
 or encrypted transport, no redirect, bounded answers, and errors that never carry the token."""
 
+import http.client
 import json
 import socket
 import ssl
@@ -12,6 +13,7 @@ import pytest
 from scenario_tools.adapters.openaev_http import (
     EXPORT_OPTIONS,
     HttpOpenAEV,
+    _HTTPSConnection,
     _HTTPSHandler,
     _Watchdog,
 )
@@ -336,15 +338,16 @@ def test_a_connection_made_while_the_watchdog_expires_is_closed(platform: Platfo
         watchdog.create_connection(_address(platform), 5)
 
 
-def test_the_watchdog_cuts_a_connection_once_wrapped_for_encryption() -> None:
-    # Wrapping for encryption detaches the socket the watchdog made: the cut must still reach
-    # the connection, during the handshake as for the headers and the body.
+def test_the_watchdog_cuts_a_connection_wrapped_for_encryption() -> None:
+    # Wrapping for encryption detaches the socket the watchdog made: the encrypted socket is the
+    # one to watch, and the cut must reach it.
     with socket.create_server(("127.0.0.1", 0)) as server:  # accepts, never answers
         watchdog = _Watchdog(5)
         raw = watchdog.create_connection(server.getsockname(), 5)
         with ssl.create_default_context().wrap_socket(
             raw, server_hostname="platform.example.org", do_handshake_on_connect=False
         ) as encrypted:
+            watchdog.watch(encrypted)
             watchdog._expire()
 
             start = time.monotonic()
@@ -353,16 +356,47 @@ def test_the_watchdog_cuts_a_connection_once_wrapped_for_encryption() -> None:
             assert time.monotonic() - start < 1
 
 
-def test_the_watchdog_cuts_nothing_once_the_call_is_over(platform: Platform) -> None:
-    # Its descriptors may then serve other files: a late expiry must leave them alone.
-    with _Watchdog(5) as watchdog:
-        connection = watchdog.create_connection(_address(platform), 5)
+def test_an_encrypted_connection_is_watched_once_connected(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connected = socket.create_connection(_address(platform), 2)  # a wait never hangs the test
+    monkeypatch.setattr(
+        http.client.HTTPSConnection, "connect", lambda self: setattr(self, "sock", connected)
+    )
+    watchdog = _Watchdog(5)
+    connection = _HTTPSConnection("platform.example.org", watchdog=watchdog)
+
+    connection.connect()
     watchdog._expire()
 
-    assert not watchdog.expired
-    with connection:
-        connection.sendall(b"GET / HTTP/1.0\r\n\r\n")
-        assert connection.recv(12) == b"HTTP/1.0 200"
+    with connected:
+        assert connected.recv(1) == b""  # shut down: nothing more can come
+
+
+def test_a_watched_socket_that_expires_late_is_cut_at_once(platform: Platform) -> None:
+    watchdog = _Watchdog(5)
+    watchdog._expire()
+
+    with socket.create_connection(_address(platform), 2) as connection:
+        watchdog.watch(connection)
+        assert connection.recv(1) == b""
+
+
+def test_a_closed_socket_is_never_cut_through_a_reused_descriptor() -> None:
+    watchdog = _Watchdog(5)
+    first, peer = socket.socketpair()
+    watchdog.watch(first)
+    descriptor = first.fileno()
+    first.close()
+    peer.close()
+
+    other, other_peer = socket.socketpair()
+    with other, other_peer:
+        assert descriptor in (other.fileno(), other_peer.fileno())  # the lowest free one
+        watchdog._expire()
+        other.sendall(b"x")
+        other_peer.sendall(b"y")
+        assert (other_peer.recv(1), other.recv(1)) == (b"x", b"y")
 
 
 LOOPBACK = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9))
@@ -651,6 +685,18 @@ def test_an_unexpected_import_answer_is_an_environment_problem(
         EnvironmentProblemError, match=r"^the platform's answer to the import is not the expected"
     ):
         _client(platform).import_scenario(ARCHIVE)
+
+
+@pytest.mark.parametrize("field", ["type", "name"])
+def test_an_import_answer_that_carries_the_token_is_refused(platform: Platform, field: str) -> None:
+    action = {"type": "Injector", "name": "Scan", field: f"x {TOKEN} x"}
+    platform.answer(200, json.dumps({"missingActions": [action]}).encode())
+
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform's answer to the import is not the expected"
+    ) as error:
+        _client(platform).import_scenario(ARCHIVE)
+    assert TOKEN not in str(error.value)
 
 
 def test_an_import_error_names_the_import(platform: Platform) -> None:

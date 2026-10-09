@@ -8,9 +8,9 @@ text of a transport error may carry the host, or what the platform sent.
 """
 
 import contextlib
+import functools
 import http.client
 import ipaddress
-import os
 import re
 import secrets
 import socket
@@ -62,10 +62,9 @@ class _Watchdog:
         self._deadline = time.monotonic() + seconds
         self._loopback_only = loopback_only
         self._lock = threading.Lock()
-        self._done = False
-        # Descriptors, not sockets: wrapping a socket for encryption detaches it, but the
-        # encrypted socket keeps the same descriptor.
-        self._descriptors: list[int] = []
+        # Socket objects, never bare descriptors: once closed, a socket has none left to cut,
+        # whereas its former descriptor may already serve another file.
+        self._sockets: list[socket.socket] = []
         self._timer = threading.Timer(seconds, self._expire)
         self._timer.daemon = True
 
@@ -123,17 +122,23 @@ class _Watchdog:
                 if self.expired or self._left() <= 0:
                     connection.close()
                     raise TimeoutError("the connection completed after the deadline")
-                self._descriptors.append(connection.fileno())
+                self._sockets.append(connection)
             return connection
         raise error
 
+    def watch(self, connection: socket.socket) -> None:
+        """Watch a socket made from one of ours, such as the one wrapped for encryption: the
+        wrapping detaches the first. Cut at once when the deadline has already passed."""
+        with self._lock:
+            self._sockets.append(connection)
+            if self.expired:
+                _cut(connection)
+
     def _expire(self) -> None:
         with self._lock:
-            if self._done:  # the call is over: its descriptors may already serve another file
-                return
             self.expired = True
-            for descriptor in self._descriptors:
-                _cut(descriptor)
+            for connection in self._sockets:
+                _cut(connection)
 
     def __enter__(self) -> "_Watchdog":
         self._timer.start()
@@ -145,17 +150,32 @@ class _Watchdog:
         error: BaseException | None,
         trace: TracebackType | None,
     ) -> None:
-        with self._lock:
-            self._done = True
         self._timer.cancel()
 
 
-def _cut(descriptor: int) -> None:
-    """Shut the connection down through a duplicate of its descriptor: the shutdown reaches
-    the connection itself, whichever socket object holds it."""
-    # Already closed: nothing left to cut.
-    with contextlib.suppress(OSError), socket.socket(fileno=os.dup(descriptor)) as twin:
-        twin.shutdown(socket.SHUT_RDWR)
+def _cut(connection: socket.socket) -> None:
+    """Shut the connection down, at the socket level: the encrypted socket's own shutdown would
+    also drop its encryption state under the thread still reading from it."""
+    with contextlib.suppress(OSError):  # already closed: nothing left to cut
+        socket.socket.shutdown(connection, socket.SHUT_RDWR)
+
+
+class _HTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args: Any, watchdog: _Watchdog, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._create_connection = watchdog.create_connection
+
+
+class _HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args: Any, watchdog: _Watchdog, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._watchdog = watchdog
+        self._create_connection = watchdog.create_connection
+
+    def connect(self) -> None:
+        # The handshake runs on the first socket, within its timeout, set to the time left.
+        super().connect()
+        self._watchdog.watch(self.sock)  # the encrypted socket: the wrapping detached the first
 
 
 class _HTTPHandler(urllib.request.HTTPHandler):
@@ -164,14 +184,7 @@ class _HTTPHandler(urllib.request.HTTPHandler):
         self._watchdog = watchdog
 
     def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
-        watchdog = self._watchdog
-
-        class Connection(http.client.HTTPConnection):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                super().__init__(*args, **kwargs)
-                self._create_connection = watchdog.create_connection
-
-        return self.do_open(Connection, req)
+        return self.do_open(functools.partial(_HTTPConnection, watchdog=self._watchdog), req)
 
 
 class _HTTPSHandler(urllib.request.HTTPSHandler):
@@ -181,14 +194,8 @@ class _HTTPSHandler(urllib.request.HTTPSHandler):
         self._watchdog = watchdog
 
     def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
-        watchdog = self._watchdog
-
-        class Connection(http.client.HTTPSConnection):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                super().__init__(*args, **kwargs)
-                self._create_connection = watchdog.create_connection
-
-        return self.do_open(Connection, req, context=self._tls)
+        connection = functools.partial(_HTTPSConnection, watchdog=self._watchdog)
+        return self.do_open(connection, req, context=self._tls)
 
 
 def _is_host(host: str) -> bool:
@@ -344,7 +351,7 @@ class HttpOpenAEV:
             body=body,
             content_type=f"multipart/form-data; boundary={boundary}",
         )
-        return _import_result(data)
+        return _import_result(data, self._token)
 
 
 def _problem(status: int, not_found: str) -> str:
@@ -357,7 +364,7 @@ def _problem(status: int, not_found: str) -> str:
     return f"the platform answered HTTP {status}"
 
 
-def _import_result(data: bytes) -> ImportResult:
+def _import_result(data: bytes, token: str) -> ImportResult:
     unexpected = EnvironmentProblemError(
         "the platform's answer to the import is not the expected JSON object"
     )
@@ -374,6 +381,8 @@ def _import_result(data: bytes) -> ImportResult:
             raise unexpected
         kind, name = action.get("type"), action.get("name")
         if not isinstance(kind, str) or not isinstance(name, str):
+            raise unexpected
+        if token in kind or token in name:  # the platform has seen it: never shown back
             raise unexpected
         skipped.append(SkippedInject(kind, name))
     return ImportResult(tuple(skipped))

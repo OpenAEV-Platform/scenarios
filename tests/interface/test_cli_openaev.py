@@ -127,6 +127,21 @@ def test_a_refused_export_is_reported_on_the_output_path(
     assert json.loads(stdout)["findings"][0]["path"] == "build/e.zip"
 
 
+def test_a_refused_export_never_shows_the_token(platform: Platform, tmp_path: Path) -> None:
+    # The platform has seen the token, and the refusal names what the archive holds.
+    platform.answer(200, _archive((f"../{TOKEN}.json", b"{}")))
+
+    code, stdout, _ = _run(
+        platform, "--format", "json", "openaev", "export", SCENARIO, "--out", str(tmp_path / "e")
+    )
+
+    assert code == 1
+    assert TOKEN not in stdout
+    [finding] = json.loads(stdout)["findings"]
+    assert finding["code"] == "IO-010"
+    assert "<OPENAEV_TOKEN>" in finding["message"]
+
+
 @pytest.mark.parametrize("scenario", ["../../api/users", SCENARIO.upper(), "x"])
 def test_export_needs_a_scenario_uuid(platform: Platform, tmp_path: Path, scenario: str) -> None:
     code, stdout, stderr = _run(
