@@ -5,6 +5,7 @@ number or to the tools used to plan the work tells them nothing. Every sentence 
 own. This file is the only one allowed to name the forbidden references.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -19,11 +20,11 @@ _FORBIDDEN = re.compile(
         (
             r"\bresearch R[0-9]",  # an item of the design research notes
             r"\bcli\.md\b",  # the internal command-line contract
-            r"\bdata[ -]model\b",  # the internal data model document
+            r"\bdata-model\b|\(data model\b",  # the internal data model document, cited
             r"\bRFC[ -]?0004\b",  # an RFC that is not public
             r"\bT0[0-9]{2}[a-z]?\b",  # a task number; ATT&CK techniques have four digits
             r"\bspeckit\b",
-            r"\bconstitution\b",
+            r"\bconstitution(\.md\b| [IVX]+\b)",  # the project rules, by file or principle
             r"(?-i:\bNotion\b)",
             r"(?-i:\bClaude\b)",
             r"co-authored-by",
@@ -47,12 +48,14 @@ def _internal_references(text: str) -> list[str]:
         "Findings, in one stable shape (contract cli.md).",
         "Cross-checks (data model, cross-checks).",
         "See the Data-Model.",
+        "Described in data-model.md.",
         "One release on one channel (RFC 0004 §4.2).",
         "As RFC-0004 says.",
         "Done in T012b.",
         "Before T013 starts.",
         "Read the speckit first.",
-        "As the Constitution requires.",
+        "As constitution IX requires.",
+        "Read constitution.md first.",
         "Copied from a Notion page.",
         "Written with Claude.",
         "Co-authored-by: someone <a@b.c>",
@@ -73,6 +76,8 @@ def test_the_check_refuses_internal_references(text: str) -> None:
         "Technique T1595, and the ICS technique T0866.",
         "TT012 is not a task number.",
         "The notion of order, the data, the model.",
+        "The manifest data model is versioned.",
+        "A crisis that suspends the constitution.",
         "Research notes, an R2 value, cli.py.",
     ],
 )
@@ -82,21 +87,20 @@ def test_the_check_accepts_ordinary_text(text: str) -> None:
 
 def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
     found = {}
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if (
-            not path.is_file()
-            or _SKIPPED_DIRECTORIES & set(relative.parts)
-            or relative == THIS_FILE
-        ):
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue  # binary files, such as the reference exports
-        references = _internal_references(text)
-        if references:
-            found[relative.as_posix()] = references
+    for directory, subdirectories, names in os.walk(root):
+        subdirectories[:] = sorted(set(subdirectories) - _SKIPPED_DIRECTORIES)  # never entered
+        for name in sorted(names):
+            path = Path(directory) / name
+            relative = path.relative_to(root)
+            if relative == THIS_FILE:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue  # binary files, such as the reference exports
+            references = _internal_references(text)
+            if references:
+                found[relative.as_posix()] = references
     return found
 
 
