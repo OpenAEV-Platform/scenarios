@@ -333,9 +333,15 @@ def _identifiers(
 
 
 def _rewrite(value: Any, targets: Mapping[str, str]) -> Any:
-    """Every rewritten identifier replaced, in values, inside text and in object keys."""
+    """Every rewritten identifier replaced, in values, inside text and in object keys. Two keys
+    of one object that become the same are refused: one value would be lost."""
     if isinstance(value, dict):
-        return {_rewrite(key, targets): _rewrite(child, targets) for key, child in value.items()}
+        rewritten = {
+            _rewrite(key, targets): _rewrite(child, targets) for key, child in value.items()
+        }
+        if len(rewritten) != len(value):
+            raise _refuse("two keys of an object name the same identifier")
+        return rewritten
     if isinstance(value, list):
         return [_rewrite(child, targets) for child in value]
     if isinstance(value, str):

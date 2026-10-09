@@ -1010,3 +1010,12 @@ def test_a_custom_contract_with_a_payload_is_accepted() -> None:
     assert implant["inject_injector_contract"]["injector_contract_id"] == stable_id(
         NS, "contract", "Dump"
     )
+
+
+def test_two_object_keys_that_name_the_same_identifier_are_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_information"]["by_team"] = {TEAM: "a", stable_id(NS, "team", "Blue"): "b"}
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
