@@ -12,6 +12,7 @@ from scenario_tools.domain.catalogue.metadata import InjectFacts, is_tabletop
 
 ROOT = Path(__file__).parents[2]
 NORMALISED = ROOT / "tests" / "golden" / "normalised"
+CATALOGUE = ROOT / "scenarios"
 DATA = YamlDataLoader(ROOT / "policy" / "data")
 BUILTIN = BuiltinContracts.from_document(DATA.load("builtin-contracts"))
 COMMUNICATION = frozenset(DATA.load("tabletop-injectors")["injectors"])
@@ -74,12 +75,17 @@ def test_recorded_facts_agree_with_the_platform_s_copies_in_the_references(name:
         ), contract["injector_contract_id"]
 
 
-def test_every_built_in_contract_of_the_references_is_recorded_in_order() -> None:
+def test_the_recorded_contracts_are_exactly_those_in_use_in_order() -> None:
+    # In use: by the references and by the catalogue entries. A maintainer records a contract in
+    # the change that adds the scenario needing it, and removes it with the last scenario using it.
+    documents = [_load(name) for name in REFERENCES] + [
+        json.loads(path.read_bytes()) for path in sorted(CATALOGUE.glob("*/*/scenario.json"))
+    ]
     used = {
         contract["injector_contract_id"]
-        for name in REFERENCES
-        for contract in _builtin_contracts(_load(name))
+        for document in documents
+        for contract in _builtin_contracts(document)
     }
 
-    assert used <= set(BUILTIN.identifiers)
+    assert set(BUILTIN.identifiers) == used
     assert list(BUILTIN.identifiers) == sorted(BUILTIN.identifiers)
