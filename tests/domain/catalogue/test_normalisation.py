@@ -465,19 +465,30 @@ def _content(document: dict[str, Any]) -> str:
 
 
 def test_volatile_fields_are_removed_inside_the_contract_copy_text() -> None:
-    domain = {"domain_id": DOMAIN_A, "listened": True, "domain_created_at": "2026-03-23T10:28:12Z"}
+    domain = {
+        "domain_id": DOMAIN_A,
+        "domain_name": "E-mail Infiltration",
+        "listened": True,
+        "domain_created_at": "2026-03-23T10:28:12Z",
+    }
     content = json.dumps(
         {"contract_id": PAYLOAD_CONTRACT, "label": {"en": "Dump é"}, "domains": [domain]},
         separators=(",", ":"),
         ensure_ascii=False,
     )
 
-    document = normalise(_with_content(content), EXTERNAL_ID, RULES).document
+    export = _with_content(content)
+    export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_domains"] = [
+        DOMAIN_A
+    ]
+
+    document = normalise(export, EXTERNAL_ID, RULES).document
 
     contract = stable_id(NS, "contract", "Dump")
     assert _content(document) == (
         f'{{"contract_id":"{contract}","label":{{"en":"Dump é"}},'
-        f'"domains":[{{"domain_id":"{_domain("E-mail Infiltration")}"}}]}}'
+        f'"domains":[{{"domain_id":"{_domain("E-mail Infiltration")}",'
+        '"domain_name":"E-mail Infiltration"}]}'
     )
 
 
@@ -1019,3 +1030,50 @@ def test_two_object_keys_that_name_the_same_identifier_are_refused() -> None:
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
     assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"attack_pattern_id": ATTACK_PATTERN},
+        {"attack_pattern_id": ATTACK_PATTERN, "attack_pattern_external_id": 3},
+        {"phase_id": PHASE, "phase_external_id": None},
+        {"domain_id": DOMAIN_A},
+    ],
+    ids=["pattern without key", "pattern key not text", "phase key null", "domain without name"],
+)
+def test_a_catalogue_identifier_without_its_key_is_refused(item: dict[str, Any]) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_information"]["catalogue"] = item
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize(
+    "copy_fields",
+    [
+        {"convertedContent": {"domains": [{"domain_name": "Network"}]}},
+        {"injector_contract_content": json.dumps({"domains": [{"domain_name": "Network"}]})},
+    ],
+    ids=["in the converted content", "in the text"],
+)
+def test_an_empty_domain_list_with_domains_in_the_copy_is_refused(
+    copy_fields: dict[str, Any],
+) -> None:
+    export = _with_domains(copy_fields)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_domains"] = []
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_an_empty_domain_list_with_no_domain_in_the_copy_is_accepted() -> None:
+    export = _with_domains({"convertedContent": {"domains": []}})
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_domains"] = []
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_domains"] == []

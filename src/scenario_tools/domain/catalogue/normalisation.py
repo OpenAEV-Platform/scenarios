@@ -318,9 +318,9 @@ def _identifiers(
             identifiers.add(contract, stable_id(namespace, "contract", name))
     for item in _catalogue_objects(export):
         for key, external_key, object_type in _CATALOGUE:
-            if isinstance(item.get(key), str) and isinstance(item.get(external_key), str):
-                if not item[external_key]:
-                    raise _refuse(f"{external_key} must not be empty")
+            if item.get(key) is not None:  # an identifier given: its shared key is required
+                if not isinstance(item.get(external_key), str) or not item[external_key]:
+                    raise _refuse(f"{key} needs a non-empty {external_key}")
                 target = stable_id(NS_OPENAEV_SCENARIOS, object_type, item[external_key])
                 identifiers.add(item[key], target)
     new = [_signature(inject, namespace) for inject in _objects(export, _INJECTS)]
@@ -417,6 +417,13 @@ def _strip_text(text: object, rules: NormalisationRules) -> object:
     return json.dumps(stripped, ensure_ascii=False, separators=(",", ":"))
 
 
+def _declared_domains(contract: Mapping[str, Any]) -> bool:
+    copy = contract.get("convertedContent")
+    if copy is None and isinstance(contract.get(_CONTENT), str):
+        copy = _decode(contract[_CONTENT])
+    return isinstance(copy, dict) and bool(copy.get("domains"))
+
+
 def _domain_names(contract: Mapping[str, Any]) -> set[str]:
     """The names of the domains declared in a contract's own copy."""
     copy = contract.get("convertedContent")
@@ -436,7 +443,11 @@ def _name_domains(document: Any) -> None:
     domains its copy names: each instance generates its own domain identifiers."""
     for item in _dicts(document):
         bare = item.get(_DOMAINS)
-        if not isinstance(bare, list) or not bare:
+        if not isinstance(bare, list):
+            continue
+        if not bare:  # no domain: its copy, if any, must name none either
+            if _declared_domains(item):
+                raise _refuse(f"{_DOMAINS} is empty, but the contract's copy names domains")
             continue
         if not all(isinstance(domain, str) and _UUID.fullmatch(domain) for domain in bare):
             raise _refuse(f"{_DOMAINS} must be a list of identifiers")
