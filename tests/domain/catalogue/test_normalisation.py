@@ -1277,3 +1277,23 @@ def test_a_copy_domain_with_an_empty_name_is_refused() -> None:
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
     assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize("flag", [1, "true", "false", 0, []])
+def test_a_custom_flag_that_is_not_a_boolean_is_refused(flag: object) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_custom"] = flag
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize("flag", [False, None])
+def test_a_built_in_contract_may_say_it_is_not_custom(flag: object) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_custom"] = flag
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_id"] == BUILT_IN

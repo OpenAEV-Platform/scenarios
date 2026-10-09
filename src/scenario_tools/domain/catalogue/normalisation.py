@@ -307,7 +307,10 @@ def _identifiers(
         payload = _payload(inject)
         contract_copy = inject.get(_CONTRACT)
         if payload is None and isinstance(contract_copy, dict):
-            if contract_copy.get("injector_contract_custom") is True:
+            custom = contract_copy.get("injector_contract_custom")
+            if custom is not None and not isinstance(custom, bool):
+                raise _refuse("injector_contract_custom must be true or false")
+            if custom:
                 # Its identifier belongs to one instance, and the contract exists on no other.
                 raise _refuse("custom contracts without a payload are not supported yet")
             # A built-in contract keeps its identifier: registered as it is, so that it is
