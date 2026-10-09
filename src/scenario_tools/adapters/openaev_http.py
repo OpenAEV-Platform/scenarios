@@ -283,7 +283,9 @@ class HttpOpenAEV:
         if not token:
             raise EnvironmentProblemError("OPENAEV_TOKEN is not set")
         if not _TOKEN.fullmatch(token):
-            raise EnvironmentProblemError("OPENAEV_TOKEN is not a token: printable ASCII only")
+            raise EnvironmentProblemError(
+                "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace"
+            )
         return cls(url, token, timeout=timeout, archive_limit=archive_limit)
 
     def _call(

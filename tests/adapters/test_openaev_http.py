@@ -74,15 +74,15 @@ def test_an_encrypted_or_local_url_is_accepted(url: str) -> None:
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a b"},
-            "OPENAEV_TOKEN is not a token",
+            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a\r\nX-Other: 1"},
-            "OPENAEV_TOKEN is not a token",
+            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "jeton-é"},
-            "OPENAEV_TOKEN is not a token",
+            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
         ),
         ({"OPENAEV_URL": "http://platform.example.org", "OPENAEV_TOKEN": TOKEN}, "https"),
         ({"OPENAEV_URL": "http://10.0.0.1:8080", "OPENAEV_TOKEN": TOKEN}, "https"),

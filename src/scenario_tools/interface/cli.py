@@ -73,8 +73,12 @@ def execute(
     try:
         return _run(command, produce, output_format, root, hidden)
     except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
-        line = f"{command}: internal error: {type(error).__name__}: {_describe(error)}"
-        return shorten(_printable(line)), EXIT_INTERNAL
+
+        def render(text: str) -> str:
+            return shorten(_printable(f"{command}: internal error: {text}"))
+
+        message = f"{type(error).__name__}: {_describe(error)}"
+        return _concealed(message, render, hidden), EXIT_INTERNAL
 
 
 def _describe(error: Exception) -> str:
@@ -86,6 +90,14 @@ def _describe(error: Exception) -> str:
 
 
 _WITHHELD = "withheld: it would show a secret"
+
+
+def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
+    """``message`` as ``render`` writes it, or withheld when either would show ``hidden``."""
+    output = render(message)
+    if hidden and (hidden in output or hidden in message):
+        return render(_WITHHELD)
+    return output
 
 
 def _render(report: Report, output_format: str) -> str:
@@ -129,11 +141,14 @@ def _run(
     except UnsafeInputError as error:
         report = Report(command, (finding_from_unsafe_input(error, root or Path.cwd()),))
     except EnvironmentProblemError as error:
-        if output_format == "json":
-            message = shorten(str(error))
-            document = {"command": command, "ok": False, "findings": [], "error": message}
-            return json.dumps(document), EXIT_ENVIRONMENT
-        return shorten(_printable(f"{command}: environment error: {error}")), EXIT_ENVIRONMENT
+
+        def render(text: str) -> str:
+            if output_format == "json":
+                document = {"command": command, "ok": False, "findings": [], "error": shorten(text)}
+                return json.dumps(document)
+            return shorten(_printable(f"{command}: environment error: {text}"))
+
+        return _concealed(str(error), render, hidden), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     return _withhold(report, output_format, hidden), code
 

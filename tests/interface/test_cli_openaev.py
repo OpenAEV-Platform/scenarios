@@ -339,6 +339,44 @@ def test_an_export_output_never_shows_the_token(
     assert "withheld: it would show a secret" in stdout
 
 
+@pytest.mark.parametrize("output_format", ["text", "json"])
+@pytest.mark.parametrize(
+    ("token", "name"),
+    [(TOKEN, TOKEN), ('t"k-secret', 't"k-secret'), ("a\\nb-secret", "a\nb-secret")],
+    ids=["plain", "escaped by JSON", "made by escaping"],
+)
+def test_an_environment_error_never_shows_the_token(
+    platform: Platform, tmp_path: Path, output_format: str, token: str, name: str
+) -> None:
+    missing = tmp_path / f"{name}.zip"
+
+    result = CliRunner().invoke(
+        main,
+        ["--format", output_format, "openaev", "import", str(missing)],
+        env={"OPENAEV_URL": platform.url, "OPENAEV_TOKEN": token},
+    )
+
+    assert result.exit_code == 3
+    assert token not in result.stdout
+    if output_format == "json":
+        assert json.loads(result.stdout)["error"] == "withheld: it would show a secret"
+    else:
+        assert result.stdout.strip() == (
+            "openaev import: environment error: withheld: it would show a secret"
+        )
+
+
+def test_an_internal_error_never_shows_the_token() -> None:
+    def produce() -> Report:
+        raise RuntimeError(f"failed near {TOKEN}")
+
+    output, code = execute("openaev import", produce, "text", hidden=TOKEN)
+
+    assert code == 4
+    assert TOKEN not in output
+    assert output == "openaev import: internal error: withheld: it would show a secret"
+
+
 def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:
     archive = tmp_path / "scenario.zip"
     archive.write_bytes(EXPORT)
