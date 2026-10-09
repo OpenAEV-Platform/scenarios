@@ -52,8 +52,16 @@ def execute(
     try:
         return _run(command, produce, output_format, root)
     except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
-        line = f"{command}: internal error: {type(error).__name__}: {error}"
+        line = f"{command}: internal error: {type(error).__name__}: {_describe(error)}"
         return shorten(_printable(line)), EXIT_INTERNAL
+
+
+def _describe(error: Exception) -> str:
+    """The text of an error, even one whose own text cannot be built."""
+    try:
+        return str(error)
+    except Exception:  # noqa: BLE001 - the guard itself must not fail
+        return "<unprintable>"
 
 
 def _run(

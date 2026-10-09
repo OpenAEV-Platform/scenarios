@@ -293,3 +293,16 @@ def test_a_failure_while_converting_a_refusal_exits_four(monkeypatch: pytest.Mon
     output, code = execute("demo", refused, "json")
 
     assert (output, code) == ("demo: internal error: RuntimeError: conversion failed", 4)
+
+
+def test_an_error_that_cannot_be_printed_still_exits_four() -> None:
+    class UnprintableError(Exception):
+        def __str__(self) -> str:
+            raise ValueError("no text")
+
+    def produce() -> Report:
+        raise UnprintableError
+
+    output, code = execute("demo", produce, "text")
+
+    assert (output, code) == ("demo: internal error: UnprintableError: <unprintable>", 4)
