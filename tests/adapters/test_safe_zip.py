@@ -743,6 +743,67 @@ def test_zip64_sizes_without_their_zip64_field_are_refused() -> None:
     assert error.value.code == "IO-007"
 
 
+def test_a_local_name_that_differs_from_the_directory_is_refused_before_reading() -> None:
+    data = bytearray(_zip([("safe", b"x")]))
+    struct.pack_into("<4s", data, _LOCAL_HEADER_SIZE, b"../x")  # same length, unchecked name
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("name", ["caf\u00e9.txt", "plain.txt"], ids=["non-ascii", "ascii"])
+def test_a_local_name_encoding_flag_that_differs_from_the_directory_is_refused(name: str) -> None:
+    data = bytearray(_zip([(name, b"x")]))
+    (flags,) = struct.unpack_from("<H", data, 6)
+    struct.pack_into("<H", data, 6, flags ^ 0x800)  # the local header alone says otherwise
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("compressed", [2**32, 2**33], ids=["4 GiB", "8 GiB"])
+def test_a_zip64_size_the_local_descriptor_cannot_hold_is_refused(compressed: int) -> None:
+    name, content = b"a", b"x" * 10
+    crc = zlib.crc32(content)
+    local = (
+        struct.pack("<4s5H3I2H", b"PK\x03\x04", 20, 0x8, 0, 0, 0x21, 0, 0, 0, len(name), 0)
+        + name
+        + content
+        + struct.pack("<3I", crc, len(content), len(content))
+    )
+    central = (
+        struct.pack(
+            "<4s6H3I5H2I",
+            b"PK\x01\x02",
+            45,
+            45,
+            0x8,
+            0,
+            0,
+            0x21,
+            crc,
+            0xFFFFFFFF,
+            len(content),
+            len(name),
+            12,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        + name
+        + struct.pack("<HHQ", 0x0001, 8, compressed)  # zip64 field: the compressed size
+    )
+    end = struct.pack("<4s4H2IH", b"PK\x05\x06", 0, 0, 1, 1, len(central), len(local), 0)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(local + central + end)
+    assert error.value.code == "IO-007"
+
+
 def test_encrypted_entries_are_limited_in_total_not_one_by_one() -> None:
     data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
     sizes = [info.compress_size for info in zipfile.ZipFile(io.BytesIO(data)).infolist()]

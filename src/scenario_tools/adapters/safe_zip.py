@@ -43,7 +43,7 @@ _LOCAL_SIZE = 30
 _DESCRIPTOR = b"PK\x07\x08"
 _ZIP64_EXTRA = 0x0001
 _ZIP64_MARK = 0xFFFFFFFF
-_AGREEING_FLAGS = _ENCRYPTED | _DATA_DESCRIPTOR
+_AGREEING_FLAGS = _ENCRYPTED | _DATA_DESCRIPTOR | _UTF8_NAME
 _ZIPCRYPTO_HEADER = 12
 
 
@@ -160,12 +160,19 @@ def _entry_end(data: bytes, position: int, info: zipfile.ZipInfo) -> int | None:
     extra = data[extra_start : extra_start + extra_length]
     if flags & _AGREEING_FLAGS != info.flag_bits & _AGREEING_FLAGS or method != info.compress_type:
         return None
+    # The ZIP library decoded the name with the encoding these agreeing flags select, so
+    # encoding it back gives the bytes the directory holds.
+    encoding = "utf-8" if flags & _UTF8_NAME else "cp437"
+    if data[position + _LOCAL_SIZE : extra_start] != info.orig_filename.encode(encoding):
+        return None
     end: int = extra_start + extra_length + info.compress_size
     if not flags & _DATA_DESCRIPTOR:
         sizes = _local_sizes(header, extra)
         agrees = crc == info.CRC and sizes == (info.compress_size, info.file_size)
         return end if agrees else None
     layout = "<QQ" if _zip64_extra(extra) is not None else "<II"
+    if layout == "<II" and max(info.compress_size, info.file_size) > _ZIP64_MARK:
+        return None  # a size the descriptor this local header announces cannot hold
     body = struct.pack("<I", info.CRC) + struct.pack(layout, info.compress_size, info.file_size)
     for descriptor in (_DESCRIPTOR + body, body):  # its signature is optional
         if data.startswith(descriptor, end):
@@ -217,15 +224,10 @@ class CheckedArchive:
         return UnsafeInputError(code, message, self.path)
 
     def _stored_data(self, info: zipfile.ZipInfo) -> bytes:
-        """The entry's bytes as stored, after a local header that names the same entry as the
-        directory. The layout check already proved that the header is there and that the data
-        lies within the archive."""
+        """The entry's bytes as stored. The layout check already proved that its local header
+        says what the directory says and that the data lies within the archive."""
         start = info.header_offset
         name_length, extra_length = struct.unpack_from("<HH", self._data, start + 26)
-        raw_name = self._data[start + _LOCAL_SIZE : start + _LOCAL_SIZE + name_length]
-        encoding = "utf-8" if info.flag_bits & _UTF8_NAME else "cp437"
-        if raw_name.decode(encoding, errors="replace") != info.orig_filename:
-            raise self._refuse("IO-007", f"local header names another entry than {info.filename!r}")
         begin = start + _LOCAL_SIZE + name_length + extra_length
         return self._data[begin : begin + info.compress_size]
 
