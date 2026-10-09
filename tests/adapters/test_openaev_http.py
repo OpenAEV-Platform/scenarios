@@ -636,6 +636,31 @@ def test_a_transport_failure_is_named_by_its_kind_only(platform: Platform) -> No
         _client(platform).export_scenario(SCENARIO)
 
 
+def test_an_answer_finished_after_the_deadline_is_late_even_if_the_timer_lags(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Lagging:  # a timer whose thread is never scheduled in time
+        daemon = False
+
+        def __init__(self, *args: object) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.threading.Timer", Lagging)
+    platform.answer(200, b"xyz")
+    platform.drip = 0.12  # each byte within the timeout, the whole answer past the deadline
+
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 0.2 seconds$"
+    ):
+        _client(platform, timeout=0.2).export_scenario(SCENARIO)
+
+
 def test_a_local_call_never_goes_through_a_proxy(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:

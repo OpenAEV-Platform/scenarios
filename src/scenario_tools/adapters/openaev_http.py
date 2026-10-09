@@ -331,7 +331,9 @@ class HttpOpenAEV:
                     raise late from None
                 kind = type(reason if isinstance(reason, BaseException) else error).__name__
                 raise EnvironmentProblemError(f"the platform cannot be reached ({kind})") from None
-        if watchdog.expired:  # a body cut at the deadline reads as a short one
+        # The clock decides, not the timer, whose thread may run late; a body cut at the
+        # deadline reads as a short one.
+        if watchdog.left() <= 0:
             raise late
         if status != 200:
             raise EnvironmentProblemError(_problem(status, not_found))
