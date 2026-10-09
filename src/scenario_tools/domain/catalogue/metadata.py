@@ -9,7 +9,7 @@ through an executor. Whether a scenario is tabletop is derived, never declared.
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from scenario_tools.domain.shared.finding import Finding, Severity, shorten
+from scenario_tools.domain.shared.finding import Finding, Severity
 
 
 def _text(document: Mapping[str, object], key: str) -> str:
@@ -122,7 +122,7 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
             Severity.BLOCKING,
             path,
             f"/{field}",
-            shorten(f"{field} is {value!r} but {expected!r} in the export"),
+            f"{field} is {value!r} but {expected!r} in the export",
         )
         for field, value, expected in (
             ("name", metadata.name, facts.name),
@@ -141,10 +141,8 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
                 Severity.BLOCKING,
                 path,
                 "/requires/injectors",
-                shorten(
-                    "requires.injectors must list the injector types of the injects; "
-                    + _differences(used - declared, declared - used)
-                ),
+                "requires.injectors must list the injector types of the injects; "
+                + _differences(used - declared, declared - used),
             )
         )
     required = frozenset(
@@ -160,10 +158,8 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
                 Severity.BLOCKING,
                 path,
                 "/platforms",
-                shorten(
-                    "platforms must include every platform an inject runs on through an executor; "
-                    f"missing: {_names(required - metadata.platforms)}"
-                ),
+                "platforms must include every platform an inject runs on through an executor; "
+                f"missing: {_names(required - metadata.platforms)}",
             )
         )
     return tuple(findings)

@@ -2,8 +2,9 @@
 
 A finding has a code (two or three capital letters, a hyphen and three digits), a severity, the
 path of the file relative to the repository root (empty when the input is not a file), the JSON
-pointer of the field (empty for the whole input) and a message. A report is ok when it holds no
-blocking finding, and lists its findings in a stable order.
+pointer of the field (empty for the whole input) and a message, shortened to ``MESSAGE_LIMIT``
+characters regardless of who builds the finding. A report is ok when it holds no blocking finding,
+and lists its findings in a stable order.
 """
 
 import re
@@ -52,6 +53,7 @@ class Finding:
             raise ValueError(f"finding field {self.field!r} is not a JSON pointer")
         if not self.message:
             raise ValueError("finding message is empty")
+        object.__setattr__(self, "message", shorten(self.message))
 
     def _sort_key(self) -> tuple[str, str, str, str, str]:
         return (self.path, self.field, self.code, self.message, self.severity.value)
