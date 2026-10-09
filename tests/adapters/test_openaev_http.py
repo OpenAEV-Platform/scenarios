@@ -44,6 +44,10 @@ def _client(
 # Credentials and transport
 
 
+def test_a_token_of_16_characters_is_accepted() -> None:
+    HttpOpenAEV.from_environment({"OPENAEV_URL": "https://a.example", "OPENAEV_TOKEN": "x" * 16})
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -79,6 +83,10 @@ def test_an_encrypted_or_local_url_is_accepted(url: str) -> None:
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a\r\nX-Other: 1"},
             "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
+        ),
+        (
+            {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "x" * 15},
+            "OPENAEV_TOKEN is not a token: at least 16 characters",
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "jeton-é"},

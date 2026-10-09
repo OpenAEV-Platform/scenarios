@@ -318,7 +318,9 @@ def openaev() -> None:
 
 @openaev.command(name="export")
 @click.argument("scenario_id")
-@click.option("--out", required=True, type=click.Path(path_type=Path, dir_okay=False))
+# Paths are checked by the command itself, never by the parser: a usage error would repeat
+# a path that may hold the token, outside the guard.
+@click.option("--out", required=True, type=click.Path(path_type=Path))
 @click.pass_context
 def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
     """Write the export archive of SCENARIO_ID to OUT, once it passes the archive checks."""
@@ -349,7 +351,7 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
 
 
 @openaev.command(name="import")
-@click.argument("archive", type=click.Path(path_type=Path, dir_okay=False))
+@click.argument("archive", type=click.Path(path_type=Path))
 @click.pass_context
 def openaev_import(ctx: click.Context, archive: Path) -> None:
     """Import ARCHIVE, once it passes the archive checks; each inject the platform skips is a

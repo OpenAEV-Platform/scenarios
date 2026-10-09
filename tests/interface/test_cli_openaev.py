@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Report
+from scenario_tools.adapters.openaev_http import TOKEN_LENGTH
+from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError
 from tests.platform_server import Platform, platform_server
@@ -127,7 +128,7 @@ def test_a_refused_export_is_reported_on_the_output_path(
     assert json.loads(stdout)["findings"][0]["path"] == "build/e.zip"
 
 
-@pytest.mark.parametrize("token", [TOKEN, "a'\"\\b-secret"], ids=["plain", "quotes"])
+@pytest.mark.parametrize("token", [TOKEN, "a'\"\\b-secret-value"], ids=["plain", "quotes"])
 def test_a_refused_export_never_shows_what_the_platform_chose(
     platform: Platform, tmp_path: Path, token: str
 ) -> None:
@@ -279,7 +280,11 @@ def test_skipped_injects_fail_the_import(platform: Platform, tmp_path: Path) -> 
 @pytest.mark.parametrize("output_format", ["text", "json"])
 @pytest.mark.parametrize(
     ("token", "name"),
-    [(TOKEN, f"x {TOKEN} x"), ("a\\nb", "a\nb"), ("u00e9-secret", "\u00e9-secret")],
+    [
+        (TOKEN, f"x {TOKEN} x"),
+        ("a\\nb-secret-value", "a\nb-secret-value"),
+        ("u00e9-secret-value", "\u00e9-secret-value"),
+    ],
     ids=["as it is", "made by the message", "made by the JSON output"],
 )
 def test_the_output_never_shows_the_token(
@@ -305,7 +310,7 @@ def test_the_output_never_shows_the_token(
         assert finding["path"] == "scenario.zip"  # only what would show the token is withheld
 
 
-@pytest.mark.parametrize("token", [TOKEN, 't"k-secret'], ids=["plain", "escaped by JSON"])
+@pytest.mark.parametrize("token", [TOKEN, 't"k-secret-value'], ids=["plain", "escaped by JSON"])
 def test_a_path_that_would_show_the_token_is_withheld(
     platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
 ) -> None:
@@ -342,7 +347,11 @@ def test_an_export_output_never_shows_the_token(
 @pytest.mark.parametrize("output_format", ["text", "json"])
 @pytest.mark.parametrize(
     ("token", "name"),
-    [(TOKEN, TOKEN), ('t"k-secret', 't"k-secret'), ("a\\nb-secret", "a\nb-secret")],
+    [
+        (TOKEN, TOKEN),
+        ('t"k-secret-value', 't"k-secret-value'),
+        ("a\\nb-secret-value", "a\nb-secret-value"),
+    ],
     ids=["plain", "escaped by JSON", "made by escaping"],
 )
 def test_an_environment_error_never_shows_the_token(
@@ -375,6 +384,43 @@ def test_an_internal_error_never_shows_the_token() -> None:
     assert code == 4
     assert TOKEN not in output
     assert output == "openaev import: internal error: withheld: it would show a secret"
+
+
+@pytest.mark.parametrize("command", ["export", "import"])
+def test_a_directory_given_as_a_file_never_shows_the_token(
+    platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    # Checked by the guarded command, not by the argument parser, whose usage error would
+    # repeat the path.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / TOKEN).mkdir()
+    platform.answer(200, EXPORT)
+    arguments = [SCENARIO, "--out", TOKEN] if command == "export" else [TOKEN]
+
+    code, stdout, stderr = _run(platform, "openaev", command, *arguments)
+
+    assert code == 1
+    assert TOKEN not in stdout + stderr
+    assert "IO-013" in stdout
+
+
+def test_what_is_left_once_withheld_could_never_hold_a_token() -> None:
+    # A token has at least TOKEN_LENGTH characters and no whitespace: the tools' own text, all
+    # that is left once everything that would show it is withheld, has no such run.
+    def finding() -> Report:
+        return Report("openaev import", (Finding("OAV-001", Severity.BLOCKING, TOKEN, "", TOKEN),))
+
+    def environment() -> Report:
+        raise EnvironmentProblemError(TOKEN)
+
+    def internal() -> Report:
+        raise RuntimeError(TOKEN)
+
+    for produce in (finding, environment, internal):
+        for output_format in ("text", "json"):
+            output, _ = execute("openaev import", produce, output_format, hidden=TOKEN)
+            assert TOKEN not in output
+            assert max(len(run) for run in output.split()) < TOKEN_LENGTH
 
 
 def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:

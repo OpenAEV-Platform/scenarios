@@ -40,6 +40,9 @@ TIMEOUT = 120.0
 ANSWER_LIMIT = 1024 * 1024
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 _TOKEN = re.compile(r"[\x21-\x7e]+")
+# Long enough never to be a part of the tools' own text, which has no run of 16 characters
+# without a space: a guard that withholds what would show the token can always fall back on it.
+TOKEN_LENGTH = 16
 _URL = _TOKEN  # printable ASCII, with no whitespace: nothing urlsplit would silently drop
 # A DNS label: letters, digits and inner hyphens; an internationalised name is written in its
 # ASCII form (xn--).
@@ -285,6 +288,10 @@ class HttpOpenAEV:
         if not _TOKEN.fullmatch(token):
             raise EnvironmentProblemError(
                 "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace"
+            )
+        if len(token) < TOKEN_LENGTH:
+            raise EnvironmentProblemError(
+                f"OPENAEV_TOKEN is not a token: at least {TOKEN_LENGTH} characters"
             )
         return cls(url, token, timeout=timeout, archive_limit=archive_limit)
 
