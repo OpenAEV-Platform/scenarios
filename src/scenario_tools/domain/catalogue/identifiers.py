@@ -2,10 +2,11 @@
 
 Every identifier is a UUIDv5, so anyone can recompute it: the root namespace derives from the
 repository URL, a scenario's namespace from its external ID, and an object's ID from its type and
-its source ID. A new version keeps the IDs of the previous one, so that installed scenarios can
-be matched inject by inject. Injects are matched in this order: the explicit mapping; the same
-authoring instance; the same contract and title, when one candidate is left; and among several
-candidates, the one whose parent injects already match. What remains ambiguous is refused.
+a key. A new version keeps the IDs of the previous one, so that installed scenarios can be matched
+inject by inject. Injects are matched in this order: the explicit mapping; an ID that is already
+one of the previous version, for a document normalised again; the same authoring instance; the
+same contract and title, when one candidate is left; and among several candidates, the one whose
+parent injects already match. What remains ambiguous is refused.
 """
 
 import uuid
@@ -27,15 +28,16 @@ def scenario_namespace(external_id: str) -> uuid.UUID:
     return uuid.uuid5(NS_OPENAEV_SCENARIOS, str(canonical))
 
 
-def stable_id(namespace: uuid.UUID, object_type: str, source_id: str) -> str:
-    """The stable ID of an object, from its type and its ID in the source export.
+def stable_id(namespace: uuid.UUID, object_type: str, key: str) -> str:
+    """The stable ID of an object, from its type and a key: its external ID, its name, or its ID
+    in the source export, depending on the type.
 
-    The type is a fixed name, never empty and without ``:``, so that ``type:source`` splits only
-    one way and two objects can never share an ID.
+    The type is a fixed name, never empty and without ``:``, so that ``type:key`` splits only one
+    way and two objects can never share an ID.
     """
     if not object_type or ":" in object_type:
         raise ValueError(f"object type {object_type!r} must be a non-empty name without ':'")
-    return str(uuid.uuid5(namespace, f"{object_type}:{source_id}"))
+    return str(uuid.uuid5(namespace, f"{object_type}:{key}"))
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,10 @@ class _Matcher:
         self.namespace = namespace
         self.new = new
         self.previous = previous
+        # Sorted once: comparing parents must not cost a sort for every candidate at every pass.
+        self.previous_parents = {
+            target: tuple(sorted(signature.parents)) for target, signature in previous.items()
+        }
         self.ids: dict[str, str] = {}
         self.taken: set[str] = set()
 
@@ -122,6 +128,11 @@ class _Matcher:
             if target in self.taken:
                 raise InvalidInjectMappingError(f"stable ID {target!r} used twice")
             self.assign(source, target)
+
+    def match_already_normalised(self) -> None:
+        for source in sorted(self.new):
+            if source not in self.ids and source in self.previous and source not in self.taken:
+                self.assign(source, source)
 
     def match_same_instance(self) -> None:
         for source in sorted(self.new):
@@ -157,16 +168,15 @@ class _Matcher:
                 raise AmbiguousInjectError(sources[0], candidates)
 
     def match_by_parents(self, sources: list[str], candidates: list[str]) -> bool:
+        by_parents: dict[tuple[str, ...], list[str]] = {}
+        for target in candidates:
+            by_parents.setdefault(self.previous_parents[target], []).append(target)
         options: dict[str, list[str]] = {}
         for source in sources:
             parents = self.new[source].parents
             if all(parent in self.ids for parent in parents):
-                wanted = sorted(self.ids[parent] for parent in parents)
-                options[source] = [
-                    target
-                    for target in candidates
-                    if sorted(self.previous[target].parents) == wanted
-                ]
+                wanted = tuple(sorted(self.ids[parent] for parent in parents))
+                options[source] = by_parents.get(wanted, [])
         claims = Counter(found[0] for found in options.values() if len(found) == 1)
         matched = False
         for source, found in sorted(options.items()):
@@ -199,6 +209,7 @@ def match_injects(
     """Give every inject of ``new`` a stable ID, reusing those of ``previous``."""
     matcher = _Matcher(namespace, _index(new, "new"), _index(previous, "previous"))
     matcher.apply_mapping(mapping or {})
+    matcher.match_already_normalised()
     matcher.match_same_instance()
     matcher.match_by_signature()
     fresh = matcher.give_new_ids()

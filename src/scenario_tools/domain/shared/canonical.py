@@ -16,6 +16,8 @@ from typing import Any
 import rfc8785
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+# The canonical form (RFC 8785) holds integers as IEEE 754 doubles, exact up to this bound.
+SAFE_INTEGER = 2**53 - 1
 
 
 class CanonicalFormError(ValueError):
@@ -48,6 +50,36 @@ def stored_form(value: Any) -> bytes:
         allow_nan=False,
     )
     return (text + "\n").encode("utf-8")
+
+
+def _encoded_length(scalar: Any) -> int:
+    text = json.dumps(scalar, ensure_ascii=False, allow_nan=False)
+    return len(text.encode("utf-8", "surrogatepass"))
+
+
+def stored_size(value: Any) -> int:
+    """The length in bytes of the stored form of ``value``, computed without building it, so
+    that an oversized document is refused before it takes memory: indentation grows with depth,
+    and a small, deeply nested input gives a much larger stored form."""
+    size = 1  # the final newline
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, dict | list) and item:
+            count = len(item)
+            # brackets, the line breaks after the opening one and before the closing one, its
+            # indentation, and between items a comma and a line break
+            size += 2 + 1 + 1 + 2 * depth + 2 * (count - 1) + count * 2 * (depth + 1)
+            if isinstance(item, dict):
+                size += sum(_encoded_length(key) + 2 for key in item)  # the key and ": "
+                stack.extend((child, depth + 1) for child in item.values())
+            else:
+                stack.extend((child, depth + 1) for child in item)
+        elif isinstance(item, dict | list):
+            size += 2
+        else:
+            size += _encoded_length(item)
+    return size
 
 
 @dataclass(frozen=True)

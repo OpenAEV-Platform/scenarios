@@ -1,0 +1,47 @@
+# Fields removed from an export by normalisation: they change from one export or one instance
+# to the next, or hold internal data, and the importer does not need them. Keys are removed
+# wherever they appear.
+removed:
+  - injector_contract_injectors
+  - injector_contract_injector_names
+  - injector_contract_payload_author
+  - injector_contract_payload_author_organization
+  - injector_contract_payload_author_team
+  - injector_contract_payload_author_user
+  - listened
+  - payload_author_organization
+  - payload_author_team
+  - payload_author_user
+  - payload_collector_type
+removed_suffixes:
+  - _created_at
+  - _updated_at
+# Lists whose order carries no meaning: they are sorted, so that two exports of the same
+# scenario give the same file.
+sorted:
+  - attack_pattern_kill_chain_phases
+  - availableExpectations
+  - contract_attack_patterns_external_ids
+  - contract_vulnerability_external_ids
+  - domains
+  - expectation_expected_security_platform_types
+  - inject_depends_on
+  - inject_documents
+  - inject_tags
+  - inject_teams
+  - injector_contract_attack_patterns
+  - injector_contract_domains
+  - injector_contract_platforms
+  - injector_contract_providing
+  - injector_contract_tags
+  - injector_contract_vulnerabilities
+  - labels
+  - mandatoryGroups
+  - payload_detection_remediations
+  - payload_expectations
+  - payload_output_parsers
+  - payload_platforms
+  - payload_tags
+  - platforms
+  - predefinedExpectations
+  - team_tags

@@ -2,7 +2,8 @@
 
 
 class UnsafeInputError(Exception):
-    """Input refused by a bounded reader, with its ``IO-*`` code."""
+    """Input refused, with its code: ``IO-*`` for unsafe or malformed input, ``VER-*`` for a
+    versioning refusal such as an invalid inject mapping."""
 
     def __init__(self, code: str, message: str, path: str = "<input>") -> None:
         super().__init__(f"{code} {path}: {message}")

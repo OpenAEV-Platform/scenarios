@@ -99,6 +99,25 @@ def test_a_re_export_from_the_same_instance_keeps_ids_even_when_titles_change() 
     assert result.new == ()
 
 
+def test_an_already_normalised_inject_keeps_its_identifier_even_when_titles_change() -> None:
+    previous = [_sig("p1", title="old title"), _sig("p2", title="old title")]
+
+    result = match_injects(NS, [_sig("p2", title="new"), _sig("p1", title="new")], previous)
+
+    assert result.ids == {"p1": "p1", "p2": "p2"}
+    assert result.new == ()
+    assert result.removed == ()
+
+
+def test_the_mapping_comes_before_an_already_normalised_identifier() -> None:
+    previous = [_sig("p1"), _sig("p2", title="u")]
+
+    result = match_injects(NS, [_sig("p1"), _sig("x", title="u")], previous, {"x": "p1"})
+
+    assert result.ids["x"] == "p1"
+    assert result.ids["p1"] == _inject_id("p1")
+
+
 def test_an_export_from_another_instance_matches_by_contract_and_title() -> None:
     previous = [_sig("p1", contract="x", title="scan"), _sig("p2", contract="y", title="scan")]
 
@@ -275,3 +294,31 @@ def test_re_preparing_from_the_same_instance_is_the_identity(new: list[InjectSig
     assert second.ids == first.ids
     assert second.new == ()
     assert second.removed == ()
+
+
+def test_an_inject_mapped_elsewhere_keeps_its_mapping_even_if_its_id_is_a_previous_one() -> None:
+    previous = [_sig("p1"), _sig("p2", title="u")]
+
+    result = match_injects(NS, [_sig("p1", title="u")], previous, {"p1": "p2"})
+
+    assert result.ids == {"p1": "p2"}
+
+
+def test_parents_match_whatever_their_order() -> None:
+    parents = [_sig(f"p{name}", title=name) for name in "abcd"]
+    previous = [
+        *parents,
+        _sig("p1", title="twin", parents=["pb", "pa"]),
+        _sig("p2", title="twin", parents=["pc"]),
+        _sig("p3", title="twin", parents=["pd"]),
+    ]
+    new = [
+        *(_sig(f"s{name}", title=name) for name in "abcd"),
+        _sig("s1", title="twin", parents=["sb", "sa"]),
+        _sig("s2", title="twin", parents=["sc"]),
+    ]
+
+    result = match_injects(NS, new, previous)
+
+    assert (result.ids["s1"], result.ids["s2"]) == ("p1", "p2")
+    assert result.removed == ("p3",)

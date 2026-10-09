@@ -18,13 +18,12 @@ from typing import Any
 
 import yaml
 
+from scenario_tools.domain.shared.canonical import SAFE_INTEGER
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 JSON_LIMIT = 20 * 1024 * 1024
 YAML_LIMIT = 256 * 1024
 MAX_DEPTH = 64
-# The canonical form (RFC 8785) holds integers as IEEE 754 doubles, exact up to this bound.
-SAFE_INTEGER = 2**53 - 1
 
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 

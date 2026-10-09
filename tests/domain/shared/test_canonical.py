@@ -13,6 +13,7 @@ from scenario_tools.domain.shared.canonical import (
     ContentHash,
     jcs,
     stored_form,
+    stored_size,
 )
 
 # RFC 8785, section 3.2.3: input and its canonical form. Backslashes are spelled out so that
@@ -152,3 +153,16 @@ def test_the_stored_form_hashes_like_the_value(value: Any) -> None:
 @given(json_values)
 def test_content_hash_of_json_is_the_sha256_of_its_jcs(value: Any) -> None:
     assert ContentHash.of_json(value).hex == hashlib.sha256(jcs(value)).hexdigest()
+
+
+@given(json_values)
+def test_the_stored_size_is_the_length_of_the_stored_form(value: Any) -> None:
+    assert stored_size(value) == len(stored_form(value))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [[], {}, [[]], {"é": [1, {"a": None}]}, [True, 2.5, "\N{EURO SIGN}"], {"a": {"b": {"c": []}}}],
+)
+def test_the_stored_size_of_examples(value: Any) -> None:
+    assert stored_size(value) == len(stored_form(value))

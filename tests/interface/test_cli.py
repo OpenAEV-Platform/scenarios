@@ -1,8 +1,10 @@
 """The command-line entry point: version, help, output formats, exit codes and the title check."""
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -306,3 +308,305 @@ def test_an_error_that_cannot_be_printed_still_exits_four() -> None:
     output, code = execute("demo", produce, "text")
 
     assert (output, code) == ("demo: internal error: UnprintableError: <unprintable>", 4)
+
+
+# The normalize command
+
+REPOSITORY = Path(__file__).parents[2]
+EASM = REPOSITORY / "tests" / "golden" / "exports" / "easm-scenario.zip"
+ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
+
+
+def _entry(tmp_path: Path, name: str = "entry") -> Path:
+    """An entry directory in a repository of its own, with the policy data of this one."""
+    data = tmp_path / "repository" / "policy" / "data"
+    if not data.exists():
+        data.mkdir(parents=True)
+        shutil.copy(REPOSITORY / "policy" / "data" / "volatile-fields.yaml", data)
+    entry = tmp_path / "repository" / "scenarios" / name
+    entry.mkdir(parents=True)
+    return entry
+
+
+def _normalize(
+    monkeypatch: pytest.MonkeyPatch, out: Path, *options: str, export: Path = EASM
+) -> Any:
+    monkeypatch.chdir("/")  # the working directory plays no part
+    return CliRunner().invoke(main, ["normalize", str(export), "--out", str(out), *options])
+
+
+def test_normalize_writes_the_normalised_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["normalize: ok"]
+    document = json.loads((entry / "scenario.json").read_text(encoding="utf-8"))
+    assert document["scenario_information"]["scenario_name"] == "EASM Scenario"
+    assert sorted(path.name for path in entry.iterdir()) == ["scenario.json"]
+
+
+def test_normalize_outside_a_repository_is_an_environment_problem(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    result = _normalize(monkeypatch, tmp_path, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 3
+    assert "policy/data" in result.stdout
+    assert not (tmp_path / "scenario.json").exists()
+
+
+def test_normalize_reads_the_external_id_of_an_existing_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, reference = _entry(tmp_path), _entry(tmp_path, "reference")
+    (entry / "scenario.yaml").write_text(f"external_id: {ENTRY_ID}\n", encoding="utf-8")
+    _normalize(monkeypatch, reference, "--external-id", ENTRY_ID)
+
+    result = _normalize(monkeypatch, entry)
+
+    assert result.exit_code == 0, result.output
+    assert (entry / "scenario.json").read_bytes() == (reference / "scenario.json").read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("yaml_id", "option"),
+    [
+        (None, None),
+        (ENTRY_ID, "00000000-0000-4000-8000-000000000001"),
+        (None, "5B9A2C84-3A0E-4C55-9A8C-2A6F0D7E1B42"),
+        (None, "not-a-uuid"),
+    ],
+    ids=["no external id", "contradicts scenario.yaml", "not canonical", "not a uuid"],
+)
+def test_normalize_without_a_usable_external_id_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, yaml_id: str | None, option: str | None
+) -> None:
+    entry = _entry(tmp_path)
+    if yaml_id is not None:
+        (entry / "scenario.yaml").write_text(f"external_id: {yaml_id}\n", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, *(["--external-id", option] if option else []))
+
+    assert result.exit_code == 2
+    assert not (entry / "scenario.json").exists()
+
+
+def test_a_contradicting_external_id_is_quoted_within_bounds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    (entry / "scenario.yaml").write_text(f"external_id: {'x' * 200_000}\n", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 2
+    assert len(result.output) < 2 * MESSAGE_LIMIT + len(str(entry)) + 200
+
+
+def test_normalize_reports_the_injects_removed_since_the_previous_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, previous = _entry(tmp_path), _entry(tmp_path, "previous")
+    _normalize(monkeypatch, previous, "--external-id", ENTRY_ID)
+    document = json.loads((previous / "scenario.json").read_text(encoding="utf-8"))
+    extra = dict(document["scenario_injects"][0], inject_id="00000000-0000-4000-8000-0000000000aa")
+    document["scenario_injects"].append(extra)
+    (previous / "scenario.json").write_text(json.dumps(document), encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, "--previous", str(previous))
+    options = ["--out", str(entry), "--previous", str(previous), "--external-id", ENTRY_ID]
+    as_json = CliRunner().invoke(main, ["--format", "json", "normalize", str(EASM), *options])
+
+    assert result.exit_code == 0, result.output
+    assert "INFO VER-012" in result.stdout
+    assert "00000000-0000-4000-8000-0000000000aa" in result.stdout
+    findings = json.loads(as_json.stdout)["findings"]
+    assert [(finding["code"], finding["path"]) for finding in findings] == [
+        ("VER-012", "scenarios/entry/scenario.json")
+    ]
+
+
+def test_a_previous_version_without_its_file_is_an_environment_problem(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, previous = _entry(tmp_path), _entry(tmp_path, "previous")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, "--previous", str(previous))
+
+    assert result.exit_code == 3
+
+
+def test_a_refused_previous_version_is_reported_on_its_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, previous = _entry(tmp_path), _entry(tmp_path, "previous")
+    (previous / "scenario.json").write_text("[]", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, "--previous", str(previous))
+
+    assert result.exit_code == 1
+    assert "IO-014 scenarios/previous/scenario.json" in result.stdout
+
+
+def test_normalize_applies_a_mapping_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    entry = _entry(tmp_path)
+    mapping = tmp_path / "repository" / "map.yaml"
+    mapping.write_text("- {source_inject_id: unknown, stable_id: x}\n", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, "--map", str(mapping))
+
+    assert result.exit_code == 1
+    assert "VER-011 map.yaml" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["not a list", "- [a, b]", "- {source_inject_id: a}"],
+    ids=["not a list", "not objects", "missing stable id"],
+)
+def test_a_malformed_mapping_file_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str
+) -> None:
+    entry = _entry(tmp_path)
+    mapping = tmp_path / "map.yaml"
+    mapping.write_text(content + "\n", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, "--map", str(mapping))
+
+    assert result.exit_code == 1
+    assert "VER-011" in result.stdout
+
+
+def test_a_linked_scenario_yaml_is_refused_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    (tmp_path / "elsewhere.yaml").write_text(f"external_id: {ENTRY_ID}\n", encoding="utf-8")
+    (entry / "scenario.yaml").symlink_to(tmp_path / "elsewhere.yaml")
+
+    result = _normalize(monkeypatch, entry)
+
+    assert result.exit_code == 1
+    assert "IO-013" in result.stdout
+    assert not (entry / "scenario.json").exists()
+
+
+def test_an_unreadable_scenario_yaml_is_an_environment_problem(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    metadata = entry / "scenario.yaml"
+    metadata.write_text(f"external_id: {ENTRY_ID}\n", encoding="utf-8")
+    metadata.chmod(0)
+    try:
+        result = _normalize(monkeypatch, entry)
+    finally:
+        metadata.chmod(0o644)
+
+    assert result.exit_code == 3
+    assert "Traceback" not in result.output
+
+
+def test_a_defect_while_reading_the_entry_exits_with_4(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    (entry / "scenario.yaml").write_text(f"external_id: {ENTRY_ID}\n", encoding="utf-8")
+
+    def broken(path: Path) -> Any:
+        raise RuntimeError("defect")
+
+    monkeypatch.setattr(cli_module, "read_yaml_file", broken)
+    result = _normalize(monkeypatch, entry)
+
+    assert result.exit_code == 4
+    assert "internal error: RuntimeError: defect" in result.stderr
+
+
+@pytest.mark.parametrize("where", ["entry", "scenarios"])
+def test_policy_data_below_the_repository_root_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str
+) -> None:
+    entry = _entry(tmp_path)
+    rogue = (entry if where == "entry" else entry.parent) / "policy" / "data"
+    rogue.mkdir(parents=True)
+    (rogue / "volatile-fields.yaml").write_text(
+        "removed: []\nremoved_suffixes: []\nsorted: []\n", encoding="utf-8"
+    )
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 1
+    assert "IO-015" in result.stdout
+    assert not (entry / "scenario.json").exists()
+
+
+def test_refusals_are_reported_from_the_repository_root_whatever_the_working_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, previous = _entry(tmp_path), _entry(tmp_path, "previous")
+    (previous / "scenario.json").write_text("[]", encoding="utf-8")
+    monkeypatch.chdir(entry.parent)
+
+    result = CliRunner().invoke(
+        main,
+        ["normalize", str(EASM), "--out", "entry", "--previous", "previous",
+         "--external-id", ENTRY_ID],
+    )  # fmt: skip
+
+    assert result.exit_code == 1
+    assert "IO-014 scenarios/previous/scenario.json" in result.stdout
+
+
+def test_an_invalid_external_id_in_scenario_yaml_is_named_as_such(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    (entry / "scenario.yaml").write_text("external_id: not-a-uuid\n", encoding="utf-8")
+
+    result = _normalize(monkeypatch, entry)
+
+    assert result.exit_code == 2
+    assert "scenario.yaml" in result.output
+
+
+def test_a_stored_entry_normalised_with_itself_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+    stored = (entry / "scenario.json").read_bytes()
+    copy_of_stored = tmp_path / "stored.json"
+    copy_of_stored.write_bytes(stored)
+
+    result = _normalize(
+        monkeypatch,
+        entry,
+        "--external-id",
+        ENTRY_ID,
+        "--previous",
+        str(entry),
+        export=copy_of_stored,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (entry / "scenario.json").read_bytes() == stored
+
+
+def test_a_refused_export_given_by_a_relative_path_is_reported_from_the_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    (entry / "bad.json").write_text("[]", encoding="utf-8")
+    monkeypatch.chdir(entry)
+
+    result = CliRunner().invoke(
+        main, ["normalize", "bad.json", "--out", ".", "--external-id", ENTRY_ID]
+    )
+
+    assert result.exit_code == 1
+    assert "IO-014 scenarios/entry/bad.json" in result.stdout
