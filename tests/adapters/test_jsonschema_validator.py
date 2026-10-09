@@ -57,6 +57,12 @@ MANIFEST: dict[str, Any] = {
             "version": "1.0.0",
             "status": "VERIFIED",
             "name": "EASM Scenario",
+            "description": "Discover and assess the external attack surface.",
+            "severity": "medium",
+            "category": "attack-scenario",
+            "main_focus": "endpoint-protection",
+            "platforms": ["Generic"],
+            "threat": {"ttps": ["T1595"]},
             "type": "time-based",
             "tabletop": False,
             "requires": {
@@ -94,6 +100,49 @@ def _changed(
 def test_valid_documents_have_no_violation(validator: JsonSchemaValidator) -> None:
     assert validator.validate("scenario", SCENARIO) == ()
     assert validator.validate("manifest", MANIFEST) == ()
+
+
+CATALOGUE_FACETS = ("description", "severity", "category", "main_focus", "platforms", "threat")
+
+
+@pytest.mark.parametrize("facet", CATALOGUE_FACETS)
+def test_every_manifest_item_carries_the_catalogue_facets(
+    validator: JsonSchemaValidator, facet: str
+) -> None:
+    document = _changed(MANIFEST, lambda d: d["items"][0].pop(facet))
+
+    violations = validator.validate("manifest", document)
+
+    assert [violation.pointer for violation in violations] == ["/items/0"]
+    assert facet in violations[0].message
+
+
+@pytest.mark.parametrize(
+    ("schema", "document", "change", "pointer"),
+    [
+        ("scenario", SCENARIO, lambda d: d.update(platforms=[]), "/platforms"),
+        ("manifest", MANIFEST, lambda d: d["items"][0].update(platforms=[]), "/items/0/platforms"),
+    ],
+    ids=["scenario", "manifest"],
+)
+def test_platforms_hold_at_least_one_value(
+    validator: JsonSchemaValidator,
+    schema: str,
+    document: dict[str, Any],
+    change: Callable[[dict[str, Any]], object],
+    pointer: str,
+) -> None:
+    violations = validator.validate(schema, _changed(document, change))
+
+    assert [violation.pointer for violation in violations] == [pointer]
+
+
+@pytest.mark.parametrize("facet", CATALOGUE_FACETS)
+def test_manifest_facets_are_defined_exactly_as_in_the_scenario_metadata(facet: str) -> None:
+    scenario = json.loads((SCHEMAS / "scenario.schema.json").read_text(encoding="utf-8"))
+    manifest = json.loads((SCHEMAS / "manifest.schema.json").read_text(encoding="utf-8"))
+
+    assert manifest["$defs"]["item"]["properties"][facet] == scenario["properties"][facet]
 
 
 @pytest.mark.parametrize(

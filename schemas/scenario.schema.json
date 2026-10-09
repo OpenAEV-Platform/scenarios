@@ -76,8 +76,9 @@
     },
     "platforms": {
       "type": "array",
+      "minItems": 1,
       "uniqueItems": true,
-      "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject that needs an executor, which is checked against the export.",
+      "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject that needs an executor, which is checked against the export. A scenario that runs on no endpoint declares Generic.",
       "items": {
         "enum": [
           "Linux",
