@@ -702,10 +702,13 @@ def test_every_pattern_of_the_schemas_means_the_same_in_python_and_ecma_262() ->
             re.compile(ecma_to_python(pattern))
 
 
-@pytest.mark.parametrize("field", ["sequence", "expires_at"])
+@pytest.mark.parametrize(
+    ("field", "value"), [("sequence", 1), ("expires_at", "2026-11-07T10:00:00Z")]
+)
 def test_a_manifest_carries_no_field_that_only_signing_would_protect(
-    validator: JsonSchemaValidator, field: str
+    validator: JsonSchemaValidator, field: str, value: object
 ) -> None:
-    document = _changed(MANIFEST, lambda d: d.update({field: 1}))
+    # Values the earlier schema accepted: the refusal comes from the field itself.
+    document = _changed(MANIFEST, lambda d: d.update({field: value}))
 
     assert [v.pointer for v in validator.validate("manifest", document)] == [f"/{field}"]
