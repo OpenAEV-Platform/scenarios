@@ -22,7 +22,8 @@ _FORBIDDEN = re.compile(
             r"\bcli\.md\b",  # the internal command-line contract
             r"\bdata-model\b|\(data model\b",  # the internal data model document, cited
             r"\bRFC[ -]?0004\b",  # an RFC that is not public
-            r"\bT0[0-9]{2}[a-z]?\b",  # a task number; ATT&CK techniques have four digits
+            r"\b(T[0-9]{3}|A0[0-9]{2})[a-z]?\b",  # a task; ATT&CK techniques have four digits
+            r"\b(FR|SC|AR)-[0-9]{3}\b",  # a requirement or success criterion
             r"\bspeckit\b",
             r"\bconstitution(\.md\b| [IVX]+\b)",  # the project rules, by file or principle
             r"(?-i:\bNotion\b)",
@@ -53,6 +54,10 @@ def _internal_references(text: str) -> list[str]:
         "As RFC-0004 says.",
         "Done in T012b.",
         "Before T013 starts.",
+        "Moved to T123.",
+        "See A001.",
+        "Serves FR-020 and SC-005.",
+        "Closes AR-001.",
         "Read the speckit first.",
         "As constitution IX requires.",
         "Read constitution.md first.",
@@ -74,6 +79,7 @@ def test_the_check_refuses_internal_references(text: str) -> None:
     [
         "Serialised in RFC 8785 canonical form, pointers per RFC 6901.",
         "Technique T1595, and the ICS technique T0866.",
+        "Findings SCH-001, IO-005, VER-010, TTL-001 and a future PAR-001.",
         "TT012 is not a task number.",
         "The notion of order, the data, the model.",
         "The manifest data model is versioned.",
