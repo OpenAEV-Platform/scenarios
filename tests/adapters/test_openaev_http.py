@@ -44,8 +44,9 @@ def _client(
 # Credentials and transport
 
 
-def test_a_token_of_16_characters_is_accepted() -> None:
-    HttpOpenAEV.from_environment({"OPENAEV_URL": "https://a.example", "OPENAEV_TOKEN": "x" * 16})
+@pytest.mark.parametrize("token", ["x" * 16, "Ab0-._~+/secret==", SCENARIO])
+def test_a_bearer_token_of_16_characters_or_more_is_accepted(token: str) -> None:
+    HttpOpenAEV.from_environment({"OPENAEV_URL": "https://a.example", "OPENAEV_TOKEN": token})
 
 
 @pytest.mark.parametrize(
@@ -78,19 +79,34 @@ def test_an_encrypted_or_local_url_is_accepted(url: str) -> None:
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a b"},
-            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
+            "OPENAEV_TOKEN is not a token",
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a\r\nX-Other: 1"},
-            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
+            "OPENAEV_TOKEN is not a token",
         ),
         (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "x" * 15},
             "OPENAEV_TOKEN is not a token: at least 16 characters",
         ),
         (
+            {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": 'quote"-secret-value'},
+            "OPENAEV_TOKEN is not a token",
+        ),
+        (
+            {
+                "OPENAEV_URL": "https://platform.example.org",
+                "OPENAEV_TOKEN": "back\\slash-secret-value",
+            },
+            "OPENAEV_TOKEN is not a token",
+        ),
+        (
+            {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "a=b-secret-value"},
+            "OPENAEV_TOKEN is not a token",
+        ),
+        (
             {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": "jeton-é"},
-            "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace",
+            "OPENAEV_TOKEN is not a token",
         ),
         ({"OPENAEV_URL": "http://platform.example.org", "OPENAEV_TOKEN": TOKEN}, "https"),
         ({"OPENAEV_URL": "http://10.0.0.1:8080", "OPENAEV_TOKEN": TOKEN}, "https"),

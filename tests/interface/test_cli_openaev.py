@@ -3,7 +3,7 @@
 import io
 import json
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -128,7 +128,7 @@ def test_a_refused_export_is_reported_on_the_output_path(
     assert json.loads(stdout)["findings"][0]["path"] == "build/e.zip"
 
 
-@pytest.mark.parametrize("token", [TOKEN, "a'\"\\b-secret-value"], ids=["plain", "quotes"])
+@pytest.mark.parametrize("token", [TOKEN, "Ab+c~d.secret-value=="], ids=["plain", "symbols"])
 def test_a_refused_export_never_shows_what_the_platform_chose(
     platform: Platform, tmp_path: Path, token: str
 ) -> None:
@@ -282,10 +282,11 @@ def test_skipped_injects_fail_the_import(platform: Platform, tmp_path: Path) -> 
     ("token", "name"),
     [
         (TOKEN, f"x {TOKEN} x"),
-        ("a\\nb-secret-value", "a\nb-secret-value"),
+        ("nb-secret-value-1", "a\nb-secret-value-1"),
         ("u00e9-secret-value", "\u00e9-secret-value"),
+        (TOKEN, "y" * 262 + TOKEN),
     ],
-    ids=["as it is", "made by the message", "made by the JSON output"],
+    ids=["as it is", "made by the message", "made by the JSON output", "cut short"],
 )
 def test_the_output_never_shows_the_token(
     platform: Platform, tmp_path: Path, output_format: str, token: str, name: str
@@ -303,14 +304,14 @@ def test_the_output_never_shows_the_token(
     )
 
     assert result.exit_code == 1
-    assert token not in result.stdout
+    assert token[:4] not in result.stdout  # not even the start of it, where a message is cut
     if output_format == "json":
         [finding] = json.loads(result.stdout)["findings"]
-        assert token not in finding["message"]
+        assert finding["message"] == "withheld: it would show a secret"
         assert finding["path"] == "scenario.zip"  # only what would show the token is withheld
 
 
-@pytest.mark.parametrize("token", [TOKEN, 't"k-secret-value'], ids=["plain", "escaped by JSON"])
+@pytest.mark.parametrize("token", [TOKEN, "Ab+c~d.secret-value=="], ids=["plain", "symbols"])
 def test_a_path_that_would_show_the_token_is_withheld(
     platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
 ) -> None:
@@ -349,14 +350,17 @@ def test_an_export_output_never_shows_the_token(
     ("token", "name"),
     [
         (TOKEN, TOKEN),
-        ('t"k-secret-value', 't"k-secret-value'),
-        ("a\\nb-secret-value", "a\nb-secret-value"),
+        ("nb-secret-value-1", "a\nb-secret-value-1"),
+        (TOKEN, "cut short"),
     ],
-    ids=["plain", "escaped by JSON", "made by escaping"],
+    ids=["plain", "made by escaping", "cut short"],
 )
 def test_an_environment_error_never_shows_the_token(
     platform: Platform, tmp_path: Path, output_format: str, token: str, name: str
 ) -> None:
+    if name == "cut short":  # the token starts just before the 300th character of the output
+        start = len(f"openaev import: environment error: cannot read {tmp_path}/")
+        name = "d" * (290 - start) + token
     missing = tmp_path / f"{name}.zip"
 
     result = CliRunner().invoke(
@@ -366,7 +370,7 @@ def test_an_environment_error_never_shows_the_token(
     )
 
     assert result.exit_code == 3
-    assert token not in result.stdout
+    assert token[:4] not in result.stdout  # not even the start of it, where a message is cut
     if output_format == "json":
         assert json.loads(result.stdout)["error"] == "withheld: it would show a secret"
     else:
@@ -421,6 +425,36 @@ def test_what_is_left_once_withheld_could_never_hold_a_token() -> None:
             output, _ = execute("openaev import", produce, output_format, hidden=TOKEN)
             assert TOKEN not in output
             assert max(len(run) for run in output.split()) < TOKEN_LENGTH
+
+
+def _finding(message: str) -> Callable[[], Report]:
+    return lambda: Report(
+        "openaev import", (Finding("OAV-001", Severity.BLOCKING, "", "", message),)
+    )
+
+
+def test_a_message_cut_after_one_character_of_the_token_is_withheld() -> None:
+    output, _ = execute("openaev import", _finding("a" * 298 + TOKEN), "text", hidden=TOKEN)
+
+    assert output.splitlines()[0] == "BLOCKING OAV-001: withheld: it would show a secret"
+
+
+def test_a_message_ending_like_the_token_starts_but_not_cut_is_left_as_it_is() -> None:
+    message = f"value {TOKEN[0]}."  # as if cut, but without the ellipsis
+
+    output, _ = execute("openaev import", _finding(message), "text", hidden=TOKEN)
+
+    assert output.splitlines()[0] == f"BLOCKING OAV-001: {message}"
+
+
+def test_an_environment_error_cut_in_the_token_is_withheld_in_json() -> None:
+    def produce() -> Report:
+        raise EnvironmentProblemError("a" * 290 + TOKEN)
+
+    output, code = execute("openaev import", produce, "json", hidden=TOKEN)
+
+    assert code == 3
+    assert json.loads(output)["error"] == "withheld: it would show a secret"
 
 
 def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:

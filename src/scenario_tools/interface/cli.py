@@ -92,10 +92,22 @@ def _describe(error: Exception) -> str:
 _WITHHELD = "withheld: it would show a secret"
 
 
+def _cut_in(text: str, hidden: str) -> bool:
+    """Whether ``text`` was cut short in the middle of ``hidden``: it then ends with the start
+    of it, before the ellipsis."""
+    return text.endswith("…") and any(
+        text[:-1].endswith(hidden[:length]) for length in range(1, len(hidden))
+    )
+
+
 def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
-    """``message`` as ``render`` writes it, or withheld when either would show ``hidden``."""
+    """``message`` as ``render`` writes it, or withheld when that would show ``hidden``, or the
+    start of it where the message is cut short. The token's characters are never escaped, so
+    the token shows as it is or not at all."""
     output = render(message)
-    if hidden and (hidden in output or hidden in message):
+    if hidden and (
+        hidden in output or _cut_in(output, hidden) or _cut_in(shorten(message), hidden)
+    ):
         return render(_WITHHELD)
     return output
 
@@ -104,13 +116,10 @@ def _render(report: Report, output_format: str) -> str:
     return json.dumps(report.document()) if output_format == "json" else _text(report)
 
 
-def _shows(output: str, report: Report, output_format: str, hidden: str) -> bool:
-    """Whether ``hidden`` shows in the output, or in a path or message as a reader of the JSON
-    decodes it, escapes undone."""
-    if hidden in output:
-        return True
-    texts = (text for finding in report.findings for text in (finding.path, finding.message))
-    return any(hidden in text for text in texts)
+def _shows(output: str, report: Report, hidden: str) -> bool:
+    """Whether ``hidden`` shows in the output, or its start in a message cut short. The token's
+    characters are never escaped, so the token shows as it is or not at all."""
+    return hidden in output or any(_cut_in(finding.message, hidden) for finding in report.findings)
 
 
 def _withhold(report: Report, output_format: str, hidden: str) -> str:
@@ -118,7 +127,7 @@ def _withhold(report: Report, output_format: str, hidden: str) -> str:
     show ``hidden``: what then remains is the tool's own text."""
     output = _render(report, output_format)
     for paths_too in (False, True):
-        if not hidden or not _shows(output, report, output_format, hidden):
+        if not hidden or not _shows(output, report, hidden):
             break
         findings = tuple(
             dataclasses.replace(f, message=_WITHHELD, path="" if paths_too else f.path)

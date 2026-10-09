@@ -39,11 +39,13 @@ EXPORT_OPTIONS = (
 TIMEOUT = 120.0
 ANSWER_LIMIT = 1024 * 1024
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-_TOKEN = re.compile(r"[\x21-\x7e]+")
+# A bearer token (RFC 6750): no output of the tools escapes these characters, so a token that
+# shows anywhere shows as it is, where the guard of the commands finds it.
+_TOKEN = re.compile(r"[A-Za-z0-9._~+/-]+=*")
 # Long enough never to be a part of the tools' own text, which has no run of 16 characters
 # without a space: a guard that withholds what would show the token can always fall back on it.
 TOKEN_LENGTH = 16
-_URL = _TOKEN  # printable ASCII, with no whitespace: nothing urlsplit would silently drop
+_URL = re.compile(r"[\x21-\x7e]+")  # visible ASCII: nothing urlsplit would silently drop
 # A DNS label: letters, digits and inner hyphens; an internationalised name is written in its
 # ASCII form (xn--).
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
@@ -287,7 +289,7 @@ class HttpOpenAEV:
             raise EnvironmentProblemError("OPENAEV_TOKEN is not set")
         if not _TOKEN.fullmatch(token):
             raise EnvironmentProblemError(
-                "OPENAEV_TOKEN is not a token: visible ASCII characters only, no whitespace"
+                "OPENAEV_TOKEN is not a token: letters, digits and -._~+/ only, then = signs"
             )
         if len(token) < TOKEN_LENGTH:
             raise EnvironmentProblemError(
