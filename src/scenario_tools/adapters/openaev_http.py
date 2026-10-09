@@ -3,18 +3,23 @@
 The URL and a tenant-scoped token come from the environment only. The transport is HTTPS, or
 plain HTTP to the local machine, and a redirect is never followed: the token would go with it.
 A local call never goes through a proxy, which would see the token in clear. Answers are read
-within limits and a total deadline, and no error message carries the token or the URL.
+within limits and a total deadline, and an error message names a failure by its kind only: the
+text of a transport error may carry the host, or what the platform sent.
 """
 
+import contextlib
 import http.client
 import ipaddress
 import re
 import secrets
-import time
+import socket
+import ssl
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from types import TracebackType
 from typing import Any
 
 from scenario_tools.adapters.safe_readers import parse_json
@@ -37,12 +42,89 @@ _URL = _TOKEN  # printable ASCII, with no whitespace: nothing urlsplit would sil
 # A DNS label: letters, digits and inner hyphens; an internationalised name is written in its
 # ASCII form (xn--).
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
-_CHUNK = 64 * 1024
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None  # the redirect answer then comes back as an error
+
+
+class _Watchdog:
+    """Cuts the connections of one call at its deadline, whatever the call waits for: the
+    connection, the tunnel, the encryption, the headers or the body. The timeout of each network
+    operation alone would let a platform that answers byte by byte hold the call for ever."""
+
+    def __init__(self, seconds: float) -> None:
+        self.expired = False
+        self._lock = threading.Lock()
+        self._sockets: list[socket.socket] = []
+        self._timer = threading.Timer(seconds, self._expire)
+        self._timer.daemon = True
+
+    def create_connection(self, *args: Any, **kwargs: Any) -> socket.socket:
+        """``socket.create_connection``, watched from the moment the socket exists."""
+        connection = socket.create_connection(*args, **kwargs)
+        with self._lock:
+            self._sockets.append(connection)
+            if self.expired:
+                _cut(connection)
+        return connection
+
+    def _expire(self) -> None:
+        with self._lock:
+            self.expired = True
+            for connection in self._sockets:
+                _cut(connection)
+
+    def __enter__(self) -> "_Watchdog":
+        self._timer.start()
+        return self
+
+    def __exit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        trace: TracebackType | None,
+    ) -> None:
+        self._timer.cancel()
+
+
+def _cut(connection: socket.socket) -> None:
+    with contextlib.suppress(OSError):  # already closed: nothing left to cut
+        connection.shutdown(socket.SHUT_RDWR)
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, watchdog: _Watchdog) -> None:
+        super().__init__()
+        self._watchdog = watchdog
+
+    def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        watchdog = self._watchdog
+
+        class Connection(http.client.HTTPConnection):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                super().__init__(*args, **kwargs)
+                self._create_connection = watchdog.create_connection
+
+        return self.do_open(Connection, req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, watchdog: _Watchdog) -> None:
+        self._tls = ssl.create_default_context()  # certificate and host name verified
+        super().__init__(context=self._tls)
+        self._watchdog = watchdog
+
+    def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+        watchdog = self._watchdog
+
+        class Connection(http.client.HTTPSConnection):
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                super().__init__(*args, **kwargs)
+                self._create_connection = watchdog.create_connection
+
+        return self.do_open(Connection, req, context=self._tls)
 
 
 def _is_host(host: str) -> bool:
@@ -92,14 +174,10 @@ class HttpOpenAEV:
         timeout: float = TIMEOUT,
         archive_limit: int = ARCHIVE_LIMIT,
     ) -> None:
-        self._url, local = _base_url(url)
+        self._url, self._local = _base_url(url)
         self._token = token
         self._timeout = timeout
         self._archive_limit = archive_limit
-        handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
-        if local:
-            handlers.append(urllib.request.ProxyHandler({}))
-        self._opener = urllib.request.build_opener(*handlers)
 
     @classmethod
     def from_environment(
@@ -136,45 +214,39 @@ class HttpOpenAEV:
         request = urllib.request.Request(  # noqa: S310 - the scheme is checked in _base_url
             self._url + path, data=body, headers=headers, method=method
         )
-        deadline = time.monotonic() + self._timeout
-        try:
-            with self._opener.open(request, timeout=self._timeout) as answer:
-                status = answer.status
-                data = self._read(answer, limit + 1, deadline)
-        except urllib.error.HTTPError as error:
-            error.close()
-            raise EnvironmentProblemError(_problem(error.code, not_found)) from None
-        except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
-            reason = getattr(error, "reason", error)
-            raise EnvironmentProblemError(f"the platform cannot be reached: {reason}") from None
-        if status != 200:
-            raise EnvironmentProblemError(_problem(status, not_found))
-        return data
-
-    def _read(self, answer: http.client.HTTPResponse, wanted: int, deadline: float) -> bytes:
-        """The answer until ``wanted`` bytes are in, one chunk at most beyond them, within the
-        total deadline: the timeout of each network operation alone would let a platform crawl
-        for ever."""
         late = EnvironmentProblemError(
             f"the platform did not answer within {self._timeout:g} seconds"
         )
-        # The answer's socket: each read waits no longer than the time left, so that the total
-        # deadline holds even when a read blocks.
-        connection = answer.fp.raw._sock  # type: ignore[attr-defined]
-        chunks: list[bytes] = []
-        size = 0
-        while size < wanted and not answer.isclosed():  # closed once the whole body is in
-            left = deadline - time.monotonic()
-            if left <= 0:
-                raise late
-            connection.settimeout(left)
+        with _Watchdog(self._timeout) as watchdog:
+            handlers: list[urllib.request.BaseHandler] = [
+                _NoRedirect(),
+                _HTTPHandler(watchdog),
+                _HTTPSHandler(watchdog),
+            ]
+            if self._local:
+                handlers.append(urllib.request.ProxyHandler({}))
+            opener = urllib.request.build_opener(*handlers)
             try:
-                chunk = answer.read1(_CHUNK)
-            except TimeoutError:
-                raise late from None
-            chunks.append(chunk)
-            size += len(chunk)
-        return b"".join(chunks)
+                # The timeout of each operation also bounds the connection itself, before a
+                # socket exists for the watchdog to cut.
+                with opener.open(request, timeout=self._timeout) as answer:
+                    status = answer.status
+                    data: bytes = answer.read(limit + 1)
+            except urllib.error.HTTPError as error:
+                error.close()
+                raise EnvironmentProblemError(_problem(error.code, not_found)) from None
+            except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
+                reason = getattr(error, "reason", error)
+                # A timed-out operation and the watchdog share one deadline: either means late.
+                if watchdog.expired or isinstance(reason, TimeoutError):
+                    raise late from None
+                kind = type(reason if isinstance(reason, BaseException) else error).__name__
+                raise EnvironmentProblemError(f"the platform cannot be reached ({kind})") from None
+        if watchdog.expired:  # a body cut at the deadline reads as a short one
+            raise late
+        if status != 200:
+            raise EnvironmentProblemError(_problem(status, not_found))
+        return data
 
     def export_scenario(self, scenario_id: str) -> bytes:
         path = f"/api/scenarios/{urllib.parse.quote(scenario_id, safe='')}/export?"

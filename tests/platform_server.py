@@ -28,6 +28,7 @@ class Platform:
     headers: dict[str, str] = field(default_factory=dict)
     delay: float = 0.0
     drip: float = 0.0  # seconds between two bytes of the body, for a platform that crawls
+    raw: bytes = b""  # sent as it is instead of a well-formed answer, dripped too
     received: list[Received] = field(default_factory=list)
 
     def answer(self, status: int, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
@@ -48,6 +49,12 @@ def _handler(platform: Platform) -> type[BaseHTTPRequestHandler]:
             )
             time.sleep(platform.delay)
             try:
+                if platform.raw:
+                    for byte in platform.raw:
+                        self.wfile.write(bytes([byte]))
+                        self.wfile.flush()
+                        time.sleep(platform.drip)
+                    return
                 self.send_response(platform.status)
                 for key, value in platform.headers.items():
                     self.send_header(key, value)

@@ -3,12 +3,18 @@ or encrypted transport, no redirect, bounded answers, and errors that never carr
 
 import json
 import socket
+import ssl
 import time
 from collections.abc import Iterator
 
 import pytest
 
-from scenario_tools.adapters.openaev_http import EXPORT_OPTIONS, HttpOpenAEV
+from scenario_tools.adapters.openaev_http import (
+    EXPORT_OPTIONS,
+    HttpOpenAEV,
+    _HTTPSHandler,
+    _Watchdog,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.openaev import ImportResult, SkippedInject
 from tests.platform_server import Platform, platform_server
@@ -220,10 +226,10 @@ def test_an_unreachable_platform_is_an_environment_problem() -> None:
         client = HttpOpenAEV.from_environment({"OPENAEV_URL": url, "OPENAEV_TOKEN": TOKEN})
 
         with pytest.raises(
-            EnvironmentProblemError, match=r"^the platform cannot be reached"
+            EnvironmentProblemError,
+            match=r"^the platform cannot be reached \(ConnectionRefusedError\)$",
         ) as error:
             client.export_scenario(SCENARIO)
-    assert url not in str(error.value)
     assert "127.0.0.1" not in str(error.value)
 
 
@@ -232,7 +238,9 @@ def test_a_platform_that_does_not_answer_in_time_is_an_environment_problem(
 ) -> None:
     platform.delay = 0.5
 
-    with pytest.raises(EnvironmentProblemError, match=r"^the platform cannot be reached"):
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 0.1 seconds$"
+    ):
         _client(platform, timeout=0.1).export_scenario(SCENARIO)
 
 
@@ -262,15 +270,63 @@ def test_a_read_that_stalls_near_the_deadline_is_cut_at_the_deadline(platform: P
     assert time.monotonic() - start < 0.65
 
 
-def test_a_deadline_passed_between_two_reads_stops_the_read(
-    platform: Platform, monkeypatch: pytest.MonkeyPatch
+def test_an_answer_whose_headers_crawl_is_cut_at_the_deadline(platform: Platform) -> None:
+    platform.raw = b"HTTP/1.1 200 OK\r\nX-Padding: " + b"a" * 200 + b"\r\n\r\n"
+    platform.drip = 0.02  # four seconds of headers, each byte well within the timeout
+
+    start = time.monotonic()
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 0.3 seconds$"
+    ):
+        _client(platform, timeout=0.3).export_scenario(SCENARIO)
+    assert time.monotonic() - start < 0.6
+
+
+def test_a_connection_opened_after_the_deadline_is_cut_at_once(platform: Platform) -> None:
+    host, port = platform.url.removeprefix("http://").split(":")
+    with _Watchdog(0.01) as watchdog:
+        while not watchdog.expired:
+            time.sleep(0.005)
+
+        with watchdog.create_connection((host, int(port)), 5) as connection:
+            assert connection.recv(1) == b""  # shut down: nothing more can come
+
+
+def test_an_encrypted_call_whose_tunnel_crawls_is_cut_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    platform.answer(200, b"archive")
-    clock = iter([0.0, 10.0])  # the deadline is set at 0, the first read is due at 10
-    monkeypatch.setattr("scenario_tools.adapters.openaev_http.time.monotonic", lambda: next(clock))
+    with platform_server() as proxy:
+        proxy.raw = b"HTTP/1.1 200 Connection established\r\nX-Padding: " + b"a" * 200
+        proxy.drip = 0.02  # four seconds for the proxy's answer, each byte within the timeout
+        for name in ("HTTPS_PROXY", "https_proxy"):
+            monkeypatch.setenv(name, proxy.url)
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        client = HttpOpenAEV.from_environment(
+            {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": TOKEN},
+            timeout=0.3,
+        )
+
+        start = time.monotonic()
+        with pytest.raises(
+            EnvironmentProblemError, match=r"^the platform did not answer within 0.3 seconds$"
+        ):
+            client.export_scenario(SCENARIO)
+        assert time.monotonic() - start < 0.6
+
+
+def test_an_encrypted_call_verifies_the_certificate_and_the_host_name() -> None:
+    tls = _HTTPSHandler(_Watchdog(1))._tls
+
+    assert tls.verify_mode is ssl.CERT_REQUIRED
+    assert tls.check_hostname
+
+
+def test_a_transport_failure_is_named_by_its_kind_only(platform: Platform) -> None:
+    platform.raw = f"Bearer {TOKEN} from platform.example.org\r\n\r\n".encode()
 
     with pytest.raises(
-        EnvironmentProblemError, match=r"^the platform did not answer within 5 seconds$"
+        EnvironmentProblemError, match=r"^the platform cannot be reached \(BadStatusLine\)$"
     ):
         _client(platform).export_scenario(SCENARIO)
 
