@@ -2,7 +2,8 @@
 
 Every command returns a report through ``execute``, which renders it as text or as the JSON
 document of the contract and gives the exit code: 0 when the report is ok, 1 with a blocking
-finding, 2 on a usage error (click), 3 when the environment cannot be used.
+finding, 2 on a usage error (click), 3 when the environment cannot be used, and 4 when the tool
+itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
 import json
@@ -14,10 +15,10 @@ import click
 from scenario_tools import __version__
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input
-from scenario_tools.domain.shared.finding import Finding, Report, Severity
+from scenario_tools.domain.shared.finding import Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
-EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT = 0, 1, 3
+EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
 
 
 def _printable(text: str) -> str:
@@ -46,7 +47,26 @@ def execute(
     command: str, produce: Callable[[], Report], output_format: str, root: Path | None = None
 ) -> tuple[str, int]:
     """Run ``produce`` and return what to print and the exit code. Paths in findings are made
-    relative to ``root``, the repository root, which is the working directory by default."""
+    relative to ``root``, the repository root, which is the working directory by default. A
+    failure anywhere, while producing or while rendering, exits with 4, never with 1."""
+    try:
+        return _run(command, produce, output_format, root)
+    except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
+        line = f"{command}: internal error: {type(error).__name__}: {_describe(error)}"
+        return shorten(_printable(line)), EXIT_INTERNAL
+
+
+def _describe(error: Exception) -> str:
+    """The text of an error, even one whose own text cannot be built."""
+    try:
+        return str(error)
+    except Exception:  # noqa: BLE001 - the guard itself must not fail
+        return "<unprintable>"
+
+
+def _run(
+    command: str, produce: Callable[[], Report], output_format: str, root: Path | None
+) -> tuple[str, int]:
     try:
         report = produce()
     except UnsafeInputError as error:
@@ -64,7 +84,7 @@ def execute(
 
 def _emit(ctx: click.Context, command: str, produce: Callable[[], Report]) -> None:
     output, code = execute(command, produce, ctx.obj["format"])
-    click.echo(output)
+    click.echo(output, err=code == EXIT_INTERNAL)  # an internal error writes nothing to stdout
     ctx.exit(code)
 
 

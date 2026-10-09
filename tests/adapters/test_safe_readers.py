@@ -1,6 +1,7 @@
 """Bounded JSON and YAML readers: everything they read is hostile until proven otherwise."""
 
 import contextlib
+import errno
 import json
 import os
 import socket
@@ -21,7 +22,7 @@ from scenario_tools.adapters.safe_readers import (
     read_json_file,
     read_yaml_file,
 )
-from scenario_tools.ports.errors import UnsafeInputError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 json_values = st.recursive(
     st.none()
@@ -432,11 +433,127 @@ def test_a_socket_is_refused(
 
 
 @pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
-def test_a_missing_file_is_not_an_unsafe_input(
+def test_a_missing_file_is_an_environment_problem(
     tmp_path: Path, reader: Callable[[Path], Any]
 ) -> None:
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(EnvironmentProblemError, match="missing"):
         reader(tmp_path / "missing")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not apply to root")
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_an_unreadable_file_is_an_environment_problem(
+    tmp_path: Path, reader: Callable[[Path], Any]
+) -> None:
+    path = tmp_path / "locked"
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0)
+    try:
+        with pytest.raises(EnvironmentProblemError):
+            reader(path)
+    finally:
+        path.chmod(0o600)
+
+
+class _FailingFile:
+    """An open file whose read fails, as on a network file system that drops."""
+
+    def __init__(self, descriptor: int, mode: str, *, closefd: bool) -> None:
+        self.descriptor = descriptor
+
+    def __enter__(self) -> "_FailingFile":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass  # the reader closes the descriptor itself
+
+    def read(self, size: int) -> bytes:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_a_failure_while_reading_is_an_environment_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reader: Callable[[Path], Any]
+) -> None:
+    path = tmp_path / "flaky"
+    path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(os, "fdopen", _FailingFile)
+
+    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+        reader(path)
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_no_descriptor_is_left_open_whether_the_file_is_read_or_refused(
+    tmp_path: Path, reader: Callable[[Path], Any]
+) -> None:
+    regular = tmp_path / "a"
+    regular.write_text("{}", encoding="utf-8")
+    descriptors = Path("/proc/self/fd")
+    before = len(list(descriptors.iterdir()))
+
+    reader(regular)
+    with pytest.raises(UnsafeInputError):
+        reader(tmp_path)  # a directory
+
+    assert len(list(descriptors.iterdir())) == before
+
+
+# Values the canonical form cannot hold
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "9007199254740992",
+        "-9007199254740992",
+        '{"a": [1, 18446744073709551616]}',
+        '"\\ud800"',
+        '{"\\udc00": 1}',
+        '["ok", "\\ud83d"]',
+    ],
+    ids=["above 2^53-1", "below -(2^53-1)", "nested", "lone high", "in a key", "unpaired"],
+)
+def test_json_values_the_canonical_form_cannot_hold_are_refused(text: str) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(text.encode())
+    assert _code(error) == "IO-006"
+
+
+@pytest.mark.parametrize(
+    "text", ["a: 9007199254740992", 'a: "\\ud800"', '"\\udc00": 1'], ids=["integer", "value", "key"]
+)
+def test_yaml_values_the_canonical_form_cannot_hold_are_refused(text: str) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(text.encode())
+    assert _code(error) == "IO-006"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('a: "\\ud83d\\ude00"', {"a": "\U0001f600"}),
+        ('"\\ud83d\\ude00": 1', {"\U0001f600": 1}),
+        ('a: ["x\\ud83d\\ude00y"]', {"a": ["x\U0001f600y"]}),
+    ],
+    ids=["value", "key", "inside a string"],
+)
+def test_yaml_surrogate_pairs_become_the_character_they_encode(text: str, expected: object) -> None:
+    assert parse_yaml(text.encode()) == expected
+
+
+def test_a_yaml_key_written_as_a_surrogate_pair_and_as_its_character_is_a_duplicate() -> None:
+    text = '"\\ud83d\\ude00": 1\n"\U0001f600": 2\n'
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(text.encode())
+    assert _code(error) == "IO-005"
+
+
+def test_the_largest_safe_integers_and_surrogate_pairs_are_kept() -> None:
+    text = '[9007199254740991, -9007199254740991, "\\ud83d\\ude00", true]'
+
+    assert parse_json(text.encode()) == [2**53 - 1, -(2**53) + 1, "\U0001f600", True]
 
 
 def test_refusal_names_its_code_and_path() -> None:

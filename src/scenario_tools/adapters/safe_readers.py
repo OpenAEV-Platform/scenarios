@@ -18,11 +18,13 @@ from typing import Any
 
 import yaml
 
-from scenario_tools.ports.errors import UnsafeInputError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 JSON_LIMIT = 20 * 1024 * 1024
 YAML_LIMIT = 256 * 1024
 MAX_DEPTH = 64
+# The canonical form (RFC 8785) holds integers as IEEE 754 doubles, exact up to this bound.
+SAFE_INTEGER = 2**53 - 1
 
 _MERGE_TAG = "tag:yaml.org,2002:merge"
 
@@ -43,19 +45,34 @@ def read_regular_file(path: Path, limit: int) -> bytes:
             raise UnsafeInputError("IO-013", "a symbolic link", str(path)) from error
         if error.errno == errno.ENXIO:  # a socket fails here, before any type check
             raise UnsafeInputError("IO-013", "not a regular file", str(path)) from error
-        raise
-    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-        os.close(descriptor)
-        raise UnsafeInputError("IO-013", "not a regular file", str(path))
-    with os.fdopen(descriptor, "rb") as file:
-        data = file.read(limit + 1)
+        # Missing, unreadable: the environment, not the content, is at fault.
+        raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
+    try:
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise UnsafeInputError("IO-013", "not a regular file", str(path))
+            with os.fdopen(descriptor, "rb", closefd=False) as file:
+                data = file.read(limit + 1)
+        finally:
+            os.close(descriptor)
+    except OSError as error:  # a read that fails, on a network file system for instance
+        raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
     if len(data) > limit:
         raise UnsafeInputError("IO-001", f"larger than {limit} bytes", str(path))
     return data
 
 
+def _has_unpaired_surrogate(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
 def _check_json_value(value: Any, max_depth: int) -> None:
-    """Refuse anything JSON cannot represent, and nesting deeper than ``max_depth``."""
+    """Refuse anything JSON or its canonical form cannot represent, and nesting deeper than
+    ``max_depth``."""
     stack: list[tuple[Any, int]] = [(value, 0)]
     while stack:
         item, depth = stack.pop()
@@ -66,12 +83,20 @@ def _check_json_value(value: Any, max_depth: int) -> None:
                 for key, child in item.items():
                     if not isinstance(key, str):
                         raise _RefusedError("IO-006", f"non-string key {key!r}")
+                    if _has_unpaired_surrogate(key):
+                        raise _RefusedError("IO-006", "unpaired surrogate in a key")
                     stack.append((child, depth + 1))
             else:
                 stack.extend((child, depth + 1) for child in item)
         elif isinstance(item, float):
             if not math.isfinite(item):
                 raise _RefusedError("IO-006", "non-finite number")
+        elif isinstance(item, int):  # booleans too, always within range
+            if abs(item) > SAFE_INTEGER:
+                raise _RefusedError("IO-006", "integer beyond the exact range of 2^53 - 1")
+        elif isinstance(item, str):
+            if _has_unpaired_surrogate(item):
+                raise _RefusedError("IO-006", "unpaired surrogate in a string")
         elif not (item is None or isinstance(item, str | bool | int)):
             raise _RefusedError("IO-006", f"value of type {type(item).__name__}")
 
@@ -212,6 +237,18 @@ def _construct_float(loader: _Loader, node: yaml.ScalarNode) -> float:
     return float(text)
 
 
+def _construct_str(loader: _Loader, node: yaml.ScalarNode) -> str:
+    """Join each pair of surrogate escapes into the character it encodes, as a JSON decoder
+    does, so that keys compare as the same text. An unpaired surrogate is left for the value
+    check to refuse."""
+    text = loader.construct_scalar(node)
+    try:
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
+    except UnicodeDecodeError:
+        return text
+
+
+_Loader.add_constructor("tag:yaml.org,2002:str", _construct_str)
 _Loader.add_constructor("tag:yaml.org,2002:bool", _construct_bool)
 _Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
 _Loader.add_constructor("tag:yaml.org,2002:float", _construct_float)
