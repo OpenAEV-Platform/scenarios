@@ -113,6 +113,8 @@ def test_an_encrypted_or_local_url_is_accepted(url: str) -> None:
         ({"OPENAEV_URL": "https://platform.example.org/a b", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://" + "a" * 70 + ".com", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://a..b", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
+        ({"OPENAEV_URL": "https://platform.example.org?", "OPENAEV_TOKEN": TOKEN}, "query"),
+        ({"OPENAEV_URL": "https://platform.example.org/#", "OPENAEV_TOKEN": TOKEN}, "query"),
         ({"OPENAEV_URL": "https://-bad.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://bad-.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
         ({"OPENAEV_URL": "https://a_b.example", "OPENAEV_TOKEN": TOKEN}, "not a URL"),
@@ -282,14 +284,107 @@ def test_an_answer_whose_headers_crawl_is_cut_at_the_deadline(platform: Platform
     assert time.monotonic() - start < 0.6
 
 
-def test_a_connection_opened_after_the_deadline_is_cut_at_once(platform: Platform) -> None:
+def _address(platform: Platform) -> tuple[str, int]:
     host, port = platform.url.removeprefix("http://").split(":")
+    return host, int(port)
+
+
+def test_no_connection_is_attempted_after_the_deadline(platform: Platform) -> None:
     with _Watchdog(0.01) as watchdog:
         while not watchdog.expired:
             time.sleep(0.005)
 
-        with watchdog.create_connection((host, int(port)), 5) as connection:
-            assert connection.recv(1) == b""  # shut down: nothing more can come
+        with pytest.raises(TimeoutError):
+            watchdog.create_connection(_address(platform), 5)
+    assert platform.received == []
+
+
+def test_a_connection_completed_after_the_deadline_is_closed(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deadline set, name resolved and attempt started in time, connection made too late.
+    clock = iter([0.0, 0.0, 0.0, 100.0])
+    monkeypatch.setattr(
+        "scenario_tools.adapters.openaev_http.time.monotonic", lambda: next(clock, 100.0)
+    )
+    watchdog = _Watchdog(5)
+
+    with pytest.raises(TimeoutError):
+        watchdog.create_connection(_address(platform), 5)
+
+
+def test_a_connection_attempt_gets_only_the_time_left(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timeouts: list[float | None] = []
+
+    class Recording(socket.socket):
+        def settimeout(self, value: float | None) -> None:
+            timeouts.append(value)
+            super().settimeout(value)
+
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.socket.socket", Recording)
+
+    with _Watchdog(5).create_connection(_address(platform), 120):
+        pass
+    assert timeouts
+    assert 0 < (timeouts[0] or 0) <= 5
+
+
+def test_a_name_resolution_that_outlives_the_deadline_is_abandoned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def slow(*args: object, **kwargs: object) -> list[object]:
+        time.sleep(2)
+        return []
+
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.socket.getaddrinfo", slow)
+    client = HttpOpenAEV.from_environment(
+        {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": TOKEN}, timeout=0.2
+    )
+
+    start = time.monotonic()
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform did not answer within 0.2 seconds$"
+    ):
+        client.export_scenario(SCENARIO)
+    assert time.monotonic() - start < 0.5
+
+
+def test_a_name_that_does_not_resolve_is_named_by_its_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unknown(*args: object, **kwargs: object) -> list[object]:
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.socket.getaddrinfo", unknown)
+    client = HttpOpenAEV.from_environment(
+        {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": TOKEN}
+    )
+
+    with pytest.raises(
+        EnvironmentProblemError, match=r"^the platform cannot be reached \(gaierror\)$"
+    ):
+        client.export_scenario(SCENARIO)
+
+
+def test_each_resolved_address_is_tried_in_turn(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host, port = _address(platform)
+    with socket.socket() as refused:  # bound but not listening: refuses the first attempt
+        refused.bind(("127.0.0.1", 0))
+        addresses = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", refused.getsockname()),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (host, port)),
+        ]
+        monkeypatch.setattr(
+            "scenario_tools.adapters.openaev_http.socket.getaddrinfo",
+            lambda *args, **kwargs: addresses,
+        )
+        platform.answer(200, b"archive")
+
+        assert _client(platform).export_scenario(SCENARIO) == b"archive"
 
 
 def test_an_encrypted_call_whose_tunnel_crawls_is_cut_at_the_deadline(

@@ -15,6 +15,7 @@ import secrets
 import socket
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,25 +51,69 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class _Watchdog:
-    """Cuts the connections of one call at its deadline, whatever the call waits for: the
+    """One deadline for a whole call, whatever the call waits for: the name resolution, the
     connection, the tunnel, the encryption, the headers or the body. The timeout of each network
-    operation alone would let a platform that answers byte by byte hold the call for ever."""
+    operation alone would let a platform that answers byte by byte hold the call for ever. The
+    connections are made here, within the time left, and cut when the deadline passes."""
 
     def __init__(self, seconds: float) -> None:
         self.expired = False
+        self._deadline = time.monotonic() + seconds
         self._lock = threading.Lock()
         self._sockets: list[socket.socket] = []
         self._timer = threading.Timer(seconds, self._expire)
         self._timer.daemon = True
 
-    def create_connection(self, *args: Any, **kwargs: Any) -> socket.socket:
-        """``socket.create_connection``, watched from the moment the socket exists."""
-        connection = socket.create_connection(*args, **kwargs)
-        with self._lock:
-            self._sockets.append(connection)
-            if self.expired:
-                _cut(connection)
-        return connection
+    def _left(self) -> float:
+        return self._deadline - time.monotonic()
+
+    def _resolve(self, host: str, port: int) -> list[Any]:
+        """The addresses of ``host``, or ``TimeoutError`` at the deadline: the resolution runs
+        in a thread of its own, as nothing else can bound it."""
+        found: list[Any] = []
+        failed: list[OSError] = []
+
+        def resolve() -> None:
+            try:
+                found.extend(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
+            except OSError as error:
+                failed.append(error)
+
+        worker = threading.Thread(target=resolve, daemon=True)
+        worker.start()
+        worker.join(max(self._left(), 0))
+        if worker.is_alive():
+            raise TimeoutError("the name resolution outlived the deadline")
+        if failed:
+            raise failed[0]
+        return found
+
+    def create_connection(
+        self, address: tuple[str, int], timeout: float, source_address: object = None
+    ) -> socket.socket:
+        """In place of ``socket.create_connection``: each address in turn, each attempt within
+        the time left, and none once the deadline has passed. The calls bind no local address,
+        so ``source_address`` is always empty."""
+        error = OSError("no address")  # getaddrinfo gives at least one, or fails
+        for family, kind, protocol, _, target in self._resolve(*address):
+            left = self._left()
+            if left <= 0:
+                raise TimeoutError("the deadline passed before the connection")
+            connection = socket.socket(family, kind, protocol)
+            try:
+                connection.settimeout(min(timeout, left))
+                connection.connect(target)
+            except OSError as failure:
+                connection.close()
+                error = failure
+                continue
+            if self._left() <= 0:
+                connection.close()
+                raise TimeoutError("the connection completed after the deadline")
+            with self._lock:
+                self._sockets.append(connection)
+            return connection
+        raise error
 
     def _expire(self) -> None:
         with self._lock:
@@ -158,7 +203,7 @@ def _base_url(url: str) -> tuple[str, bool]:
         raise EnvironmentProblemError("OPENAEV_URL has no host")
     if parts.username is not None or parts.password is not None:
         raise EnvironmentProblemError("OPENAEV_URL must not carry user information")
-    if parts.query or parts.fragment:
+    if "?" in url or "#" in url:  # an empty query or fragment too: the path would follow it
         raise EnvironmentProblemError("OPENAEV_URL must not carry a query or fragment")
     return url.rstrip("/"), local
 
