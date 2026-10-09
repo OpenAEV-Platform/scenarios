@@ -137,7 +137,28 @@ def test_platforms_hold_at_least_one_value(
     assert [violation.pointer for violation in violations] == [pointer]
 
 
-@pytest.mark.parametrize("facet", CATALOGUE_FACETS)
+@pytest.mark.parametrize(
+    "external_id",
+    [
+        "5B9A2C84-3A0E-4C55-9A8C-2A6F0D7E1B42",
+        "5b9a2c84-3a0e-4c55-9a8c-2A6F0D7E1B42",
+        "{5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42}",
+        "urn:uuid:5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42",
+        "5b9a2c843a0e4c559a8c2a6f0d7e1b42",
+    ],
+    ids=["upper case", "mixed case", "braces", "urn", "no hyphens"],
+)
+def test_only_the_canonical_external_id_is_accepted(
+    validator: JsonSchemaValidator, external_id: str
+) -> None:
+    scenario = _changed(SCENARIO, lambda d: d.update(external_id=external_id))
+    manifest = _changed(MANIFEST, lambda d: d["items"][0].update(external_id=external_id))
+
+    assert [v.pointer for v in validator.validate("scenario", scenario)] == ["/external_id"]
+    assert [v.pointer for v in validator.validate("manifest", manifest)] == ["/items/0/external_id"]
+
+
+@pytest.mark.parametrize("facet", [*CATALOGUE_FACETS, "external_id"])
 def test_manifest_facets_are_defined_exactly_as_in_the_scenario_metadata(facet: str) -> None:
     scenario = json.loads((SCHEMAS / "scenario.schema.json").read_text(encoding="utf-8"))
     manifest = json.loads((SCHEMAS / "manifest.schema.json").read_text(encoding="utf-8"))
