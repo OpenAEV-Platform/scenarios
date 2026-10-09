@@ -3,8 +3,8 @@
 A finding has a code (two or three capital letters, a hyphen and three digits), a severity, the
 path of the file relative to the repository root (empty when the input is not a file), the JSON
 pointer of the field (empty for the whole input) and a message, shortened to ``MESSAGE_LIMIT``
-characters whoever builds the finding. A report is ok when it holds no blocking finding, and lists
-its findings in a stable order.
+characters regardless of who builds the finding. A report is ok when it holds no blocking finding,
+and lists its findings in a stable order.
 """
 
 import re
