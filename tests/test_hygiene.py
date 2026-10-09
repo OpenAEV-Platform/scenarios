@@ -11,27 +11,29 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).parents[1]
+THIS_FILE = Path(__file__).relative_to(ROOT)
 
+# Matched in any case, except the two names that are also common words.
 _FORBIDDEN = re.compile(
     "|".join(
         (
             r"\bresearch R[0-9]",  # an item of the design research notes
             r"\bcli\.md\b",  # the internal command-line contract
-            r"(?i:\bdata[ -]model\b)",  # the internal data model document
+            r"\bdata[ -]model\b",  # the internal data model document
             r"\bRFC[ -]?0004\b",  # an RFC that is not public
             r"\bT0[0-9]{2}[a-z]?\b",  # a task number; ATT&CK techniques have four digits
-            r"(?i:\bspeckit\b)",
-            r"(?i:\bconstitution\b)",
-            r"\bNotion\b",
-            r"\bClaude\b",
-            r"(?i:co-authored-by)",
+            r"\bspeckit\b",
+            r"\bconstitution\b",
+            r"(?-i:\bNotion\b)",
+            r"(?-i:\bClaude\b)",
+            r"co-authored-by",
         )
-    )
+    ),
+    re.IGNORECASE,
 )
 _SKIPPED_DIRECTORIES = frozenset(
     {".git", ".venv", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__", "mutants"}
 )
-_SKIPPED_FILES = frozenset({Path(__file__).name, "uv.lock"})
 
 
 def _internal_references(text: str) -> list[str]:
@@ -54,6 +56,10 @@ def _internal_references(text: str) -> list[str]:
         "Copied from a Notion page.",
         "Written with Claude.",
         "Co-authored-by: someone <a@b.c>",
+        "Research R2 explains it.",
+        "See CLI.md.",
+        "As rfc 0004 says.",
+        "Done in t012b.",
     ],
 )
 def test_the_check_refuses_internal_references(text: str) -> None:
@@ -74,27 +80,44 @@ def test_the_check_accepts_ordinary_text(text: str) -> None:
     assert _internal_references(text) == []
 
 
-def _repository_text_files() -> list[Path]:
-    files = []
-    for path in sorted(ROOT.rglob("*")):
-        relative = path.relative_to(ROOT)
-        if not path.is_file() or _SKIPPED_DIRECTORIES & set(relative.parts):
-            continue
-        if path.name in _SKIPPED_FILES:
-            continue
-        files.append(path)
-    return files
-
-
-def test_no_repository_file_refers_to_internal_documents() -> None:
+def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
     found = {}
-    for path in _repository_text_files():
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if (
+            not path.is_file()
+            or _SKIPPED_DIRECTORIES & set(relative.parts)
+            or relative == THIS_FILE
+        ):
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue  # binary files, such as the reference exports
         references = _internal_references(text)
         if references:
-            found[str(path.relative_to(ROOT))] = references
+            found[relative.as_posix()] = references
+    return found
 
-    assert found == {}
+
+def test_no_repository_file_refers_to_internal_documents() -> None:
+    assert _files_with_internal_references(ROOT) == {}
+
+
+def test_only_this_test_file_is_exempt(tmp_path: Path) -> None:
+    files: dict[Path, bytes] = {
+        THIS_FILE: b"the speckit",
+        Path("other") / THIS_FILE.name: b"the speckit",
+        Path("uv.lock"): b"the speckit",
+        Path(".venv") / "lib.py": b"the speckit",
+        Path("export.zip"): b"\xff\xfe the speckit",
+    }
+    for relative, content in files.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    assert _files_with_internal_references(tmp_path) == {
+        f"other/{THIS_FILE.name}": ["speckit"],
+        "uv.lock": ["speckit"],
+    }
