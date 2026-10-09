@@ -1,4 +1,4 @@
-"""Scenario metadata and its cross-checks against the export (data model, cross-checks)."""
+"""Scenario metadata and its cross-checks against the export."""
 
 from dataclasses import replace
 from typing import Any

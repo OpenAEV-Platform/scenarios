@@ -1,4 +1,4 @@
-"""Findings: what every command reports, in one stable shape (contract cli.md)."""
+"""Findings: what every command reports, in one stable shape."""
 
 import pytest
 from hypothesis import given

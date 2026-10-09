@@ -1,4 +1,4 @@
-"""Schema validation with jsonschema, format checking included (research R6)."""
+"""Schema validation with jsonschema, format checking included."""
 
 import copy
 import json
