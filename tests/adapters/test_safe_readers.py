@@ -21,7 +21,7 @@ from scenario_tools.adapters.safe_readers import (
     read_json_file,
     read_yaml_file,
 )
-from scenario_tools.ports.errors import UnsafeInputError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 json_values = st.recursive(
     st.none()
@@ -432,11 +432,62 @@ def test_a_socket_is_refused(
 
 
 @pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
-def test_a_missing_file_is_not_an_unsafe_input(
+def test_a_missing_file_is_an_environment_problem(
     tmp_path: Path, reader: Callable[[Path], Any]
 ) -> None:
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(EnvironmentProblemError, match="missing"):
         reader(tmp_path / "missing")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not apply to root")
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_an_unreadable_file_is_an_environment_problem(
+    tmp_path: Path, reader: Callable[[Path], Any]
+) -> None:
+    path = tmp_path / "locked"
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0)
+    try:
+        with pytest.raises(EnvironmentProblemError):
+            reader(path)
+    finally:
+        path.chmod(0o600)
+
+
+# Values the canonical form cannot hold
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "9007199254740992",
+        "-9007199254740992",
+        '{"a": [1, 18446744073709551616]}',
+        '"\\ud800"',
+        '{"\\udc00": 1}',
+        '["ok", "\\ud83d"]',
+    ],
+    ids=["above 2^53-1", "below -(2^53-1)", "nested", "lone high", "in a key", "unpaired"],
+)
+def test_json_values_the_canonical_form_cannot_hold_are_refused(text: str) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(text.encode())
+    assert _code(error) == "IO-006"
+
+
+@pytest.mark.parametrize(
+    "text", ["a: 9007199254740992", 'a: "\\ud800"', '"\\udc00": 1'], ids=["integer", "value", "key"]
+)
+def test_yaml_values_the_canonical_form_cannot_hold_are_refused(text: str) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(text.encode())
+    assert _code(error) == "IO-006"
+
+
+def test_the_largest_safe_integers_and_surrogate_pairs_are_kept() -> None:
+    text = '[9007199254740991, -9007199254740991, "\\ud83d\\ude00", true]'
+
+    assert parse_json(text.encode()) == [2**53 - 1, -(2**53) + 1, "\U0001f600", True]
 
 
 def test_refusal_names_its_code_and_path() -> None:

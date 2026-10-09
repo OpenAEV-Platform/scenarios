@@ -10,7 +10,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import scenario_tools
-from scenario_tools.domain.shared.finding import Finding, Report, Severity
+import scenario_tools.interface.cli as cli_module
+from scenario_tools.adapters.safe_readers import read_json_file
+from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -221,3 +223,43 @@ def test_any_message_is_rendered_on_one_line_and_encodes_as_utf8(message: str) -
     text.encode("utf-8")
     assert document.isascii()
     assert json.loads(document)["findings"][0]["message"] == message
+
+
+# Defects of the tool and unreadable files never read as a content defect
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+def test_an_unexpected_error_exits_four_with_one_escaped_line_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    def broken(title: str) -> Report:
+        raise RuntimeError("boom\n::error::injected")
+
+    monkeypatch.setattr(cli_module, "check_title_use_case", broken)
+
+    result = CliRunner().invoke(main, ["--format", output_format, "check-title", "fix: a (#1)"])
+
+    assert result.exit_code == 4
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        "check-title: internal error: RuntimeError: boom\\n::error::injected"
+    ]
+
+
+def test_a_file_that_cannot_be_read_is_an_environment_problem(tmp_path: Path) -> None:
+    output, code = execute("demo", lambda: read_json_file(tmp_path / "missing"), "text")
+
+    assert code == 3
+    assert output.startswith("demo: environment error: ")
+
+
+def test_a_long_internal_error_is_shortened(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(title: str) -> Report:
+        raise RuntimeError("x" * 100_000)
+
+    monkeypatch.setattr(cli_module, "check_title_use_case", broken)
+
+    result = CliRunner().invoke(main, ["check-title", "fix: a (#1)"])
+
+    assert result.exit_code == 4
+    assert len(result.stderr.strip()) <= MESSAGE_LIMIT
