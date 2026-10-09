@@ -47,7 +47,18 @@ def execute(
     command: str, produce: Callable[[], Report], output_format: str, root: Path | None = None
 ) -> tuple[str, int]:
     """Run ``produce`` and return what to print and the exit code. Paths in findings are made
-    relative to ``root``, the repository root, which is the working directory by default."""
+    relative to ``root``, the repository root, which is the working directory by default. A
+    failure anywhere, while producing or while rendering, exits with 4, never with 1."""
+    try:
+        return _run(command, produce, output_format, root)
+    except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
+        line = f"{command}: internal error: {type(error).__name__}: {error}"
+        return shorten(_printable(line)), EXIT_INTERNAL
+
+
+def _run(
+    command: str, produce: Callable[[], Report], output_format: str, root: Path | None
+) -> tuple[str, int]:
     try:
         report = produce()
     except UnsafeInputError as error:
@@ -57,9 +68,6 @@ def execute(
             document = {"command": command, "ok": False, "findings": [], "error": str(error)}
             return json.dumps(document), EXIT_ENVIRONMENT
         return _printable(f"{command}: environment error: {error}"), EXIT_ENVIRONMENT
-    except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
-        line = f"{command}: internal error: {type(error).__name__}: {error}"
-        return shorten(_printable(line)), EXIT_INTERNAL
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     if output_format == "json":
         return json.dumps(report.document()), code

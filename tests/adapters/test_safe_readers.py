@@ -484,6 +484,26 @@ def test_yaml_values_the_canonical_form_cannot_hold_are_refused(text: str) -> No
     assert _code(error) == "IO-006"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('a: "\\ud83d\\ude00"', {"a": "\U0001f600"}),
+        ('"\\ud83d\\ude00": 1', {"\U0001f600": 1}),
+        ('a: ["x\\ud83d\\ude00y"]', {"a": ["x\U0001f600y"]}),
+    ],
+    ids=["value", "key", "inside a string"],
+)
+def test_yaml_surrogate_pairs_become_the_character_they_encode(text: str, expected: object) -> None:
+    assert parse_yaml(text.encode()) == expected
+
+
+def test_a_yaml_key_written_as_a_surrogate_pair_and_as_its_character_is_a_duplicate() -> None:
+    text = '"\\ud83d\\ude00": 1\n"\U0001f600": 2\n'
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(text.encode())
+    assert _code(error) == "IO-005"
+
+
 def test_the_largest_safe_integers_and_surrogate_pairs_are_kept() -> None:
     text = '[9007199254740991, -9007199254740991, "\\ud83d\\ude00", true]'
 

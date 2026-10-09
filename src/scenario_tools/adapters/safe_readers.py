@@ -232,6 +232,18 @@ def _construct_float(loader: _Loader, node: yaml.ScalarNode) -> float:
     return float(text)
 
 
+def _construct_str(loader: _Loader, node: yaml.ScalarNode) -> str:
+    """Join each pair of surrogate escapes into the character it encodes, as a JSON decoder
+    does, so that keys compare as the same text. An unpaired surrogate is left for the value
+    check to refuse."""
+    text = loader.construct_scalar(node)
+    try:
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
+    except UnicodeDecodeError:
+        return text
+
+
+_Loader.add_constructor("tag:yaml.org,2002:str", _construct_str)
 _Loader.add_constructor("tag:yaml.org,2002:bool", _construct_bool)
 _Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
 _Loader.add_constructor("tag:yaml.org,2002:float", _construct_float)

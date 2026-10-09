@@ -263,3 +263,33 @@ def test_a_long_internal_error_is_shortened(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result.exit_code == 4
     assert len(result.stderr.strip()) <= MESSAGE_LIMIT
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+def test_a_failure_while_rendering_exits_four(
+    monkeypatch: pytest.MonkeyPatch, output_format: str
+) -> None:
+    def broken(*args: object) -> object:
+        raise RuntimeError("rendering failed")
+
+    monkeypatch.setattr(cli_module, "_text", broken)
+    monkeypatch.setattr(Report, "document", broken)
+
+    output, code = execute("demo", _report(), output_format)
+
+    assert code == 4
+    assert output == "demo: internal error: RuntimeError: rendering failed"
+
+
+def test_a_failure_while_converting_a_refusal_exits_four(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refused() -> Report:
+        raise UnsafeInputError("IO-001", "too large", "a.json")
+
+    def broken(*args: object) -> object:
+        raise RuntimeError("conversion failed")
+
+    monkeypatch.setattr(cli_module, "finding_from_unsafe_input", broken)
+
+    output, code = execute("demo", refused, "json")
+
+    assert (output, code) == ("demo: internal error: RuntimeError: conversion failed", 4)
