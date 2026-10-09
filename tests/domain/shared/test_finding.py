@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from scenario_tools.domain.shared.finding import Finding, Report, Severity
+from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity, shorten
 
 
 def _finding(**changes: object) -> Finding:
@@ -108,3 +108,8 @@ def test_findings_are_reported_in_a_stable_order(findings: list[Finding], random
     assert list(ordered) == sorted(
         findings, key=lambda f: (f.path, f.field, f.code, f.message, f.severity.value)
     )
+
+
+def test_a_long_message_is_shortened_to_the_limit() -> None:
+    assert shorten("a" * MESSAGE_LIMIT) == "a" * MESSAGE_LIMIT
+    assert shorten("a" * (MESSAGE_LIMIT + 1)) == "a" * (MESSAGE_LIMIT - 1) + "…"

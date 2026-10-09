@@ -1,0 +1,9 @@
+# Injector types that only communicate with the players: a scenario is tabletop when every
+# inject uses one of them. Any other type, including an unknown one, makes it technical.
+# openaev_phishing is deliberately absent: it sends real phishing e-mails with a capture page.
+injectors:
+  - openaev_challenge
+  - openaev_channel
+  - openaev_email
+  - openaev_manual
+  - openaev_ovh_sms

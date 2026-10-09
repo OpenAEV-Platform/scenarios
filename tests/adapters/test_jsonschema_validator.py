@@ -2,6 +2,8 @@
 
 import copy
 import json
+import re
+import warnings
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -9,11 +11,11 @@ from typing import Any
 import pytest
 
 from scenario_tools.adapters.jsonschema_validator import (
-    MESSAGE_LIMIT,
     JsonSchemaValidator,
     ecma_to_python,
     json_pointer,
 )
+from scenario_tools.domain.shared.finding import MESSAGE_LIMIT
 from scenario_tools.ports.schema import SchemaViolation
 
 SCHEMAS = Path(__file__).parents[2] / "schemas"
@@ -240,16 +242,24 @@ def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, nam
     ]
 
 
+# ECMA-262's wildcard matches anything but a line terminator; Python's also matches \r, U+2028
+# and U+2029.
+_DOT = r"[^\n\r\u2028\u2029]"
+
+
 @pytest.mark.parametrize(
     ("pattern", "translated"),
     [
         ("^a$", "^a\\Z"),
-        ("^(?=.{1,39}$)a$", "^(?=.{1,39}\\Z)a\\Z"),
+        ("^(?=.{1,39}$)a$", f"^(?={_DOT}{{1,39}}\\Z)a\\Z"),
         ("^a\\$$", "^a\\$\\Z"),
         ("^[$]$", "^[$]\\Z"),
         ("^[\\]$]$", "^[\\]$]\\Z"),
         ("^[a$]$", "^[a$]\\Z"),
         ("^a", "^a"),
+        ("a.b", f"a{_DOT}b"),
+        ("a\\.b", "a\\.b"),
+        ("[.]", "[.]"),
     ],
     ids=[
         "end",
@@ -259,10 +269,23 @@ def test_malformed_archive_names_are_refused(validator: JsonSchemaValidator, nam
         "escaped bracket in class",
         "dollar later in class",
         "no end",
+        "wildcard",
+        "escaped dot",
+        "dot in class",
     ],
 )
-def test_ecma_end_anchors_are_translated(pattern: str, translated: str) -> None:
+def test_ecma_anchors_and_wildcards_are_translated(pattern: str, translated: str) -> None:
     assert ecma_to_python(pattern) == translated
+
+
+@pytest.mark.parametrize("terminator", ["\n", "\r", "\u2028", "\u2029"])
+def test_the_wildcard_never_matches_a_line_terminator(tmp_path: Path, terminator: str) -> None:
+    schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "pattern": "^a.b$"}
+    (tmp_path / "dot.schema.json").write_text(json.dumps(schema), encoding="utf-8")
+    probe = JsonSchemaValidator(tmp_path)
+
+    assert probe.validate("dot", "axb") == ()
+    assert probe.validate("dot", f"a{terminator}b") != ()
 
 
 @pytest.mark.parametrize(
@@ -485,3 +508,129 @@ def test_every_format_used_by_the_schemas_is_really_checked(tmp_path: Path) -> N
         valid, invalid = FORMAT_SAMPLES[name]
         assert probe.validate(name, valid) == (), name
         assert probe.validate(name, invalid) != (), name
+
+
+# A pattern must mean the same in Python, which checks it here, and in every ECMA-262 engine,
+# with or without the "u" flag. Patterns are held to the interoperable subset that JSON Schema
+# 2020-12 recommends (Core, section 6.4), in ASCII only: literal characters, escaped
+# metacharacters, non-empty classes, quantifiers + * ? {x} {x,} {x,y} and their lazy forms,
+# anchors, plain groups and alternation. Anything else is refused, since it means something else
+# in one of the engines (\d, ., {,5}, []) or exists in only one of them (lookbehind, a*+, \cA).
+_SUBSET_TOKEN = re.compile(
+    r"""
+      \\[\\.^$*+?()\[\]{}|/]                         # escaped metacharacter
+    | \[\^?(?!\^)(?:\\[\\\]\[^-]|[ -Z^-~])+\]        # non-empty class
+    | (?:[*+?]|\{[0-9]+(?:,[0-9]*)?\})\??(?![*+?{])  # quantifier, maybe lazy, never possessive
+    | \((?!\?) | [)|^$]                              # plain group, alternation, anchors
+    | [A-Za-z0-9\ !"\#%&',/:;<=>@_`~-]               # literal character
+    """,
+    re.VERBOSE,
+)
+
+
+def _non_portable(pattern: str) -> list[str]:
+    found, index = [], 0
+    while index < len(pattern):
+        token = _SUBSET_TOKEN.match(pattern, index)
+        if token is None:
+            found.append(pattern[index:])
+            break
+        index = token.end()
+    return found
+
+
+def _patterns(node: object) -> Iterator[str]:
+    if isinstance(node, dict):
+        if isinstance(node.get("pattern"), str):
+            yield node["pattern"]
+        if isinstance(node.get("patternProperties"), dict):
+            yield from node["patternProperties"]
+        for child in node.values():
+            yield from _patterns(child)
+    elif isinstance(node, list):
+        for child in node:
+            yield from _patterns(child)
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^\d+$",
+        r"^\W",
+        r"\s",
+        r"\bword",
+        r"(?<=a)b",
+        r"(?<!a)b",
+        r"(?=a)b",
+        r"(?:a)",
+        r"(a)\1",
+        r"(?P<name>a)",
+        r"(?<name>a)\k<name>",
+        r"\p{L}",
+        r"(?i)abc",
+        r"abc\Z",
+        r"\cA",
+        r"\u{41}",
+        r"\x41",
+        r"\uD83D\uDE00",
+        r"\t",
+        r"a.b",
+        r"a{,5}",
+        r"a*+",
+        r"a{2}+",
+        r"[]a]",
+        r"[^]",
+        r"a{",
+        r"a]",
+        r"\-",
+        "caf\u00e9",
+        "\U0001f600",
+        "a\nb",
+    ],
+)
+def test_the_guard_refuses_what_is_outside_the_interoperable_subset(pattern: str) -> None:
+    assert _non_portable(pattern)
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"^[0-9]{4}$",
+        r"^[a-z0-9]+(-[a-z0-9]+)*$",
+        r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$",
+        r"^[A-Za-z0-9:._-]*$",
+        r"^[^abc]+?$",
+        r"a*?b??c{2}d{2,}?e{2,3}",
+        r"^https://",
+        r"^(>=|>|==|~=)[0-9]+$",
+        r"a\\d",
+        r"\.\\\/\^\$\*\+\?\(\)\[\]\{\}\|",
+        r"[\]\[\\\^\-]",
+    ],
+)
+def test_the_guard_accepts_the_interoperable_subset(pattern: str) -> None:
+    assert _non_portable(pattern) == []
+
+
+def test_the_guard_collects_patterns_and_pattern_property_names_at_any_depth() -> None:
+    node = {
+        "properties": {"a": {"pattern": "^x$"}},
+        "patternProperties": {"^y": {"pattern": "w"}},
+        "prefixItems": [{"pattern": "z"}],
+    }
+
+    assert sorted(_patterns(node)) == ["^x$", "^y", "w", "z"]
+
+
+def test_every_pattern_of_the_schemas_means_the_same_in_python_and_ecma_262() -> None:
+    patterns = [
+        pattern
+        for file in SCHEMAS.glob("*.schema.json")
+        for pattern in _patterns(json.loads(file.read_text(encoding="utf-8")))
+    ]
+    assert patterns
+    assert {pattern: _non_portable(pattern) for pattern in patterns if _non_portable(pattern)} == {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        for pattern in patterns:
+            re.compile(ecma_to_python(pattern))

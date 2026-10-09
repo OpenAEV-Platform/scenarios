@@ -77,7 +77,7 @@
     "platforms": {
       "type": "array",
       "uniqueItems": true,
-      "description": "Empty only for a tabletop scenario, that is one where no inject needs an executor and there is no payload.",
+      "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject that needs an executor, which is checked against the export.",
       "items": {
         "enum": [
           "Linux",

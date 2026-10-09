@@ -67,7 +67,8 @@
     "github_login": {
       "type": "string",
       "description": "A GitHub login in lower case: logins are case-insensitive, and a canonical case lets uniqueness count distinct accounts.",
-      "pattern": "^(?=.{1,39}$)[a-z0-9]+(?:-[a-z0-9]+)*$"
+      "maxLength": 39,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
     },
     "item": {
       "type": "object",
