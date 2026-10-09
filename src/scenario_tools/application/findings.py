@@ -10,7 +10,9 @@ _NO_FILE = "<input>"
 _DRIVE = re.compile(r"[A-Za-z]:")
 
 
-def _repository_path(raw: str, root: PurePath) -> str:
+def repository_path(raw: str, root: PurePath) -> str:
+    """``raw`` as a path relative to the repository root, or a bare file name when it lies
+    outside the repository, or empty when there is no file."""
     """The path relative to the repository root. A path outside it, or one that cannot be
     expressed with ``/`` separators, keeps only its file name, so that no path of the runner is
     ever reported."""
@@ -32,5 +34,5 @@ def _repository_path(raw: str, root: PurePath) -> str:
 def finding_from_unsafe_input(error: UnsafeInputError, root: PurePath) -> Finding:
     """A refused input is a blocking ``IO-*`` finding on its file."""
     return Finding(
-        error.code, Severity.BLOCKING, _repository_path(error.path, root), "", error.message
+        error.code, Severity.BLOCKING, repository_path(error.path, root), "", error.message
     )

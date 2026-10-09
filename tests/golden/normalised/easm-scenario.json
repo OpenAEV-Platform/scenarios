@@ -1,0 +1,2516 @@
+{
+  "export_version": 1,
+  "scenario_articles": [],
+  "scenario_challenges": [],
+  "scenario_channels": [],
+  "scenario_documents": [],
+  "scenario_information": {
+    "scenario_category": "attack-scenario",
+    "scenario_default_kill_chain": null,
+    "scenario_dependencies": [
+      "STARTERPACK"
+    ],
+    "scenario_description": "EASM is a cybersecurity practice focused on discovering, mapping, and continuously monitoring all internet-facing assets of an organization (websites, IP addresses, cloud services, APIs, admin portals, etc.). \n\nThe goal is to take the attacker’s perspective in order to identify vulnerabilities, misconfigurations, or forgotten services before they can be exploited.\n\nKey challenges:\n\n- Eliminating blind spots (shadow IT, unmanaged services)\n-  Detecting vulnerabilities (CVEs) and risky configurations early\n- Maintaining a strong security posture in a constantly evolving IT environment\n\nSimply define an asset using an IP address or FQDN. OpenBAS then performs enumeration just like an attacker would:\n- Identifying open ports and running services\n- Detecting exposed administration portals\n- Checking for known vulnerabilities (CVEs)\n- Highlighting misconfigurations (e.g., default credentials)\n- Findings are correlated and reported, giving clear visibility into external exposure.",
+    "scenario_documents": [],
+    "scenario_id": "4d4da1ac-4808-5f7a-9ab6-f7efef02231f",
+    "scenario_lessons_anonymized": false,
+    "scenario_lessons_enabled": false,
+    "scenario_mail_from": "simulation@example.org",
+    "scenario_main_focus": "endpoint-protection",
+    "scenario_message_footer": "SIMULATION FOOTER",
+    "scenario_message_header": "SIMULATION HEADER",
+    "scenario_name": "EASM Scenario",
+    "scenario_severity": "high",
+    "scenario_subtitle": "",
+    "scenario_tags": []
+  },
+  "scenario_injects": [
+    {
+      "inject_all_teams": false,
+      "inject_city": null,
+      "inject_content": {
+        "expectations": [
+          {
+            "expectation_description": "",
+            "expectation_expectation_group": false,
+            "expectation_name": "Not vulnerable",
+            "expectation_score": 100,
+            "expectation_type": "VULNERABILITY"
+          }
+        ],
+        "target_property_selector": "hostname",
+        "target_selector": "asset-groups",
+        "targets": "",
+        "template": ""
+      },
+      "inject_country": null,
+      "inject_depends_duration": 0,
+      "inject_depends_on": [],
+      "inject_description": "",
+      "inject_documents": [],
+      "inject_enabled": true,
+      "inject_id": "4d9f9294-97ad-5463-b658-bdb31753756f",
+      "inject_injector_contract": {
+        "convertedContent": {
+          "config": {
+            "color_dark": "#ff5722",
+            "color_light": "#ff5722",
+            "expose": true,
+            "label": {
+              "en": "Nuclei Scan",
+              "fr": "Nuclei Scan"
+            },
+            "type": "openaev_nuclei"
+          },
+          "contract_attack_patterns_external_ids": [
+            "T1595.002"
+          ],
+          "contract_id": "2e7fc079-4444-4531-4444-928fe4a1fc0b",
+          "contract_vulnerability_external_ids": [],
+          "domains": [
+            {
+              "domain_color": "#009933",
+              "domain_name": "Network"
+            }
+          ],
+          "external_id": null,
+          "fields": [
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "asset-groups": "Asset groups",
+                "assets": "Assets",
+                "manual": "Manual"
+              },
+              "defaultValue": [
+                "asset-groups"
+              ],
+              "key": "target_selector",
+              "label": "Type of targets",
+              "linkedFields": [],
+              "mandatory": true,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "assets",
+              "label": "Targeted assets",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "assets"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "assets"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "asset_groups",
+              "label": "Targeted asset groups",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "asset-groups"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset-group",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "asset-groups"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "automatic": "Automatic",
+                "hostname": "Hostname",
+                "local_ip": "Local IP (first)",
+                "seen_ip": "Seen IP"
+              },
+              "defaultValue": [
+                "automatic"
+              ],
+              "key": "target_property_selector",
+              "label": "Targeted assets property",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "targets",
+              "label": "Manual targets (comma-separated)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "manual"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "manual"
+              }
+            },
+            {
+              "argumentType": null,
+              "availableExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "expectations",
+              "label": "Expectations",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "predefinedExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "readOnly": false,
+              "type": "expectation",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "template",
+              "label": "Manual template path (-t)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "options",
+              "label": "Options",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            }
+          ],
+          "is_atomic_testing": true,
+          "label": {
+            "en": "Nuclei - CVE Scan",
+            "fr": "Nuclei - Scan CVE"
+          },
+          "manual": false,
+          "outputs": [
+            {
+              "field": "expectation_signatures",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "expectation_signature"
+            },
+            {
+              "field": "cve",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "cve"
+            },
+            {
+              "field": "others",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "text"
+            },
+            {
+              "field": "action_output",
+              "isFindingCompatible": false,
+              "isMultiple": false,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "action_output"
+            }
+          ],
+          "platforms": [],
+          "variables": [
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.id",
+                  "label": "Id of the user in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.email",
+                  "label": "Email of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.firstname",
+                  "label": "Firstname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lastname",
+                  "label": "Lastname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lang",
+                  "label": "Lang of the user",
+                  "type": "String"
+                }
+              ],
+              "key": "user",
+              "label": "User that will receive the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.id",
+                  "label": "Id of the exercise in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.name",
+                  "label": "Name of the exercise",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.description",
+                  "label": "Description of the exercise",
+                  "type": "String"
+                }
+              ],
+              "key": "exercise",
+              "label": "Exercise of the current injection",
+              "type": "Object"
+            },
+            {
+              "cardinality": "n",
+              "children": [],
+              "key": "teams",
+              "label": "List of team name for the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "player_uri",
+              "label": "Player interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "challenges_uri",
+              "label": "Challenges interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "scoreboard_uri",
+              "label": "Scoreboard interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "lessons_uri",
+              "label": "Lessons learned interface platform link",
+              "type": "String"
+            }
+          ]
+        },
+        "injector_contract_arch": null,
+        "injector_contract_atomic_testing": true,
+        "injector_contract_attack_patterns": [],
+        "injector_contract_content": "{\"contract_id\": \"2e7fc079-4444-4531-4444-928fe4a1fc0b\", \"label\": {\"en\": \"Nuclei - CVE Scan\", \"fr\": \"Nuclei - Scan CVE\"}, \"fields\": [{\"key\": \"target_selector\", \"label\": \"Type of targets\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": true, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"asset-groups\"], \"choices\": {\"assets\": \"Assets\", \"manual\": \"Manual\", \"asset-groups\": \"Asset groups\"}}, {\"key\": \"assets\", \"label\": \"Targeted assets\", \"type\": \"asset\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"assets\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"assets\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"asset_groups\", \"label\": \"Targeted asset groups\", \"type\": \"asset-group\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"asset-groups\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"asset-groups\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"target_property_selector\", \"label\": \"Targeted assets property\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"automatic\"], \"choices\": {\"automatic\": \"Automatic\", \"hostname\": \"Hostname\", \"seen_ip\": \"Seen IP\", \"local_ip\": \"Local IP (first)\"}}, {\"key\": \"targets\", \"label\": \"Manual targets (comma-separated)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"manual\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"manual\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"expectations\", \"label\": \"Expectations\", \"type\": \"expectation\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": [], \"availableExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}], \"predefinedExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}]}, {\"key\": \"template\", \"label\": \"Manual template path (-t)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"options\", \"label\": \"Options\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}], \"outputs\": [{\"type\": \"expectation_signature\", \"field\": \"expectation_signatures\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"cve\", \"field\": \"cve\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"text\", \"field\": \"others\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"action_output\", \"field\": \"action_output\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": false, \"isMultiple\": false}], \"config\": {\"type\": \"openaev_nuclei\", \"expose\": true, \"label\": {\"en\": \"Nuclei Scan\", \"fr\": \"Nuclei Scan\"}, \"color_dark\": \"#ff5722\", \"color_light\": \"#ff5722\"}, \"manual\": false, \"variables\": [{\"key\": \"user\", \"label\": \"User that will receive the injection\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": [{\"key\": \"user.id\", \"label\": \"Id of the user in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.email\", \"label\": \"Email of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.firstname\", \"label\": \"Firstname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lastname\", \"label\": \"Lastname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lang\", \"label\": \"Lang of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"exercise\", \"label\": \"Exercise of the current injection\", \"type\": \"Object\", \"cardinality\": \"1\", \"children\": [{\"key\": \"exercise.id\", \"label\": \"Id of the exercise in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.name\", \"label\": \"Name of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.description\", \"label\": \"Description of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"teams\", \"label\": \"List of team name for the injection\", \"type\": \"String\", \"cardinality\": \"n\", \"children\": []}, {\"key\": \"player_uri\", \"label\": \"Player interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"challenges_uri\", \"label\": \"Challenges interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"scoreboard_uri\", \"label\": \"Scoreboard interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"lessons_uri\", \"label\": \"Lessons learned interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}], \"contract_attack_patterns_external_ids\": [\"T1595.002\"], \"contract_vulnerability_external_ids\": [], \"is_atomic_testing\": true, \"platforms\": [], \"external_id\": null, \"domains\": [{\"domain_name\": \"Network\", \"domain_color\": \"#009933\"}]}",
+        "injector_contract_custom": false,
+        "injector_contract_domains": [
+          "4bb325f0-e547-4daf-9e74-a1556686921b"
+        ],
+        "injector_contract_external_id": null,
+        "injector_contract_id": "2e7fc079-4444-4531-4444-928fe4a1fc0b",
+        "injector_contract_import_available": false,
+        "injector_contract_injector_names": {
+          "e1bad898-9804-427d-99e4-dc32c5f2898d": "Nuclei"
+        },
+        "injector_contract_injector_type": "openaev_nuclei",
+        "injector_contract_labels": {
+          "en": "Nuclei - CVE Scan",
+          "fr": "Nuclei - Scan CVE"
+        },
+        "injector_contract_manual": false,
+        "injector_contract_needs_executor": false,
+        "injector_contract_payload": null,
+        "injector_contract_payload_author_team": null,
+        "injector_contract_payload_author_user": null,
+        "injector_contract_payload_status": null,
+        "injector_contract_platforms": [],
+        "injector_contract_providing": [
+          "expectation_signature",
+          "cve",
+          "text",
+          "action_output"
+        ],
+        "injector_contract_tags": [],
+        "injector_contract_vulnerabilities": []
+      },
+      "inject_tags": [],
+      "inject_teams": [],
+      "inject_title": "Nuclei - CVE Scan"
+    },
+    {
+      "inject_all_teams": false,
+      "inject_city": null,
+      "inject_content": {
+        "expectations": [
+          {
+            "expectation_description": "",
+            "expectation_expectation_group": false,
+            "expectation_name": "Detection",
+            "expectation_score": 100,
+            "expectation_type": "DETECTION"
+          }
+        ],
+        "target_property_selector": "hostname",
+        "target_selector": "asset-groups",
+        "targets": ""
+      },
+      "inject_country": null,
+      "inject_depends_duration": 0,
+      "inject_depends_on": [],
+      "inject_description": "",
+      "inject_documents": [],
+      "inject_enabled": true,
+      "inject_id": "6fc5feb6-0ea0-5b51-a190-c65c29931765",
+      "inject_injector_contract": {
+        "convertedContent": {
+          "config": {
+            "color_dark": "#00bcd4",
+            "color_light": "#00bcd4",
+            "expose": true,
+            "label": {
+              "en": "Nmap Scan",
+              "fr": "Nmap Scan"
+            },
+            "type": "openaev_nmap"
+          },
+          "contract_attack_patterns_external_ids": [
+            "T1046"
+          ],
+          "contract_id": "93d27459-68d0-43b1-ad65-eacc3cfa5cf7",
+          "contract_vulnerability_external_ids": [],
+          "domains": [
+            {
+              "domain_color": "#009933",
+              "domain_name": "Network"
+            }
+          ],
+          "external_id": null,
+          "fields": [
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "asset-groups": "Asset groups",
+                "assets": "Assets",
+                "manual": "Manual"
+              },
+              "defaultValue": [
+                "asset-groups"
+              ],
+              "key": "target_selector",
+              "label": "Type of targets",
+              "linkedFields": [],
+              "mandatory": true,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "assets",
+              "label": "Targeted assets",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "assets"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "assets"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "asset_groups",
+              "label": "Targeted asset groups",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "asset-groups"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset-group",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "asset-groups"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "automatic": "Automatic",
+                "hostname": "Hostname",
+                "local_ip": "Local IP (first)",
+                "seen_ip": "Seen IP"
+              },
+              "defaultValue": [
+                "automatic"
+              ],
+              "key": "target_property_selector",
+              "label": "Targeted assets property",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "targets",
+              "label": "Manual targets (comma-separated)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "manual"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "manual"
+              }
+            },
+            {
+              "argumentType": null,
+              "availableExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "NDR",
+                    "SIEM",
+                    "XDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "NDR",
+                    "XDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                }
+              ],
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "expectations",
+              "label": "Expectations",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "predefinedExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "NDR",
+                    "SIEM",
+                    "XDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "NDR",
+                    "XDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                }
+              ],
+              "readOnly": false,
+              "type": "expectation",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            }
+          ],
+          "is_atomic_testing": true,
+          "label": {
+            "en": "Nmap - TCP Connect Scan",
+            "fr": "Nmap - TCP Connect Scan"
+          },
+          "manual": false,
+          "outputs": [
+            {
+              "field": "scan_results",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "scan"
+              ],
+              "type": "portscan"
+            },
+            {
+              "field": "ports",
+              "isFindingCompatible": false,
+              "isMultiple": true,
+              "labels": [
+                "scan"
+              ],
+              "type": "port"
+            },
+            {
+              "field": "action_output",
+              "isFindingCompatible": false,
+              "isMultiple": false,
+              "labels": [
+                "scan"
+              ],
+              "type": "action_output"
+            },
+            {
+              "field": "expectation_signatures",
+              "isFindingCompatible": false,
+              "isMultiple": true,
+              "labels": [
+                "scan"
+              ],
+              "type": "expectation_signature"
+            }
+          ],
+          "platforms": [],
+          "variables": [
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.id",
+                  "label": "Id of the user in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.email",
+                  "label": "Email of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.firstname",
+                  "label": "Firstname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lastname",
+                  "label": "Lastname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lang",
+                  "label": "Lang of the user",
+                  "type": "String"
+                }
+              ],
+              "key": "user",
+              "label": "User that will receive the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.id",
+                  "label": "Id of the exercise in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.name",
+                  "label": "Name of the exercise",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.description",
+                  "label": "Description of the exercise",
+                  "type": "String"
+                }
+              ],
+              "key": "exercise",
+              "label": "Exercise of the current injection",
+              "type": "Object"
+            },
+            {
+              "cardinality": "n",
+              "children": [],
+              "key": "teams",
+              "label": "List of team name for the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "player_uri",
+              "label": "Player interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "challenges_uri",
+              "label": "Challenges interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "scoreboard_uri",
+              "label": "Scoreboard interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "lessons_uri",
+              "label": "Lessons learned interface platform link",
+              "type": "String"
+            }
+          ]
+        },
+        "injector_contract_arch": null,
+        "injector_contract_atomic_testing": true,
+        "injector_contract_attack_patterns": [],
+        "injector_contract_content": "{\"contract_id\": \"93d27459-68d0-43b1-ad65-eacc3cfa5cf7\", \"label\": {\"en\": \"Nmap - TCP Connect Scan\", \"fr\": \"Nmap - TCP Connect Scan\"}, \"fields\": [{\"key\": \"target_selector\", \"label\": \"Type of targets\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": true, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"asset-groups\"], \"choices\": {\"assets\": \"Assets\", \"manual\": \"Manual\", \"asset-groups\": \"Asset groups\"}}, {\"key\": \"assets\", \"label\": \"Targeted assets\", \"type\": \"asset\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"assets\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"assets\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"asset_groups\", \"label\": \"Targeted asset groups\", \"type\": \"asset-group\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"asset-groups\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"asset-groups\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"target_property_selector\", \"label\": \"Targeted assets property\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"automatic\"], \"choices\": {\"automatic\": \"Automatic\", \"hostname\": \"Hostname\", \"seen_ip\": \"Seen IP\", \"local_ip\": \"Local IP (first)\"}}, {\"key\": \"targets\", \"label\": \"Manual targets (comma-separated)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"manual\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"manual\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"expectations\", \"label\": \"Expectations\", \"type\": \"expectation\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": [], \"availableExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"NDR\", \"SIEM\", \"XDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"NDR\", \"XDR\"]}], \"predefinedExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"NDR\", \"SIEM\", \"XDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"NDR\", \"XDR\"]}]}], \"outputs\": [{\"type\": \"portscan\", \"field\": \"scan_results\", \"labels\": [\"scan\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"port\", \"field\": \"ports\", \"labels\": [\"scan\"], \"isFindingCompatible\": false, \"isMultiple\": true}, {\"type\": \"action_output\", \"field\": \"action_output\", \"labels\": [\"scan\"], \"isFindingCompatible\": false, \"isMultiple\": false}, {\"type\": \"expectation_signature\", \"field\": \"expectation_signatures\", \"labels\": [\"scan\"], \"isFindingCompatible\": false, \"isMultiple\": true}], \"config\": {\"type\": \"openaev_nmap\", \"expose\": true, \"label\": {\"en\": \"Nmap Scan\", \"fr\": \"Nmap Scan\"}, \"color_dark\": \"#00bcd4\", \"color_light\": \"#00bcd4\"}, \"manual\": false, \"variables\": [{\"key\": \"user\", \"label\": \"User that will receive the injection\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": [{\"key\": \"user.id\", \"label\": \"Id of the user in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.email\", \"label\": \"Email of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.firstname\", \"label\": \"Firstname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lastname\", \"label\": \"Lastname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lang\", \"label\": \"Lang of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"exercise\", \"label\": \"Exercise of the current injection\", \"type\": \"Object\", \"cardinality\": \"1\", \"children\": [{\"key\": \"exercise.id\", \"label\": \"Id of the exercise in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.name\", \"label\": \"Name of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.description\", \"label\": \"Description of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"teams\", \"label\": \"List of team name for the injection\", \"type\": \"String\", \"cardinality\": \"n\", \"children\": []}, {\"key\": \"player_uri\", \"label\": \"Player interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"challenges_uri\", \"label\": \"Challenges interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"scoreboard_uri\", \"label\": \"Scoreboard interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"lessons_uri\", \"label\": \"Lessons learned interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}], \"contract_attack_patterns_external_ids\": [\"T1046\"], \"contract_vulnerability_external_ids\": [], \"is_atomic_testing\": true, \"platforms\": [], \"external_id\": null, \"domains\": [{\"domain_name\": \"Network\", \"domain_color\": \"#009933\"}]}",
+        "injector_contract_custom": false,
+        "injector_contract_domains": [
+          "4bb325f0-e547-4daf-9e74-a1556686921b"
+        ],
+        "injector_contract_external_id": null,
+        "injector_contract_id": "93d27459-68d0-43b1-ad65-eacc3cfa5cf7",
+        "injector_contract_import_available": false,
+        "injector_contract_injector_names": {
+          "76f8f4d6-9f6f-4e61-befc-48f735876a4a": "Nmap"
+        },
+        "injector_contract_injector_type": "openaev_nmap",
+        "injector_contract_labels": {
+          "en": "Nmap - TCP Connect Scan",
+          "fr": "Nmap - TCP Connect Scan"
+        },
+        "injector_contract_manual": false,
+        "injector_contract_needs_executor": false,
+        "injector_contract_payload": null,
+        "injector_contract_payload_author_team": null,
+        "injector_contract_payload_author_user": null,
+        "injector_contract_payload_status": null,
+        "injector_contract_platforms": [],
+        "injector_contract_providing": [
+          "portscan",
+          "port",
+          "action_output",
+          "expectation_signature"
+        ],
+        "injector_contract_tags": [],
+        "injector_contract_vulnerabilities": []
+      },
+      "inject_tags": [],
+      "inject_teams": [],
+      "inject_title": "Nmap - TCP Connect Scan"
+    },
+    {
+      "inject_all_teams": false,
+      "inject_city": null,
+      "inject_content": {
+        "expectations": [
+          {
+            "expectation_description": "",
+            "expectation_expectation_group": false,
+            "expectation_name": "Not vulnerable",
+            "expectation_score": 100,
+            "expectation_type": "VULNERABILITY"
+          }
+        ],
+        "target_property_selector": "hostname",
+        "target_selector": "asset-groups",
+        "targets": "",
+        "template": ""
+      },
+      "inject_country": null,
+      "inject_depends_duration": 0,
+      "inject_depends_on": [],
+      "inject_description": "",
+      "inject_documents": [],
+      "inject_enabled": true,
+      "inject_id": "995352b3-8c34-58eb-813a-557245e55903",
+      "inject_injector_contract": {
+        "convertedContent": {
+          "config": {
+            "color_dark": "#ff5722",
+            "color_light": "#ff5722",
+            "expose": true,
+            "label": {
+              "en": "Nuclei Scan",
+              "fr": "Nuclei Scan"
+            },
+            "type": "openaev_nuclei"
+          },
+          "contract_attack_patterns_external_ids": [
+            "T1595.002"
+          ],
+          "contract_id": "a4eb02bd-3c9f-4a97-b9a1-54a9b7a7f21e",
+          "contract_vulnerability_external_ids": [],
+          "domains": [
+            {
+              "domain_color": "#009933",
+              "domain_name": "Network"
+            },
+            {
+              "domain_color": "#FF9933",
+              "domain_name": "Web App"
+            }
+          ],
+          "external_id": null,
+          "fields": [
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "asset-groups": "Asset groups",
+                "assets": "Assets",
+                "manual": "Manual"
+              },
+              "defaultValue": [
+                "asset-groups"
+              ],
+              "key": "target_selector",
+              "label": "Type of targets",
+              "linkedFields": [],
+              "mandatory": true,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "assets",
+              "label": "Targeted assets",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "assets"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "assets"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "asset_groups",
+              "label": "Targeted asset groups",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "asset-groups"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset-group",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "asset-groups"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "automatic": "Automatic",
+                "hostname": "Hostname",
+                "local_ip": "Local IP (first)",
+                "seen_ip": "Seen IP"
+              },
+              "defaultValue": [
+                "automatic"
+              ],
+              "key": "target_property_selector",
+              "label": "Targeted assets property",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "targets",
+              "label": "Manual targets (comma-separated)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "manual"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "manual"
+              }
+            },
+            {
+              "argumentType": null,
+              "availableExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "expectations",
+              "label": "Expectations",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "predefinedExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "readOnly": false,
+              "type": "expectation",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "template",
+              "label": "Manual template path (-t)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "options",
+              "label": "Options",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            }
+          ],
+          "is_atomic_testing": true,
+          "label": {
+            "en": "Nuclei - Misconfigurations",
+            "fr": "Nuclei - Mauvaises configurations"
+          },
+          "manual": false,
+          "outputs": [
+            {
+              "field": "expectation_signatures",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "expectation_signature"
+            },
+            {
+              "field": "cve",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "cve"
+            },
+            {
+              "field": "others",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "text"
+            },
+            {
+              "field": "action_output",
+              "isFindingCompatible": false,
+              "isMultiple": false,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "action_output"
+            }
+          ],
+          "platforms": [],
+          "variables": [
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.id",
+                  "label": "Id of the user in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.email",
+                  "label": "Email of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.firstname",
+                  "label": "Firstname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lastname",
+                  "label": "Lastname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lang",
+                  "label": "Lang of the user",
+                  "type": "String"
+                }
+              ],
+              "key": "user",
+              "label": "User that will receive the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.id",
+                  "label": "Id of the exercise in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.name",
+                  "label": "Name of the exercise",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.description",
+                  "label": "Description of the exercise",
+                  "type": "String"
+                }
+              ],
+              "key": "exercise",
+              "label": "Exercise of the current injection",
+              "type": "Object"
+            },
+            {
+              "cardinality": "n",
+              "children": [],
+              "key": "teams",
+              "label": "List of team name for the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "player_uri",
+              "label": "Player interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "challenges_uri",
+              "label": "Challenges interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "scoreboard_uri",
+              "label": "Scoreboard interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "lessons_uri",
+              "label": "Lessons learned interface platform link",
+              "type": "String"
+            }
+          ]
+        },
+        "injector_contract_arch": null,
+        "injector_contract_atomic_testing": true,
+        "injector_contract_attack_patterns": [],
+        "injector_contract_content": "{\"contract_id\": \"a4eb02bd-3c9f-4a97-b9a1-54a9b7a7f21e\", \"label\": {\"en\": \"Nuclei - Misconfigurations\", \"fr\": \"Nuclei - Mauvaises configurations\"}, \"fields\": [{\"key\": \"target_selector\", \"label\": \"Type of targets\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": true, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"asset-groups\"], \"choices\": {\"assets\": \"Assets\", \"manual\": \"Manual\", \"asset-groups\": \"Asset groups\"}}, {\"key\": \"assets\", \"label\": \"Targeted assets\", \"type\": \"asset\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"assets\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"assets\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"asset_groups\", \"label\": \"Targeted asset groups\", \"type\": \"asset-group\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"asset-groups\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"asset-groups\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"target_property_selector\", \"label\": \"Targeted assets property\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"automatic\"], \"choices\": {\"automatic\": \"Automatic\", \"hostname\": \"Hostname\", \"seen_ip\": \"Seen IP\", \"local_ip\": \"Local IP (first)\"}}, {\"key\": \"targets\", \"label\": \"Manual targets (comma-separated)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"manual\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"manual\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"expectations\", \"label\": \"Expectations\", \"type\": \"expectation\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": [], \"availableExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}], \"predefinedExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}]}, {\"key\": \"template\", \"label\": \"Manual template path (-t)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"options\", \"label\": \"Options\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}], \"outputs\": [{\"type\": \"expectation_signature\", \"field\": \"expectation_signatures\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"cve\", \"field\": \"cve\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"text\", \"field\": \"others\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"action_output\", \"field\": \"action_output\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": false, \"isMultiple\": false}], \"config\": {\"type\": \"openaev_nuclei\", \"expose\": true, \"label\": {\"en\": \"Nuclei Scan\", \"fr\": \"Nuclei Scan\"}, \"color_dark\": \"#ff5722\", \"color_light\": \"#ff5722\"}, \"manual\": false, \"variables\": [{\"key\": \"user\", \"label\": \"User that will receive the injection\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": [{\"key\": \"user.id\", \"label\": \"Id of the user in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.email\", \"label\": \"Email of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.firstname\", \"label\": \"Firstname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lastname\", \"label\": \"Lastname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lang\", \"label\": \"Lang of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"exercise\", \"label\": \"Exercise of the current injection\", \"type\": \"Object\", \"cardinality\": \"1\", \"children\": [{\"key\": \"exercise.id\", \"label\": \"Id of the exercise in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.name\", \"label\": \"Name of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.description\", \"label\": \"Description of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"teams\", \"label\": \"List of team name for the injection\", \"type\": \"String\", \"cardinality\": \"n\", \"children\": []}, {\"key\": \"player_uri\", \"label\": \"Player interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"challenges_uri\", \"label\": \"Challenges interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"scoreboard_uri\", \"label\": \"Scoreboard interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"lessons_uri\", \"label\": \"Lessons learned interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}], \"contract_attack_patterns_external_ids\": [\"T1595.002\"], \"contract_vulnerability_external_ids\": [], \"is_atomic_testing\": true, \"platforms\": [], \"external_id\": null, \"domains\": [{\"domain_name\": \"Network\", \"domain_color\": \"#009933\"}, {\"domain_name\": \"Web App\", \"domain_color\": \"#FF9933\"}]}",
+        "injector_contract_custom": false,
+        "injector_contract_domains": [
+          "4bb325f0-e547-4daf-9e74-a1556686921b",
+          "742bc21d-2a95-4180-9132-c4261a96e7e5"
+        ],
+        "injector_contract_external_id": null,
+        "injector_contract_id": "a4eb02bd-3c9f-4a97-b9a1-54a9b7a7f21e",
+        "injector_contract_import_available": false,
+        "injector_contract_injector_names": {
+          "e1bad898-9804-427d-99e4-dc32c5f2898d": "Nuclei"
+        },
+        "injector_contract_injector_type": "openaev_nuclei",
+        "injector_contract_labels": {
+          "en": "Nuclei - Misconfigurations",
+          "fr": "Nuclei - Mauvaises configurations"
+        },
+        "injector_contract_manual": false,
+        "injector_contract_needs_executor": false,
+        "injector_contract_payload": null,
+        "injector_contract_payload_author_team": null,
+        "injector_contract_payload_author_user": null,
+        "injector_contract_payload_status": null,
+        "injector_contract_platforms": [],
+        "injector_contract_providing": [
+          "expectation_signature",
+          "cve",
+          "text",
+          "action_output"
+        ],
+        "injector_contract_tags": [],
+        "injector_contract_vulnerabilities": []
+      },
+      "inject_tags": [],
+      "inject_teams": [],
+      "inject_title": "Nuclei - Misconfigurations"
+    },
+    {
+      "inject_all_teams": false,
+      "inject_city": null,
+      "inject_content": {
+        "expectations": [
+          {
+            "expectation_description": "",
+            "expectation_expectation_group": false,
+            "expectation_name": "Not vulnerable",
+            "expectation_score": 100,
+            "expectation_type": "VULNERABILITY"
+          }
+        ],
+        "target_property_selector": "hostname",
+        "target_selector": "asset-groups",
+        "targets": "",
+        "template": ""
+      },
+      "inject_country": null,
+      "inject_depends_duration": 0,
+      "inject_depends_on": [],
+      "inject_description": "",
+      "inject_documents": [],
+      "inject_enabled": true,
+      "inject_id": "a026f0e3-6e36-5229-b1de-c53095d7b2d5",
+      "inject_injector_contract": {
+        "convertedContent": {
+          "config": {
+            "color_dark": "#ff5722",
+            "color_light": "#ff5722",
+            "expose": true,
+            "label": {
+              "en": "Nuclei Scan",
+              "fr": "Nuclei Scan"
+            },
+            "type": "openaev_nuclei"
+          },
+          "contract_attack_patterns_external_ids": [
+            "T1595.002"
+          ],
+          "contract_id": "9c4b2f29-61f6-4ae3-80e7-928fe4a2fc0b",
+          "contract_vulnerability_external_ids": [],
+          "domains": [
+            {
+              "domain_color": "#009933",
+              "domain_name": "Network"
+            },
+            {
+              "domain_color": "#FF9933",
+              "domain_name": "Web App"
+            }
+          ],
+          "external_id": null,
+          "fields": [
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "asset-groups": "Asset groups",
+                "assets": "Assets",
+                "manual": "Manual"
+              },
+              "defaultValue": [
+                "asset-groups"
+              ],
+              "key": "target_selector",
+              "label": "Type of targets",
+              "linkedFields": [],
+              "mandatory": true,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "assets",
+              "label": "Targeted assets",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "assets"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "assets"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "asset_groups",
+              "label": "Targeted asset groups",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "asset-groups"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset-group",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "asset-groups"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "automatic": "Automatic",
+                "hostname": "Hostname",
+                "local_ip": "Local IP (first)",
+                "seen_ip": "Seen IP"
+              },
+              "defaultValue": [
+                "automatic"
+              ],
+              "key": "target_property_selector",
+              "label": "Targeted assets property",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "targets",
+              "label": "Manual targets (comma-separated)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "manual"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "manual"
+              }
+            },
+            {
+              "argumentType": null,
+              "availableExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "expectations",
+              "label": "Expectations",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "predefinedExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "readOnly": false,
+              "type": "expectation",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "template",
+              "label": "Manual template path (-t)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "options",
+              "label": "Options",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            }
+          ],
+          "is_atomic_testing": true,
+          "label": {
+            "en": "Nuclei - Exposures",
+            "fr": "Nuclei - Expositions"
+          },
+          "manual": false,
+          "outputs": [
+            {
+              "field": "expectation_signatures",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "expectation_signature"
+            },
+            {
+              "field": "cve",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "cve"
+            },
+            {
+              "field": "others",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "text"
+            },
+            {
+              "field": "action_output",
+              "isFindingCompatible": false,
+              "isMultiple": false,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "action_output"
+            }
+          ],
+          "platforms": [],
+          "variables": [
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.id",
+                  "label": "Id of the user in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.email",
+                  "label": "Email of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.firstname",
+                  "label": "Firstname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lastname",
+                  "label": "Lastname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lang",
+                  "label": "Lang of the user",
+                  "type": "String"
+                }
+              ],
+              "key": "user",
+              "label": "User that will receive the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.id",
+                  "label": "Id of the exercise in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.name",
+                  "label": "Name of the exercise",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.description",
+                  "label": "Description of the exercise",
+                  "type": "String"
+                }
+              ],
+              "key": "exercise",
+              "label": "Exercise of the current injection",
+              "type": "Object"
+            },
+            {
+              "cardinality": "n",
+              "children": [],
+              "key": "teams",
+              "label": "List of team name for the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "player_uri",
+              "label": "Player interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "challenges_uri",
+              "label": "Challenges interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "scoreboard_uri",
+              "label": "Scoreboard interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "lessons_uri",
+              "label": "Lessons learned interface platform link",
+              "type": "String"
+            }
+          ]
+        },
+        "injector_contract_arch": null,
+        "injector_contract_atomic_testing": true,
+        "injector_contract_attack_patterns": [],
+        "injector_contract_content": "{\"contract_id\": \"9c4b2f29-61f6-4ae3-80e7-928fe4a2fc0b\", \"label\": {\"en\": \"Nuclei - Exposures\", \"fr\": \"Nuclei - Expositions\"}, \"fields\": [{\"key\": \"target_selector\", \"label\": \"Type of targets\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": true, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"asset-groups\"], \"choices\": {\"assets\": \"Assets\", \"manual\": \"Manual\", \"asset-groups\": \"Asset groups\"}}, {\"key\": \"assets\", \"label\": \"Targeted assets\", \"type\": \"asset\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"assets\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"assets\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"asset_groups\", \"label\": \"Targeted asset groups\", \"type\": \"asset-group\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"asset-groups\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"asset-groups\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"target_property_selector\", \"label\": \"Targeted assets property\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"automatic\"], \"choices\": {\"automatic\": \"Automatic\", \"hostname\": \"Hostname\", \"seen_ip\": \"Seen IP\", \"local_ip\": \"Local IP (first)\"}}, {\"key\": \"targets\", \"label\": \"Manual targets (comma-separated)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"manual\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"manual\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"expectations\", \"label\": \"Expectations\", \"type\": \"expectation\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": [], \"availableExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}], \"predefinedExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}]}, {\"key\": \"template\", \"label\": \"Manual template path (-t)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"options\", \"label\": \"Options\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}], \"outputs\": [{\"type\": \"expectation_signature\", \"field\": \"expectation_signatures\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"cve\", \"field\": \"cve\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"text\", \"field\": \"others\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"action_output\", \"field\": \"action_output\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": false, \"isMultiple\": false}], \"config\": {\"type\": \"openaev_nuclei\", \"expose\": true, \"label\": {\"en\": \"Nuclei Scan\", \"fr\": \"Nuclei Scan\"}, \"color_dark\": \"#ff5722\", \"color_light\": \"#ff5722\"}, \"manual\": false, \"variables\": [{\"key\": \"user\", \"label\": \"User that will receive the injection\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": [{\"key\": \"user.id\", \"label\": \"Id of the user in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.email\", \"label\": \"Email of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.firstname\", \"label\": \"Firstname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lastname\", \"label\": \"Lastname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lang\", \"label\": \"Lang of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"exercise\", \"label\": \"Exercise of the current injection\", \"type\": \"Object\", \"cardinality\": \"1\", \"children\": [{\"key\": \"exercise.id\", \"label\": \"Id of the exercise in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.name\", \"label\": \"Name of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.description\", \"label\": \"Description of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"teams\", \"label\": \"List of team name for the injection\", \"type\": \"String\", \"cardinality\": \"n\", \"children\": []}, {\"key\": \"player_uri\", \"label\": \"Player interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"challenges_uri\", \"label\": \"Challenges interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"scoreboard_uri\", \"label\": \"Scoreboard interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"lessons_uri\", \"label\": \"Lessons learned interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}], \"contract_attack_patterns_external_ids\": [\"T1595.002\"], \"contract_vulnerability_external_ids\": [], \"is_atomic_testing\": true, \"platforms\": [], \"external_id\": null, \"domains\": [{\"domain_name\": \"Network\", \"domain_color\": \"#009933\"}, {\"domain_name\": \"Web App\", \"domain_color\": \"#FF9933\"}]}",
+        "injector_contract_custom": false,
+        "injector_contract_domains": [
+          "4bb325f0-e547-4daf-9e74-a1556686921b",
+          "742bc21d-2a95-4180-9132-c4261a96e7e5"
+        ],
+        "injector_contract_external_id": null,
+        "injector_contract_id": "9c4b2f29-61f6-4ae3-80e7-928fe4a2fc0b",
+        "injector_contract_import_available": false,
+        "injector_contract_injector_names": {
+          "e1bad898-9804-427d-99e4-dc32c5f2898d": "Nuclei"
+        },
+        "injector_contract_injector_type": "openaev_nuclei",
+        "injector_contract_labels": {
+          "en": "Nuclei - Exposures",
+          "fr": "Nuclei - Expositions"
+        },
+        "injector_contract_manual": false,
+        "injector_contract_needs_executor": false,
+        "injector_contract_payload": null,
+        "injector_contract_payload_author_team": null,
+        "injector_contract_payload_author_user": null,
+        "injector_contract_payload_status": null,
+        "injector_contract_platforms": [],
+        "injector_contract_providing": [
+          "expectation_signature",
+          "cve",
+          "text",
+          "action_output"
+        ],
+        "injector_contract_tags": [],
+        "injector_contract_vulnerabilities": []
+      },
+      "inject_tags": [],
+      "inject_teams": [],
+      "inject_title": "Nuclei - Exposures"
+    },
+    {
+      "inject_all_teams": false,
+      "inject_city": null,
+      "inject_content": {
+        "expectations": [
+          {
+            "expectation_description": "",
+            "expectation_expectation_group": false,
+            "expectation_name": "Not vulnerable",
+            "expectation_score": 100,
+            "expectation_type": "VULNERABILITY"
+          }
+        ],
+        "target_property_selector": "hostname",
+        "target_selector": "asset-groups",
+        "targets": "",
+        "template": ""
+      },
+      "inject_country": null,
+      "inject_depends_duration": 0,
+      "inject_depends_on": [],
+      "inject_description": "",
+      "inject_documents": [],
+      "inject_enabled": true,
+      "inject_id": "a36363bb-d18e-5b29-8981-ce336474217c",
+      "inject_injector_contract": {
+        "convertedContent": {
+          "config": {
+            "color_dark": "#ff5722",
+            "color_light": "#ff5722",
+            "expose": true,
+            "label": {
+              "en": "Nuclei Scan",
+              "fr": "Nuclei Scan"
+            },
+            "type": "openaev_nuclei"
+          },
+          "contract_attack_patterns_external_ids": [
+            "T1595.002"
+          ],
+          "contract_id": "3cf1b7a6-39d2-4531-8c8e-2b7c67470d1e",
+          "contract_vulnerability_external_ids": [],
+          "domains": [
+            {
+              "domain_color": "#009933",
+              "domain_name": "Network"
+            },
+            {
+              "domain_color": "#FF9933",
+              "domain_name": "Web App"
+            }
+          ],
+          "external_id": null,
+          "fields": [
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "asset-groups": "Asset groups",
+                "assets": "Assets",
+                "manual": "Manual"
+              },
+              "defaultValue": [
+                "asset-groups"
+              ],
+              "key": "target_selector",
+              "label": "Type of targets",
+              "linkedFields": [],
+              "mandatory": true,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "assets",
+              "label": "Targeted assets",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "assets"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "assets"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "asset_groups",
+              "label": "Targeted asset groups",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "asset-groups"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "asset-group",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "asset-groups"
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "choices": {
+                "automatic": "Automatic",
+                "hostname": "Hostname",
+                "local_ip": "Local IP (first)",
+                "seen_ip": "Seen IP"
+              },
+              "defaultValue": [
+                "automatic"
+              ],
+              "key": "target_property_selector",
+              "label": "Targeted assets property",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "select",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": [
+                  "assets",
+                  "asset-groups"
+                ]
+              }
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "targets",
+              "label": "Manual targets (comma-separated)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [
+                "target_selector"
+              ],
+              "mandatoryConditionValues": {
+                "target_selector": "manual"
+              },
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [
+                "target_selector"
+              ],
+              "visibleConditionValues": {
+                "target_selector": "manual"
+              }
+            },
+            {
+              "argumentType": null,
+              "availableExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "cardinality": "n",
+              "defaultValue": [],
+              "key": "expectations",
+              "label": "Expectations",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "predefinedExpectations": [
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "SIEM",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Detection",
+                  "expectation_score": 100,
+                  "expectation_type": "DETECTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [
+                    "XDR",
+                    "NDR"
+                  ],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Prevention",
+                  "expectation_score": 100,
+                  "expectation_type": "PREVENTION"
+                },
+                {
+                  "expectation_description": "",
+                  "expectation_expectation_group": false,
+                  "expectation_expected_security_platform_types": [],
+                  "expectation_is_multi_selectable": false,
+                  "expectation_is_predefined": true,
+                  "expectation_name": "Not vulnerable",
+                  "expectation_score": 100,
+                  "expectation_type": "VULNERABILITY"
+                }
+              ],
+              "readOnly": false,
+              "type": "expectation",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "template",
+              "label": "Manual template path (-t)",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            },
+            {
+              "argumentType": null,
+              "cardinality": "1",
+              "defaultValue": "",
+              "key": "options",
+              "label": "Options",
+              "linkedFields": [],
+              "mandatory": false,
+              "mandatoryConditionFields": [],
+              "mandatoryConditionValues": [],
+              "mandatoryGroups": [],
+              "readOnly": false,
+              "type": "text",
+              "visibleConditionFields": [],
+              "visibleConditionValues": []
+            }
+          ],
+          "is_atomic_testing": true,
+          "label": {
+            "en": "Nuclei - Panel Scan",
+            "fr": "Nuclei - Scan Panel"
+          },
+          "manual": false,
+          "outputs": [
+            {
+              "field": "expectation_signatures",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "expectation_signature"
+            },
+            {
+              "field": "cve",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "cve"
+            },
+            {
+              "field": "others",
+              "isFindingCompatible": true,
+              "isMultiple": true,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "text"
+            },
+            {
+              "field": "action_output",
+              "isFindingCompatible": false,
+              "isMultiple": false,
+              "labels": [
+                "nuclei"
+              ],
+              "type": "action_output"
+            }
+          ],
+          "platforms": [],
+          "variables": [
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.id",
+                  "label": "Id of the user in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.email",
+                  "label": "Email of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.firstname",
+                  "label": "Firstname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lastname",
+                  "label": "Lastname of the user",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "user.lang",
+                  "label": "Lang of the user",
+                  "type": "String"
+                }
+              ],
+              "key": "user",
+              "label": "User that will receive the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.id",
+                  "label": "Id of the exercise in the platform",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.name",
+                  "label": "Name of the exercise",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "exercise.description",
+                  "label": "Description of the exercise",
+                  "type": "String"
+                }
+              ],
+              "key": "exercise",
+              "label": "Exercise of the current injection",
+              "type": "Object"
+            },
+            {
+              "cardinality": "n",
+              "children": [],
+              "key": "teams",
+              "label": "List of team name for the injection",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "player_uri",
+              "label": "Player interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "challenges_uri",
+              "label": "Challenges interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "scoreboard_uri",
+              "label": "Scoreboard interface platform link",
+              "type": "String"
+            },
+            {
+              "cardinality": "1",
+              "children": [],
+              "key": "lessons_uri",
+              "label": "Lessons learned interface platform link",
+              "type": "String"
+            }
+          ]
+        },
+        "injector_contract_arch": null,
+        "injector_contract_atomic_testing": true,
+        "injector_contract_attack_patterns": [],
+        "injector_contract_content": "{\"contract_id\": \"3cf1b7a6-39d2-4531-8c8e-2b7c67470d1e\", \"label\": {\"en\": \"Nuclei - Panel Scan\", \"fr\": \"Nuclei - Scan Panel\"}, \"fields\": [{\"key\": \"target_selector\", \"label\": \"Type of targets\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": true, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"asset-groups\"], \"choices\": {\"assets\": \"Assets\", \"manual\": \"Manual\", \"asset-groups\": \"Asset groups\"}}, {\"key\": \"assets\", \"label\": \"Targeted assets\", \"type\": \"asset\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"assets\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"assets\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"asset_groups\", \"label\": \"Targeted asset groups\", \"type\": \"asset-group\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"asset-groups\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"asset-groups\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": []}, {\"key\": \"target_property_selector\", \"label\": \"Targeted assets property\", \"type\": \"select\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": [\"assets\", \"asset-groups\"]}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": [\"automatic\"], \"choices\": {\"automatic\": \"Automatic\", \"hostname\": \"Hostname\", \"seen_ip\": \"Seen IP\", \"local_ip\": \"Local IP (first)\"}}, {\"key\": \"targets\", \"label\": \"Manual targets (comma-separated)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [\"target_selector\"], \"mandatoryConditionValues\": {\"target_selector\": \"manual\"}, \"visibleConditionFields\": [\"target_selector\"], \"visibleConditionValues\": {\"target_selector\": \"manual\"}, \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"expectations\", \"label\": \"Expectations\", \"type\": \"expectation\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"n\", \"defaultValue\": [], \"availableExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}], \"predefinedExpectations\": [{\"expectation_type\": \"DETECTION\", \"expectation_name\": \"Detection\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"SIEM\", \"NDR\"]}, {\"expectation_type\": \"PREVENTION\", \"expectation_name\": \"Prevention\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": [\"XDR\", \"NDR\"]}, {\"expectation_type\": \"VULNERABILITY\", \"expectation_name\": \"Not vulnerable\", \"expectation_description\": \"\", \"expectation_score\": 100, \"expectation_expectation_group\": false, \"expectation_is_predefined\": true, \"expectation_is_multi_selectable\": false, \"expectation_expected_security_platform_types\": []}]}, {\"key\": \"template\", \"label\": \"Manual template path (-t)\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}, {\"key\": \"options\", \"label\": \"Options\", \"type\": \"text\", \"mandatoryGroups\": [], \"mandatoryConditionFields\": [], \"mandatoryConditionValues\": [], \"visibleConditionFields\": [], \"visibleConditionValues\": [], \"linkedFields\": [], \"mandatory\": false, \"readOnly\": false, \"argumentType\": null, \"cardinality\": \"1\", \"defaultValue\": \"\"}], \"outputs\": [{\"type\": \"expectation_signature\", \"field\": \"expectation_signatures\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"cve\", \"field\": \"cve\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"text\", \"field\": \"others\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": true, \"isMultiple\": true}, {\"type\": \"action_output\", \"field\": \"action_output\", \"labels\": [\"nuclei\"], \"isFindingCompatible\": false, \"isMultiple\": false}], \"config\": {\"type\": \"openaev_nuclei\", \"expose\": true, \"label\": {\"en\": \"Nuclei Scan\", \"fr\": \"Nuclei Scan\"}, \"color_dark\": \"#ff5722\", \"color_light\": \"#ff5722\"}, \"manual\": false, \"variables\": [{\"key\": \"user\", \"label\": \"User that will receive the injection\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": [{\"key\": \"user.id\", \"label\": \"Id of the user in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.email\", \"label\": \"Email of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.firstname\", \"label\": \"Firstname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lastname\", \"label\": \"Lastname of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"user.lang\", \"label\": \"Lang of the user\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"exercise\", \"label\": \"Exercise of the current injection\", \"type\": \"Object\", \"cardinality\": \"1\", \"children\": [{\"key\": \"exercise.id\", \"label\": \"Id of the exercise in the platform\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.name\", \"label\": \"Name of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"exercise.description\", \"label\": \"Description of the exercise\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}]}, {\"key\": \"teams\", \"label\": \"List of team name for the injection\", \"type\": \"String\", \"cardinality\": \"n\", \"children\": []}, {\"key\": \"player_uri\", \"label\": \"Player interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"challenges_uri\", \"label\": \"Challenges interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"scoreboard_uri\", \"label\": \"Scoreboard interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}, {\"key\": \"lessons_uri\", \"label\": \"Lessons learned interface platform link\", \"type\": \"String\", \"cardinality\": \"1\", \"children\": []}], \"contract_attack_patterns_external_ids\": [\"T1595.002\"], \"contract_vulnerability_external_ids\": [], \"is_atomic_testing\": true, \"platforms\": [], \"external_id\": null, \"domains\": [{\"domain_name\": \"Network\", \"domain_color\": \"#009933\"}, {\"domain_name\": \"Web App\", \"domain_color\": \"#FF9933\"}]}",
+        "injector_contract_custom": false,
+        "injector_contract_domains": [
+          "4bb325f0-e547-4daf-9e74-a1556686921b",
+          "742bc21d-2a95-4180-9132-c4261a96e7e5"
+        ],
+        "injector_contract_external_id": null,
+        "injector_contract_id": "3cf1b7a6-39d2-4531-8c8e-2b7c67470d1e",
+        "injector_contract_import_available": false,
+        "injector_contract_injector_names": {
+          "e1bad898-9804-427d-99e4-dc32c5f2898d": "Nuclei"
+        },
+        "injector_contract_injector_type": "openaev_nuclei",
+        "injector_contract_labels": {
+          "en": "Nuclei - Panel Scan",
+          "fr": "Nuclei - Scan Panel"
+        },
+        "injector_contract_manual": false,
+        "injector_contract_needs_executor": false,
+        "injector_contract_payload": null,
+        "injector_contract_payload_author_team": null,
+        "injector_contract_payload_author_user": null,
+        "injector_contract_payload_status": null,
+        "injector_contract_platforms": [],
+        "injector_contract_providing": [
+          "expectation_signature",
+          "cve",
+          "text",
+          "action_output"
+        ],
+        "injector_contract_tags": [],
+        "injector_contract_vulnerabilities": []
+      },
+      "inject_tags": [],
+      "inject_teams": [],
+      "inject_title": "Nuclei - Panel Scan"
+    }
+  ],
+  "scenario_organizations": [],
+  "scenario_tags": [],
+  "scenario_teams": [],
+  "scenario_users": [],
+  "scenario_variables": []
+}

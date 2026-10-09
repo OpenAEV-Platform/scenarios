@@ -1,0 +1,138 @@
+"""Policy data and export files: read safely, written without following a link."""
+
+import errno
+import io
+import os
+import zipfile
+from pathlib import Path
+
+import pytest
+
+from scenario_tools.adapters.data_files import (
+    YamlDataLoader,
+    read_export,
+    read_mapping,
+    write_output,
+)
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+
+ROOT = Path(__file__).parents[2]
+GOLDEN = ROOT / "tests" / "golden" / "exports"
+
+
+def test_policy_data_is_read_by_name() -> None:
+    rules = YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
+
+    assert set(rules) == {"removed", "removed_suffixes", "sorted"}
+
+
+@pytest.mark.parametrize("name", ["../secrets", "a/b", "", "Volatile"])
+def test_a_data_name_is_a_plain_name(name: str) -> None:
+    with pytest.raises(ValueError, match="data name"):
+        YamlDataLoader(ROOT / "policy" / "data").load(name)
+
+
+def test_an_exported_archive_gives_its_scenario() -> None:
+    export = read_export(GOLDEN / "easm-scenario.zip")
+
+    assert export["scenario_information"]["scenario_name"] == "EASM Scenario"
+
+
+def test_an_exported_json_file_gives_its_scenario(tmp_path: Path) -> None:
+    path = tmp_path / "export.json"
+    path.write_text('{"scenario_information": {"scenario_name": "x"}}', encoding="utf-8")
+
+    assert read_export(path) == {"scenario_information": {"scenario_name": "x"}}
+
+
+@pytest.mark.parametrize("names", [[], ["a.json", "b.json"]], ids=["none", "two"])
+def test_an_archive_needs_exactly_one_scenario_entry(tmp_path: Path, names: list[str]) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("readme.txt", b"x")
+        for name in names:
+            archive.writestr(name, b"{}")
+    path = tmp_path / "export.zip"
+    path.write_bytes(buffer.getvalue())
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export(path)
+    assert error.value.code == "IO-014"
+
+
+def test_an_output_is_written_and_replaced(tmp_path: Path) -> None:
+    path = tmp_path / "scenario.json"
+    write_output(path, b"a first, longer content\n")
+    write_output(path, b"second\n")  # shorter: nothing of the first may remain
+
+    assert path.read_bytes() == b"second\n"
+
+
+def test_an_output_is_never_written_through_a_link(tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere"
+    target.write_bytes(b"keep\n")
+    (tmp_path / "scenario.json").symlink_to(target)
+
+    with pytest.raises(UnsafeInputError) as error:
+        write_output(tmp_path / "scenario.json", b"new\n")
+    assert error.value.code == "IO-013"
+    assert target.read_bytes() == b"keep\n"
+
+
+def test_a_mapping_file_gives_source_to_stable_identifiers(tmp_path: Path) -> None:
+    path = tmp_path / "map.yaml"
+    path.write_text(
+        "- {source_inject_id: a, stable_id: b}\n- {source_inject_id: c, stable_id: d}\n",
+        encoding="utf-8",
+    )
+
+    assert read_mapping(path) == {"a": "b", "c": "d"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["a: b", "- [a, b]", "- {source_inject_id: a}", "- {source_inject_id: a, stable_id: 1}",
+     "- {source_inject_id: a, stable_id: b}\n- {source_inject_id: a, stable_id: c}"],
+    ids=["not a list", "not objects", "missing stable id", "not text", "source twice"],
+)  # fmt: skip
+def test_a_malformed_mapping_is_refused(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "map.yaml"
+    path.write_text(content + "\n", encoding="utf-8")
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_mapping(path)
+    assert error.value.code == "VER-011"
+
+
+def test_an_empty_mapping_maps_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "map.yaml"
+    path.write_text("[]\n", encoding="utf-8")
+
+    assert read_mapping(path) == {}
+
+
+def test_an_output_that_cannot_be_created_is_an_environment_problem(tmp_path: Path) -> None:
+    with pytest.raises(EnvironmentProblemError):
+        write_output(tmp_path / "missing" / "scenario.json", b"x")
+
+
+def test_an_output_that_cannot_be_written_is_an_environment_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FullDisk:
+        def __init__(self, descriptor: int, mode: str, *, closefd: bool) -> None:
+            pass
+
+        def __enter__(self) -> "FullDisk":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            pass
+
+        def write(self, data: bytes) -> int:
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "fdopen", FullDisk)
+
+    with pytest.raises(EnvironmentProblemError, match="No space left"):
+        write_output(tmp_path / "scenario.json", b"x")
