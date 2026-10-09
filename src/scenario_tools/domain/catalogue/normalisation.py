@@ -412,15 +412,15 @@ def _decode(text: str) -> Any:
 
 def _strip_text(text: object, rules: NormalisationRules) -> object:
     """The JSON text of a contract copy, without its volatile fields and with its set-like lists
-    sorted, encoded again in compact form, keys in their order: the platform does not encode all
-    its contracts the same way, and two equivalent copies must give the same text."""
+    sorted, encoded again in compact form with sorted keys: the platform does not encode all its
+    contracts the same way, and two equivalent copies must give the same text."""
     if text is None:
         return None
     if not isinstance(text, str):
         raise _refuse(f"{_CONTENT} must be JSON text")
     decoded = _decode(text)
     cleaned = _sort(_strip(decoded, rules), rules)  # the same rules as the rest of the export
-    return json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def _declared_domains(contract: Mapping[str, Any]) -> bool:
@@ -449,13 +449,11 @@ def _name_domains(document: Any) -> None:
     domains its copy names: each instance generates its own domain identifiers."""
     for item in _dicts(document):
         bare = item.get(_DOMAINS)
-        if bare is None:  # absent or null: no domain
-            continue
-        if not isinstance(bare, list):
+        if bare is not None and not isinstance(bare, list):
             raise _refuse(f"{_DOMAINS} must be a list")
-        if not bare:  # no domain: its copy, if any, must name none either
+        if not bare:  # absent, null or empty: its copy, if any, must name no domain either
             if _declared_domains(item):
-                raise _refuse(f"{_DOMAINS} is empty, but the contract's copy names domains")
+                raise _refuse(f"{_DOMAINS} names no domain, but the contract's copy does")
             continue
         if not all(isinstance(domain, str) and _UUID.fullmatch(domain) for domain in bare):
             raise _refuse(f"{_DOMAINS} must be a list of identifiers")

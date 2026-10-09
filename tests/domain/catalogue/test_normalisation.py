@@ -492,9 +492,9 @@ def test_volatile_fields_are_removed_inside_the_contract_copy_text() -> None:
 
     contract = stable_id(NS, "contract", "Dump")
     assert _content(document) == (
-        f'{{"contract_id":"{contract}","label":{{"en":"Dump é"}},'
+        f'{{"contract_id":"{contract}",'
         f'"domains":[{{"domain_id":"{_domain("E-mail Infiltration")}",'
-        '"domain_name":"E-mail Infiltration"}]}'
+        '"domain_name":"E-mail Infiltration"}],"label":{"en":"Dump é"}}'
     )
 
 
@@ -1209,3 +1209,24 @@ def test_two_equivalent_contract_copy_texts_give_the_same_text() -> None:
         return _content(normalise(_with_content(content), EXTERNAL_ID, RULES).document)
 
     assert normalised('{"inject_tags": ["a", "b"]}') == normalised('{"inject_tags":["b","a"]}')
+
+
+def test_the_keys_of_a_contract_copy_text_are_sorted() -> None:
+    def normalised(content: str) -> str:
+        return _content(normalise(_with_content(content), EXTERNAL_ID, RULES).document)
+
+    assert normalised('{"b": 2, "a": {"d": 1, "c": 0}}') == '{"a":{"c":0,"d":1},"b":2}'
+
+
+@pytest.mark.parametrize("absent", [True, False], ids=["absent", "null"])
+def test_no_domain_list_with_domains_in_the_copy_is_refused(absent: bool) -> None:
+    export = _with_domains({"convertedContent": {"domains": [{"domain_name": "Network"}]}})
+    contract = export["scenario_injects"][0]["inject_injector_contract"]
+    if absent:
+        del contract["injector_contract_domains"]
+    else:
+        contract["injector_contract_domains"] = None
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
