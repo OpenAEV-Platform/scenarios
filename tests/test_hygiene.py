@@ -7,6 +7,7 @@ own. This file is the only one allowed to name the forbidden references.
 
 import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -32,9 +33,6 @@ _FORBIDDEN = re.compile(
         )
     ),
     re.IGNORECASE,
-)
-_SKIPPED_DIRECTORIES = frozenset(
-    {".git", ".venv", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__", "mutants"}
 )
 
 
@@ -91,22 +89,30 @@ def test_the_check_accepts_ordinary_text(text: str) -> None:
     assert _internal_references(text) == []
 
 
+def _committable_files(root: Path) -> list[Path]:
+    """Tracked files and new files that are not ignored: what a commit can contain."""
+    listing = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
+        cwd=root,
+        check=True,
+        capture_output=True,
+    ).stdout
+    return sorted(Path(os.fsdecode(name)) for name in listing.split(b"\0") if name)
+
+
 def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
     found = {}
-    for directory, subdirectories, names in os.walk(root):
-        subdirectories[:] = sorted(set(subdirectories) - _SKIPPED_DIRECTORIES)  # never entered
-        for name in sorted(names):
-            path = Path(directory) / name
-            relative = path.relative_to(root)
-            if relative == THIS_FILE:
-                continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue  # binary files, such as the reference exports
-            references = _internal_references(text)
-            if references:
-                found[relative.as_posix()] = references
+    for relative in _committable_files(root):
+        path = root / relative
+        if relative == THIS_FILE or not path.is_file():
+            continue  # this file names the references; a deleted file is not read
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue  # binary files, such as the reference exports
+        references = _internal_references(text)
+        if references:
+            found[relative.as_posix()] = references
     return found
 
 
@@ -114,11 +120,15 @@ def test_no_repository_file_refers_to_internal_documents() -> None:
     assert _files_with_internal_references(ROOT) == {}
 
 
-def test_only_this_test_file_is_exempt(tmp_path: Path) -> None:
+def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exempt(
+    tmp_path: Path,
+) -> None:
     files: dict[Path, bytes] = {
+        Path(".gitignore"): b"htmlcov/\n.venv/\n",
         THIS_FILE: b"the speckit",
         Path("other") / THIS_FILE.name: b"the speckit",
         Path("uv.lock"): b"the speckit",
+        Path("htmlcov") / "index.html": b"the speckit",
         Path(".venv") / "lib.py": b"the speckit",
         Path("export.zip"): b"\xff\xfe the speckit",
     }
@@ -126,6 +136,7 @@ def test_only_this_test_file_is_exempt(tmp_path: Path) -> None:
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
 
     assert _files_with_internal_references(tmp_path) == {
         f"other/{THIS_FILE.name}": ["speckit"],
