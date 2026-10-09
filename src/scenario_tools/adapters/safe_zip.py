@@ -42,6 +42,8 @@ _LOCAL = b"PK\x03\x04"
 _LOCAL_SIZE = 30
 _DESCRIPTOR = b"PK\x07\x08"
 _ZIP64_EXTRA = 0x0001
+_ZIP64_MARK = 0xFFFFFFFF
+_AGREEING_FLAGS = _ENCRYPTED | _DATA_DESCRIPTOR
 _ZIPCRYPTO_HEADER = 12
 
 
@@ -125,20 +127,56 @@ def _zipcrypto_decrypt(data: bytes, password: bytes, check_byte: int) -> bytes |
     return keys.decrypt(data[_ZIPCRYPTO_HEADER:])
 
 
-def _has_zip64_extra(extra: bytes) -> bool:
+def _zip64_extra(extra: bytes) -> bytes | None:
+    """The zip64 field of an extra block, or ``None`` when there is none."""
     position = 0
     while position + 4 <= len(extra):
         tag, size = struct.unpack_from("<HH", extra, position)
         if tag == _ZIP64_EXTRA:
-            return True
+            return extra[position + 4 : position + 4 + size]
         position += 4 + size
-    return False
+    return None
+
+
+def _local_sizes(header: bytes, extra: bytes) -> tuple[int, int]:
+    """The compressed and uncompressed sizes a local header declares, zip64 included. A zip64
+    marker without its zip64 field is returned as is, and so never matches the directory."""
+    compressed, size = struct.unpack_from("<II", header, 18)
+    field = _zip64_extra(extra)
+    if _ZIP64_MARK in (compressed, size) and field is not None and len(field) >= 16:
+        size, compressed = struct.unpack_from("<QQ", field)
+    return compressed, size
+
+
+def _entry_end(data: bytes, position: int, info: zipfile.ZipInfo) -> int | None:
+    """Where the entry whose local header is at ``position`` ends, after its data and, when
+    flagged, its data descriptor; or ``None`` when the local header or the descriptor says
+    something else than the directory."""
+    header = data[position : position + _LOCAL_SIZE]
+    flags, method = struct.unpack_from("<HH", header, 6)
+    (crc,) = struct.unpack_from("<I", header, 14)
+    name_length, extra_length = struct.unpack_from("<HH", header, 26)
+    extra_start = position + _LOCAL_SIZE + name_length
+    extra = data[extra_start : extra_start + extra_length]
+    if flags & _AGREEING_FLAGS != info.flag_bits & _AGREEING_FLAGS or method != info.compress_type:
+        return None
+    end: int = extra_start + extra_length + info.compress_size
+    if not flags & _DATA_DESCRIPTOR:
+        sizes = _local_sizes(header, extra)
+        agrees = crc == info.CRC and sizes == (info.compress_size, info.file_size)
+        return end if agrees else None
+    layout = "<QQ" if _zip64_extra(extra) is not None else "<II"
+    body = struct.pack("<I", info.CRC) + struct.pack(layout, info.compress_size, info.file_size)
+    for descriptor in (_DESCRIPTOR + body, body):  # its signature is optional
+        if data.startswith(descriptor, end):
+            return end + len(descriptor)
+    return None
 
 
 def _check_layout(data: bytes, infos: list[zipfile.ZipInfo], directory: int, path: str) -> None:
-    """Require the entries to lie end to end from the first byte to the central directory: each
-    one is its local header, its data and, when flagged, its data descriptor, and the next one
-    starts right after it."""
+    """Require the entries to lie end to end from the first byte to the central directory, each
+    local header saying what the directory says: a streaming reader, which follows the local
+    headers, then sees exactly the entries that were checked."""
     position = 0
     for info in sorted(infos, key=lambda entry: entry.header_offset):
         header = data[position : position + _LOCAL_SIZE]
@@ -146,13 +184,14 @@ def _check_layout(data: bytes, infos: list[zipfile.ZipInfo], directory: int, pat
             raise UnsafeInputError(
                 "IO-007", f"entries overlap or leave bytes no entry lists, at {position}", path
             )
-        name_length, extra_length = struct.unpack_from("<HH", header, 26)
-        extra_start = position + _LOCAL_SIZE + name_length
-        extra = data[extra_start : extra_start + extra_length]
-        position = extra_start + extra_length + info.compress_size
-        if info.flag_bits & _DATA_DESCRIPTOR:
-            signed = data[position : position + 4] == _DESCRIPTOR
-            position += (4 if signed else 0) + 4 + (16 if _has_zip64_extra(extra) else 8)
+        end = _entry_end(data, position, info)
+        if end is None:
+            raise UnsafeInputError(
+                "IO-007",
+                f"local header of entry {info.filename!r} disagrees with the directory",
+                path,
+            )
+        position = end
     if position != directory:
         raise UnsafeInputError(
             "IO-007", f"entries overlap or leave bytes no entry lists, at {position}", path
