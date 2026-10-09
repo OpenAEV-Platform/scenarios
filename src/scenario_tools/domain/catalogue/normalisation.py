@@ -204,20 +204,17 @@ def _signature(inject: Mapping[str, Any], namespace: uuid.UUID) -> InjectSignatu
         relations = []
     if not isinstance(relations, list):
         raise _refuse("inject_depends_on must be a list")
-    parents = tuple(
-        sorted(
-            relation["dependency_relationship"]["inject_parent_id"]
-            for relation in relations
-            if isinstance(relation, dict)
-            and isinstance(relation.get("dependency_relationship"), dict)
-            and isinstance(relation["dependency_relationship"].get("inject_parent_id"), str)
-        )
-    )
+    inject_id = _text(inject, "inject_id", "inject")
+    parents = []
+    for relation in relations:
+        link = relation.get("dependency_relationship") if isinstance(relation, dict) else None
+        if not isinstance(link, dict):
+            raise _refuse("inject_depends_on must hold dependency relationships")
+        if link.get("inject_children_id") != inject_id:
+            raise _refuse(f"a dependency of inject {inject_id!r} names another child")
+        parents.append(_text(link, "inject_parent_id", "dependency_relationship"))
     return InjectSignature(
-        _text(inject, "inject_id", "inject"),
-        str(key),
-        _text(inject, "inject_title", "inject"),
-        parents,
+        inject_id, str(key), _text(inject, "inject_title", "inject"), tuple(parents)
     )
 
 
@@ -240,8 +237,14 @@ def _catalogue_objects(export: Mapping[str, Any]) -> Iterator[dict[str, Any]]:
 def _check_injects(signatures: list[InjectSignature]) -> None:
     if len(signatures) > MAX_INJECTS:
         raise _refuse(f"more than {MAX_INJECTS} injects")
-    if len({signature.id for signature in signatures}) != len(signatures):
+    identifiers = {signature.id for signature in signatures}
+    if len(identifiers) != len(signatures):
         raise _refuse("an inject identifier appears twice")
+    for signature in signatures:
+        if not identifiers.issuperset(signature.parents):
+            raise _refuse(
+                f"inject {signature.id!r} depends on an inject the scenario does not have"
+            )
 
 
 def _previous_signatures(

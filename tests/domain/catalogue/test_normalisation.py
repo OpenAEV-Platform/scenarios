@@ -401,10 +401,15 @@ def test_a_new_version_keeps_the_identifiers_of_the_previous_one() -> None:
     assert second.removed_injects == ()
 
 
+def _renamed(export: dict[str, Any], old: str, new: str) -> dict[str, Any]:
+    """The export with one identifier renamed everywhere, as another instance would export it."""
+    renamed: dict[str, Any] = json.loads(json.dumps(export).replace(old, new))
+    return renamed
+
+
 def test_an_inject_from_another_instance_is_matched_by_contract_and_title() -> None:
     first = normalise(EXPORT, EXTERNAL_ID, RULES).document
-    elsewhere = copy.deepcopy(EXPORT)
-    elsewhere["scenario_injects"][0]["inject_id"] = "00000000-0000-4000-8000-0000000000ff"
+    elsewhere = _renamed(EXPORT, MAIL, "00000000-0000-4000-8000-0000000000ff")
 
     second = normalise(elsewhere, EXTERNAL_ID, RULES, previous=first).document
 
@@ -421,6 +426,7 @@ def test_an_ambiguous_match_is_refused_until_mapped() -> None:
         clone["inject_id"] = f"00000000-0000-4000-8000-0000000000e{number}"
         twins["scenario_injects"].append(clone)
     del twins["scenario_injects"][0]
+    twins["scenario_injects"][0]["inject_depends_on"] = []  # its parent was removed
 
     with pytest.raises(AmbiguousInjectError):
         normalise(twins, EXTERNAL_ID, RULES, previous=first)
@@ -726,8 +732,7 @@ def test_rules_that_are_not_lists_of_names_are_refused(document: Any) -> None:
 
 def test_an_inject_running_the_same_payload_is_matched_by_payload_and_title() -> None:
     first = normalise(EXPORT, EXTERNAL_ID, RULES).document
-    copied = copy.deepcopy(EXPORT)
-    copied["scenario_injects"][1]["inject_id"] = "00000000-0000-4000-8000-0000000000fe"
+    copied = _renamed(EXPORT, IMPLANT, "00000000-0000-4000-8000-0000000000fe")
 
     second = normalise(copied, EXTERNAL_ID, RULES, previous=first).document
 
@@ -831,12 +836,13 @@ def test_a_contract_copy_inside_another_is_refused(copy_inside: dict[str, Any]) 
 
 
 def test_a_previous_inject_identifier_that_is_not_a_uuid_is_refused() -> None:
-    previous = normalise(EXPORT, EXTERNAL_ID, RULES).document
-    previous["scenario_injects"][0]["inject_id"] = "not-a-uuid"
+    stored = normalise(EXPORT, EXTERNAL_ID, RULES).document
+    previous = _renamed(stored, stored["scenario_injects"][0]["inject_id"], "not-a-uuid")
 
     with pytest.raises(ExportStructureError) as error:
         normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous, mapping={MAIL: "not-a-uuid"})
-    assert error.value.code == "IO-014"
+    assert (error.value.code, error.value.origin) == ("IO-014", "previous")
+    assert "not a canonical UUID" in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -1077,3 +1083,41 @@ def test_an_empty_domain_list_with_no_domain_in_the_copy_is_accepted() -> None:
     mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
 
     assert mail["inject_injector_contract"]["injector_contract_domains"] == []
+
+
+@pytest.mark.parametrize(
+    "relation",
+    [
+        "x",
+        {"dependency_relationship": "x"},
+        {"dependency_relationship": {"inject_children_id": IMPLANT}},
+        {"dependency_relationship": {"inject_parent_id": USER, "inject_children_id": IMPLANT}},
+        {"dependency_relationship": {"inject_parent_id": MAIL, "inject_children_id": USER}},
+        {"dependency_relationship": {"inject_parent_id": MAIL}},
+    ],
+    ids=[
+        "not an object",
+        "relationship not an object",
+        "no parent",
+        "unknown parent",
+        "another child",
+        "no child",
+    ],
+)
+def test_a_malformed_dependency_is_refused(relation: Any) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][1]["inject_depends_on"] = [relation]
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_malformed_dependency_in_the_previous_version_is_refused() -> None:
+    previous = normalise(EXPORT, EXTERNAL_ID, RULES).document
+    implant = _injects(previous)["Dump credentials"]
+    implant["inject_depends_on"][0]["dependency_relationship"]["inject_parent_id"] = USER
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
+    assert error.value.origin == "previous"
