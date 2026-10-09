@@ -1297,3 +1297,29 @@ def test_a_built_in_contract_may_say_it_is_not_custom(flag: object) -> None:
     mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
 
     assert mail["inject_injector_contract"]["injector_contract_id"] == BUILT_IN
+
+
+@pytest.mark.parametrize("field", ["inject_content", "injector_contract_content"])
+@pytest.mark.parametrize("escape", ["\\u0030", "\\u002d", "\\u0041", "\\u0066"])
+def test_an_identifier_character_written_as_an_escape_is_refused(field: str, escape: str) -> None:
+    export = copy.deepcopy(EXPORT)
+    inject = export["scenario_injects"][1]
+    text = json.dumps({"ref": "x"}).replace("x", escape)
+    if field == "inject_content":
+        inject["inject_content"] = text
+    else:
+        inject["inject_injector_contract"]["injector_contract_content"] = text
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_other_escapes_in_a_json_text_field_are_accepted() -> None:
+    export = copy.deepcopy(EXPORT)
+    text = '{"body": "line\\nnext \\u00e9 \\u0067 \\\\u0030"}'  # the last one is literal text
+    export["scenario_injects"][1]["inject_content"] = text
+
+    implant = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Dump credentials"]
+
+    assert implant["inject_content"] == text

@@ -41,6 +41,10 @@ PLACEHOLDER_SENDER = "simulation@example.org"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _UUID_IN_TEXT = re.compile(_UUID.pattern, re.IGNORECASE)
+# A hexadecimal digit or a hyphen written as an escape in JSON text, not preceded by an escaped
+# backslash: an identifier written that way would escape rewriting.
+_ESCAPED_ID_CHARACTER = re.compile(r"(?<!\\)(?:\\\\)*\\u00(?:3[0-9]|4[1-6]|6[1-6]|2[dD])")
+_JSON_TEXT_FIELDS = ("inject_content", "injector_contract_content")
 _INFORMATION, _INJECTS = "scenario_information", "scenario_injects"
 _ARTICLES = "scenario_articles"
 # Parts of an export whose identifiers have no agreed rule yet: refused when not empty.
@@ -529,6 +533,11 @@ def normalise(
         raise _refuse("not a JSON object")
     if not isinstance(export.get(_INFORMATION), dict):
         raise _refuse(f"{_INFORMATION} must be an object")
+    for item in _dicts(export):
+        for field in _JSON_TEXT_FIELDS:
+            text = item.get(field)
+            if isinstance(text, str) and _ESCAPED_ID_CHARACTER.search(text):
+                raise _refuse(f"{field} writes an identifier character as an escape")
     for key, what in _NOT_SUPPORTED:
         if export.get(key):
             raise _refuse(f"{what} are not supported yet")
