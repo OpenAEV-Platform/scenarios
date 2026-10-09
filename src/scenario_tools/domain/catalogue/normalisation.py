@@ -35,7 +35,6 @@ from scenario_tools.domain.catalogue.identifiers import (
     scenario_namespace,
     stable_id,
 )
-from scenario_tools.domain.shared.canonical import jcs
 
 PLACEHOLDER_SENDER = "simulation@example.org"
 
@@ -473,10 +472,16 @@ def _strip(value: Any, rules: NormalisationRules) -> Any:
     return value
 
 
+def _order(value: Any) -> str:
+    """The sort key of a set-like list item: its JSON text with sorted keys. Two distinct values
+    never share it, unlike their canonical bytes (1 and 1.0 have the same ones)."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def _sort(value: Any, rules: NormalisationRules) -> Any:
     if isinstance(value, dict):
         return {
-            key: sorted(_sort(child, rules), key=jcs)
+            key: sorted(_sort(child, rules), key=_order)
             if key in rules.sorted_lists and isinstance(child, list)
             else _sort(child, rules)
             for key, child in value.items()

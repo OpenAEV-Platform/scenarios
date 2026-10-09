@@ -1121,3 +1121,16 @@ def test_a_malformed_dependency_in_the_previous_version_is_refused() -> None:
     with pytest.raises(ExportStructureError) as error:
         normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
     assert error.value.origin == "previous"
+
+
+@pytest.mark.parametrize("values", [[1, 1.0], [1.0, 1], [{"a": 1}, {"a": 1.0}]])
+def test_values_with_the_same_canonical_form_are_sorted_the_same_way(values: list[Any]) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_tags"] = values
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+    reverse = copy.deepcopy(EXPORT)
+    reverse["scenario_injects"][0]["inject_tags"] = list(reversed(values))
+    again = _injects(normalise(reverse, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert json.dumps(mail["inject_tags"]) == json.dumps(again["inject_tags"])
