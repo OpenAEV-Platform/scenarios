@@ -587,6 +587,156 @@ def test_a_password_is_ignored_for_an_entry_that_is_not_encrypted() -> None:
     assert archive_from_bytes(data).read("f", password=b"infected") == VISIBLE
 
 
+# Layout and encrypted entries: no byte outside an entry, a total budget, an early password check
+
+
+def _all_encrypted(data: bytes, *, entries: int | None = None) -> bytes:
+    """Set the encryption flag of every entry, or of the first ``entries`` ones, in their central
+    and local headers."""
+    patched = bytearray(data)
+    for signature, flags_at in ((b"PK\x01\x02", 8), (b"PK\x03\x04", 6)):
+        position, done = data.find(signature), 0
+        while position >= 0 and (entries is None or done < entries):
+            (flags,) = struct.unpack_from("<H", patched, position + flags_at)
+            struct.pack_into("<H", patched, position + flags_at, flags | 1)
+            position, done = data.find(signature, position + 4), done + 1
+    return bytes(patched)
+
+
+class _Stream(io.RawIOBase):
+    """A destination that cannot seek, so that the ZIP library writes data descriptors."""
+
+    def __init__(self) -> None:
+        self.data = bytearray()
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data: object) -> int:
+        chunk = bytes(data)  # type: ignore[call-overload]
+        self.data += chunk
+        return len(chunk)
+
+
+@pytest.mark.parametrize("zip64", [False, True], ids=["descriptor", "zip64 descriptor"])
+def test_archives_written_as_a_stream_lie_end_to_end(zip64: bool) -> None:
+    stream = _Stream()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in ("a.txt", "b.txt"):
+            info = zipfile.ZipInfo(name)
+            info.extra = struct.pack("<HHB", 0x5455, 1, 1)  # a timestamp field, not zip64
+            with archive.open(info, "w", force_zip64=zip64) as entry:
+                entry.write(name.encode() * 50)
+    data = bytes(stream.data)
+    assert all(info.flag_bits & 0x8 for info in zipfile.ZipFile(io.BytesIO(data)).infolist())
+
+    checked = archive_from_bytes(data)
+    assert checked.read("b.txt") == b"b.txt" * 50
+
+
+def test_a_data_descriptor_without_its_optional_signature_is_read() -> None:
+    stream = _Stream()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("a.txt", b"a" * 100)
+    signed = bytes(stream.data)
+    descriptor = signed.find(b"PK\x07\x08")
+    data = bytearray(signed[:descriptor] + signed[descriptor + 4 :])  # signature removed
+    end = data.rfind(b"PK\x05\x06")
+    (directory,) = struct.unpack_from("<I", data, end + 16)
+    struct.pack_into("<I", data, end + 16, directory - 4)
+
+    assert archive_from_bytes(bytes(data)).read("a.txt") == b"a" * 100
+
+
+def test_encrypted_entries_are_limited_in_total_not_one_by_one() -> None:
+    data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
+    sizes = [info.compress_size for info in zipfile.ZipFile(io.BytesIO(data)).infolist()]
+
+    archive_from_bytes(data, encrypted_limit=sum(sizes))
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data, encrypted_limit=sum(sizes) - 1)
+    assert error.value.code == "IO-008"
+    assert max(sizes) <= sum(sizes) - 1  # each entry alone is within the limit
+
+
+def test_entries_that_are_not_encrypted_do_not_count_in_the_budget() -> None:
+    data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 2000)]), entries=1)
+    encrypted = zipfile.ZipFile(io.BytesIO(data)).infolist()[0].compress_size
+
+    archive_from_bytes(data, encrypted_limit=encrypted)
+
+
+def test_entries_that_overlap_are_refused_before_any_entry_is_read() -> None:
+    data = bytearray(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
+    second = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+    struct.pack_into("<I", data, second + 42, 0)  # "b" now starts where "a" starts
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_bytes_that_no_entry_lists_are_refused() -> None:
+    hidden = _zip([("../../evil.sh", b"echo owned")])
+    hidden = hidden[: hidden.find(b"PK\x01\x02")]  # its local header and data only
+    listed = _zip([("ok.txt", b"fine"), ("other.txt", b"fine too")])
+    second = listed.find(b"PK\x03\x04", 4)
+    data = bytearray(listed[:second] + hidden + listed[second:])  # unlisted bytes between entries
+    central = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+    struct.pack_into("<I", data, central + 42, second + len(hidden))
+    end = data.rfind(b"PK\x05\x06")
+    (directory,) = struct.unpack_from("<I", data, end + 16)
+    struct.pack_into("<I", data, end + 16, directory + len(hidden))
+    assert [info.filename for info in zipfile.ZipFile(io.BytesIO(bytes(data))).infolist()] == [
+        "ok.txt",
+        "other.txt",
+    ]
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_bytes_between_the_last_entry_and_the_directory_are_refused() -> None:
+    listed = _zip([("ok.txt", b"fine")])
+    directory = listed.find(b"PK\x01\x02")
+    data = bytearray(listed[:directory] + b"unlisted" + listed[directory:])
+    end = data.rfind(b"PK\x05\x06")
+    struct.pack_into("<I", data, end + 16, directory + len(b"unlisted"))
+    assert zipfile.ZipFile(io.BytesIO(bytes(data))).namelist() == ["ok.txt"]
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_data_before_the_first_entry_is_refused() -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(b"prefix" + _zip([("a", b"a")]))
+    assert error.value.code == "IO-007"
+
+
+def test_a_wrong_password_is_found_before_the_entry_is_decrypted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decrypted: list[int] = []
+    original = safe_zip_module._ZipCryptoKeys.decrypt
+
+    def spy(keys: object, data: bytes) -> bytes:
+        decrypted.append(len(data))
+        return original(keys, data)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(safe_zip_module._ZipCryptoKeys, "decrypt", spy)
+    archive = archive_from_bytes(ENCRYPTED_DEFLATED)
+
+    with pytest.raises(UnsafeInputError):
+        archive.read("d.txt", password=b"wrong")
+    assert decrypted == [12]
+    decrypted.clear()
+    archive.read("d.txt", password=b"infected")
+    assert decrypted == [12, 27 - 12]
+
+
 # Hostile input in general
 
 
