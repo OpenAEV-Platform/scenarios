@@ -1,4 +1,4 @@
-"""Deterministic identifiers and inject matching across versions (research R2)."""
+"""Deterministic identifiers and inject matching across versions."""
 
 import uuid
 from collections.abc import Sequence

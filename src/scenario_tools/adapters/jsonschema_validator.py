@@ -1,4 +1,4 @@
-"""Schema validation with jsonschema, format checking included (research R6).
+"""Schema validation with jsonschema, format checking included.
 
 Schemas are JSON Schema 2020-12 files named ``<name>.schema.json``, read with the bounded JSON
 reader and checked when loaded. Formats are checked by the standard validators; jsonschema

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/manifest.schema.json",
   "title": "OpenAEV content release manifest",
-  "description": "Signed list of the items of one release on one channel (RFC 0004 §4.2). Serialised in RFC 8785 canonical form.",
+  "description": "Signed list of the items of one release on one channel. Serialised in RFC 8785 canonical form.",
   "type": "object",
   "additionalProperties": false,
   "required": [

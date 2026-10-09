@@ -1,4 +1,4 @@
-"""Deterministic identifiers, and inject matching across versions (research R2).
+"""Deterministic identifiers, and inject matching across versions.
 
 Every identifier is a UUIDv5, so anyone can recompute it: the root namespace derives from the
 repository URL, a scenario's namespace from its external ID, and an object's ID from its type and
@@ -196,7 +196,7 @@ def match_injects(
     previous: Sequence[InjectSignature],
     mapping: Mapping[str, str] | None = None,
 ) -> InjectMatching:
-    """Give every inject of ``new`` a stable ID, reusing those of ``previous`` (research R2)."""
+    """Give every inject of ``new`` a stable ID, reusing those of ``previous``."""
     matcher = _Matcher(namespace, _index(new, "new"), _index(previous, "previous"))
     matcher.apply_mapping(mapping or {})
     matcher.match_same_instance()
