@@ -6,6 +6,7 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used, and 
 itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -59,13 +60,18 @@ def _text(report: Report) -> str:
 
 
 def execute(
-    command: str, produce: Callable[[], Report], output_format: str, root: Path | None = None
+    command: str,
+    produce: Callable[[], Report],
+    output_format: str,
+    root: Path | None = None,
+    hidden: str = "",
 ) -> tuple[str, int]:
     """Run ``produce`` and return what to print and the exit code. Paths in findings are made
     relative to ``root``, the repository root, which is the working directory by default. A
-    failure anywhere, while producing or while rendering, exits with 4, never with 1."""
+    failure anywhere, while producing or while rendering, exits with 4, never with 1. Nothing
+    printed shows ``hidden``, however the output writes what the findings hold."""
     try:
-        return _run(command, produce, output_format, root)
+        return _run(command, produce, output_format, root, hidden)
     except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
         line = f"{command}: internal error: {type(error).__name__}: {_describe(error)}"
         return shorten(_printable(line)), EXIT_INTERNAL
@@ -79,8 +85,44 @@ def _describe(error: Exception) -> str:
         return "<unprintable>"
 
 
+_WITHHELD = "withheld: it would show a secret"
+
+
+def _render(report: Report, output_format: str) -> str:
+    return json.dumps(report.document()) if output_format == "json" else _text(report)
+
+
+def _shows(output: str, report: Report, output_format: str, hidden: str) -> bool:
+    """Whether ``hidden`` shows in the output, or in a path or message as a reader of the JSON
+    decodes it, escapes undone."""
+    if hidden in output:
+        return True
+    texts = (text for finding in report.findings for text in (finding.path, finding.message))
+    return any(hidden in text for text in texts)
+
+
+def _withhold(report: Report, output_format: str, hidden: str) -> str:
+    """The output, with the messages, then the paths, of the findings withheld while it would
+    show ``hidden``: what then remains is the tool's own text."""
+    output = _render(report, output_format)
+    for paths_too in (False, True):
+        if not hidden or not _shows(output, report, output_format, hidden):
+            break
+        findings = tuple(
+            dataclasses.replace(f, message=_WITHHELD, path="" if paths_too else f.path)
+            for f in report.findings
+        )
+        report = Report(report.command, findings)
+        output = _render(report, output_format)
+    return output
+
+
 def _run(
-    command: str, produce: Callable[[], Report], output_format: str, root: Path | None
+    command: str,
+    produce: Callable[[], Report],
+    output_format: str,
+    root: Path | None,
+    hidden: str = "",
 ) -> tuple[str, int]:
     try:
         report = produce()
@@ -93,15 +135,17 @@ def _run(
             return json.dumps(document), EXIT_ENVIRONMENT
         return shorten(_printable(f"{command}: environment error: {error}")), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
-    if output_format == "json":
-        return json.dumps(report.document()), code
-    return _text(report), code
+    return _withhold(report, output_format, hidden), code
 
 
 def _emit(
-    ctx: click.Context, command: str, produce: Callable[[], Report], root: Path | None = None
+    ctx: click.Context,
+    command: str,
+    produce: Callable[[], Report],
+    root: Path | None = None,
+    hidden: str = "",
 ) -> NoReturn:
-    output, code = execute(command, produce, ctx.obj["format"], root)
+    output, code = execute(command, produce, ctx.obj["format"], root, hidden)
     click.echo(output, err=code == EXIT_INTERNAL)  # an internal error writes nothing to stdout
     ctx.exit(code)
 
@@ -285,7 +329,8 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
             write=lambda data: write_output(out, data),
         )
 
-    _emit(ctx, "openaev export", produce)
+    # The platform has seen the token: what it sends back never shows it.
+    _emit(ctx, "openaev export", produce, hidden=os.environ.get("OPENAEV_TOKEN", ""))
 
 
 @openaev.command(name="import")
@@ -301,4 +346,4 @@ def openaev_import(ctx: click.Context, archive: Path) -> None:
         data = read_export_archive(archive)
         return import_archive(platform, data, repository_path(str(archive), Path.cwd()))
 
-    _emit(ctx, "openaev import", produce)
+    _emit(ctx, "openaev import", produce, hidden=os.environ.get("OPENAEV_TOKEN", ""))

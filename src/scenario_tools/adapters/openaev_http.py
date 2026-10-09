@@ -371,7 +371,7 @@ class HttpOpenAEV:
             body=body,
             content_type=f"multipart/form-data; boundary={boundary}",
         )
-        return _import_result(data, self._token)
+        return _import_result(data)
 
 
 def _problem(status: int, not_found: str) -> str:
@@ -384,7 +384,7 @@ def _problem(status: int, not_found: str) -> str:
     return f"the platform answered HTTP {status}"
 
 
-def _import_result(data: bytes, token: str) -> ImportResult:
+def _import_result(data: bytes) -> ImportResult:
     unexpected = EnvironmentProblemError(
         "the platform's answer to the import is not the expected JSON object"
     )
@@ -401,8 +401,6 @@ def _import_result(data: bytes, token: str) -> ImportResult:
             raise unexpected
         kind, name = action.get("type"), action.get("name")
         if not isinstance(kind, str) or not isinstance(name, str):
-            raise unexpected
-        if token in kind or token in name:  # the platform has seen it: never shown back
             raise unexpected
         skipped.append(SkippedInject(kind, name))
     return ImportResult(tuple(skipped))

@@ -813,16 +813,14 @@ def test_an_unexpected_import_answer_is_an_environment_problem(
         _client(platform).import_scenario(ARCHIVE)
 
 
-@pytest.mark.parametrize("field", ["type", "name"])
-def test_an_import_answer_that_carries_the_token_is_refused(platform: Platform, field: str) -> None:
-    action = {"type": "Injector", "name": "Scan", field: f"x {TOKEN} x"}
+def test_skipped_injects_are_returned_as_the_platform_names_them(platform: Platform) -> None:
+    # Whatever they hold: the commands decide what their output may show.
+    action = {"type": "Injector", "name": f"x {TOKEN} x"}
     platform.answer(200, json.dumps({"missingActions": [action]}).encode())
 
-    with pytest.raises(
-        EnvironmentProblemError, match=r"^the platform's answer to the import is not the expected"
-    ) as error:
-        _client(platform).import_scenario(ARCHIVE)
-    assert TOKEN not in str(error.value)
+    assert _client(platform).import_scenario(ARCHIVE) == ImportResult(
+        (SkippedInject("Injector", f"x {TOKEN} x"),)
+    )
 
 
 def test_an_import_error_names_the_import(platform: Platform) -> None:

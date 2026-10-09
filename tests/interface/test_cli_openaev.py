@@ -276,6 +276,79 @@ def test_skipped_injects_fail_the_import(platform: Platform, tmp_path: Path) -> 
     ]
 
 
+@pytest.mark.parametrize("output_format", ["text", "json"])
+@pytest.mark.parametrize(
+    ("token", "name"),
+    [(TOKEN, f"x {TOKEN} x"), ("a\\nb", "a\nb"), ("u00e9-secret", "\u00e9-secret")],
+    ids=["as it is", "made by the message", "made by the JSON output"],
+)
+def test_the_output_never_shows_the_token(
+    platform: Platform, tmp_path: Path, output_format: str, token: str, name: str
+) -> None:
+    # The platform has seen the token and names the skipped injects: whatever it sends, and
+    # however the output writes it, the token never shows.
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EXPORT)
+    platform.answer(200, json.dumps({"missingActions": [{"type": "x", "name": name}]}).encode())
+
+    result = CliRunner().invoke(
+        main,
+        ["--format", output_format, "openaev", "import", str(archive)],
+        env={"OPENAEV_URL": platform.url, "OPENAEV_TOKEN": token},
+    )
+
+    assert result.exit_code == 1
+    assert token not in result.stdout
+    if output_format == "json":
+        [finding] = json.loads(result.stdout)["findings"]
+        assert token not in finding["message"]
+        assert finding["path"] == "scenario.zip"  # only what would show the token is withheld
+
+
+@pytest.mark.parametrize("token", [TOKEN, 't"k-secret'], ids=["plain", "escaped by JSON"])
+def test_a_path_that_would_show_the_token_is_withheld(
+    platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / f"{token}.zip").write_bytes(EXPORT)
+    platform.answer(200, b'{"missingActions": [{"type": "Injector", "name": "Scan"}]}')
+
+    result = CliRunner().invoke(
+        main,
+        ["--format", "json", "openaev", "import", f"{token}.zip"],
+        env={"OPENAEV_URL": platform.url, "OPENAEV_TOKEN": token},
+    )
+    code, stdout = result.exit_code, result.stdout
+
+    assert code == 1
+    assert token not in stdout
+    [finding] = json.loads(stdout)["findings"]
+    assert (finding["code"], finding["path"]) == ("OAV-001", "")
+
+
+def test_an_export_output_never_shows_the_token(
+    platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    platform.answer(200, b"not an archive")
+
+    code, stdout, _ = _run(platform, "openaev", "export", SCENARIO, "--out", f"{TOKEN}.zip")
+
+    assert code == 1
+    assert TOKEN not in stdout
+    assert "withheld: it would show a secret" in stdout
+
+
+def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EXPORT)
+    platform.answer(200, b'{"missingActions": [{"type": "Injector", "name": "Scan"}]}')
+
+    _, stdout, _ = _run(platform, "openaev", "import", str(archive))
+
+    assert "the platform skipped inject 'Scan'" in stdout
+
+
 def test_a_refused_archive_is_never_sent(platform: Platform, tmp_path: Path) -> None:
     archive = tmp_path / "scenario.zip"
     archive.write_bytes(_archive(("a.json", b"{}"), ("b.json", b"{}")))
