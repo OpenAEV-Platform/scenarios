@@ -20,7 +20,11 @@ removed_suffixes:
 # scenario give the same file.
 sorted:
   - attack_pattern_kill_chain_phases
+  - availableExpectations
+  - contract_attack_patterns_external_ids
+  - contract_vulnerability_external_ids
   - domains
+  - expectation_expected_security_platform_types
   - inject_depends_on
   - inject_documents
   - inject_tags
@@ -28,6 +32,16 @@ sorted:
   - injector_contract_attack_patterns
   - injector_contract_domains
   - injector_contract_platforms
+  - injector_contract_providing
   - injector_contract_tags
+  - injector_contract_vulnerabilities
+  - labels
+  - mandatoryGroups
+  - payload_detection_remediations
+  - payload_expectations
+  - payload_output_parsers
+  - payload_platforms
   - payload_tags
+  - platforms
+  - predefinedExpectations
   - team_tags

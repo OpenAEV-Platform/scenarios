@@ -168,6 +168,26 @@ def test_no_volatile_field_is_left_even_inside_contract_copies(export: Path) -> 
     assert _volatile_keys(json.loads(_prepare(export)), rules) == set()
 
 
-@pytest.mark.parametrize("key", ["injector_contract_tags", "domains"])
+# Lists that are sets: the platform serialises several of them in varying orders.
+_SETS = (
+    "injector_contract_tags", "domains", "expectation_expected_security_platform_types",
+    "contract_attack_patterns_external_ids", "contract_vulnerability_external_ids",
+    "injector_contract_vulnerabilities", "injector_contract_providing", "payload_expectations",
+    "payload_platforms", "payload_detection_remediations", "payload_output_parsers", "platforms",
+    "labels", "mandatoryGroups", "availableExpectations", "predefinedExpectations",
+)  # fmt: skip
+# Lists whose order carries meaning: a form, a choice, or what the author ordered.
+_ORDERED = (
+    "fields", "children", "choices", "conditions", "variables", "target_selector",
+    "expectations", "payload_arguments", "payload_prerequisites", "outputs",
+)  # fmt: skip
+
+
+@pytest.mark.parametrize("key", _SETS)
 def test_these_lists_are_sets(key: str) -> None:
     assert key in _rules().sorted_lists
+
+
+@pytest.mark.parametrize("key", _ORDERED)
+def test_these_lists_keep_their_order(key: str) -> None:
+    assert key not in _rules().sorted_lists
