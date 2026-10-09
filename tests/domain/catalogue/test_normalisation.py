@@ -907,8 +907,9 @@ def test_two_articles_with_the_same_name_in_one_channel_are_refused() -> None:
         {"article_id": USER, "article_name": "Release", "article_channel": TEAM},
         {"article_id": USER, "article_name": "Release"},
         {"article_id": USER, "article_name": "", "article_channel": AUTHOR},
+        {"article_id": USER, "article_name": "Release", "article_channel": [AUTHOR]},
     ],
-    ids=["unknown channel", "no channel", "empty name"],
+    ids=["unknown channel", "no channel", "empty name", "channel not text"],
 )
 def test_an_article_without_a_known_channel_or_name_is_refused(article: dict[str, Any]) -> None:
     export = copy.deepcopy(EXPORT)
@@ -989,3 +990,23 @@ def test_domain_identifiers_inside_the_contract_text_are_rewritten() -> None:
 def test_an_external_id_that_is_not_canonical_is_a_programming_error() -> None:
     with pytest.raises(ValueError, match="canonical"):
         normalise(EXPORT, EXTERNAL_ID.upper(), RULES)
+
+
+def test_a_custom_contract_without_a_payload_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_custom"] = True
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_custom_contract_with_a_payload_is_accepted() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_custom"] = True
+
+    implant = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Dump credentials"]
+
+    assert implant["inject_injector_contract"]["injector_contract_id"] == stable_id(
+        NS, "contract", "Dump"
+    )

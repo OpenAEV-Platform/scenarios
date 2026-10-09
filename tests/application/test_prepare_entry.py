@@ -130,3 +130,12 @@ def test_malformed_policy_data_is_an_environment_problem() -> None:
 
     with pytest.raises(EnvironmentProblemError, match="volatile-fields"):
         prepare_entry(EXPORT, EXTERNAL_ID, BrokenData(), path="e")
+
+
+def test_unreadable_policy_data_is_an_environment_problem() -> None:
+    class UnreadableData:
+        def load(self, name: str) -> Any:
+            raise UnsafeInputError("IO-003", "not valid YAML", "policy/data/volatile-fields.yaml")
+
+    with pytest.raises(EnvironmentProblemError, match="volatile-fields"):
+        prepare_entry(EXPORT, EXTERNAL_ID, UnreadableData(), path="e")

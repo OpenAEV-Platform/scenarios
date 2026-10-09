@@ -45,7 +45,7 @@ def prepare_entry(
     mapping."""
     try:
         rules = NormalisationRules.from_document(data.load(VOLATILE_FIELDS))
-    except ValueError as error:  # the maintainers' data, not the contributor's input
+    except (ValueError, UnsafeInputError) as error:  # the maintainers' data, not the input
         raise EnvironmentProblemError(f"policy data {error}") from error
     try:
         normalised = normalise(export, external_id, rules, previous=previous, mapping=mapping)

@@ -291,7 +291,7 @@ def _identifiers(
     articles: set[str] = set()
     for item in _objects(export, _ARTICLES):
         source, name = _text(item, "article_id", _ARTICLES), _name(item, "article_name", _ARTICLES)
-        channel = channels.get(item.get("article_channel"))  # type: ignore[arg-type]
+        channel = channels.get(_text(item, "article_channel", _ARTICLES))
         if channel is None:
             raise _refuse(f"article {name!r} has no channel of the scenario")
         article_key = json.dumps([channel, name])
@@ -302,6 +302,12 @@ def _identifiers(
     payloads: dict[str, str] = {}
     for inject in _objects(export, _INJECTS):
         payload = _payload(inject)
+        if (
+            payload is None
+            and (inject.get(_CONTRACT) or {}).get("injector_contract_custom") is True
+        ):
+            # Its identifier belongs to one instance, and the contract exists on no other.
+            raise _refuse("custom contracts without a payload are not supported yet")
         if payload is not None:
             source = _text(payload, "payload_id", _PAYLOAD)
             name = _text(payload, "payload_name", _PAYLOAD)
