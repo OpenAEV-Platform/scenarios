@@ -3,6 +3,7 @@
 import copy
 import json
 import re
+import warnings
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -509,24 +510,32 @@ def test_every_format_used_by_the_schemas_is_really_checked(tmp_path: Path) -> N
         assert probe.validate(name, invalid) != (), name
 
 
-# A pattern must mean the same in Python, which checks it here, and in ECMA-262, which other
-# consumers of the schemas use. Only escapes and groups known to agree are allowed; anything else
-# is refused, whether it means something else in one of them (\d matches every Unicode digit in
-# Python, only 0-9 in ECMA-262) or exists in only one (\cA, \u{41}, \Z, lookbehind).
-_ESCAPE_OR_GROUP = re.compile(r"\\(x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|.)|\(\?(.)", re.DOTALL)
-_PORTABLE_ESCAPES = frozenset("tnrfv.\\/-^$*+?()[]{}|")
-_PORTABLE_GROUPS = frozenset(":=!")
+# A pattern must mean the same in Python, which checks it here, and in every ECMA-262 engine,
+# with or without the "u" flag. Patterns are held to the interoperable subset that JSON Schema
+# 2020-12 recommends (Core, section 6.4), in ASCII only: literal characters, escaped
+# metacharacters, non-empty classes, quantifiers + * ? {x} {x,} {x,y} and their lazy forms,
+# anchors, plain groups and alternation. Anything else is refused, since it means something else
+# in one of the engines (\d, ., {,5}, []) or exists in only one of them (lookbehind, a*+, \cA).
+_SUBSET_TOKEN = re.compile(
+    r"""
+      \\[\\.^$*+?()\[\]{}|/]                         # escaped metacharacter
+    | \[\^?(?!\^)(?:\\[\\\]\[^-]|[ -Z^-~])+\]        # non-empty class
+    | (?:[*+?]|\{[0-9]+(?:,[0-9]*)?\})\??(?![*+?{])  # quantifier, maybe lazy, never possessive
+    | \((?!\?) | [)|^$]                              # plain group, alternation, anchors
+    | [A-Za-z0-9\ !"\#%&',/:;<=>@_`~-]               # literal character
+    """,
+    re.VERBOSE,
+)
 
 
 def _non_portable(pattern: str) -> list[str]:
-    found = []
-    for match in _ESCAPE_OR_GROUP.finditer(pattern):
-        escaped, group = match.groups()
-        # A two-character or longer escape is \xHH or \uHHHH, the same in both.
-        portable_escape = escaped is None or escaped in _PORTABLE_ESCAPES or len(escaped) > 1
-        portable_group = group is None or group in _PORTABLE_GROUPS
-        if not (portable_escape and portable_group):
-            found.append(match.group())
+    found, index = [], 0
+    while index < len(pattern):
+        token = _SUBSET_TOKEN.match(pattern, index)
+        if token is None:
+            found.append(pattern[index:])
+            break
+        index = token.end()
     return found
 
 
@@ -552,6 +561,8 @@ def _patterns(node: object) -> Iterator[str]:
         r"\bword",
         r"(?<=a)b",
         r"(?<!a)b",
+        r"(?=a)b",
+        r"(?:a)",
         r"(a)\1",
         r"(?P<name>a)",
         r"(?<name>a)\k<name>",
@@ -560,11 +571,24 @@ def _patterns(node: object) -> Iterator[str]:
         r"abc\Z",
         r"\cA",
         r"\u{41}",
-        r"\x4",
-        r"\q",
+        r"\x41",
+        r"\uD83D\uDE00",
+        r"\t",
+        r"a.b",
+        r"a{,5}",
+        r"a*+",
+        r"a{2}+",
+        r"[]a]",
+        r"[^]",
+        r"a{",
+        r"a]",
+        r"\-",
+        "caf\u00e9",
+        "\U0001f600",
+        "a\nb",
     ],
 )
-def test_the_guard_refuses_non_portable_constructs(pattern: str) -> None:
+def test_the_guard_refuses_what_is_outside_the_interoperable_subset(pattern: str) -> None:
     assert _non_portable(pattern)
 
 
@@ -572,17 +596,19 @@ def test_the_guard_refuses_non_portable_constructs(pattern: str) -> None:
     "pattern",
     [
         r"^[0-9]{4}$",
-        r"^(?=.{1,39}$)[a-z]+(?:-[a-z]+)*$",
-        r"(?!x)y",
-        r"a\\d",
-        r"\.",
+        r"^[a-z0-9]+(-[a-z0-9]+)*$",
+        r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$",
+        r"^[A-Za-z0-9:._-]*$",
+        r"^[^abc]+?$",
+        r"a*?b??c{2}d{2,}?e{2,3}",
         r"^https://",
-        r"\x41\u00e9",
-        r"\t\n\r\f\v",
-        r"\/\-\^\$\*\+\?\(\)\[\]\{\}\|",
+        r"^(>=|>|==|~=)[0-9]+$",
+        r"a\\d",
+        r"\.\\\/\^\$\*\+\?\(\)\[\]\{\}\|",
+        r"[\]\[\\\^\-]",
     ],
 )
-def test_the_guard_accepts_portable_constructs(pattern: str) -> None:
+def test_the_guard_accepts_the_interoperable_subset(pattern: str) -> None:
     assert _non_portable(pattern) == []
 
 
@@ -604,5 +630,7 @@ def test_every_pattern_of_the_schemas_means_the_same_in_python_and_ecma_262() ->
     ]
     assert patterns
     assert {pattern: _non_portable(pattern) for pattern in patterns if _non_portable(pattern)} == {}
-    for pattern in patterns:
-        re.compile(ecma_to_python(pattern))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        for pattern in patterns:
+            re.compile(ecma_to_python(pattern))
