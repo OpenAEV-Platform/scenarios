@@ -138,9 +138,16 @@ def _zip64_extra(extra: bytes) -> bytes | None:
     return None
 
 
+def _dos_time(info: zipfile.ZipInfo) -> int:
+    """The DOS modification time the directory holds for an entry."""
+    hour, minute, second = info.date_time[3:]
+    return (hour << 11) | (minute << 5) | (second // 2)
+
+
 def _local_sizes(header: bytes, extra: bytes) -> tuple[int, int]:
-    """The compressed and uncompressed sizes a local header declares, zip64 included. A zip64
-    marker without its zip64 field is returned as is, and so never matches the directory."""
+    """The compressed and uncompressed sizes a local header declares, zip64 included. In a local
+    header, the zip64 field holds both sizes (APPNOTE 4.5.3), not only the promoted ones. A zip64
+    marker without a full zip64 field is returned as is, and so never matches the directory."""
     compressed, size = struct.unpack_from("<II", header, 18)
     field = _zip64_extra(extra)
     if _ZIP64_MARK in (compressed, size) and field is not None and len(field) >= 16:
@@ -153,13 +160,15 @@ def _entry_end(data: bytes, position: int, info: zipfile.ZipInfo) -> int | None:
     flagged, its data descriptor; or ``None`` when the local header or the descriptor says
     something else than the directory."""
     header = data[position : position + _LOCAL_SIZE]
-    flags, method = struct.unpack_from("<HH", header, 6)
+    flags, method, time = struct.unpack_from("<3H", header, 6)
     (crc,) = struct.unpack_from("<I", header, 14)
     name_length, extra_length = struct.unpack_from("<HH", header, 26)
     extra_start = position + _LOCAL_SIZE + name_length
     extra = data[extra_start : extra_start + extra_length]
     if flags & _AGREEING_FLAGS != info.flag_bits & _AGREEING_FLAGS or method != info.compress_type:
         return None
+    if flags & _ENCRYPTED and flags & _DATA_DESCRIPTOR and time != _dos_time(info):
+        return None  # the time then gives the password check byte: both readers must agree
     # The ZIP library decoded the name with the encoding these agreeing flags select, so
     # encoding it back gives the bytes the directory holds.
     encoding = "utf-8" if flags & _UTF8_NAME else "cp437"
@@ -236,11 +245,10 @@ class CheckedArchive:
             raise self._refuse("IO-007", f"entry {info.filename!r} is encrypted, password required")
         if len(data) < _ZIPCRYPTO_HEADER:
             raise self._refuse("IO-007", f"entry {info.filename!r} too short for its encryption")
-        if info.flag_bits & _DATA_DESCRIPTOR:
-            hour, minute, second = info.date_time[3:]  # high byte of the DOS time
-            check_byte = ((hour << 11) | (minute << 5) | (second // 2)) >> 8
-        else:
-            check_byte = info.CRC >> 24
+        # With a data descriptor, the CRC is not known when the header is written: the check
+        # byte is then the high byte of the modification time.
+        descriptor = info.flag_bits & _DATA_DESCRIPTOR
+        check_byte = _dos_time(info) >> 8 if descriptor else info.CRC >> 24
         plain = _zipcrypto_decrypt(data, password, check_byte)
         if plain is None:
             raise self._refuse("IO-007", f"wrong password for entry {info.filename!r}")

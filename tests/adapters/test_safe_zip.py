@@ -804,6 +804,18 @@ def test_a_zip64_size_the_local_descriptor_cannot_hold_is_refused(compressed: in
     assert error.value.code == "IO-007"
 
 
+def test_an_encrypted_entry_whose_local_time_differs_from_the_directory_is_refused() -> None:
+    data = bytearray(ENCRYPTED)  # encrypted, with a data descriptor: the time is the check byte
+    (flags,) = struct.unpack_from("<H", data, 6)
+    assert flags & 0x9 == 0x9
+    (time,) = struct.unpack_from("<H", data, 10)
+    struct.pack_into("<H", data, 10, time ^ 0x0800)  # another hour, in the local header only
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
 def test_encrypted_entries_are_limited_in_total_not_one_by_one() -> None:
     data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
     sizes = [info.compress_size for info in zipfile.ZipFile(io.BytesIO(data)).infolist()]
