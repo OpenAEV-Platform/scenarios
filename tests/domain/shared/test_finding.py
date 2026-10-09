@@ -113,3 +113,13 @@ def test_findings_are_reported_in_a_stable_order(findings: list[Finding], random
 def test_a_long_message_is_shortened_to_the_limit() -> None:
     assert shorten("a" * MESSAGE_LIMIT) == "a" * MESSAGE_LIMIT
     assert shorten("a" * (MESSAGE_LIMIT + 1)) == "a" * (MESSAGE_LIMIT - 1) + "…"
+
+
+@pytest.mark.parametrize("length", [1, MESSAGE_LIMIT, MESSAGE_LIMIT + 1, 1_000_000])
+def test_every_finding_message_is_at_most_the_limit(length: int) -> None:
+    message = "m" * length
+
+    finding = Finding("IO-005", Severity.BLOCKING, "a.json", "", message)
+
+    assert finding.message == shorten(message)
+    assert len(finding.message) <= MESSAGE_LIMIT
