@@ -27,6 +27,7 @@ from scenario_tools.adapters.safe_zip import (
 from scenario_tools.ports.errors import UnsafeInputError
 
 GOLDEN = Path(__file__).parents[1] / "golden" / "exports"
+_LOCAL_HEADER_SIZE = 30
 # Made with `zip -P infected`: deflate, and deflate streamed from standard input (zip64, entry
 # "-"). Like the archive above, both use a data descriptor.
 ENCRYPTED_DEFLATED = base64.b64decode(
@@ -585,6 +586,359 @@ def test_a_password_is_ignored_for_an_entry_that_is_not_encrypted() -> None:
     data = _handmade(VISIBLE, method=0, crc=zlib.crc32(VISIBLE), size=len(VISIBLE))
 
     assert archive_from_bytes(data).read("f", password=b"infected") == VISIBLE
+
+
+# Layout and encrypted entries: no byte outside an entry, a total budget, an early password check
+
+
+def _all_encrypted(data: bytes, *, entries: int | None = None) -> bytes:
+    """Set the encryption flag of every entry, or of the first ``entries`` ones, in their central
+    and local headers."""
+    patched = bytearray(data)
+    for signature, flags_at in ((b"PK\x01\x02", 8), (b"PK\x03\x04", 6)):
+        position, done = data.find(signature), 0
+        while position >= 0 and (entries is None or done < entries):
+            (flags,) = struct.unpack_from("<H", patched, position + flags_at)
+            struct.pack_into("<H", patched, position + flags_at, flags | 1)
+            position, done = data.find(signature, position + 4), done + 1
+    return bytes(patched)
+
+
+class _Stream(io.RawIOBase):
+    """A destination that cannot seek, so that the ZIP library writes data descriptors."""
+
+    def __init__(self) -> None:
+        self.data = bytearray()
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data: object) -> int:
+        chunk = bytes(data)  # type: ignore[call-overload]
+        self.data += chunk
+        return len(chunk)
+
+
+@pytest.mark.parametrize("zip64", [False, True], ids=["descriptor", "zip64 descriptor"])
+def test_archives_written_as_a_stream_lie_end_to_end(zip64: bool) -> None:
+    stream = _Stream()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in ("a.txt", "b.txt"):
+            info = zipfile.ZipInfo(name)
+            info.extra = struct.pack("<HHB", 0x5455, 1, 1)  # a timestamp field, not zip64
+            with archive.open(info, "w", force_zip64=zip64) as entry:
+                entry.write(name.encode() * 50)
+    data = bytes(stream.data)
+    assert all(info.flag_bits & 0x8 for info in zipfile.ZipFile(io.BytesIO(data)).infolist())
+
+    checked = archive_from_bytes(data)
+    assert checked.read("b.txt") == b"b.txt" * 50
+
+
+def test_a_data_descriptor_without_its_optional_signature_is_read() -> None:
+    stream = _Stream()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("a.txt", b"a" * 100)
+    signed = bytes(stream.data)
+    descriptor = signed.find(b"PK\x07\x08")
+    data = bytearray(signed[:descriptor] + signed[descriptor + 4 :])  # signature removed
+    end = data.rfind(b"PK\x05\x06")
+    (directory,) = struct.unpack_from("<I", data, end + 16)
+    struct.pack_into("<I", data, end + 16, directory - 4)
+
+    assert archive_from_bytes(bytes(data)).read("a.txt") == b"a" * 100
+
+
+def _streamed(content: bytes = b"a" * 100) -> bytes:
+    stream = _Stream()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("a.txt", content)
+    return bytes(stream.data)
+
+
+def _move_directory(data: bytearray, by: int) -> None:
+    end = data.rfind(b"PK\x05\x06")
+    (directory,) = struct.unpack_from("<I", data, end + 16)
+    struct.pack_into("<I", data, end + 16, directory + by)
+
+
+def test_a_descriptor_flag_set_only_in_the_directory_is_refused() -> None:
+    plain = _zip([("a.txt", b"a" * 100)])
+    info = zipfile.ZipFile(io.BytesIO(plain)).infolist()[0]
+    directory = plain.find(b"PK\x01\x02")
+    descriptor = struct.pack("<3I", info.CRC, info.compress_size, info.file_size)
+    data = bytearray(plain[:directory] + descriptor + plain[directory:])
+    struct.pack_into("<H", data, directory + len(descriptor) + 8, info.flag_bits | 0x8)
+    _move_directory(data, len(descriptor))
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [(6, 1), (8, 0), (14, 0), (18, 1), (22, 1)],
+    ids=["encryption flag", "method", "crc", "compressed size", "size"],
+)
+def test_a_local_header_that_disagrees_with_the_directory_is_refused(
+    field: int, value: int
+) -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    size = 2 if field in (6, 8) else 4
+    struct.pack_into("<H" if size == 2 else "<I", data, field, value)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_a_descriptor_that_disagrees_with_the_directory_is_refused() -> None:
+    data = bytearray(_streamed())
+    descriptor = data.find(b"PK\x07\x08")
+    data[descriptor + 4] ^= 0xFF  # its CRC
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_an_unsigned_descriptor_whose_crc_looks_like_the_signature_is_laid_out_right() -> None:
+    signed = _streamed()
+    descriptor = signed.find(b"PK\x07\x08")
+    data = bytearray(signed[:descriptor] + signed[descriptor + 4 :])
+    _move_directory(data, -4)
+    struct.pack_into("<4s", data, descriptor, b"PK\x07\x08")  # the CRC, in the descriptor
+    struct.pack_into("<4s", data, data.find(b"PK\x01\x02") + 16, b"PK\x07\x08")  # and directory
+
+    archive_from_bytes(bytes(data))  # laid out right; reading would fail on the real CRC
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
+def test_a_zip64_entry_without_descriptor_is_read(compression: int) -> None:
+    buffer = io.BytesIO()
+    with (
+        zipfile.ZipFile(buffer, "w", compression) as archive,
+        archive.open("a.txt", "w", force_zip64=True) as entry,
+    ):
+        entry.write(b"a" * 100)
+
+    assert archive_from_bytes(buffer.getvalue()).read("a.txt") == b"a" * 100
+
+
+def test_zip64_sizes_without_their_zip64_field_are_refused() -> None:
+    buffer = io.BytesIO()
+    with (
+        zipfile.ZipFile(buffer, "w") as archive,
+        archive.open("a.txt", "w", force_zip64=True) as entry,
+    ):
+        entry.write(b"a" * 100)
+    data = bytearray(buffer.getvalue())
+    extra = _LOCAL_HEADER_SIZE + len(b"a.txt")
+    assert struct.unpack_from("<H", data, extra) == (0x0001,)
+    struct.pack_into("<H", data, extra, 0x9999)  # the local zip64 field becomes unknown
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_a_local_name_that_differs_from_the_directory_is_refused_before_reading() -> None:
+    data = bytearray(_zip([("safe", b"x")]))
+    struct.pack_into("<4s", data, _LOCAL_HEADER_SIZE, b"../x")  # same length, unchecked name
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("name", ["caf\u00e9.txt", "plain.txt"], ids=["non-ascii", "ascii"])
+def test_a_local_name_encoding_flag_that_differs_from_the_directory_is_refused(name: str) -> None:
+    data = bytearray(_zip([(name, b"x")]))
+    (flags,) = struct.unpack_from("<H", data, 6)
+    struct.pack_into("<H", data, 6, flags ^ 0x800)  # the local header alone says otherwise
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("compressed", [2**32, 2**33], ids=["4 GiB", "8 GiB"])
+def test_a_zip64_size_the_local_descriptor_cannot_hold_is_refused(compressed: int) -> None:
+    name, content = b"a", b"x" * 10
+    crc = zlib.crc32(content)
+    local = (
+        struct.pack("<4s5H3I2H", b"PK\x03\x04", 20, 0x8, 0, 0, 0x21, 0, 0, 0, len(name), 0)
+        + name
+        + content
+        + struct.pack("<3I", crc, len(content), len(content))
+    )
+    central = (
+        struct.pack(
+            "<4s6H3I5H2I",
+            b"PK\x01\x02",
+            45,
+            45,
+            0x8,
+            0,
+            0,
+            0x21,
+            crc,
+            0xFFFFFFFF,
+            len(content),
+            len(name),
+            12,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        + name
+        + struct.pack("<HHQ", 0x0001, 8, compressed)  # zip64 field: the compressed size
+    )
+    end = struct.pack("<4s4H2IH", b"PK\x05\x06", 0, 0, 1, 1, len(central), len(local), 0)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(local + central + end)
+    assert error.value.code == "IO-007"
+
+
+def test_an_encrypted_entry_whose_local_time_differs_from_the_directory_is_refused() -> None:
+    data = bytearray(ENCRYPTED)  # encrypted, with a data descriptor: the time is the check byte
+    (flags,) = struct.unpack_from("<H", data, 6)
+    assert flags & 0x9 == 0x9
+    (time,) = struct.unpack_from("<H", data, 10)
+    struct.pack_into("<H", data, 10, time ^ 0x0800)  # another hour, in the local header only
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize(
+    "flag", [0x10, 0x20, 0x40, 0x2000], ids=["bit 4", "patched data", "strong encryption", "masked"]
+)
+def test_flags_this_reader_does_not_implement_are_refused(flag: int) -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    for signature, flags_at in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        position = data.find(signature)
+        (flags,) = struct.unpack_from("<H", data, position + flags_at)
+        struct.pack_into("<H", data, position + flags_at, flags | flag)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("flag", [0x2, 0x4, 0x20], ids=["option 1", "option 2", "patched data"])
+def test_a_flag_set_only_in_the_local_header_is_refused(flag: int) -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    (flags,) = struct.unpack_from("<H", data, 6)
+    struct.pack_into("<H", data, 6, flags | flag)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_deflate_option_flags_set_in_both_headers_are_accepted() -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    for signature, flags_at in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        position = data.find(signature)
+        (flags,) = struct.unpack_from("<H", data, position + flags_at)
+        struct.pack_into("<H", data, position + flags_at, flags | 0x2)  # maximum compression
+
+    assert archive_from_bytes(bytes(data)).read("a.txt") == b"a" * 100
+
+
+def test_encrypted_entries_are_limited_in_total_not_one_by_one() -> None:
+    data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
+    sizes = [info.compress_size for info in zipfile.ZipFile(io.BytesIO(data)).infolist()]
+
+    archive_from_bytes(data, encrypted_limit=sum(sizes))
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(data, encrypted_limit=sum(sizes) - 1)
+    assert error.value.code == "IO-008"
+    assert max(sizes) <= sum(sizes) - 1  # each entry alone is within the limit
+
+
+def test_entries_that_are_not_encrypted_do_not_count_in_the_budget() -> None:
+    data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 2000)]), entries=1)
+    encrypted = zipfile.ZipFile(io.BytesIO(data)).infolist()[0].compress_size
+
+    archive_from_bytes(data, encrypted_limit=encrypted)
+
+
+def test_entries_that_overlap_are_refused_before_any_entry_is_read() -> None:
+    data = bytearray(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
+    second = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+    struct.pack_into("<I", data, second + 42, 0)  # "b" now starts where "a" starts
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_bytes_that_no_entry_lists_are_refused() -> None:
+    hidden = _zip([("../../evil.sh", b"echo owned")])
+    hidden = hidden[: hidden.find(b"PK\x01\x02")]  # its local header and data only
+    listed = _zip([("ok.txt", b"fine"), ("other.txt", b"fine too")])
+    second = listed.find(b"PK\x03\x04", 4)
+    data = bytearray(listed[:second] + hidden + listed[second:])  # unlisted bytes between entries
+    central = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+    struct.pack_into("<I", data, central + 42, second + len(hidden))
+    end = data.rfind(b"PK\x05\x06")
+    (directory,) = struct.unpack_from("<I", data, end + 16)
+    struct.pack_into("<I", data, end + 16, directory + len(hidden))
+    assert [info.filename for info in zipfile.ZipFile(io.BytesIO(bytes(data))).infolist()] == [
+        "ok.txt",
+        "other.txt",
+    ]
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_bytes_between_the_last_entry_and_the_directory_are_refused() -> None:
+    listed = _zip([("ok.txt", b"fine")])
+    directory = listed.find(b"PK\x01\x02")
+    data = bytearray(listed[:directory] + b"unlisted" + listed[directory:])
+    end = data.rfind(b"PK\x05\x06")
+    struct.pack_into("<I", data, end + 16, directory + len(b"unlisted"))
+    assert zipfile.ZipFile(io.BytesIO(bytes(data))).namelist() == ["ok.txt"]
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_data_before_the_first_entry_is_refused() -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(b"prefix" + _zip([("a", b"a")]))
+    assert error.value.code == "IO-007"
+
+
+def test_a_wrong_password_is_found_before_the_entry_is_decrypted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decrypted: list[int] = []
+    original = safe_zip_module._ZipCryptoKeys.decrypt
+
+    def spy(keys: object, data: bytes) -> bytes:
+        decrypted.append(len(data))
+        return original(keys, data)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(safe_zip_module._ZipCryptoKeys, "decrypt", spy)
+    archive = archive_from_bytes(ENCRYPTED_DEFLATED)
+
+    with pytest.raises(UnsafeInputError):
+        archive.read("d.txt", password=b"wrong")
+    assert decrypted == [12]
+    decrypted.clear()
+    archive.read("d.txt", password=b"infected")
+    assert decrypted == [12, 27 - 12]
 
 
 # Hostile input in general
