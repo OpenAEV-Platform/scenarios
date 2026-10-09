@@ -195,7 +195,7 @@ def _signature(inject: Mapping[str, Any], namespace: uuid.UUID) -> InjectSignatu
     payload = _payload(inject)
     contract = inject.get(_CONTRACT) or {}
     if payload is not None:
-        key = stable_id(namespace, "payload", _text(payload, "payload_name", _PAYLOAD))
+        key = stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD))
     else:
         key = contract.get("injector_contract_id") or ""
     relations = inject.get("inject_depends_on")
@@ -315,7 +315,7 @@ def _identifiers(
             identifiers.add(built_in, built_in)
         if payload is not None:
             source = _text(payload, "payload_id", _PAYLOAD)
-            name = _text(payload, "payload_name", _PAYLOAD)
+            name = _name(payload, "payload_name", _PAYLOAD)
             if payloads.setdefault(name, source) != source:
                 raise _refuse(f"two payloads are named {name!r}")
             identifiers.add(source, stable_id(namespace, "payload", name))

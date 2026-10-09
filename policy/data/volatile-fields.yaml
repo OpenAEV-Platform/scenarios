@@ -27,5 +27,6 @@ sorted:
   - injector_contract_attack_patterns
   - injector_contract_domains
   - injector_contract_platforms
+  - injector_contract_tags
   - payload_tags
   - team_tags

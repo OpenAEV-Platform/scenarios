@@ -1230,3 +1230,23 @@ def test_no_domain_list_with_domains_in_the_copy_is_refused(absent: bool) -> Non
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
     assert error.value.code == "IO-014"
+
+
+def test_an_empty_payload_name_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    contract = export["scenario_injects"][1]["inject_injector_contract"]
+    contract["injector_contract_payload"]["payload_name"] = ""
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_an_empty_payload_name_in_the_previous_version_is_refused() -> None:
+    previous = normalise(EXPORT, EXTERNAL_ID, RULES).document
+    contract = _injects(previous)["Dump credentials"]["inject_injector_contract"]
+    contract["injector_contract_payload"]["payload_name"] = ""
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
+    assert error.value.origin == "previous"

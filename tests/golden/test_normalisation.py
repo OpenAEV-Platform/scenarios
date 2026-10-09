@@ -166,3 +166,7 @@ def test_no_volatile_field_is_left_even_inside_contract_copies(export: Path) -> 
 
     assert _volatile_keys(read_export(export), rules)
     assert _volatile_keys(json.loads(_prepare(export)), rules) == set()
+
+
+def test_contract_tags_are_a_set() -> None:
+    assert "injector_contract_tags" in _rules().sorted_lists
