@@ -107,10 +107,10 @@ class _Watchdog:
                 connection.close()
                 error = failure
                 continue
-            if self._left() <= 0:
-                connection.close()
-                raise TimeoutError("the connection completed after the deadline")
-            with self._lock:
+            with self._lock:  # the same lock as the watchdog: it cannot fire in between
+                if self.expired or self._left() <= 0:
+                    connection.close()
+                    raise TimeoutError("the connection completed after the deadline")
                 self._sockets.append(connection)
             return connection
         raise error

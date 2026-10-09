@@ -313,6 +313,16 @@ def test_a_connection_completed_after_the_deadline_is_closed(
         watchdog.create_connection(_address(platform), 5)
 
 
+def test_a_connection_made_while_the_watchdog_expires_is_closed(platform: Platform) -> None:
+    # The watchdog fires between the last check of the clock and the registration of the
+    # socket: it found nothing to cut, so the socket must not be handed over.
+    watchdog = _Watchdog(5)
+    watchdog._expire()
+
+    with pytest.raises(TimeoutError):
+        watchdog.create_connection(_address(platform), 5)
+
+
 def test_a_connection_attempt_gets_only_the_time_left(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
