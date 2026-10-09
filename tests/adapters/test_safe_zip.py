@@ -816,6 +816,42 @@ def test_an_encrypted_entry_whose_local_time_differs_from_the_directory_is_refus
     assert error.value.code == "IO-007"
 
 
+@pytest.mark.parametrize(
+    "flag", [0x10, 0x20, 0x40, 0x2000], ids=["bit 4", "patched data", "strong encryption", "masked"]
+)
+def test_flags_this_reader_does_not_implement_are_refused(flag: int) -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    for signature, flags_at in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        position = data.find(signature)
+        (flags,) = struct.unpack_from("<H", data, position + flags_at)
+        struct.pack_into("<H", data, position + flags_at, flags | flag)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+@pytest.mark.parametrize("flag", [0x2, 0x4, 0x20], ids=["option 1", "option 2", "patched data"])
+def test_a_flag_set_only_in_the_local_header_is_refused(flag: int) -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    (flags,) = struct.unpack_from("<H", data, 6)
+    struct.pack_into("<H", data, 6, flags | flag)
+
+    with pytest.raises(UnsafeInputError) as error:
+        archive_from_bytes(bytes(data))
+    assert error.value.code == "IO-007"
+
+
+def test_deflate_option_flags_set_in_both_headers_are_accepted() -> None:
+    data = bytearray(_zip([("a.txt", b"a" * 100)]))
+    for signature, flags_at in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        position = data.find(signature)
+        (flags,) = struct.unpack_from("<H", data, position + flags_at)
+        struct.pack_into("<H", data, position + flags_at, flags | 0x2)  # maximum compression
+
+    assert archive_from_bytes(bytes(data)).read("a.txt") == b"a" * 100
+
+
 def test_encrypted_entries_are_limited_in_total_not_one_by_one() -> None:
     data = _all_encrypted(_zip([("a", b"a" * 20), ("b", b"b" * 20)]))
     sizes = [info.compress_size for info in zipfile.ZipFile(io.BytesIO(data)).infolist()]

@@ -43,7 +43,10 @@ _LOCAL_SIZE = 30
 _DESCRIPTOR = b"PK\x07\x08"
 _ZIP64_EXTRA = 0x0001
 _ZIP64_MARK = 0xFFFFFFFF
-_AGREEING_FLAGS = _ENCRYPTED | _DATA_DESCRIPTOR | _UTF8_NAME
+_DEFLATE_OPTIONS = 0x6
+# Every other flag (patched data, strong encryption, masked headers…) changes how an entry is
+# decoded in a way this reader does not implement.
+_SUPPORTED_FLAGS = _ENCRYPTED | _DEFLATE_OPTIONS | _DATA_DESCRIPTOR | _UTF8_NAME
 _ZIPCRYPTO_HEADER = 12
 
 
@@ -165,7 +168,7 @@ def _entry_end(data: bytes, position: int, info: zipfile.ZipInfo) -> int | None:
     name_length, extra_length = struct.unpack_from("<HH", header, 26)
     extra_start = position + _LOCAL_SIZE + name_length
     extra = data[extra_start : extra_start + extra_length]
-    if flags & _AGREEING_FLAGS != info.flag_bits & _AGREEING_FLAGS or method != info.compress_type:
+    if flags != info.flag_bits or method != info.compress_type:
         return None
     if flags & _ENCRYPTED and flags & _DATA_DESCRIPTOR and time != _dos_time(info):
         return None  # the time then gives the password check byte: both readers must agree
@@ -323,6 +326,10 @@ def archive_from_bytes(
         if info.compress_type not in (_STORED, _DEFLATED):
             raise UnsafeInputError(
                 "IO-007", f"compression method {info.compress_type} not allowed", path
+            )
+        if info.flag_bits & ~_SUPPORTED_FLAGS:
+            raise UnsafeInputError(
+                "IO-007", f"flags {info.flag_bits:#06x} not supported for {info.filename!r}", path
             )
         if _is_unsafe_name(info.orig_filename):
             raise UnsafeInputError("IO-010", f"unsafe entry name {info.orig_filename!r}", path)
