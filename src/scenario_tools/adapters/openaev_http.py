@@ -68,7 +68,7 @@ class _Watchdog:
         self._timer = threading.Timer(seconds, self._expire)
         self._timer.daemon = True
 
-    def _left(self) -> float:
+    def left(self) -> float:
         return self._deadline - time.monotonic()
 
     def _resolve(self, host: str, port: int) -> list[Any]:
@@ -85,7 +85,7 @@ class _Watchdog:
 
         worker = threading.Thread(target=resolve, daemon=True)
         worker.start()
-        worker.join(max(self._left(), 0))
+        worker.join(max(self.left(), 0))
         if worker.is_alive():
             raise TimeoutError("the name resolution outlived the deadline")
         if failed:
@@ -107,7 +107,7 @@ class _Watchdog:
                 f"OPENAEV_URL uses http, but {address[0]} does not resolve to the local machine"
             )
         for family, kind, protocol, _, target in addresses:
-            left = self._left()
+            left = self.left()
             if left <= 0:
                 raise TimeoutError("the deadline passed before the connection")
             connection = socket.socket(family, kind, protocol)
@@ -119,7 +119,7 @@ class _Watchdog:
                 error = failure
                 continue
             with self._lock:  # the same lock as the watchdog: it cannot fire in between
-                if self.expired or self._left() <= 0:
+                if self.expired or self.left() <= 0:
                     connection.close()
                     raise TimeoutError("the connection completed after the deadline")
                 self._sockets.append(connection)
@@ -167,15 +167,33 @@ class _HTTPConnection(http.client.HTTPConnection):
 
 
 class _HTTPSConnection(http.client.HTTPSConnection):
-    def __init__(self, *args: Any, watchdog: _Watchdog, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self, *args: Any, watchdog: _Watchdog, context: ssl.SSLContext, **kwargs: Any
+    ) -> None:
+        super().__init__(*args, context=context, **kwargs)
         self._watchdog = watchdog
+        self._tls = context
         self._create_connection = watchdog.create_connection
 
     def connect(self) -> None:
-        # The handshake runs on the first socket, within its timeout, set to the time left.
-        super().connect()
-        self._watchdog.watch(self.sock)  # the encrypted socket: the wrapping detached the first
+        """The connection of the standard library, with the handshake watched: the wrapping
+        detaches the first socket, so the encrypted one is handed to the watchdog before the
+        handshake starts, with the time left as its timeout, a slow tunnel included."""
+        http.client.HTTPConnection.connect(self)  # the connection, and the proxy tunnel if any
+        encrypted = self._tls.wrap_socket(
+            self.sock,
+            # Through a proxy, the platform is the tunnel's host (set by the standard library).
+            server_hostname=getattr(self, "_tunnel_host", None) or self.host,
+            do_handshake_on_connect=False,
+        )
+        self._watchdog.watch(encrypted)
+        try:
+            encrypted.settimeout(max(self._watchdog.left(), 0.001))  # past it: already cut
+            encrypted.do_handshake()
+        except BaseException:
+            encrypted.close()
+            raise
+        self.sock = encrypted
 
 
 class _HTTPHandler(urllib.request.HTTPHandler):
@@ -325,7 +343,7 @@ class HttpOpenAEV:
             "GET",
             path + urllib.parse.urlencode(EXPORT_OPTIONS),
             self._archive_limit,
-            not_found=f"scenario {scenario_id} not found on the platform",
+            not_found="the scenario was not found on the platform",
         )
         if len(data) > self._archive_limit:
             raise UnsafeInputError("IO-001", f"larger than {self._archive_limit} bytes")

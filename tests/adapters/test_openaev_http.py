@@ -197,7 +197,7 @@ def test_an_export_at_the_archive_limit_is_returned(platform: Platform) -> None:
     [
         (401, "the platform refused the token \\(HTTP 401\\)"),
         (403, "the platform refused the token \\(HTTP 403\\)"),
-        (404, f"scenario {SCENARIO} not found on the platform \\(HTTP 404\\)"),
+        (404, "the scenario was not found on the platform \\(HTTP 404\\)"),
         (500, "the platform answered HTTP 500"),
         (204, "the platform answered HTTP 204"),
     ],
@@ -210,6 +210,16 @@ def test_an_error_of_the_platform_is_an_environment_problem(
     with pytest.raises(EnvironmentProblemError, match=f"^{reason}$") as error:
         _client(platform).export_scenario(SCENARIO)
     assert TOKEN not in str(error.value)
+
+
+def test_an_unknown_scenario_is_not_named_back(platform: Platform) -> None:
+    # The identifier is the caller's, and could be anything, the token included.
+    platform.answer(404)
+    client = HttpOpenAEV.from_environment({"OPENAEV_URL": platform.url, "OPENAEV_TOKEN": SCENARIO})
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        client.export_scenario(SCENARIO)
+    assert SCENARIO not in str(error.value)
 
 
 def test_a_redirect_is_never_followed(platform: Platform) -> None:
@@ -356,21 +366,88 @@ def test_the_watchdog_cuts_a_connection_wrapped_for_encryption() -> None:
             assert time.monotonic() - start < 1
 
 
-def test_an_encrypted_connection_is_watched_once_connected(
-    platform: Platform, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    connected = socket.create_connection(_address(platform), 2)  # a wait never hangs the test
+class _Encrypted:
+    def __init__(self, events: list[tuple[object, ...]], failure: Exception | None) -> None:
+        self.events, self.failure = events, failure
+
+    def settimeout(self, value: float) -> None:
+        self.events.append(("timeout", value))
+
+    def do_handshake(self) -> None:
+        self.events.append(("handshake",))
+        if self.failure:
+            raise self.failure
+
+    def close(self) -> None:
+        self.events.append(("close",))
+
+
+def _encrypted_connection(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception | None = None
+) -> tuple[_HTTPSConnection, _Encrypted, list[tuple[object, ...]]]:
+    """An encrypted connection whose network, encryption and watchdog are stand-ins that
+    record what the connection does, in order."""
+    events: list[tuple[object, ...]] = []
+    encrypted = _Encrypted(events, failure)
+
+    class Context:
+        def wrap_socket(self, sock: object, **options: object) -> _Encrypted:
+            events.append(("wrap", options["server_hostname"], options["do_handshake_on_connect"]))
+            return encrypted
+
+    class Watchdog:
+        create_connection = None
+
+        def watch(self, connection: object) -> None:
+            events.append(("watch", connection is encrypted))
+
+        def left(self) -> float:
+            return 2.5
+
     monkeypatch.setattr(
-        http.client.HTTPSConnection, "connect", lambda self: setattr(self, "sock", connected)
+        http.client.HTTPConnection, "connect", lambda self: setattr(self, "sock", object())
     )
-    watchdog = _Watchdog(5)
-    connection = _HTTPSConnection("platform.example.org", watchdog=watchdog)
+    connection = _HTTPSConnection(
+        "platform.example.org",
+        watchdog=Watchdog(),  # type: ignore[arg-type]
+        context=Context(),  # type: ignore[arg-type]
+    )
+    return connection, encrypted, events
+
+
+def test_the_encrypted_socket_is_watched_before_its_handshake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection, encrypted, events = _encrypted_connection(monkeypatch)
 
     connection.connect()
-    watchdog._expire()
 
-    with connected:
-        assert connected.recv(1) == b""  # shut down: nothing more can come
+    assert events == [
+        ("wrap", "platform.example.org", False),
+        ("watch", True),
+        ("timeout", 2.5),
+        ("handshake",),
+    ]
+    assert connection.sock is encrypted
+
+
+def test_through_a_proxy_the_handshake_names_the_platform(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection, _, events = _encrypted_connection(monkeypatch)
+    connection.set_tunnel("tunnel.example.org", 443)
+
+    connection.connect()
+
+    assert events[0] == ("wrap", "tunnel.example.org", False)
+
+
+def test_a_failed_handshake_closes_the_encrypted_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    connection, _, events = _encrypted_connection(monkeypatch, TimeoutError("late"))
+
+    with pytest.raises(TimeoutError):
+        connection.connect()
+    assert events[-1] == ("close",)
 
 
 def test_a_watched_socket_that_expires_late_is_cut_at_once(platform: Platform) -> None:
@@ -517,6 +594,30 @@ def test_an_encrypted_call_whose_tunnel_crawls_is_cut_at_the_deadline(
         ):
             client.export_scenario(SCENARIO)
         assert time.monotonic() - start < 0.6
+
+
+def test_the_handshake_after_a_slow_tunnel_ends_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with platform_server() as proxy:
+        proxy.raw = b"HTTP/1.1 200 Connection established\r\n\r\n"
+        proxy.drip = 0.008  # a third of a second for the tunnel
+        proxy.hold = 1.0  # then no answer to the client's hello
+        for name in ("HTTPS_PROXY", "https_proxy"):
+            monkeypatch.setenv(name, proxy.url)
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        client = HttpOpenAEV.from_environment(
+            {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": TOKEN},
+            timeout=0.6,
+        )
+
+        start = time.monotonic()
+        with pytest.raises(
+            EnvironmentProblemError, match=r"^the platform did not answer within 0.6 seconds$"
+        ):
+            client.export_scenario(SCENARIO)
+        assert time.monotonic() - start < 0.8
 
 
 def test_an_encrypted_call_verifies_the_certificate_and_the_host_name() -> None:
