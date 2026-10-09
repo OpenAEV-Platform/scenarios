@@ -411,17 +411,16 @@ def _decode(text: str) -> Any:
 
 
 def _strip_text(text: object, rules: NormalisationRules) -> object:
-    """The JSON text of a contract copy, without its volatile fields. A text that held none is
-    kept as it is: the platform does not encode all its contracts the same way."""
+    """The JSON text of a contract copy, without its volatile fields and with its set-like lists
+    sorted, encoded again in compact form, keys in their order: the platform does not encode all
+    its contracts the same way, and two equivalent copies must give the same text."""
     if text is None:
         return None
     if not isinstance(text, str):
         raise _refuse(f"{_CONTENT} must be JSON text")
     decoded = _decode(text)
-    stripped = _strip(decoded, rules)
-    if stripped == decoded:
-        return text
-    return json.dumps(stripped, ensure_ascii=False, separators=(",", ":"))
+    cleaned = _sort(_strip(decoded, rules), rules)  # the same rules as the rest of the export
+    return json.dumps(cleaned, ensure_ascii=False, separators=(",", ":"))
 
 
 def _declared_domains(contract: Mapping[str, Any]) -> bool:

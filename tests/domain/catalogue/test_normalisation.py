@@ -498,13 +498,13 @@ def test_volatile_fields_are_removed_inside_the_contract_copy_text() -> None:
     )
 
 
-def test_a_contract_copy_text_without_volatile_fields_is_kept_as_it_is() -> None:
+def test_every_contract_copy_text_is_encoded_in_compact_form() -> None:
     content = f'{{"contract_id": "{PAYLOAD_CONTRACT}", "fields": [1, 2.50]}}'
 
     document = normalise(_with_content(content), EXTERNAL_ID, RULES).document
 
     contract = stable_id(NS, "contract", "Dump")
-    assert _content(document) == f'{{"contract_id": "{contract}", "fields": [1, 2.50]}}'
+    assert _content(document) == f'{{"contract_id":"{contract}","fields":[1,2.5]}}'
 
 
 def test_a_contract_copy_text_as_deep_as_allowed_is_accepted() -> None:
@@ -1192,3 +1192,20 @@ def test_a_null_domain_list_is_no_domain() -> None:
     mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
 
     assert mail["inject_injector_contract"]["injector_contract_domains"] is None
+
+
+def test_set_like_lists_inside_a_contract_copy_text_are_sorted() -> None:
+    def normalised(tags: list[str]) -> str:
+        content = json.dumps({"inject_tags": tags, "label": "x"}, separators=(",", ": "))
+        return _content(normalise(_with_content(content), EXTERNAL_ID, RULES).document)
+
+    assert (
+        normalised(["b", "a"]) == normalised(["a", "b"]) == '{"inject_tags":["a","b"],"label":"x"}'
+    )
+
+
+def test_two_equivalent_contract_copy_texts_give_the_same_text() -> None:
+    def normalised(content: str) -> str:
+        return _content(normalise(_with_content(content), EXTERNAL_ID, RULES).document)
+
+    assert normalised('{"inject_tags": ["a", "b"]}') == normalised('{"inject_tags":["b","a"]}')
