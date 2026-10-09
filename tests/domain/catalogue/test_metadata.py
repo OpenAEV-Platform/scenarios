@@ -291,3 +291,34 @@ def test_values_from_the_export_are_never_echoed_in_full() -> None:
 
     assert [finding.code for finding in findings] == ["SCH-002", "SCH-003", "SCH-004"]
     assert all(len(finding.message) <= MESSAGE_LIMIT for finding in findings)
+
+
+def test_a_communication_inject_that_needs_an_executor_makes_the_scenario_technical() -> None:
+    facts = replace(
+        FACTS,
+        injects=(
+            _inject("openaev_email"),
+            _inject("openaev_email", needs_executor=True, platforms=frozenset({"Windows"})),
+        ),
+    )
+
+    assert not is_tabletop(facts, COMMUNICATION)
+
+
+@given(
+    st.lists(
+        st.tuples(
+            st.sampled_from(["openaev_email", "openaev_manual", "openaev_nmap"]), st.booleans()
+        ),
+        max_size=4,
+    )
+)
+def test_tabletop_means_communication_only_and_no_executor(
+    injects: list[tuple[str, bool]],
+) -> None:
+    facts = replace(FACTS, injects=tuple(_inject(kind, executor) for kind, executor in injects))
+
+    expected = bool(injects) and all(
+        kind in COMMUNICATION and not executor for kind, executor in injects
+    )
+    assert is_tabletop(facts, COMMUNICATION) == expected

@@ -96,10 +96,13 @@ class ExportFacts:
 
 
 def is_tabletop(facts: ExportFacts, communication: frozenset[str]) -> bool:
-    """True when every inject uses a communication injector; a scenario without any inject, or
-    with an injector outside the list, is technical."""
+    """True when every inject uses a communication injector and none needs an executor. A
+    scenario without any inject, with an injector outside the list, or with an inject that runs
+    through an executor is technical: the injector type comes from the export, so it is never
+    trusted alone."""
     return bool(facts.injects) and all(
-        inject.injector_type in communication for inject in facts.injects
+        inject.injector_type in communication and not inject.needs_executor
+        for inject in facts.injects
     )
 
 
