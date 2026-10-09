@@ -136,3 +136,41 @@ def test_an_output_that_cannot_be_written_is_an_environment_problem(
 
     with pytest.raises(EnvironmentProblemError, match="No space left"):
         write_output(tmp_path / "scenario.json", b"x")
+
+
+def test_an_output_directory_that_is_a_link_is_refused(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "entry").symlink_to(real)
+
+    with pytest.raises(UnsafeInputError) as error:
+        write_output(tmp_path / "entry" / "scenario.json", b"x")
+    assert error.value.code == "IO-013"
+    assert list(real.iterdir()) == []
+
+
+@pytest.mark.parametrize("kind", ["fifo", "directory"])
+def test_an_output_that_is_not_a_regular_file_is_refused_without_blocking(
+    tmp_path: Path, kind: str
+) -> None:
+    target = tmp_path / "scenario.json"
+    if kind == "fifo":
+        os.mkfifo(target)
+    else:
+        target.mkdir()
+
+    with pytest.raises(UnsafeInputError) as error:
+        write_output(target, b"x")
+    assert error.value.code == "IO-013"
+
+
+def test_a_fifo_with_a_reader_is_refused_too(tmp_path: Path) -> None:
+    target = tmp_path / "scenario.json"
+    os.mkfifo(target)
+    reader = os.open(target, os.O_RDONLY | os.O_NONBLOCK)  # the open now succeeds
+    try:
+        with pytest.raises(UnsafeInputError) as error:
+            write_output(target, b"x")
+        assert error.value.code == "IO-013"
+    finally:
+        os.close(reader)

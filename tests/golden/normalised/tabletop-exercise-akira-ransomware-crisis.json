@@ -288,9 +288,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -568,9 +565,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -856,9 +850,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -1161,9 +1152,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -1449,9 +1437,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -1737,9 +1722,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -2025,9 +2007,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -2313,9 +2292,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -2601,9 +2577,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -2889,9 +2862,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -3177,9 +3147,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -3465,9 +3432,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -3753,9 +3717,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -4041,9 +4002,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -4329,9 +4287,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -4617,9 +4572,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -4905,9 +4857,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -5193,9 +5142,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -5481,9 +5427,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",
@@ -5769,9 +5712,6 @@
         "injector_contract_external_id": null,
         "injector_contract_id": "2790bd39-37d4-4e39-be7e-53f3ca783f86",
         "injector_contract_import_available": true,
-        "injector_contract_injector_names": {
-          "41b4dd55-5bd1-4614-98cd-9e3770753306": "Email"
-        },
         "injector_contract_injector_type": "openaev_email",
         "injector_contract_labels": {
           "en": "Send multi-recipients mail",

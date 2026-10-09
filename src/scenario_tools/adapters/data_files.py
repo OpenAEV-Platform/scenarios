@@ -7,6 +7,7 @@ following a symbolic link, so that a link planted in an entry cannot redirect th
 import errno
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -64,19 +65,37 @@ def read_mapping(path: Path) -> dict[str, str]:
     return mapping
 
 
+def _not_followed(path: Path, error: OSError) -> Exception:
+    """A link, or anything but a directory or a regular file, is refused input; any other
+    failure is the environment's."""
+    if error.errno in (errno.ELOOP, errno.ENOTDIR, errno.EISDIR, errno.ENXIO):
+        return UnsafeInputError("IO-013", "a symbolic link or not a regular file", str(path))
+    return EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
+
+
 def write_output(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path``, replacing a regular file, never through a link."""
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    """Write ``data`` to ``path``, replacing a regular file. Neither the output directory nor the
+    file may be a link, and only a regular file is written: the file is opened without blocking,
+    so that a FIFO planted in its place can neither stall nor receive the output."""
     try:
-        descriptor = os.open(path, flags, 0o644)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
-        if error.errno == errno.ELOOP:
-            raise UnsafeInputError("IO-013", "a symbolic link", str(path)) from error
-        raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
+        raise _not_followed(path.parent, error) from error
     try:
-        with os.fdopen(descriptor, "wb", closefd=False) as file:
-            file.write(data)
-    except OSError as error:
-        raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
+        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
+        try:
+            descriptor = os.open(path.name, flags, 0o644, dir_fd=directory)
+        except OSError as error:
+            raise _not_followed(path, error) from error
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise UnsafeInputError("IO-013", "not a regular file", str(path))
+            os.ftruncate(descriptor, 0)
+            with os.fdopen(descriptor, "wb", closefd=False) as file:
+                file.write(data)
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
+        finally:
+            os.close(descriptor)
     finally:
-        os.close(descriptor)
+        os.close(directory)

@@ -211,6 +211,9 @@ def _identifiers(
     old = [
         _signature(inject, lambda payload: payload) for inject in _objects(previous or {}, _INJECTS)
     ]
+    for signatures, where in ((new, "the export"), (old, "the previous version")):
+        if len({signature.id for signature in signatures}) != len(signatures):
+            raise _refuse(f"an inject identifier appears twice in {where}")
     matching = match_injects(namespace, new, old, mapping)
     for source, target in matching.ids.items():
         identifiers.add(source, target)
@@ -218,8 +221,9 @@ def _identifiers(
 
 
 def _rewrite(value: Any, targets: Mapping[str, str]) -> Any:
+    """Every rewritten identifier replaced, in values, inside text and in object keys."""
     if isinstance(value, dict):
-        return {key: _rewrite(child, targets) for key, child in value.items()}
+        return {_rewrite(key, targets): _rewrite(child, targets) for key, child in value.items()}
     if isinstance(value, list):
         return [_rewrite(child, targets) for child in value]
     if isinstance(value, str):

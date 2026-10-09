@@ -17,8 +17,9 @@ ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 # Fields that hold an identifier of the instance the export comes from.
 _INSTANCE_KEYS = re.compile(
     r"scenario_id|inject_id|team_id|variable_id|payload_id|attack_pattern_id|phase_id"
-    r"|injector_contract_payload_author(_organization)?"
+    r"|injector_contract_payload_author(_organization)?|injector_contract_injectors"
 )
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 def _prepare(export: Path) -> bytes:
@@ -27,11 +28,16 @@ def _prepare(export: Path) -> bytes:
 
 
 def _instance_identifiers(value: Any) -> set[str]:
+    """Identifiers of the source instance: in identifier fields, in identifier lists, and as
+    object keys."""
     found: set[str] = set()
     if isinstance(value, dict):
         for key, child in value.items():
-            if _INSTANCE_KEYS.fullmatch(key) and isinstance(child, str):
-                found.add(child)
+            if _UUID.fullmatch(key):
+                found.add(key)
+            if _INSTANCE_KEYS.fullmatch(key):
+                items = child if isinstance(child, list) else [child]
+                found |= {item for item in items if isinstance(item, str)}
             found |= _instance_identifiers(child)
     elif isinstance(value, list):
         for child in value:

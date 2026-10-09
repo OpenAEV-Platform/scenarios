@@ -440,3 +440,28 @@ def test_twins_are_told_apart_by_their_parents_on_another_instance() -> None:
 
     for parent_title in ("Parent one", "Parent two"):
         assert child_of(second, parent_title) == child_of(first, parent_title)
+
+
+def test_identifiers_used_as_object_keys_are_rewritten_too() -> None:
+    keyed = copy.deepcopy(EXPORT)
+    keyed["scenario_information"]["by_team"] = {TEAM: "Blue"}
+
+    document = normalise(keyed, EXTERNAL_ID, RULES).document
+
+    assert document["scenario_information"]["by_team"] == {stable_id(NS, "team", TEAM): "Blue"}
+
+
+@pytest.mark.parametrize("where", ["export", "previous"])
+def test_repeated_inject_identifiers_are_refused(where: str) -> None:
+    repeated = copy.deepcopy(EXPORT)
+    repeated["scenario_injects"].append(copy.deepcopy(repeated["scenario_injects"][0]))
+    if where == "export":
+        export, previous = repeated, None
+    else:
+        previous = normalise(EXPORT, EXTERNAL_ID, RULES).document
+        previous["scenario_injects"].append(copy.deepcopy(previous["scenario_injects"][0]))
+        export = EXPORT
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES, previous=previous)
+    assert error.value.code == "IO-014"
