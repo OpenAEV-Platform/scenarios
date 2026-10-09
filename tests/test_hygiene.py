@@ -104,12 +104,17 @@ def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
     found = {}
     for relative in _committable_files(root):
         path = root / relative
-        if relative == THIS_FILE or not path.is_file():
-            continue  # this file names the references; a deleted file is not read
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue  # binary files, such as the reference exports
+        if relative == THIS_FILE:
+            continue  # this file names the references
+        if path.is_symlink():
+            text = str(path.readlink())  # what the repository stores for a link: its target
+        elif not path.is_file():
+            continue  # deleted from the working tree
+        else:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue  # binary files, such as the reference exports
         references = _internal_references(text)
         if references:
             found[relative.as_posix()] = references
@@ -136,9 +141,12 @@ def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exemp
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    (tmp_path / "broken-link").symlink_to("contract/cli.md")
+    (tmp_path / "link").symlink_to("uv.lock")
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
 
     assert _files_with_internal_references(tmp_path) == {
+        "broken-link": ["cli.md"],
         f"other/{THIS_FILE.name}": ["speckit"],
         "uv.lock": ["speckit"],
     }
