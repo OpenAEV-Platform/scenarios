@@ -7,6 +7,7 @@ itself fails, so that a defect of the tool never reads as a defect of the conten
 """
 
 import json
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -17,14 +18,18 @@ import click
 from scenario_tools import __version__
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
+    check_export_archive,
     read_export,
+    read_export_archive,
     read_mapping,
     write_output,
 )
+from scenario_tools.adapters.openaev_http import HttpOpenAEV
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.domain.shared.finding import Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -83,9 +88,10 @@ def _run(
         report = Report(command, (finding_from_unsafe_input(error, root or Path.cwd()),))
     except EnvironmentProblemError as error:
         if output_format == "json":
-            document = {"command": command, "ok": False, "findings": [], "error": str(error)}
+            message = shorten(str(error))
+            document = {"command": command, "ok": False, "findings": [], "error": message}
             return json.dumps(document), EXIT_ENVIRONMENT
-        return _printable(f"{command}: environment error: {error}"), EXIT_ENVIRONMENT
+        return shorten(_printable(f"{command}: environment error: {error}")), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     if output_format == "json":
         return json.dumps(report.document()), code
@@ -243,3 +249,47 @@ def normalize(
         )
 
     _emit(ctx, "normalize", produce, root)
+
+
+@main.group(name="openaev")
+def openaev() -> None:
+    """Export a scenario from an OpenAEV platform, or import an archive into one. The platform
+    is OPENAEV_URL, and the token OPENAEV_TOKEN, both read from the environment only."""
+
+
+@openaev.command(name="export")
+@click.argument("scenario_id")
+@click.option("--out", required=True, type=click.Path(path_type=Path, dir_okay=False))
+@click.pass_context
+def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
+    """Write the export archive of SCENARIO_ID to OUT, once it passes the archive checks."""
+    if not _CANONICAL_UUID.fullmatch(scenario_id):
+        raise click.UsageError("SCENARIO_ID must be a UUID in lower case with hyphens")
+    out = Path(os.path.normpath(out.absolute()))  # without "..", links left as they are
+
+    def produce() -> Report:
+        return export_scenario(
+            HttpOpenAEV.from_environment(os.environ),
+            scenario_id,
+            str(out),
+            check=lambda data: check_export_archive(data, str(out)),
+            write=lambda data: write_output(out, data),
+        )
+
+    _emit(ctx, "openaev export", produce)
+
+
+@openaev.command(name="import")
+@click.argument("archive", type=click.Path(path_type=Path, dir_okay=False))
+@click.pass_context
+def openaev_import(ctx: click.Context, archive: Path) -> None:
+    """Import ARCHIVE, once it passes the archive checks; each inject the platform skips is a
+    blocking finding."""
+    archive = Path(os.path.normpath(archive.absolute()))  # without "..", links left as they are
+
+    def produce() -> Report:
+        platform = HttpOpenAEV.from_environment(os.environ)
+        data = read_export_archive(archive)
+        return import_archive(platform, data, repository_path(str(archive), Path.cwd()))
+
+    _emit(ctx, "openaev import", produce)
