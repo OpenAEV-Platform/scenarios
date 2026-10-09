@@ -2,16 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/manifest.schema.json",
   "title": "OpenAEV content release manifest",
-  "description": "Signed list of the items of one release on one channel. Serialised in RFC 8785 canonical form.",
+  "description": "List of the items of one release on one channel, with the hash of every archive. Serialised in RFC 8785 canonical form.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "repository",
     "channel",
-    "sequence",
     "issued_at",
-    "expires_at",
     "release",
     "items"
   ],
@@ -28,15 +26,7 @@
         "stable"
       ]
     },
-    "sequence": {
-      "type": "integer",
-      "minimum": 1
-    },
     "issued_at": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "expires_at": {
       "type": "string",
       "format": "date-time"
     },
@@ -52,7 +42,7 @@
     },
     "release_approver": {
       "$ref": "#/$defs/github_login",
-      "description": "Added by the signing job after approval. Absent from the unsigned build output; required by the verifier in a signed manifest."
+      "description": "Added by the release job after the release approval. Absent from the build output; required by the verifier in an approved manifest."
     }
   },
   "$defs": {

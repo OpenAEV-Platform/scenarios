@@ -47,9 +47,7 @@ MANIFEST: dict[str, Any] = {
     "schema_version": 1,
     "repository": "OpenAEV-Platform/scenarios",
     "channel": "edge",
-    "sequence": 1,
     "issued_at": "2026-10-08T10:00:00Z",
-    "expires_at": "2026-11-07T10:00:00Z",
     "release": "2026.10.08.1",
     "items": [
         {
@@ -211,15 +209,13 @@ def test_scenario_violations_name_the_offending_value(
     ("change", "pointer"),
     [
         (lambda d: d.update(issued_at="2026-13-45T25:61:00Z"), "/issued_at"),
-        (lambda d: d.update(expires_at="tomorrow"), "/expires_at"),
-        (lambda d: d.update(sequence=0), "/sequence"),
         (
             lambda d: d["items"][0]["approvals"].update(approvers=["alice"]),
             "/items/0/approvals/approvers",
         ),
         (lambda d: d["items"][0]["archive"].update(name="x.zip"), "/items/0/archive/name"),
     ],
-    ids=["issued at", "expires at", "sequence", "one approver", "archive name"],
+    ids=["issued at", "one approver", "archive name"],
 )
 def test_manifest_violations_name_the_offending_value(
     validator: JsonSchemaValidator, change: Callable[[dict[str, Any]], object], pointer: str
@@ -704,3 +700,12 @@ def test_every_pattern_of_the_schemas_means_the_same_in_python_and_ecma_262() ->
         warnings.simplefilter("error")
         for pattern in patterns:
             re.compile(ecma_to_python(pattern))
+
+
+@pytest.mark.parametrize("field", ["sequence", "expires_at"])
+def test_a_manifest_carries_no_field_that_only_signing_would_protect(
+    validator: JsonSchemaValidator, field: str
+) -> None:
+    document = _changed(MANIFEST, lambda d: d.update({field: 1}))
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [f"/{field}"]
