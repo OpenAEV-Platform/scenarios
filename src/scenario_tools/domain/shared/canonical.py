@@ -16,6 +16,8 @@ from typing import Any
 import rfc8785
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+# The canonical form (RFC 8785) holds integers as IEEE 754 doubles, exact up to this bound.
+SAFE_INTEGER = 2**53 - 1
 
 
 class CanonicalFormError(ValueError):

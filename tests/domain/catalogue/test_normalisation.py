@@ -1250,3 +1250,30 @@ def test_an_empty_payload_name_in_the_previous_version_is_refused() -> None:
     with pytest.raises(ExportStructureError) as error:
         normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
     assert error.value.origin == "previous"
+
+
+@pytest.mark.parametrize("number", [2**53, -(2**53), 10**20])
+def test_a_contract_copy_text_with_an_integer_out_of_range_is_refused(number: int) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_with_content(json.dumps({"a": number})), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_contract_copy_text_with_the_largest_exact_integers_is_accepted() -> None:
+    content = json.dumps({"a": [2**53 - 1, -(2**53 - 1)], "b": True})
+
+    assert json.loads(_content(normalise(_with_content(content), EXTERNAL_ID, RULES).document)) == {
+        "a": [2**53 - 1, -(2**53 - 1)],
+        "b": True,
+    }
+
+
+def test_a_copy_domain_with_an_empty_name_is_refused() -> None:
+    export = _with_domains({"convertedContent": {"domains": [{"domain_name": ""}]}})
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_domains"] = [
+        DOMAIN_A
+    ]
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"

@@ -20,6 +20,7 @@ removed_suffixes:
 # scenario give the same file.
 sorted:
   - attack_pattern_kill_chain_phases
+  - domains
   - inject_depends_on
   - inject_documents
   - inject_tags

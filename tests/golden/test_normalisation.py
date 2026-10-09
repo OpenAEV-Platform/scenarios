@@ -168,5 +168,6 @@ def test_no_volatile_field_is_left_even_inside_contract_copies(export: Path) -> 
     assert _volatile_keys(json.loads(_prepare(export)), rules) == set()
 
 
-def test_contract_tags_are_a_set() -> None:
-    assert "injector_contract_tags" in _rules().sorted_lists
+@pytest.mark.parametrize("key", ["injector_contract_tags", "domains"])
+def test_these_lists_are_sets(key: str) -> None:
+    assert key in _rules().sorted_lists

@@ -35,6 +35,7 @@ from scenario_tools.domain.catalogue.identifiers import (
     scenario_namespace,
     stable_id,
 )
+from scenario_tools.domain.shared.canonical import SAFE_INTEGER
 
 PLACEHOLDER_SENDER = "simulation@example.org"
 
@@ -377,7 +378,8 @@ def _not_a_number(text: str) -> None:
 
 def _check_decoded(value: Any) -> None:
     """What the readers would refuse in a file: nesting deeper than they allow, an unpaired
-    surrogate in a string or a key; and a contract copy inside the copy, which bounds the work
+    surrogate in a string or a key, an integer the canonical form cannot hold exactly; and a
+    contract copy inside the copy, which bounds the work
     on nested text."""
     stack: list[tuple[Any, int]] = [(value, 0)]
     while stack:
@@ -396,6 +398,8 @@ def _check_decoded(value: Any) -> None:
                 item.encode("utf-8")
             except UnicodeEncodeError as error:
                 raise _refuse(f"{_CONTENT} holds an unpaired surrogate") from error
+        elif isinstance(item, int) and abs(item) > SAFE_INTEGER:  # a boolean is 0 or 1
+            raise _refuse(f"{_CONTENT} holds an integer beyond the exact range of 2^53 - 1")
 
 
 def _decode(text: str) -> Any:
@@ -437,7 +441,9 @@ def _domain_names(contract: Mapping[str, Any]) -> set[str]:
         copy = _decode(contract[_CONTENT])
     domains = copy.get("domains") if isinstance(copy, dict) else None
     if not isinstance(domains, list) or not all(
-        isinstance(domain, dict) and isinstance(domain.get("domain_name"), str)
+        isinstance(domain, dict)
+        and isinstance(domain.get("domain_name"), str)
+        and domain["domain_name"]
         for domain in domains
     ):
         raise _refuse(f"{_DOMAINS} needs a copy of the contract that names its domains")
