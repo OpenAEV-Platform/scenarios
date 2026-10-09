@@ -127,19 +127,27 @@ def test_a_refused_export_is_reported_on_the_output_path(
     assert json.loads(stdout)["findings"][0]["path"] == "build/e.zip"
 
 
-def test_a_refused_export_never_shows_the_token(platform: Platform, tmp_path: Path) -> None:
-    # The platform has seen the token, and the refusal names what the archive holds.
-    platform.answer(200, _archive((f"../{TOKEN}.json", b"{}")))
+@pytest.mark.parametrize("token", [TOKEN, "a'\"\\b-secret"], ids=["plain", "quotes"])
+def test_a_refused_export_never_shows_what_the_platform_chose(
+    platform: Platform, tmp_path: Path, token: str
+) -> None:
+    # The platform has seen the token and chooses what the archive holds: the refusal gives the
+    # check that failed, never the content, whichever way the content would be written.
+    platform.answer(200, _archive((f"../{token}.json", b"{}")))
 
-    code, stdout, _ = _run(
-        platform, "--format", "json", "openaev", "export", SCENARIO, "--out", str(tmp_path / "e")
+    result = CliRunner().invoke(
+        main,
+        ["--format", "json", "openaev", "export", SCENARIO, "--out", str(tmp_path / "e")],
+        env={"OPENAEV_URL": platform.url, "OPENAEV_TOKEN": token},
     )
 
-    assert code == 1
-    assert TOKEN not in stdout
-    [finding] = json.loads(stdout)["findings"]
-    assert finding["code"] == "IO-010"
-    assert "<OPENAEV_TOKEN>" in finding["message"]
+    assert result.exit_code == 1
+    [finding] = json.loads(result.stdout)["findings"]
+    assert (finding["code"], finding["message"]) == (
+        "IO-010",
+        "the archive the platform exported fails this check",
+    )
+    assert "secret" not in result.stdout
 
 
 @pytest.mark.parametrize("scenario", ["../../api/users", SCENARIO.upper(), "x"])

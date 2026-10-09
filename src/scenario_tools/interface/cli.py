@@ -270,8 +270,10 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
     def check(data: bytes) -> None:
         try:
             check_export_archive(data, str(out))
-        except UnsafeInputError as error:  # the archive names what the platform chose
-            message = error.message.replace(os.environ["OPENAEV_TOKEN"], "<OPENAEV_TOKEN>")
+        except UnsafeInputError as error:
+            # The platform has seen the token and chooses what the archive holds: the refusal
+            # gives the check that failed, never the content, however it would be written.
+            message = "the archive the platform exported fails this check"
             raise UnsafeInputError(error.code, message, error.path) from error
 
     def produce() -> Report:
