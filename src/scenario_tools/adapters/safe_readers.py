@@ -47,11 +47,16 @@ def read_regular_file(path: Path, limit: int) -> bytes:
             raise UnsafeInputError("IO-013", "not a regular file", str(path)) from error
         # Missing, unreadable: the environment, not the content, is at fault.
         raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
-    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-        os.close(descriptor)
-        raise UnsafeInputError("IO-013", "not a regular file", str(path))
-    with os.fdopen(descriptor, "rb") as file:
-        data = file.read(limit + 1)
+    try:
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise UnsafeInputError("IO-013", "not a regular file", str(path))
+            with os.fdopen(descriptor, "rb", closefd=False) as file:
+                data = file.read(limit + 1)
+        finally:
+            os.close(descriptor)
+    except OSError as error:  # a read that fails, on a network file system for instance
+        raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
     if len(data) > limit:
         raise UnsafeInputError("IO-001", f"larger than {limit} bytes", str(path))
     return data

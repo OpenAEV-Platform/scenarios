@@ -1,6 +1,7 @@
 """Bounded JSON and YAML readers: everything they read is hostile until proven otherwise."""
 
 import contextlib
+import errno
 import json
 import os
 import socket
@@ -452,6 +453,51 @@ def test_an_unreadable_file_is_an_environment_problem(
             reader(path)
     finally:
         path.chmod(0o600)
+
+
+class _FailingFile:
+    """An open file whose read fails, as on a network file system that drops."""
+
+    def __init__(self, descriptor: int, mode: str, *, closefd: bool) -> None:
+        self.descriptor = descriptor
+
+    def __enter__(self) -> "_FailingFile":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass  # the reader closes the descriptor itself
+
+    def read(self, size: int) -> bytes:
+        raise OSError(errno.EIO, "Input/output error")
+
+
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_a_failure_while_reading_is_an_environment_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reader: Callable[[Path], Any]
+) -> None:
+    path = tmp_path / "flaky"
+    path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(os, "fdopen", _FailingFile)
+
+    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+        reader(path)
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")
+@pytest.mark.parametrize("reader", [read_json_file, read_yaml_file])
+def test_no_descriptor_is_left_open_whether_the_file_is_read_or_refused(
+    tmp_path: Path, reader: Callable[[Path], Any]
+) -> None:
+    regular = tmp_path / "a"
+    regular.write_text("{}", encoding="utf-8")
+    descriptors = Path("/proc/self/fd")
+    before = len(list(descriptors.iterdir()))
+
+    reader(regular)
+    with pytest.raises(UnsafeInputError):
+        reader(tmp_path)  # a directory
+
+    assert len(list(descriptors.iterdir())) == before
 
 
 # Values the canonical form cannot hold
