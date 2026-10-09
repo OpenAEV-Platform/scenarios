@@ -92,8 +92,10 @@ def _run(
     return _text(report), code
 
 
-def _emit(ctx: click.Context, command: str, produce: Callable[[], Report]) -> NoReturn:
-    output, code = execute(command, produce, ctx.obj["format"])
+def _emit(
+    ctx: click.Context, command: str, produce: Callable[[], Report], root: Path | None = None
+) -> NoReturn:
+    output, code = execute(command, produce, ctx.obj["format"], root)
     click.echo(output, err=code == EXIT_INTERNAL)  # an internal error writes nothing to stdout
     ctx.exit(code)
 
@@ -134,16 +136,48 @@ def _entry_external_id(out: Path, given: str | None) -> str:
         document = read_yaml_file(metadata)
         declared = document.get("external_id") if isinstance(document, dict) else None
     if given is not None and declared is not None and given != declared:
-        raise click.UsageError(f"--external-id contradicts {metadata}: {declared!r}")
-    value = given if given is not None else declared
-    if not isinstance(value, str) or not _CANONICAL_UUID.fullmatch(value):
+        raise click.UsageError(f"--external-id contradicts {metadata}: {shorten(repr(declared))}")
+    if given is None and declared is not None:
+        if not isinstance(declared, str) or not _CANONICAL_UUID.fullmatch(declared):
+            raise click.UsageError(
+                f"the external_id of {metadata} is not a UUID in lower case with hyphens: "
+                f"{shorten(repr(declared))}"
+            )
+        return declared
+    if given is None or not _CANONICAL_UUID.fullmatch(given):
         raise click.UsageError(
             "give --external-id, a UUID in lower case with hyphens, for a first preparation"
         )
-    return value
+    return given
 
 
-def _refused(error: UnsafeInputError) -> Callable[[], Report]:
+def _policy_levels(out: Path) -> list[Path]:
+    """OUT and those of its parents that hold policy data, from the deepest up."""
+    return [
+        directory
+        for directory in (out.resolve(), *out.resolve().parents)
+        if (directory / "policy" / "data").is_dir()
+    ]
+
+
+def _repository_root(levels: list[Path], out: Path) -> Path:
+    """The repository that holds the entry, wherever the command runs from: the only directory
+    among OUT and its parents with policy data. A second one would let an entry bring its own
+    rules, so it is refused."""
+    if not levels:
+        raise EnvironmentProblemError(
+            f"no policy/data directory in {out} or above: not a repository"
+        )
+    if len(levels) > 1:
+        raise UnsafeInputError(
+            "IO-015",
+            "policy data below the repository root: an entry may not carry its own rules",
+            str(levels[0] / "policy" / "data"),
+        )
+    return levels[0]
+
+
+def _refused(error: Exception) -> Callable[[], Report]:
     def produce() -> Report:
         raise error
 
@@ -166,23 +200,34 @@ def normalize(
     mapping_file: Path | None,
 ) -> None:
     """Write the normalised form of EXPORT, an archive or a JSON file, to OUT/scenario.json."""
+    # Absolute paths, so that findings are reported from the repository root.
+    export, out = export.absolute(), out.absolute()
+    levels: list[Path] = []
     try:
+        levels = _policy_levels(out)
+        root = _repository_root(levels, out)
         entry_id = _entry_external_id(out, external_id)
-    except UnsafeInputError as error:  # an unreadable scenario.yaml is refused input
-        _emit(ctx, "normalize", _refused(error))
+    except click.UsageError:
+        raise
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, "normalize", _refused(error), levels[-1] if levels else None)
+    previous_file = previous.absolute() / "scenario.json" if previous else None
+    mapping_file = mapping_file.absolute() if mapping_file else None
 
     def produce() -> Report:
         prepared = prepare_entry(
             read_export(export),
             entry_id,
-            YamlDataLoader(Path.cwd() / "policy" / "data"),
+            YamlDataLoader(root / "policy" / "data"),
             path=str(export),
-            previous=read_json_file(previous / "scenario.json") if previous else None,
+            previous=read_json_file(previous_file) if previous_file else None,
+            previous_path=str(previous_file) if previous_file else None,
             mapping=read_mapping(mapping_file) if mapping_file else None,
+            mapping_path=str(mapping_file) if mapping_file else None,
         )
         target = out / "scenario.json"
         write_output(target, prepared.scenario_json)
-        where = repository_path(str(target.resolve()), Path.cwd())
+        where = repository_path(str(target.resolve()), root)
         return Report(
             "normalize",
             tuple(
@@ -197,4 +242,4 @@ def normalize(
             ),
         )
 
-    _emit(ctx, "normalize", produce)
+    _emit(ctx, "normalize", produce, root)

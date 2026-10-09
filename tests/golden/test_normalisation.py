@@ -1,6 +1,8 @@
 """Normalisation of the starter-pack exports: no trace of the instance, the same bytes every run."""
 
+import copy
 import json
+import random
 import re
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader, read_export
 from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.domain.catalogue.normalisation import NormalisationRules
 
 ROOT = Path(__file__).parents[2]
 EXPORTS = ROOT / "tests" / "golden" / "exports"
@@ -16,15 +19,44 @@ NORMALISED = ROOT / "tests" / "golden" / "normalised"
 ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 # Fields that hold an identifier of the instance the export comes from.
 _INSTANCE_KEYS = re.compile(
-    r"scenario_id|inject_id|team_id|variable_id|payload_id|attack_pattern_id|phase_id"
-    r"|injector_contract_payload_author(_organization)?|injector_contract_injectors"
+    r"(scenario|inject|team|variable|tag|document|channel|article|challenge|organization"
+    r"|payload|attack_pattern|phase|domain)_id"
+    r"|injector_contract_(injectors|domains)"
+    r"|(injector_contract_)?payload_author(_organization|_user|_team)?"
 )
+_COLLECTIONS = (
+    "scenario_injects", "scenario_teams", "scenario_variables", "scenario_tags",
+    "scenario_documents", "scenario_channels", "scenario_articles", "scenario_challenges",
+    "scenario_organizations",
+)  # fmt: skip
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-def _prepare(export: Path) -> bytes:
+def _rules() -> NormalisationRules:
+    return NormalisationRules.from_document(
+        YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
+    )
+
+
+def _normalise(document: Any, previous: Any = None) -> bytes:
     data = YamlDataLoader(ROOT / "policy" / "data")
-    return prepare_entry(read_export(export), ENTRY_ID, data, path=export.name).scenario_json
+    return prepare_entry(document, ENTRY_ID, data, path="export", previous=previous).scenario_json
+
+
+def _prepare(export: Path) -> bytes:
+    return _normalise(read_export(export))
+
+
+def _shuffle(value: Any, keys: frozenset[str], shuffler: random.Random) -> None:
+    """Every list whose order carries no meaning shuffled, at any depth."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in keys and isinstance(child, list):
+                shuffler.shuffle(child)
+            _shuffle(child, keys, shuffler)
+    elif isinstance(value, list):
+        for child in value:
+            _shuffle(child, keys, shuffler)
 
 
 def _instance_identifiers(value: Any) -> set[str]:
@@ -59,9 +91,45 @@ def test_no_identifier_of_the_source_instance_is_left(export: Path) -> None:
     assert sorted(identifier for identifier in identifiers if identifier in text) == []
 
 
+@pytest.mark.parametrize("seed", range(5))
 @pytest.mark.parametrize("export", sorted(EXPORTS.glob("*.zip")), ids=lambda path: path.stem)
-def test_normalising_twice_gives_the_same_bytes(export: Path) -> None:
-    assert _prepare(export) == _prepare(export)
+def test_the_order_of_the_export_does_not_change_the_bytes(export: Path, seed: int) -> None:
+    shuffled = copy.deepcopy(read_export(export))
+    _shuffle(shuffled, _rules().sorted_lists | set(_COLLECTIONS), random.Random(seed))  # noqa: S311 (test shuffling)
+
+    assert _normalise(shuffled) == _prepare(export)
+
+
+@pytest.mark.parametrize("export", sorted(EXPORTS.glob("*.zip")), ids=lambda path: path.stem)
+def test_a_stored_form_normalised_with_itself_gives_the_same_bytes(export: Path) -> None:
+    stored = json.loads(_prepare(export))
+
+    assert _normalise(copy.deepcopy(stored), previous=stored) == _prepare(export)
+
+
+_AUTHORS = (
+    ("injector_contract_payload_author_user", "injector_contract_payload_author_team"),
+    ("payload_author_user", "payload_author_team", "payload_author_organization"),
+)
+
+
+def test_payload_authors_are_removed() -> None:
+    export = copy.deepcopy(read_export(EXPORTS / "salt-typhoon-cve-ttps-validation.zip"))
+    for inject in export["scenario_injects"]:
+        contract = inject["inject_injector_contract"]
+        if contract.get("injector_contract_payload"):
+            for number, key in enumerate(_AUTHORS[0]):
+                contract[key] = f"30000000-0000-4000-8000-{number:012x}"
+            for number, key in enumerate(_AUTHORS[1]):
+                contract["injector_contract_payload"][key] = (
+                    f"40000000-0000-4000-8000-{number:012x}"
+                )
+            contract["injector_contract_payload"]["payload_collector_type"] = "internal-collector"
+
+    text = _normalise(export).decode()
+
+    assert [key for keys in _AUTHORS for key in keys if f'"{key}"' in text] == []
+    assert '"payload_collector_type"' not in text
 
 
 def test_the_reviewed_forms_are_stored_forms() -> None:
@@ -72,3 +140,29 @@ def test_the_reviewed_forms_are_stored_forms() -> None:
             json.dumps(json.loads(text), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
             == text
         )
+
+
+def _volatile_keys(value: Any, rules: NormalisationRules) -> set[str]:
+    """Volatile fields left anywhere, inside the JSON text of contract copies too."""
+    if isinstance(value, dict):
+        found = {
+            key for key in value if key in rules.removed or key.endswith(rules.removed_suffixes)
+        }
+        for key, child in value.items():
+            if key == "injector_contract_content" and isinstance(child, str):
+                child = json.loads(child)
+            found |= _volatile_keys(child, rules)
+        return found
+    if isinstance(value, list):
+        return {key for child in value for key in _volatile_keys(child, rules)}
+    return set()
+
+
+@pytest.mark.parametrize("export", sorted(EXPORTS.glob("*.zip")), ids=lambda path: path.stem)
+def test_no_volatile_field_is_left_even_inside_contract_copies(export: Path) -> None:
+    rules = NormalisationRules.from_document(
+        YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
+    )
+
+    assert _volatile_keys(read_export(export), rules)
+    assert _volatile_keys(json.loads(_prepare(export)), rules) == set()

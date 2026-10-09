@@ -41,7 +41,7 @@ BUILT_IN = "2790bd39-37d4-4e39-be7e-53f3ca783f86"  # a contract that ships with 
 DOMAIN_A, DOMAIN_B = "2a6577e3-20b3-4101-bc85-e80307696a2b", "1b6577e3-20b3-4101-bc85-e80307696a2b"
 INSTANCE_IDS = (
     SCENARIO, USER, TEAM, VARIABLE, TAG, MAIL, IMPLANT, PAYLOAD_CONTRACT, PAYLOAD, AUTHOR,
-    ORGANISATION, ATTACK_PATTERN, PHASE,
+    ORGANISATION, ATTACK_PATTERN, PHASE, DOMAIN_A, DOMAIN_B,
 )  # fmt: skip
 
 RULES = NormalisationRules(
@@ -80,6 +80,12 @@ EXPORT: dict[str, Any] = {
             "inject_injector_contract": {
                 "injector_contract_id": BUILT_IN,
                 "injector_contract_domains": [DOMAIN_A, DOMAIN_B],
+                "convertedContent": {
+                    "domains": [
+                        {"domain_id": DOMAIN_A, "domain_name": "E-mail Infiltration"},
+                        {"domain_id": None, "domain_name": "Tabletop"},
+                    ]
+                },
                 "injector_contract_injectors": ["49229430-b5b5-431f-ba5b-f36f599b0233"],
                 "injector_contract_created_at": "2026-10-07T13:16:22Z",
                 "listened": True,
@@ -148,26 +154,211 @@ def test_no_instance_identifier_is_left_anywhere() -> None:
     assert [identifier for identifier in INSTANCE_IDS if identifier in text] == []
 
 
-def test_scenario_objects_take_identifiers_derived_from_the_entry() -> None:
+def test_scenario_objects_take_identifiers_from_their_natural_key() -> None:
     document = normalise(EXPORT, EXTERNAL_ID, RULES).document
     implant = _injects(document)["Dump credentials"]["inject_injector_contract"]
 
-    assert document["scenario_information"]["scenario_id"] == stable_id(NS, "scenario", SCENARIO)
-    assert document["scenario_teams"][0]["team_id"] == stable_id(NS, "team", TEAM)
-    assert document["scenario_variables"][0]["variable_id"] == stable_id(NS, "variable", VARIABLE)
-    assert document["scenario_tags"][0]["tag_id"] == stable_id(NS, "tag", TAG)
-    assert implant["injector_contract_id"] == stable_id(NS, "contract", PAYLOAD_CONTRACT)
-    assert implant["injector_contract_payload"]["payload_id"] == stable_id(NS, "payload", PAYLOAD)
+    assert document["scenario_information"]["scenario_id"] == stable_id(NS, "scenario", EXTERNAL_ID)
+    assert document["scenario_teams"][0]["team_id"] == stable_id(NS, "team", "Blue")
+    assert document["scenario_variables"][0]["variable_id"] == stable_id(NS, "variable", "k")
+    assert document["scenario_tags"][0]["tag_id"] == stable_id(NS, "tag", "crisis")
+    assert implant["injector_contract_id"] == stable_id(NS, "contract", "Dump")
+    assert implant["injector_contract_payload"]["payload_id"] == stable_id(NS, "payload", "Dump")
 
 
-def test_built_in_contracts_and_domains_keep_their_identifiers() -> None:
+NAMED = [
+    ("scenario_teams", "team_id", "team_name", "team"),
+    ("scenario_variables", "variable_id", "variable_key", "variable"),
+    ("scenario_tags", "tag_id", "tag_name", "tag"),
+    ("scenario_documents", "document_id", "document_target", "document"),
+    ("scenario_channels", "channel_id", "channel_name", "channel"),
+    ("scenario_challenges", "challenge_id", "challenge_name", "challenge"),
+    ("scenario_organizations", "organization_id", "organization_name", "organization"),
+]
+
+
+@pytest.mark.parametrize(("collection", "id_key", "name_key", "object_type"), NAMED)
+def test_every_named_collection_takes_identifiers_from_its_key(
+    collection: str, id_key: str, name_key: str, object_type: str
+) -> None:
+    export = copy.deepcopy(EXPORT)
+    export[collection] = [{id_key: USER, name_key: "Alpha"}]
+
+    document = normalise(export, EXTERNAL_ID, RULES).document
+
+    assert document[collection][0][id_key] == stable_id(NS, object_type, "Alpha")
+
+
+@pytest.mark.parametrize(("collection", "id_key", "name_key", "object_type"), NAMED)
+def test_two_objects_with_the_same_key_are_refused(
+    collection: str, id_key: str, name_key: str, object_type: str
+) -> None:
+    export = copy.deepcopy(EXPORT)
+    export[collection] = [{id_key: USER, name_key: "Alpha"}, {id_key: AUTHOR, name_key: "Alpha"}]
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_two_payloads_with_the_same_name_are_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    twin = copy.deepcopy(export["scenario_injects"][1])
+    twin["inject_id"] = USER
+    twin["inject_title"] = "Dump again"
+    twin["inject_injector_contract"]["injector_contract_id"] = AUTHOR
+    twin["inject_injector_contract"]["injector_contract_payload"]["payload_id"] = ORGANISATION
+    export["scenario_injects"].append(twin)
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_re_export_from_another_instance_gives_the_same_document() -> None:
+    first = normalise(EXPORT, EXTERNAL_ID, RULES).document
+    text = json.dumps(EXPORT)
+    for number, identifier in enumerate(INSTANCE_IDS):
+        text = text.replace(identifier, f"10000000-0000-4000-8000-{number:012x}")
+
+    again = normalise(json.loads(text), EXTERNAL_ID, RULES, previous=first)
+
+    assert again.document == first
+    assert again.removed_injects == ()
+
+
+def test_a_stored_document_normalised_with_itself_is_unchanged() -> None:
+    stored = normalise(EXPORT, EXTERNAL_ID, RULES).document
+
+    again = normalise(copy.deepcopy(stored), EXTERNAL_ID, RULES, previous=stored)
+
+    assert again.document == stored
+    assert again.removed_injects == ()
+
+
+def test_an_identifier_in_capitals_inside_text_is_rewritten() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_information"]["scenario_description"] = f"see {ATTACK_PATTERN.upper()}"
+
+    document = normalise(export, EXTERNAL_ID, RULES).document
+
+    pattern = stable_id(NS_OPENAEV_SCENARIOS, "attack-pattern", "T1003")
+    assert document["scenario_information"]["scenario_description"] == f"see {pattern}"
+
+
+def test_a_chained_scenario_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_workflow"] = {"workflow_steps": [{"step_id": USER}]}
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def _many_injects(count: int) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"] = [
+        {"inject_id": f"20000000-0000-4000-8000-{number:012x}", "inject_title": f"Step {number}"}
+        for number in range(count)
+    ]
+    return export
+
+
+def test_an_export_of_a_thousand_injects_is_accepted() -> None:
+    assert (
+        len(normalise(_many_injects(1000), EXTERNAL_ID, RULES).document["scenario_injects"]) == 1000
+    )
+
+
+def test_an_export_of_more_than_a_thousand_injects_is_refused() -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_many_injects(1001), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def _domain(name: str) -> str:
+    return stable_id(NS_OPENAEV_SCENARIOS, "domain", name)
+
+
+def test_built_in_contracts_keep_their_identifiers() -> None:
     mail = _injects(normalise(EXPORT, EXTERNAL_ID, RULES).document)["Ransom note"]
 
     assert mail["inject_injector_contract"]["injector_contract_id"] == BUILT_IN
-    assert set(mail["inject_injector_contract"]["injector_contract_domains"]) == {
-        DOMAIN_A,
-        DOMAIN_B,
-    }
+
+
+def test_domains_take_identifiers_from_their_names() -> None:
+    mail = _injects(normalise(EXPORT, EXTERNAL_ID, RULES).document)["Ransom note"]
+    contract = mail["inject_injector_contract"]
+
+    assert contract["injector_contract_domains"] == sorted(
+        [_domain("E-mail Infiltration"), _domain("Tabletop")]
+    )
+    assert contract["convertedContent"]["domains"] == [
+        {"domain_id": _domain("E-mail Infiltration"), "domain_name": "E-mail Infiltration"},
+        {"domain_id": None, "domain_name": "Tabletop"},
+    ]
+
+
+def _with_domains(contract_fields: dict[str, Any]) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    contract = export["scenario_injects"][0]["inject_injector_contract"]
+    del contract["convertedContent"]
+    contract.update(contract_fields)
+    return export
+
+
+def test_without_converted_content_domains_are_named_by_the_contract_text() -> None:
+    text = json.dumps({"domains": [{"domain_name": "Network"}, {"domain_name": "Cloud"}]})
+    export = _with_domains({"injector_contract_content": text})
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_domains"] == sorted(
+        [_domain("Network"), _domain("Cloud")]
+    )
+
+
+@pytest.mark.parametrize(
+    "contract_fields",
+    [
+        {"convertedContent": {"domains": [{"domain_name": "Network"}]}},
+        {"injector_contract_content": json.dumps({"domains": [{"domain_name": "Network"}]})},
+        {},
+        {"convertedContent": {"domains": [{"domain_name": 1}, {"domain_name": "x"}]}},
+        {"convertedContent": {"domains": "x"}},
+        {"convertedContent": "x"},
+        {
+            "injector_contract_domains": [1, 2],
+            "convertedContent": {"domains": [{"domain_name": "a"}, {"domain_name": "b"}]},
+        },
+        {
+            "convertedContent": {
+                "domains": [{"domain_name": "a"}, {"domain_name": "b"}, {"domain_name": "c"}]
+            }
+        },
+        {
+            "injector_contract_domains": ["x", "y"],
+            "convertedContent": {"domains": [{"domain_name": "a"}, {"domain_name": "b"}]},
+        },
+    ],
+    ids=[
+        "copy too short",
+        "text too short",
+        "no copy",
+        "name not text",
+        "not a list",
+        "not an object",
+        "identifiers not text",
+        "copy too long",
+        "identifiers not UUIDs",
+    ],
+)
+def test_a_domain_list_that_does_not_match_its_copy_is_refused(
+    contract_fields: dict[str, Any],
+) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_with_domains(contract_fields), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
 
 
 def test_attack_patterns_and_phases_derive_from_their_external_identifiers() -> None:
@@ -261,6 +452,94 @@ def test_volatile_fields_are_removed_wherever_they_are() -> None:
     assert keys & RULES.removed == set()
 
 
+def _with_content(content: object) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_content"] = content
+    return export
+
+
+def _content(document: dict[str, Any]) -> str:
+    contract = _injects(document)["Dump credentials"]["inject_injector_contract"]
+    text: str = contract["injector_contract_content"]
+    return text
+
+
+def test_volatile_fields_are_removed_inside_the_contract_copy_text() -> None:
+    domain = {"domain_id": DOMAIN_A, "listened": True, "domain_created_at": "2026-03-23T10:28:12Z"}
+    content = json.dumps(
+        {"contract_id": PAYLOAD_CONTRACT, "label": {"en": "Dump é"}, "domains": [domain]},
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+    document = normalise(_with_content(content), EXTERNAL_ID, RULES).document
+
+    contract = stable_id(NS, "contract", "Dump")
+    assert _content(document) == (
+        f'{{"contract_id":"{contract}","label":{{"en":"Dump é"}},'
+        f'"domains":[{{"domain_id":"{_domain("E-mail Infiltration")}"}}]}}'
+    )
+
+
+def test_a_contract_copy_text_without_volatile_fields_is_kept_as_it_is() -> None:
+    content = f'{{"contract_id": "{PAYLOAD_CONTRACT}", "fields": [1, 2.50]}}'
+
+    document = normalise(_with_content(content), EXTERNAL_ID, RULES).document
+
+    contract = stable_id(NS, "contract", "Dump")
+    assert _content(document) == f'{{"contract_id": "{contract}", "fields": [1, 2.50]}}'
+
+
+def test_a_contract_copy_text_as_deep_as_allowed_is_accepted() -> None:
+    content = "[" * 64 + "]" * 64
+
+    document = normalise(_with_content(content), EXTERNAL_ID, RULES).document
+
+    assert _content(document) == content
+
+
+def test_a_contract_copy_without_text_keeps_none() -> None:
+    document = normalise(_with_content(None), EXTERNAL_ID, RULES).document
+
+    contract = _injects(document)["Dump credentials"]["inject_injector_contract"]
+    assert contract["injector_contract_content"] is None
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{",
+        '{"a": NaN}',
+        '{"a": 1e400}',
+        '{"a": 1, "a": 2}',
+        '{"a": 1} x',
+        {"a": 1},
+        "[" * 65 + "]" * 65,
+        '{"a":' * 65 + "1" + "}" * 65,
+        "[" * 100_000 + "]" * 100_000,
+        '{"listened": true, "a": "\\ud800"}',
+        '{"a": ' + "9" * 5000 + "}",
+    ],
+    ids=[
+        "not JSON",
+        "not a number",
+        "out of range",
+        "repeated key",
+        "trailing text",
+        "not text",
+        "too deep",
+        "too deep in objects",
+        "deeper than the parser",
+        "unpaired surrogate",
+        "too many digits",
+    ],
+)
+def test_a_contract_copy_text_that_is_not_json_is_refused(content: object) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_with_content(content), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
 def test_internal_data_is_neutralised() -> None:
     document = normalise(EXPORT, EXTERNAL_ID, RULES).document
 
@@ -288,7 +567,7 @@ def test_set_like_lists_and_collections_are_sorted() -> None:
     inject_ids = [inject["inject_id"] for inject in document["scenario_injects"]]
 
     assert mail["inject_injector_contract"]["injector_contract_domains"] == sorted(
-        [DOMAIN_A, DOMAIN_B]
+        [_domain("E-mail Infiltration"), _domain("Tabletop")]
     )
     assert inject_ids == sorted(inject_ids)
 
@@ -321,7 +600,7 @@ def test_the_result_does_not_depend_on_the_order_of_the_export(random: Any) -> N
         {"scenario_information": {"scenario_id": SCENARIO}, "scenario_teams": [{"team_id": None}]},
         {
             "scenario_information": {"scenario_id": SCENARIO},
-            "scenario_teams": [{"team_id": SCENARIO}],
+            "scenario_teams": [{"team_id": SCENARIO, "team_name": "Blue"}],
         },
         {
             "scenario_information": {"scenario_id": SCENARIO},
@@ -330,6 +609,45 @@ def test_the_result_does_not_depend_on_the_order_of_the_export(random: Any) -> N
         {
             "scenario_information": {"scenario_id": SCENARIO},
             "scenario_injects": [{"inject_injector_contract": {"injector_contract_payload": "x"}}],
+        },
+        {"scenario_information": {"scenario_id": BUILT_IN.upper()}},
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_teams": [{"team_id": "source-id"}],
+        },
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_teams": [{"team_id": f"team-{TEAM}"}],
+        },
+        {
+            "scenario_information": {
+                "scenario_id": SCENARIO,
+                "pattern": {"attack_pattern_id": "T1003", "attack_pattern_external_id": "T1003"},
+            }
+        },
+        {
+            "scenario_information": {
+                "scenario_id": SCENARIO,
+                "pattern": {"attack_pattern_id": ATTACK_PATTERN, "attack_pattern_external_id": ""},
+            }
+        },
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_injects": [{"inject_id": MAIL, "inject_title": "t", "inject_depends_on": 1}],
+        },
+        {"scenario_information": {"scenario_id": SCENARIO}, "scenario_teams": [{"team_id": TEAM}]},
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_teams": [{"team_id": TEAM, "team_name": ""}],
+        },
+        {"scenario_information": {"scenario_id": SCENARIO}, "scenario_objectives": [{"x": 1}]},
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_lessons_categories": [{"x": 1}],
+        },
+        {
+            "scenario_information": {"scenario_id": SCENARIO},
+            "scenario_lessons_questions": [{"x": 1}],
         },
     ],
     ids=[
@@ -344,6 +662,17 @@ def test_the_result_does_not_depend_on_the_order_of_the_export(random: Any) -> N
         "one identifier for two objects",
         "contract not an object",
         "payload not an object",
+        "scenario id in capitals",
+        "team id not a UUID",
+        "team id holding a UUID",
+        "attack pattern id not a UUID",
+        "empty external identifier",
+        "dependencies not a list",
+        "team without a name",
+        "team with an empty name",
+        "objectives",
+        "lessons categories",
+        "lessons questions",
     ],
 )
 def test_an_export_without_the_expected_structure_is_refused(export: Any) -> None:
@@ -375,8 +704,9 @@ def test_rules_are_read_from_their_data_document() -> None:
         [],
         {"removed": [], "removed_suffixes": []},
         {"removed": "x", "removed_suffixes": [], "sorted": []},
+        {"removed": [], "removed_suffixes": [""], "sorted": []},
     ],
-    ids=["not an object", "missing list", "not a list"],
+    ids=["not an object", "missing list", "not a list", "empty name"],
 )
 def test_rules_that_are_not_lists_of_names_are_refused(document: Any) -> None:
     with pytest.raises(ValueError, match="volatile-fields"):
@@ -448,7 +778,7 @@ def test_identifiers_used_as_object_keys_are_rewritten_too() -> None:
 
     document = normalise(keyed, EXTERNAL_ID, RULES).document
 
-    assert document["scenario_information"]["by_team"] == {stable_id(NS, "team", TEAM): "Blue"}
+    assert document["scenario_information"]["by_team"] == {stable_id(NS, "team", "Blue"): "Blue"}
 
 
 @pytest.mark.parametrize("where", ["export", "previous"])
@@ -465,3 +795,197 @@ def test_repeated_inject_identifiers_are_refused(where: str) -> None:
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES, previous=previous)
     assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize("previous", [[], [{"scenario_injects": []}], "text", 1])
+def test_a_previous_version_that_is_not_an_object_is_refused(previous: Any) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize(
+    "copy_inside",
+    [
+        {"injector_contract_content": "{}"},
+        {"in_object": {"injector_contract_content": "{}"}},
+        {"in_list": [{"injector_contract_content": "{}"}]},
+    ],
+    ids=["at the top", "in an object", "in a list"],
+)
+def test_a_contract_copy_inside_another_is_refused(copy_inside: dict[str, Any]) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(_with_content(json.dumps(copy_inside)), EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_previous_inject_identifier_that_is_not_a_uuid_is_refused() -> None:
+    previous = normalise(EXPORT, EXTERNAL_ID, RULES).document
+    previous["scenario_injects"][0]["inject_id"] = "not-a-uuid"
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous, mapping={MAIL: "not-a-uuid"})
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize(
+    "previous",
+    [
+        [],
+        {"scenario_injects": [{"inject_id": MAIL}]},
+        {"scenario_injects": [{"inject_id": MAIL, "inject_title": "t"}] * 2},
+        {"scenario_injects": [{"inject_id": "x", "inject_title": "t"}]},
+    ],
+    ids=["not an object", "inject without title", "repeated inject", "not a UUID"],
+)
+def test_a_refusal_of_the_previous_version_says_so(previous: Any) -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=previous)
+    assert error.value.origin == "previous"
+
+
+def test_a_refusal_of_the_export_says_so() -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise({"scenario_information": []}, EXTERNAL_ID, RULES)
+    assert error.value.origin == "export"
+
+
+def test_an_empty_payload_is_no_payload() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_payload"] = {}
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_id"] == BUILT_IN
+
+
+def _channel_and_articles(*articles: tuple[str, str]) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_channels"] = [
+        {"channel_id": USER, "channel_name": "Press"},
+        {"channel_id": AUTHOR, "channel_name": "Radio"},
+    ]
+    channels = {"Press": USER, "Radio": AUTHOR}
+    export["scenario_articles"] = [
+        {"article_id": f"50000000-0000-4000-8000-{number:012x}", "article_name": name,
+         "article_channel": channels[channel]}
+        for number, (channel, name) in enumerate(articles)
+    ]  # fmt: skip
+    return export
+
+
+def test_articles_take_identifiers_from_their_channel_and_name() -> None:
+    export = _channel_and_articles(("Press", "Release"), ("Radio", "Release"))
+
+    articles = normalise(export, EXTERNAL_ID, RULES).document["scenario_articles"]
+
+    identifiers = [article["article_id"] for article in articles]
+    assert identifiers == sorted(identifiers)
+    assert sorted(identifiers) == sorted(
+        [
+            stable_id(NS, "article", json.dumps(["Press", "Release"])),
+            stable_id(NS, "article", json.dumps(["Radio", "Release"])),
+        ]
+    )
+    assert {article["article_channel"] for article in articles} == {
+        stable_id(NS, "channel", "Press"),
+        stable_id(NS, "channel", "Radio"),
+    }
+
+
+def test_two_articles_with_the_same_name_in_one_channel_are_refused() -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise(
+            _channel_and_articles(("Press", "Release"), ("Press", "Release")), EXTERNAL_ID, RULES
+        )
+    assert error.value.code == "IO-014"
+
+
+@pytest.mark.parametrize(
+    "article",
+    [
+        {"article_id": USER, "article_name": "Release", "article_channel": TEAM},
+        {"article_id": USER, "article_name": "Release"},
+        {"article_id": USER, "article_name": "", "article_channel": AUTHOR},
+    ],
+    ids=["unknown channel", "no channel", "empty name"],
+)
+def test_an_article_without_a_known_channel_or_name_is_refused(article: dict[str, Any]) -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_channels"] = [{"channel_id": AUTHOR, "channel_name": "Press"}]
+    export["scenario_articles"] = [article]
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_a_previous_version_of_another_entry_is_refused() -> None:
+    other = normalise(EXPORT, "6b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42", RULES).document
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(EXPORT, EXTERNAL_ID, RULES, previous=other)
+    assert (error.value.code, error.value.origin) == ("IO-014", "previous")
+    assert str(error.value).startswith("not a previous version of this entry")
+
+
+@pytest.mark.parametrize(
+    ("content", "domains"),
+    [
+        ('{"a": "\\ud800"}', []),
+        ('{"\\udc00": 1}', []),
+        ('{"domains": [{"domain_name": "\\ud800"}]}', [DOMAIN_A]),
+    ],
+    ids=["in a value", "in a key", "in a domain name"],
+)
+def test_a_contract_copy_text_with_an_unpaired_surrogate_is_refused(
+    content: str, domains: list[str]
+) -> None:
+    export = _with_content(content)
+    export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_domains"] = domains
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert error.value.code == "IO-014"
+
+
+def test_converted_content_comes_before_the_contract_text_for_domains() -> None:
+    text = json.dumps({"domains": [{"domain_name": "Network"}]})
+    export = _with_domains(
+        {
+            "injector_contract_content": text,
+            "convertedContent": {"domains": [{"domain_name": "Cloud"}]},
+        }
+    )
+    export["scenario_injects"][0]["inject_injector_contract"]["injector_contract_domains"] = [
+        DOMAIN_A
+    ]
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    assert mail["inject_injector_contract"]["injector_contract_domains"] == [_domain("Cloud")]
+
+
+def test_domain_identifiers_inside_the_contract_text_are_rewritten() -> None:
+    text = json.dumps(
+        {
+            "domains": [
+                {"domain_id": DOMAIN_A, "domain_name": "Network"},
+                {"domain_id": DOMAIN_B, "domain_name": "Cloud"},
+            ]
+        }
+    )
+    export = _with_domains({"injector_contract_content": text})
+
+    mail = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Ransom note"]
+
+    decoded = json.loads(mail["inject_injector_contract"]["injector_contract_content"])
+    assert [domain["domain_id"] for domain in decoded["domains"]] == [
+        _domain("Network"),
+        _domain("Cloud"),
+    ]
+
+
+def test_an_external_id_that_is_not_canonical_is_a_programming_error() -> None:
+    with pytest.raises(ValueError, match="canonical"):
+        normalise(EXPORT, EXTERNAL_ID.upper(), RULES)

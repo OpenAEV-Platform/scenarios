@@ -3,6 +3,8 @@
 import errno
 import io
 import os
+import secrets
+import stat
 import zipfile
 from pathlib import Path
 
@@ -116,26 +118,47 @@ def test_an_output_that_cannot_be_created_is_an_environment_problem(tmp_path: Pa
         write_output(tmp_path / "missing" / "scenario.json", b"x")
 
 
-def test_an_output_that_cannot_be_written_is_an_environment_problem(
+def test_a_failed_write_keeps_the_previous_output_and_no_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class FullDisk:
-        def __init__(self, descriptor: int, mode: str, *, closefd: bool) -> None:
-            pass
+    target = tmp_path / "scenario.json"
+    target.write_bytes(b"previous\n")
 
-        def __enter__(self) -> "FullDisk":
-            return self
+    def full_disk(descriptor: int, data: bytes) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device")
 
-        def __exit__(self, *exc: object) -> None:
-            pass
-
-        def write(self, data: bytes) -> int:
-            raise OSError(errno.ENOSPC, "No space left on device")
-
-    monkeypatch.setattr(os, "fdopen", FullDisk)
+    monkeypatch.setattr(os, "write", full_disk)
 
     with pytest.raises(EnvironmentProblemError, match="No space left"):
-        write_output(tmp_path / "scenario.json", b"x")
+        write_output(target, b"new\n")
+    assert target.read_bytes() == b"previous\n"
+    assert [path.name for path in tmp_path.iterdir()] == ["scenario.json"]
+
+
+def test_a_hard_linked_output_is_replaced_without_touching_the_other_file(tmp_path: Path) -> None:
+    target, other = tmp_path / "scenario.json", tmp_path / "other.json"
+    other.write_bytes(b"other\n")
+    os.link(other, target)
+
+    write_output(target, b"new\n")
+
+    assert target.read_bytes() == b"new\n"
+    assert other.read_bytes() == b"other\n"
+
+
+def test_the_output_mode_is_the_same_whatever_the_umask_or_the_previous_mode(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "scenario.json"
+    target.write_bytes(b"previous\n")
+    target.chmod(0o666)
+    mask = os.umask(0o077)
+    try:
+        write_output(target, b"new\n")
+    finally:
+        os.umask(mask)
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
 
 
 def test_an_output_directory_that_is_a_link_is_refused(tmp_path: Path) -> None:
@@ -174,3 +197,60 @@ def test_a_fifo_with_a_reader_is_refused_too(tmp_path: Path) -> None:
         assert error.value.code == "IO-013"
     finally:
         os.close(reader)
+
+
+def test_an_output_whose_status_cannot_be_read_is_an_environment_problem(tmp_path: Path) -> None:
+    entry = tmp_path / "entry"
+    entry.mkdir()
+    entry.chmod(0o400)  # readable, but nothing in it can be looked up
+    try:
+        with pytest.raises(EnvironmentProblemError, match="Permission denied"):
+            write_output(entry / "scenario.json", b"x")
+    finally:
+        entry.chmod(0o700)
+
+
+def test_a_planted_temporary_file_is_never_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    planted = tmp_path / ".scenario.json.0123456789abcdef"
+    planted.write_bytes(b"planted\n")
+    monkeypatch.setattr(secrets, "token_hex", lambda size: "0123456789abcdef")
+
+    with pytest.raises(EnvironmentProblemError):
+        write_output(tmp_path / "scenario.json", b"new\n")
+    assert planted.read_bytes() == b"planted\n"
+    assert not (tmp_path / "scenario.json").exists()
+
+
+def test_a_write_cut_short_is_resumed_until_everything_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_write = os.write
+    monkeypatch.setattr(os, "write", lambda descriptor, data: real_write(descriptor, data[:3]))
+
+    write_output(tmp_path / "scenario.json", b"a longer content\n")
+
+    assert (tmp_path / "scenario.json").read_bytes() == b"a longer content\n"
+
+
+def test_an_interrupted_write_leaves_no_temporary_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(descriptor: int) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "fsync", interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        write_output(tmp_path / "scenario.json", b"new\n")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_an_empty_mapping_file_is_refused(tmp_path: Path) -> None:
+    mapping = tmp_path / "map.yaml"
+    mapping.write_text("", encoding="utf-8")
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_mapping(mapping)
+    assert error.value.code == "VER-011"

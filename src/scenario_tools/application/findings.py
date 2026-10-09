@@ -11,11 +11,9 @@ _DRIVE = re.compile(r"[A-Za-z]:")
 
 
 def repository_path(raw: str, root: PurePath) -> str:
-    """``raw`` as a path relative to the repository root, or a bare file name when it lies
-    outside the repository, or empty when there is no file."""
-    """The path relative to the repository root. A path outside it, or one that cannot be
-    expressed with ``/`` separators, keeps only its file name, so that no path of the runner is
-    ever reported."""
+    """``raw`` as a path relative to the repository root, or empty when there is no file. A path
+    outside the repository, or one that cannot be expressed with ``/`` separators, keeps only its
+    file name, so that no path of the runner is ever reported."""
     if raw == _NO_FILE:
         return ""
     path = PurePosixPath(raw)

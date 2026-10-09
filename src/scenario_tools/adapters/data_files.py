@@ -4,9 +4,11 @@ Every read goes through the bounded readers. A command's output is written witho
 following a symbolic link, so that a link planted in an entry cannot redirect the write.
 """
 
+import contextlib
 import errno
 import os
 import re
+import secrets
 import stat
 from pathlib import Path
 from typing import Any
@@ -74,28 +76,45 @@ def _not_followed(path: Path, error: OSError) -> Exception:
 
 
 def write_output(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path``, replacing a regular file. Neither the output directory nor the
-    file may be a link, and only a regular file is written: the file is opened without blocking,
-    so that a FIFO planted in its place can neither stall nor receive the output."""
+    """Write ``data`` to ``path``, replacing a regular file at once: the data go to a new
+    temporary file in the same directory, which is then renamed over the target. A failure
+    leaves the previous output as it was, a hard link to another file never receives the data,
+    and the mode is 0644 whatever the umask. Neither the output directory nor the target may be
+    a link, and the target must be a regular file if it exists."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _not_followed(path.parent, error) from error
+    temporary = f".{path.name}.{secrets.token_hex(8)}"
     try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK
         try:
-            descriptor = os.open(path.name, flags, 0o644, dir_fd=directory)
-        except OSError as error:
+            existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not stat.S_ISREG(existing.st_mode):
+            raise UnsafeInputError("IO-013", "a symbolic link or not a regular file", str(path))
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        try:
+            descriptor = os.open(temporary, flags, 0o600, dir_fd=directory)
+        except OSError as error:  # a file of that name is not ours to remove
             raise _not_followed(path, error) from error
         try:
-            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                raise UnsafeInputError("IO-013", "not a regular file", str(path))
-            os.ftruncate(descriptor, 0)
-            with os.fdopen(descriptor, "wb", closefd=False) as file:
-                file.write(data)
-        except OSError as error:
-            raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
-        finally:
-            os.close(descriptor)
+            try:
+                view = memoryview(data)
+                while view:
+                    view = view[os.write(descriptor, view) :]
+                os.fchmod(descriptor, 0o644)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.rename(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+        except BaseException as error:  # an interruption too: no temporary file is left behind
+            with contextlib.suppress(OSError):
+                os.unlink(temporary, dir_fd=directory)
+            if isinstance(error, OSError):
+                raise _not_followed(path, error) from error
+            raise
+    except OSError as error:  # the target's status could not be read
+        raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
     finally:
         os.close(directory)
