@@ -299,6 +299,19 @@ def test_no_connection_is_attempted_after_the_deadline(platform: Platform) -> No
     assert platform.received == []
 
 
+def test_no_attempt_starts_once_the_deadline_has_passed(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = iter([0.0, 0.0])  # deadline set and name resolved in time; then always too late
+    monkeypatch.setattr(
+        "scenario_tools.adapters.openaev_http.time.monotonic", lambda: next(clock, 100.0)
+    )
+
+    with pytest.raises(TimeoutError, match="before the connection"):
+        _Watchdog(5).create_connection(_address(platform), 5)
+    assert platform.received == []
+
+
 def test_a_connection_completed_after_the_deadline_is_closed(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -321,6 +334,58 @@ def test_a_connection_made_while_the_watchdog_expires_is_closed(platform: Platfo
 
     with pytest.raises(TimeoutError):
         watchdog.create_connection(_address(platform), 5)
+
+
+def test_the_watchdog_cuts_a_connection_once_wrapped_for_encryption() -> None:
+    # Wrapping for encryption detaches the socket the watchdog made: the cut must still reach
+    # the connection, during the handshake as for the headers and the body.
+    with socket.create_server(("127.0.0.1", 0)) as server:  # accepts, never answers
+        watchdog = _Watchdog(5)
+        raw = watchdog.create_connection(server.getsockname(), 5)
+        with ssl.create_default_context().wrap_socket(
+            raw, server_hostname="platform.example.org", do_handshake_on_connect=False
+        ) as encrypted:
+            watchdog._expire()
+
+            start = time.monotonic()
+            with pytest.raises(ConnectionError):  # the hello cannot even be sent
+                encrypted.do_handshake()
+            assert time.monotonic() - start < 1
+
+
+def test_the_watchdog_cuts_nothing_once_the_call_is_over(platform: Platform) -> None:
+    # Its descriptors may then serve other files: a late expiry must leave them alone.
+    with _Watchdog(5) as watchdog:
+        connection = watchdog.create_connection(_address(platform), 5)
+    watchdog._expire()
+
+    assert not watchdog.expired
+    with connection:
+        connection.sendall(b"GET / HTTP/1.0\r\n\r\n")
+        assert connection.recv(12) == b"HTTP/1.0 200"
+
+
+LOOPBACK = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9))
+ELSEWHERE = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", 8080))
+
+
+@pytest.mark.parametrize("addresses", [[ELSEWHERE], [LOOPBACK, ELSEWHERE]], ids=["one", "mixed"])
+def test_localhost_must_resolve_to_the_local_machine(
+    monkeypatch: pytest.MonkeyPatch, addresses: list[object]
+) -> None:
+    monkeypatch.setattr(
+        "scenario_tools.adapters.openaev_http.socket.getaddrinfo",
+        lambda *args, **kwargs: addresses,
+    )
+    client = HttpOpenAEV.from_environment(
+        {"OPENAEV_URL": "http://localhost:8080", "OPENAEV_TOKEN": TOKEN}, timeout=0.5
+    )
+
+    with pytest.raises(
+        EnvironmentProblemError,
+        match=r"^OPENAEV_URL uses http, but localhost does not resolve to the local machine$",
+    ):
+        client.export_scenario(SCENARIO)
 
 
 def test_a_connection_attempt_gets_only_the_time_left(

@@ -10,6 +10,7 @@ text of a transport error may carry the host, or what the platform sent.
 import contextlib
 import http.client
 import ipaddress
+import os
 import re
 import secrets
 import socket
@@ -56,11 +57,15 @@ class _Watchdog:
     operation alone would let a platform that answers byte by byte hold the call for ever. The
     connections are made here, within the time left, and cut when the deadline passes."""
 
-    def __init__(self, seconds: float) -> None:
+    def __init__(self, seconds: float, *, loopback_only: bool = False) -> None:
         self.expired = False
         self._deadline = time.monotonic() + seconds
+        self._loopback_only = loopback_only
         self._lock = threading.Lock()
-        self._sockets: list[socket.socket] = []
+        self._done = False
+        # Descriptors, not sockets: wrapping a socket for encryption detaches it, but the
+        # encrypted socket keeps the same descriptor.
+        self._descriptors: list[int] = []
         self._timer = threading.Timer(seconds, self._expire)
         self._timer.daemon = True
 
@@ -95,7 +100,14 @@ class _Watchdog:
         the time left, and none once the deadline has passed. The calls bind no local address,
         so ``source_address`` is always empty."""
         error = OSError("no address")  # getaddrinfo gives at least one, or fails
-        for family, kind, protocol, _, target in self._resolve(*address):
+        addresses = self._resolve(*address)
+        if self._loopback_only and not all(
+            ipaddress.ip_address(target[0]).is_loopback for *_, target in addresses
+        ):
+            raise EnvironmentProblemError(
+                f"OPENAEV_URL uses http, but {address[0]} does not resolve to the local machine"
+            )
+        for family, kind, protocol, _, target in addresses:
             left = self._left()
             if left <= 0:
                 raise TimeoutError("the deadline passed before the connection")
@@ -111,15 +123,17 @@ class _Watchdog:
                 if self.expired or self._left() <= 0:
                     connection.close()
                     raise TimeoutError("the connection completed after the deadline")
-                self._sockets.append(connection)
+                self._descriptors.append(connection.fileno())
             return connection
         raise error
 
     def _expire(self) -> None:
         with self._lock:
+            if self._done:  # the call is over: its descriptors may already serve another file
+                return
             self.expired = True
-            for connection in self._sockets:
-                _cut(connection)
+            for descriptor in self._descriptors:
+                _cut(descriptor)
 
     def __enter__(self) -> "_Watchdog":
         self._timer.start()
@@ -131,12 +145,17 @@ class _Watchdog:
         error: BaseException | None,
         trace: TracebackType | None,
     ) -> None:
+        with self._lock:
+            self._done = True
         self._timer.cancel()
 
 
-def _cut(connection: socket.socket) -> None:
-    with contextlib.suppress(OSError):  # already closed: nothing left to cut
-        connection.shutdown(socket.SHUT_RDWR)
+def _cut(descriptor: int) -> None:
+    """Shut the connection down through a duplicate of its descriptor: the shutdown reaches
+    the connection itself, whichever socket object holds it."""
+    # Already closed: nothing left to cut.
+    with contextlib.suppress(OSError), socket.socket(fileno=os.dup(descriptor)) as twin:
+        twin.shutdown(socket.SHUT_RDWR)
 
 
 class _HTTPHandler(urllib.request.HTTPHandler):
@@ -262,7 +281,7 @@ class HttpOpenAEV:
         late = EnvironmentProblemError(
             f"the platform did not answer within {self._timeout:g} seconds"
         )
-        with _Watchdog(self._timeout) as watchdog:
+        with _Watchdog(self._timeout, loopback_only=self._local) as watchdog:
             handlers: list[urllib.request.BaseHandler] = [
                 _NoRedirect(),
                 _HTTPHandler(watchdog),
