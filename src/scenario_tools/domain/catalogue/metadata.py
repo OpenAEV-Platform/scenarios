@@ -1,9 +1,11 @@
 """Scenario metadata (``scenario.yaml``) and its cross-checks against the export.
 
-The schema checks each document on its own; the cross-checks compare it with facts taken from
-the normalised export: the name and facets must be the export's, the declared injectors must be
+The schema checks each document on its own; the cross-checks compare it with facts of the
+normalised export: the name and facets must be the export's, the declared injectors must be
 those the injects use, and the declared platforms must include every platform an inject runs on
-through an executor. Whether a scenario is tabletop is derived, never declared.
+through an executor. The facts of each inject come from the platform's definition of its
+contract, never from the copy the export carries. Whether a scenario is tabletop is derived,
+never declared.
 """
 
 from collections.abc import Mapping
@@ -86,7 +88,8 @@ class InjectFacts:
 
 @dataclass(frozen=True)
 class ExportFacts:
-    """What the cross-checks need from the normalised export."""
+    """What the cross-checks need from the normalised export: its name and facets, and the facts
+    of each inject, taken from the platform's definition of its contract."""
 
     name: str
     severity: str
@@ -98,8 +101,8 @@ class ExportFacts:
 def is_tabletop(facts: ExportFacts, communication: frozenset[str]) -> bool:
     """True when every inject uses a communication injector and none needs an executor. A
     scenario without any inject, with an injector outside the list, or with an inject that runs
-    through an executor is technical: the injector type comes from the export, so it is never
-    trusted alone."""
+    through an executor is technical. Both conditions are checked, so neither fact decides
+    alone."""
     return bool(facts.injects) and all(
         inject.injector_type in communication and not inject.needs_executor
         for inject in facts.injects
