@@ -23,6 +23,7 @@ from scenario_tools.domain.shared.finding import shorten
 from scenario_tools.ports.schema import SchemaViolation
 
 _SUFFIX = ".schema.json"
+VIOLATION_LIMIT = 100  # as many as a report shows
 
 
 def json_pointer(path: Iterable[str | int]) -> str:
@@ -131,6 +132,10 @@ def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
     return unexpected or general  # never drop an error, even if no property can be named
 
 
+def _violation_key(violation: SchemaViolation) -> tuple[str, str]:
+    return (violation.pointer, violation.message)
+
+
 class JsonSchemaValidator:
     """Validates documents against the schemas of a directory."""
 
@@ -147,12 +152,13 @@ class JsonSchemaValidator:
             )
 
     def validate(self, schema: str, document: object) -> tuple[SchemaViolation, ...]:
+        """The document's violations, at most ``VIOLATION_LIMIT`` of them: the validator stops
+        there, so a hostile document cannot make it build millions."""
         validator = self._validators[schema]
-        violations = {
-            violation
-            for error in validator.iter_errors(document)
-            for violation in _violations(error)
-        }
-        return tuple(
-            sorted(violations, key=lambda violation: (violation.pointer, violation.message))
-        )
+        violations: set[SchemaViolation] = set()
+        for error in validator.iter_errors(document):
+            violations.update(_violations(error))
+            if len(violations) >= VIOLATION_LIMIT:
+                violations = set(sorted(violations, key=_violation_key)[:VIOLATION_LIMIT])
+                break
+        return tuple(sorted(violations, key=_violation_key))
