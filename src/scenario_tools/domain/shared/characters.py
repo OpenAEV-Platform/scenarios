@@ -4,7 +4,7 @@ A bidirectional control can make a command read differently from what runs ("Tro
 and a zero-width, tag or reserved invisible character can carry text no one sees. The list is
 closed and shared by every check, so that the cleaning of a text and the refusal of a
 contribution never drift apart. Tab and line breaks are allowed. The joiners and variation
-selectors that scripts and emoji need (U+200C, U+200D, U+FE00 to U+FE0F) are allowed where
+selectors that scripts and emoji need (U+034F, U+200C, U+200D, U+FE00 to U+FE0F) are allowed where
 text uses them, after a letter, a mark or a symbol (the presentation selectors after an emoji
 only), and a joiner or non-joiner before what it acts on; never at the start or the end of a
 text, after ASCII or a space, nor as a run, where they could carry hidden data.
@@ -21,7 +21,7 @@ _RANGES = (
     (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
 )  # fmt: skip
 HIDDEN = frozenset(chr(code) for first, last in _RANGES for code in range(first, last + 1))
-JOINERS = frozenset((chr(0x200C), chr(0x200D), *map(chr, range(0xFE00, 0xFE10))))
+JOINERS = frozenset((chr(0x034F), chr(0x200C), chr(0x200D), *map(chr, range(0xFE00, 0xFE10))))
 _ZWNJ, _ZWJ, _VS16, _KEYCAP = chr(0x200C), chr(0x200D), chr(0xFE0F), chr(0x20E3)
 _PRESENTATION = frozenset((chr(0xFE0E), _VS16))
 # The emoji that are no symbol: a letter and punctuation marks Unicode draws as emoji too.

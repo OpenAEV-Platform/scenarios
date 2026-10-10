@@ -20,9 +20,10 @@ CONTRACT_RANGES = [
 ]  # fmt: skip
 ALLOWED = [chr(code) for code in (
     0x09, 0x0A, 0x0D, 0x85, 0x2028, 0x2029,  # tab and line breaks
-    0xAD, 0xE9, 0x6F22, 0x1F642, 0x20, 0xA0, 0x034F, 0x115F, 0x2800,
+    0xAD, 0xE9, 0x6F22, 0x1F642, 0x20, 0xA0, 0x115F, 0x2800,
 )]  # fmt: skip
 RLO, ZWSP, ZWJ, ZWNJ, VS16 = chr(0x202E), chr(0x200B), chr(0x200D), chr(0x200C), chr(0xFE0F)
+CGJ = chr(0x034F)
 
 
 def test_the_list_is_exactly_the_contract_s_one() -> None:
@@ -81,6 +82,7 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         f"{chr(0x2139)}{VS16}",  # information source, a letter shown as emoji
         f"{chr(0x203C)}{VS16}",  # double exclamation mark shown as emoji
         f"{chr(0x3030)}{chr(0xFE0E)}",  # wavy dash shown as text
+        f"{chr(0x05D1)}{chr(0x05B8)}{CGJ}{chr(0x05B7)}",  # Hebrew vowel points kept in order
     ],
     ids=[
         "emoji",
@@ -95,6 +97,7 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         "information source",
         "double exclamation",
         "wavy dash as text",
+        "hebrew grapheme joiner",
     ],
 )
 def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> None:
@@ -122,6 +125,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"{chr(0x0645)}{ZWNJ}", 0x200C),
         (f"{chr(0x1F642)}{ZWJ}{chr(0x0661)}", 0x200D),  # nor a digit
         (f"{chr(0x0645)}{ZWNJ}{chr(0x1F642)}", 0x200C),  # a non-joiner keeps letters apart
+        (f"a{CGJ}b", 0x034F),  # a grapheme joiner, invisible, after ASCII
+        (f"{chr(0x05B8)}{CGJ}{CGJ}", 0x034F),  # or as a run
     ],
     ids=[
         "at the start",
@@ -142,6 +147,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "zwnj at the end",
         "zwj before a digit",
         "zwnj before an emoji",
+        "cgj after ascii",
+        "cgj run",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:

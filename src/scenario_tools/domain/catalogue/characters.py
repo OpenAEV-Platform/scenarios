@@ -70,21 +70,28 @@ def _places(text: str, wanted: list[int]) -> dict[int, tuple[int, bool]]:
     return places
 
 
+def _children(pointer: str, value: Any) -> Iterator[tuple[str, str | None, Any]]:
+    """The children of a container as (pointer, key or None, child), made one at a time."""
+    if isinstance(value, dict):
+        return ((f"{pointer}/{_shown(key)}", key, child) for key, child in value.items())
+    return ((f"{pointer}/{index}", None, child) for index, child in enumerate(value))
+
+
 def _texts(document: Any) -> Iterator[tuple[str, str, str, str]]:
-    """Every text of ``document`` as (pointer, where, text, decoded), walked without recursion:
-    each value with the characters its escapes write, each key as it is."""
-    stack: list[tuple[str, Any]] = [("", document)]
-    while stack:
-        pointer, value = stack.pop()
-        if isinstance(value, dict):
-            for key, child in reversed(value.items()):
-                child_pointer = f"{pointer}/{_shown(key)}"
-                yield child_pointer, " in a key", key, ""
-                stack.append((child_pointer, child))
-        elif isinstance(value, list):
-            stack.extend(
-                (f"{pointer}/{index}", child) for index, child in reversed(list(enumerate(value)))
-            )
+    """Every text of ``document`` as (pointer, where, text, decoded): each key as it is, each
+    value with the characters its escapes write. Walked without recursion, holding one cursor
+    per level of nesting, never the siblings, so that a wide list stays small to walk."""
+    cursors: list[Iterator[tuple[str, str | None, Any]]] = [iter((("", None, document),))]
+    while cursors:
+        entry = next(cursors[-1], None)
+        if entry is None:
+            cursors.pop()
+            continue
+        pointer, key, value = entry
+        if key is not None:
+            yield pointer, " in a key", key, ""
+        if isinstance(value, dict | list):
+            cursors.append(_children(pointer, value))
         elif isinstance(value, str):
             yield pointer, "", value, _decoded(value)
 

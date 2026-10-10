@@ -221,3 +221,14 @@ def test_decoding_escapes_takes_memory_in_proportion_to_the_text() -> None:
         finally:
             tracemalloc.stop()
         assert peak < 2 * len(text), escape
+
+
+def test_walking_a_wide_list_holds_one_cursor_per_level_not_the_siblings() -> None:
+    document = {"v": [None] * 200_000, "w": {str(key): None for key in range(50_000)}}
+    tracemalloc.start()
+    try:
+        hidden_character_findings(document, PATH)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 100_000
