@@ -332,6 +332,9 @@ class HttpOpenAEV:
                 with opener.open(request, timeout=self._timeout) as answer:
                     status = answer.status
                     data: bytes = answer.read(limit + 1)
+                    # What the declared length still owes: a bounded read returns a short
+                    # prefix, with no error, when the platform closes the connection early.
+                    owed = answer.length
             except urllib.error.HTTPError as error:
                 error.close()
                 raise EnvironmentProblemError(_problem(error.code, not_found)) from None
@@ -348,6 +351,8 @@ class HttpOpenAEV:
             raise late
         if status != 200:
             raise EnvironmentProblemError(_problem(status, not_found))
+        if owed and len(data) <= limit:  # past the limit, the rest is left unread on purpose
+            raise EnvironmentProblemError("the platform's answer was cut short")
         return data
 
     def export_scenario(self, scenario_id: str) -> bytes:

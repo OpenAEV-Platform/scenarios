@@ -6,7 +6,7 @@ import json
 import socket
 import ssl
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 
@@ -845,6 +845,28 @@ def test_skipped_injects_are_returned_as_the_platform_names_them(platform: Platf
     assert _client(platform).import_scenario(ARCHIVE) == ImportResult(
         (SkippedInject("Injector", f"x {TOKEN} x"),)
     )
+
+
+@pytest.mark.parametrize("call", ["export", "import"])
+def test_an_answer_shorter_than_it_declared_is_refused(platform: Platform, call: str) -> None:
+    # The platform closes the connection before the length it announced: what came is a prefix,
+    # however valid it looks.
+    platform.raw = b'HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"missingActions": []}'
+    client = _client(platform)
+    calls: dict[str, Callable[[], object]] = {
+        "export": lambda: client.export_scenario(SCENARIO),
+        "import": lambda: client.import_scenario(ARCHIVE),
+    }
+
+    with pytest.raises(EnvironmentProblemError, match=r"^the platform's answer was cut short$"):
+        calls[call]()
+
+
+def test_an_export_cut_short_exactly_at_the_limit_is_refused(platform: Platform) -> None:
+    platform.raw = b"HTTP/1.1 200 OK\r\nContent-Length: 150\r\n\r\n" + b"x" * 100
+
+    with pytest.raises(EnvironmentProblemError, match=r"^the platform's answer was cut short$"):
+        _client(platform, archive_limit=100).export_scenario(SCENARIO)
 
 
 def test_an_import_error_names_the_import(platform: Platform) -> None:
