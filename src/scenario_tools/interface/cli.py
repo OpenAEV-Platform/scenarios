@@ -345,7 +345,7 @@ def normalize(
 def archive(ctx: click.Context, entry: Path, out: Path) -> None:
     """Write the import archive of ENTRY to OUT: its scenario.json and attachments.zip as they
     are, in the layout the platform's importer reads, once the entry passes its checks."""
-    entry = Path(os.path.normpath(entry.absolute()))  # without "..", links left as they are
+    entry = entry.resolve()  # its place in the repository, whatever link names it
     out = Path(os.path.normpath(out.absolute()))
     if _inside(out, entry):
         raise click.UsageError("OUT may not be inside the entry")

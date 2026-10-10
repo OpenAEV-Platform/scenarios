@@ -311,6 +311,28 @@ def test_paths_are_reported_from_the_repository_wherever_the_command_runs(
     assert paths == {"scenarios/domain/entry/scenario.json"}
 
 
+@pytest.mark.parametrize(
+    ("reference", "external_id", "reported"),
+    [
+        ("salt-typhoon-cve-ttps-validation", ENTRY_ID, "scenario.json"),
+        ("easm-scenario", "not-a-uuid", "scenario.yaml"),
+    ],
+    ids=["scenario", "metadata"],
+)
+def test_paths_are_reported_from_the_repository_when_the_entry_is_named_through_a_link(
+    tmp_path: Path, reference: str, external_id: str, reported: str
+) -> None:
+    entry = _entry(tmp_path / "repository", reference)
+    (entry / "scenario.yaml").write_text(f"external_id: {external_id}\n")
+    alias = tmp_path / "alias"
+    alias.symlink_to(entry, target_is_directory=True)
+
+    _, stdout, _ = _run("--format", "json", "archive", str(alias), "--out", str(tmp_path / "e"))
+
+    paths = {finding["path"] for finding in json.loads(stdout)["findings"]}
+    assert paths == {f"scenarios/domain/entry/{reported}"}
+
+
 def test_the_archive_is_never_written_inside_the_entry_however_named(tmp_path: Path) -> None:
     # Compared by file identity: a link to the entry, or another case on a case-insensitive
     # disk, still names the entry.
