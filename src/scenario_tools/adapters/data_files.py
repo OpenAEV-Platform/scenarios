@@ -60,7 +60,8 @@ def _export_document(archive: CheckedArchive) -> Any:
     if documents:
         raise DocumentsNotSupportedError(
             "IO-014",
-            f"{DOCUMENTS_NOT_SUPPORTED}: the export carries {len(documents)}",
+            f"{DOCUMENTS_NOT_SUPPORTED}: the export carries {len(documents)} document"
+            + ("s" if len(documents) > 1 else ""),
             archive.path,
         )
     entries = [name for name in archive.names if archive.comment(name) == _SCENARIO_ENTRY]

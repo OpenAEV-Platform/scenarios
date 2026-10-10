@@ -108,8 +108,10 @@ def test_an_export_carrying_documents_is_refused_until_they_are_supported(
 
     with pytest.raises(UnsafeInputError) as error:
         read_export(path)
-    assert error.value.code == "IO-014"
-    assert "documents are not supported yet" in error.value.message
+    assert (error.value.code, error.value.message) == (
+        "IO-014",
+        "documents are not supported yet: the export carries 1 document",
+    )
 
 
 def test_an_export_archive_in_memory_passes_the_same_checks() -> None:
@@ -393,3 +395,13 @@ def test_an_empty_mapping_file_is_refused(tmp_path: Path) -> None:
     with pytest.raises(UnsafeInputError) as error:
         read_mapping(mapping)
     assert error.value.code == "VER-011"
+
+
+def test_the_documents_refusal_counts_them(tmp_path: Path) -> None:
+    path = tmp_path / "export.zip"
+    documents = [(f"{n}.pdf", b"Attachment", b"x") for n in range(2)]
+    path.write_bytes(_export_zip(("EASM.json", b"Scenario", b"{}"), *documents))
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export(path)
+    assert error.value.message.endswith("the export carries 2 documents")
