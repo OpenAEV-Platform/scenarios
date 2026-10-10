@@ -12,7 +12,9 @@ import pytest
 
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
+    check_export_archive,
     read_export,
+    read_export_archive,
     read_mapping,
     write_output,
 )
@@ -60,6 +62,44 @@ def test_an_archive_needs_exactly_one_scenario_entry(tmp_path: Path, names: list
     with pytest.raises(UnsafeInputError) as error:
         read_export(path)
     assert error.value.code == "IO-014"
+
+
+def test_an_export_archive_in_memory_passes_the_same_checks() -> None:
+    data = (GOLDEN / "easm-scenario.zip").read_bytes()
+    check_export_archive(data, "export.zip")
+
+    with pytest.raises(UnsafeInputError) as error:
+        check_export_archive(b"not a zip", "out/export.zip")
+    assert (error.value.code, error.value.path) == ("IO-007", "out/export.zip")
+
+
+def test_an_export_archive_file_gives_its_bytes_once_checked(tmp_path: Path) -> None:
+    assert (
+        read_export_archive(GOLDEN / "easm-scenario.zip")
+        == (GOLDEN / "easm-scenario.zip").read_bytes()
+    )
+    path = tmp_path / "export.zip"
+    path.write_bytes(b"x" * (20 * 1024 * 1024 + 1))
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export_archive(path)
+    assert (error.value.code, error.value.path) == ("IO-001", str(path))
+
+
+@pytest.mark.parametrize("names", [[], ["a.json", "b.json"]], ids=["none", "two"])
+def test_an_export_archive_file_needs_exactly_one_scenario_entry(
+    tmp_path: Path, names: list[str]
+) -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in names:
+            archive.writestr(name, b"{}")
+    path = tmp_path / "export.zip"
+    path.write_bytes(buffer.getvalue())
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export_archive(path)
+    assert (error.value.code, error.value.path) == ("IO-014", str(path))
 
 
 def test_an_output_is_written_and_replaced(tmp_path: Path) -> None:

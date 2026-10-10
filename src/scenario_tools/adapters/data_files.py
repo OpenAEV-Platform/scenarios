@@ -13,8 +13,18 @@ import stat
 from pathlib import Path
 from typing import Any
 
-from scenario_tools.adapters.safe_readers import parse_json, read_json_file, read_yaml_file
-from scenario_tools.adapters.safe_zip import open_zip
+from scenario_tools.adapters.safe_readers import (
+    parse_json,
+    read_json_file,
+    read_regular_file,
+    read_yaml_file,
+)
+from scenario_tools.adapters.safe_zip import (
+    ARCHIVE_LIMIT,
+    CheckedArchive,
+    archive_from_bytes,
+    open_zip,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 _DATA_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -32,19 +42,35 @@ class YamlDataLoader:
         return read_yaml_file(self.directory / f"{name}.yaml")
 
 
-def read_export(path: Path) -> Any:
-    """An exported scenario, from its archive or from its JSON file."""
-    if path.suffix != ".zip":
-        return read_json_file(path)
-    archive = open_zip(path)
+def _export_document(archive: CheckedArchive) -> Any:
     entries = [name for name in archive.names if name.endswith(".json")]
     if len(entries) != 1:
         raise UnsafeInputError(
             "IO-014",
             f"an export archive holds one scenario JSON entry, not {len(entries)}",
-            str(path),
+            archive.path,
         )
-    return parse_json(archive.read(entries[0]), path=str(path))
+    return parse_json(archive.read(entries[0]), path=archive.path)
+
+
+def check_export_archive(data: bytes, path: str) -> None:
+    """Refuse bytes that are not a safe export archive holding one scenario JSON entry; ``path``
+    names the archive in the refusal."""
+    _export_document(archive_from_bytes(data, path=path))
+
+
+def read_export_archive(path: Path) -> bytes:
+    """The bytes of an export archive file that passes the same checks."""
+    data = read_regular_file(path, ARCHIVE_LIMIT)
+    check_export_archive(data, str(path))
+    return data
+
+
+def read_export(path: Path) -> Any:
+    """An exported scenario, from its archive or from its JSON file."""
+    if path.suffix != ".zip":
+        return read_json_file(path)
+    return _export_document(open_zip(path))
 
 
 def read_mapping(path: Path) -> dict[str, str]:

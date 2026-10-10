@@ -6,7 +6,9 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used, and 
 itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
+import dataclasses
 import json
+import os
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -17,14 +19,18 @@ import click
 from scenario_tools import __version__
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
+    check_export_archive,
     read_export,
+    read_export_archive,
     read_mapping,
     write_output,
 )
+from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.domain.shared.finding import Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -54,16 +60,25 @@ def _text(report: Report) -> str:
 
 
 def execute(
-    command: str, produce: Callable[[], Report], output_format: str, root: Path | None = None
+    command: str,
+    produce: Callable[[], Report],
+    output_format: str,
+    root: Path | None = None,
+    hidden: str = "",
 ) -> tuple[str, int]:
     """Run ``produce`` and return what to print and the exit code. Paths in findings are made
     relative to ``root``, the repository root, which is the working directory by default. A
-    failure anywhere, while producing or while rendering, exits with 4, never with 1."""
+    failure anywhere, while producing or while rendering, exits with 4, never with 1. Nothing
+    printed shows ``hidden``, however the output writes what the findings hold."""
     try:
-        return _run(command, produce, output_format, root)
+        return _run(command, produce, output_format, root, hidden)
     except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
-        line = f"{command}: internal error: {type(error).__name__}: {_describe(error)}"
-        return shorten(_printable(line)), EXIT_INTERNAL
+
+        def render(text: str) -> str:
+            return shorten(_printable(f"{command}: internal error: {text}"))
+
+        message = f"{type(error).__name__}: {_describe(error)}"
+        return _concealed(message, render, hidden), EXIT_INTERNAL
 
 
 def _describe(error: Exception) -> str:
@@ -74,28 +89,100 @@ def _describe(error: Exception) -> str:
         return "<unprintable>"
 
 
+_WITHHELD = "withheld: it would show a secret"
+
+
+def _cut_in(text: str, hidden: str) -> bool:
+    """Whether ``text`` was cut short in the middle of ``hidden``: it then ends with the start
+    of it, before the ellipsis, as it is or as JSON writes it."""
+    for ellipsis in ("…", "\\u2026"):
+        if text.endswith(ellipsis):
+            shown = text[: -len(ellipsis)]
+            # No start longer than the text can end it: the work stays bounded by the text.
+            longest = min(len(hidden), len(shown))
+            return any(shown.endswith(hidden[:length]) for length in range(1, longest + 1))
+    return False
+
+
+def _cut_in_any_form(text: str, hidden: str) -> bool:
+    """Whether ``text``, as the text or the JSON output writes it, was cut short in the middle
+    of ``hidden``: an escape can write the start of the token."""
+    forms = (_printable(text), json.dumps(text)[1:-1])
+    return any(_cut_in(form, hidden) for form in forms)
+
+
+def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
+    """``message`` as ``render`` writes it, or withheld when that would show ``hidden``, or the
+    start of it where the message is cut short. The token's characters are never escaped, so
+    the token shows as it is or not at all."""
+    output = render(message)
+    if hidden and (
+        hidden in output or _cut_in(output, hidden) or _cut_in_any_form(shorten(message), hidden)
+    ):
+        return render(_WITHHELD)
+    return output
+
+
+def _render(report: Report, output_format: str) -> str:
+    return json.dumps(report.document()) if output_format == "json" else _text(report)
+
+
+def _shows(output: str, report: Report, hidden: str) -> bool:
+    """Whether ``hidden`` shows in the output, or its start in a message cut short. The token's
+    characters are never escaped, so the token shows as it is or not at all."""
+    return hidden in output or any(
+        _cut_in_any_form(finding.message, hidden) for finding in report.findings
+    )
+
+
+def _withhold(report: Report, output_format: str, hidden: str) -> str:
+    """The output, with the messages, then the paths, of the findings withheld while it would
+    show ``hidden``: what then remains is the tool's own text, never the platform's."""
+    output = _render(report, output_format)
+    for paths_too in (False, True):
+        if not hidden or not _shows(output, report, hidden):
+            break
+        findings = tuple(
+            dataclasses.replace(f, message=_WITHHELD, path="" if paths_too else f.path)
+            for f in report.findings
+        )
+        report = Report(report.command, findings)
+        output = _render(report, output_format)
+    return output
+
+
 def _run(
-    command: str, produce: Callable[[], Report], output_format: str, root: Path | None
+    command: str,
+    produce: Callable[[], Report],
+    output_format: str,
+    root: Path | None,
+    hidden: str = "",
 ) -> tuple[str, int]:
     try:
         report = produce()
     except UnsafeInputError as error:
         report = Report(command, (finding_from_unsafe_input(error, root or Path.cwd()),))
     except EnvironmentProblemError as error:
-        if output_format == "json":
-            document = {"command": command, "ok": False, "findings": [], "error": str(error)}
-            return json.dumps(document), EXIT_ENVIRONMENT
-        return _printable(f"{command}: environment error: {error}"), EXIT_ENVIRONMENT
+
+        def render(text: str) -> str:
+            if output_format == "json":
+                document = {"command": command, "ok": False, "findings": [], "error": shorten(text)}
+                return json.dumps(document)
+            return shorten(_printable(f"{command}: environment error: {text}"))
+
+        return _concealed(str(error), render, hidden), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
-    if output_format == "json":
-        return json.dumps(report.document()), code
-    return _text(report), code
+    return _withhold(report, output_format, hidden), code
 
 
 def _emit(
-    ctx: click.Context, command: str, produce: Callable[[], Report], root: Path | None = None
+    ctx: click.Context,
+    command: str,
+    produce: Callable[[], Report],
+    root: Path | None = None,
+    hidden: str = "",
 ) -> NoReturn:
-    output, code = execute(command, produce, ctx.obj["format"], root)
+    output, code = execute(command, produce, ctx.obj["format"], root, hidden)
     click.echo(output, err=code == EXIT_INTERNAL)  # an internal error writes nothing to stdout
     ctx.exit(code)
 
@@ -243,3 +330,69 @@ def normalize(
         )
 
     _emit(ctx, "normalize", produce, root)
+
+
+@main.group(name="openaev")
+def openaev() -> None:
+    """Export a scenario from an OpenAEV platform, or import an archive into one. The platform
+    is OPENAEV_URL, and the token OPENAEV_TOKEN, both read from the environment only."""
+
+
+@openaev.command(name="export")
+@click.argument("scenario_id")
+# Paths are checked by the command itself, never by the parser: a usage error would repeat
+# a path that may hold the token, outside the guard.
+@click.option("--out", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
+    """Write the export archive of SCENARIO_ID to OUT, once it passes the archive checks."""
+    if not _CANONICAL_UUID.fullmatch(scenario_id):
+        raise click.UsageError("SCENARIO_ID must be a UUID in lower case with hyphens")
+    out = Path(os.path.normpath(out.absolute()))  # without "..", links left as they are
+
+    def check(data: bytes) -> None:
+        try:
+            check_export_archive(data, str(out))
+        except UnsafeInputError as error:
+            # The platform has seen the token and chooses what the archive holds: the refusal
+            # gives the check that failed, never the content, however it would be written.
+            message = "the archive the platform exported fails this check"
+            raise UnsafeInputError(error.code, message, error.path) from error
+
+    def produce() -> Report:
+        return export_scenario(
+            HttpOpenAEV.from_environment(os.environ),
+            scenario_id,
+            str(out),
+            check=check,
+            write=lambda data: write_output(out, data),
+        )
+
+    # The platform has seen the token: what it sends back never shows it.
+    _emit(
+        ctx,
+        "openaev export",
+        produce,
+        hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
+    )
+
+
+@openaev.command(name="import")
+@click.argument("archive", type=click.Path(path_type=Path))
+@click.pass_context
+def openaev_import(ctx: click.Context, archive: Path) -> None:
+    """Import ARCHIVE, once it passes the archive checks; each inject the platform skips is a
+    blocking finding."""
+    archive = Path(os.path.normpath(archive.absolute()))  # without "..", links left as they are
+
+    def produce() -> Report:
+        platform = HttpOpenAEV.from_environment(os.environ)
+        data = read_export_archive(archive)
+        return import_archive(platform, data, repository_path(str(archive), Path.cwd()))
+
+    _emit(
+        ctx,
+        "openaev import",
+        produce,
+        hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
+    )
