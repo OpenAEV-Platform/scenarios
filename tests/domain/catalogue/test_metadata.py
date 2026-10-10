@@ -487,3 +487,25 @@ def test_injectors_that_cannot_be_established_are_left_to_complete() -> None:
     _, findings = _start(unknown_injects=2)
 
     assert "2 injects" in _message(findings, "/requires/injectors")
+
+
+def test_injects_whose_contract_is_unknown_leave_platforms_and_executors_to_check() -> None:
+    # Their facts are unknown: they may run on an endpoint through an executor.
+    metadata, findings = _start(replace(FACTS, injects=()), unknown_injects=2)
+
+    assert metadata["platforms"] == ["Generic"]
+    assert "2 injects" in _message(findings, "/platforms")
+    assert "2 injects" in _message(findings, "/requires/executors")
+
+
+def test_both_reasons_are_given_when_a_field_has_two() -> None:
+    implant = _inject("openaev_implant", True, frozenset({"Linux", "x" * 10}))
+
+    _, findings = _start(replace(FACTS, injects=(implant,)), unknown_injects=1)
+
+    platforms = _message(findings, "/platforms")
+    assert "1 platform" in platforms
+    assert "1 inject" in platforms
+    executors = _message(findings, "/requires/executors")
+    assert "Linux" in executors
+    assert "1 inject" in executors

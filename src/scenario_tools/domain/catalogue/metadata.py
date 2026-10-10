@@ -259,9 +259,10 @@ def starting_metadata(
     for reason in (why_name, why_description, why_severity, why_category, why_main_focus):
         if reason is not None:
             todo[reason[0]] = reason[1]
+    reasons: dict[str, list[str]] = {}
     if unknown_platforms:
         plural = "s" if unknown_platforms > 1 else ""
-        todo["/platforms"] = (
+        reasons.setdefault("/platforms", []).append(
             f"{unknown_platforms} platform{plural} of the injects that run through an executor "
             f"{'are' if plural else 'is'} not among {', '.join(PLATFORMS)}: left out"
         )
@@ -269,16 +270,22 @@ def starting_metadata(
     todo["/sources"] = _SOURCES
     todo.update(_REQUIRES_DEFAULTS)
     if unknown_injects:
-        plural = "s" if unknown_injects > 1 else ""
-        todo["/requires/injectors"] = (
-            f"complete requires.injectors: the injector type of {unknown_injects} "
-            f"inject{plural} cannot be established from the recorded built-in contracts"
+        # Their facts are unknown: they may need an executor, on any platform.
+        injects = f"{unknown_injects} inject{'s' if unknown_injects > 1 else ''}"
+        unknown = f"the contract of {injects} is not a recorded built-in one"
+        todo["/requires/injectors"] = f"complete requires.injectors: {unknown}"
+        reasons.setdefault("/platforms", []).append(
+            f"check them: {unknown}, so the platforms it runs on are unknown"
+        )
+        reasons.setdefault("/requires/executors", []).append(
+            f"check them: {unknown}, so whether it needs an executor is unknown"
         )
     if executors:
         where = ", ".join(platforms) or "platforms left out above"
-        todo["/requires/executors"] = (
-            f"injects run through an executor on {where}: name the executors they need"
+        reasons.setdefault("/requires/executors", []).insert(
+            0, f"injects run through an executor on {where}: name the executors they need"
         )
+    todo.update({field: "; ".join(why) for field, why in reasons.items()})
     metadata: dict[str, object] = {
         "schema_version": 1,
         "external_id": external_id,
