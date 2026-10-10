@@ -177,7 +177,10 @@ def test_a_stored_scenario_normalisation_would_change_is_refused() -> None:
     assert [(f.code, f.severity, f.path, f.field) for f in report.findings] == [
         ("GEN-002", Severity.BLOCKING, PATH, "")
     ]
-    assert "normalisation" in report.findings[0].message
+    message = report.findings[0].message
+    assert "edited by hand" in message  # the two likely causes, and what to do
+    assert "external ID in scenario.yaml" in message
+    assert "normalise the export again" in message
     assert data is None
     assert builder.calls == []
 

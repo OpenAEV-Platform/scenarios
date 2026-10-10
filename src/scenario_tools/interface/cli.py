@@ -350,6 +350,8 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
     out = Path(os.path.normpath(out.absolute()))
     if _inside(out, entry):
         raise click.UsageError("OUT may not be inside the entry")
+    if out.is_dir():
+        raise click.UsageError("OUT is a directory: give the path of the archive file")
     scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
     levels: list[Path] = []
     try:

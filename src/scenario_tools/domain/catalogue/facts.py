@@ -178,7 +178,8 @@ def copy_findings(document: object, builtin: BuiltinContracts, path: str) -> tup
                     path,
                     f"/{INJECTS}/{index}",
                     "the copy of this built-in contract is not the recorded one: an instance "
-                    "that lacks the contract would build it from this copy",
+                    "that lacks the contract would build it from this copy; normalise a fresh "
+                    "export, or update its recorded digest if the platform changed the contract",
                 )
             )
     return tuple(findings)

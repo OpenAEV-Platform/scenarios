@@ -41,8 +41,9 @@ def build_archive(
                 Severity.BLOCKING,
                 path,
                 "",
-                "the file is not what normalisation writes for this entry's external ID: "
-                "normalise the export again with it",
+                "the file is not what normalisation writes for the external ID in "
+                "scenario.yaml: it was edited by hand, or normalised with another external ID; "
+                "normalise the export again with this one",
             ),
         )
     if findings:

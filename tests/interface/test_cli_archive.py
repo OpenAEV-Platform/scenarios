@@ -292,8 +292,9 @@ def test_another_external_id_is_not_what_normalisation_writes(tmp_path: Path) ->
     [finding] = json.loads(stdout)["findings"]
     assert (finding["code"], finding["message"]) == (
         "GEN-002",
-        "the file is not what normalisation writes for this entry's external ID: normalise the "
-        "export again with it",
+        "the file is not what normalisation writes for the external ID in scenario.yaml: it was "
+        "edited by hand, or normalised with another external ID; normalise the export again "
+        "with this one",
     )
 
 
@@ -377,3 +378,13 @@ def test_an_entry_named_through_a_loop_of_links_is_reported_not_raised(tmp_path:
 
     assert code == 1
     assert [finding["code"] for finding in json.loads(stdout)["findings"]] == ["IO-013"]
+
+
+def test_an_existing_directory_as_out_is_a_usage_error(tmp_path: Path) -> None:
+    entry = _entry(tmp_path, "easm-scenario")
+    (tmp_path / "out").mkdir()
+
+    code, stdout, stderr = _run("archive", str(entry), "--out", str(tmp_path / "out"))
+
+    assert (code, stdout) == (2, "")
+    assert "OUT is a directory" in stderr

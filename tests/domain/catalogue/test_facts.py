@@ -397,7 +397,9 @@ def test_a_copy_that_differs_from_the_recorded_one_is_refused() -> None:
     assert [(f.code, f.severity, f.path, f.field) for f in findings] == [
         ("SCH-006", Severity.BLOCKING, PATH, "/scenario_injects/0")
     ]
-    assert "recorded" in findings[0].message
+    message = findings[0].message
+    assert "normalise a fresh export" in message  # a hand edit, or a platform that changed it
+    assert "update its recorded digest" in message
 
 
 def test_only_recorded_built_in_copies_are_compared() -> None:

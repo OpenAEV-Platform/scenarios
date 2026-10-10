@@ -1,5 +1,6 @@
 """The import archive: the layout the platform's importer reads, the same bytes every build."""
 
+import hashlib
 import io
 import zipfile
 from pathlib import Path
@@ -56,6 +57,15 @@ def test_an_archive_built_on_windows_is_the_same(monkeypatch: pytest.MonkeyPatch
 def test_two_builds_give_the_same_bytes() -> None:
     assert ZipArchiveBuilder().build(SCENARIO, ATTACHMENTS) == ZipArchiveBuilder().build(
         SCENARIO, ATTACHMENTS
+    )
+
+
+def test_the_bytes_do_not_depend_on_the_toolchain() -> None:
+    # Pinned: a Python or zipfile release that writes other headers would change every archive.
+    data = ZipArchiveBuilder().build(b'{"scenario": {}}\n', b"attachments")
+
+    assert hashlib.sha256(data).hexdigest() == (
+        "2c4938926525c915dc549c941a0a6a9ad4b1e5770b76956bb6ec8edbace43b99"
     )
 
 
