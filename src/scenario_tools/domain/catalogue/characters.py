@@ -46,18 +46,21 @@ def _shown(key: str) -> str:
 
 
 def _unescaped(text: str) -> str:
-    """The hidden characters a text writes as escapes. An escaped backslash before an escape
-    (two decodings away) is followed down to the character."""
+    """``text`` with the escapes it writes turned into the characters a JSON reader would make
+    of them, so that a hidden character, or a joiner out of place, is seen in its context; empty
+    when it writes none. An escaped backslash before an escape (two decodings away) is followed
+    down to the character."""
     while (reduced := _ESCAPED_BACKSLASH.sub(lambda _: "\\", text)) != text:
         text = reduced
-    found = []
-    for match in _ESCAPE.finditer(text):
-        code = int(match.group(1), 16)
-        if match.group(2) and 0xD800 <= code <= 0xDBFF:
-            code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
-        if chr(code) in HIDDEN:
-            found.append(chr(code))
-    return "".join(found)
+    decoded, count = _ESCAPE.subn(_character, text)
+    return decoded if count else ""
+
+
+def _character(match: re.Match[str]) -> str:
+    code = int(match.group(1), 16)
+    if match.group(2) and 0xD800 <= code <= 0xDBFF:
+        code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
+    return chr(code)
 
 
 def _message(hidden: Hidden, where: str) -> str:
@@ -72,9 +75,11 @@ def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...
     pointer of its value or key, with its count, never the text. Past ``REPORT_LIMIT``, the last
     finding counts the texts left, so that a flood of them stays small to report."""
     findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()  # a character found as it is is not reported again
     left = 0
     for pointer, where, text in _texts(document):
-        occurrences = hidden_occurrences(text)
+        occurrences = [o for o in hidden_occurrences(text) if (pointer, o.label) not in seen]
+        seen.update((pointer, o.label) for o in occurrences)
         if not occurrences:
             continue
         if left or len(findings) + len(occurrences) > REPORT_LIMIT - 1:

@@ -136,3 +136,16 @@ def test_the_summary_of_a_single_text_left_is_in_the_singular() -> None:
     document = {f"k{n}": f"x{RLO}" for n in range(REPORT_LIMIT)}
 
     assert _fields(document)[-1] == ("", "1 more text holds hidden characters")
+
+
+def test_an_escaped_joiner_is_placed_as_if_it_were_the_character() -> None:
+    start = "\\u200dfoo"  # an escaped ZWJ at the start of the text
+    after_ascii = "a\\u200d"
+    keycap = "1\\ufe0f\\u20e3"  # a keycap, escaped
+
+    assert [len(_fields({"v": text})) for text in (start, after_ascii, keycap)] == [1, 1, 0]
+    assert "out of place as an escape" in _fields({"v": start})[0][1]
+
+
+def test_a_character_both_raw_and_escaped_in_a_value_is_reported_once() -> None:
+    assert len(_fields({"v": f"{RLO} \\u202e"})) == 1
