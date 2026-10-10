@@ -30,7 +30,12 @@ EXPORT: dict[str, Any] = {
 class FakeData:
     def load(self, name: str) -> Any:
         assert name == "volatile-fields"
-        return {"removed": ["listened"], "removed_suffixes": [], "sorted": []}
+        return {
+            "removed": ["listened"],
+            "removed_suffixes": [],
+            "sorted": [],
+            "emptied_in_builtin_contracts": [],
+        }
 
 
 def test_an_export_becomes_the_stored_form_of_its_normalised_document() -> None:
@@ -127,7 +132,12 @@ def test_the_limit_of_a_normalised_form_is_that_of_a_json_input() -> None:
 def test_malformed_policy_data_is_an_environment_problem() -> None:
     class BrokenData:
         def load(self, name: str) -> Any:
-            return {"removed": 5, "removed_suffixes": [], "sorted": []}
+            return {
+                "removed": 5,
+                "removed_suffixes": [],
+                "sorted": [],
+                "emptied_in_builtin_contracts": [],
+            }
 
     with pytest.raises(EnvironmentProblemError, match="volatile-fields"):
         prepare_entry(EXPORT, EXTERNAL_ID, BrokenData(), path="e")

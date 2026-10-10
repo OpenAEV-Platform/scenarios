@@ -99,6 +99,7 @@ class NormalisationRules:
     removed: frozenset[str]
     removed_suffixes: tuple[str, ...]
     sorted_lists: frozenset[str]
+    emptied_in_builtin_contracts: frozenset[str]
 
     @classmethod
     def from_document(cls, document: object) -> "NormalisationRules":
@@ -116,6 +117,7 @@ class NormalisationRules:
             removed=frozenset(names("removed")),
             removed_suffixes=names("removed_suffixes"),
             sorted_lists=frozenset(names("sorted")),
+            emptied_in_builtin_contracts=frozenset(names("emptied_in_builtin_contracts")),
         )
 
 
@@ -508,6 +510,17 @@ def _sort(value: Any, rules: NormalisationRules) -> Any:
     return value
 
 
+def _unlink(document: dict[str, Any], rules: NormalisationRules) -> None:
+    """Empty the lists a built-in contract's copy gains from the instance it was exported from,
+    such as the techniques its collectors linked to the contract. A contract created from a
+    payload keeps its own: they are the payload's content."""
+    for inject in document.get(_INJECTS) or []:
+        contract = inject.get(_CONTRACT)
+        if isinstance(contract, dict) and not contract.get(_PAYLOAD):
+            for key in rules.emptied_in_builtin_contracts & contract.keys():
+                contract[key] = []
+
+
 def _neutralise(document: dict[str, Any]) -> None:
     document[_INFORMATION]["scenario_mail_from"] = PLACEHOLDER_SENDER
     document["scenario_users"] = []
@@ -547,6 +560,7 @@ def normalise(
     document = _rewrite(export, identifiers.targets)  # new objects, export untouched
     _name_domains(document)
     document = _strip(document, rules)
+    _unlink(document, rules)
     _neutralise(document)
     document = _sort(document, rules)
     for collection, key, *_ in (*_OBJECTS, (_ARTICLES, "article_id"), (_INJECTS, "inject_id")):

@@ -55,6 +55,7 @@ RULES = NormalisationRules(
     ),
     removed_suffixes=("_created_at", "_updated_at"),
     sorted_lists=frozenset({"injector_contract_domains", "inject_teams", "inject_tags"}),
+    emptied_in_builtin_contracts=frozenset({"injector_contract_attack_patterns"}),
 )
 
 EXPORT: dict[str, Any] = {
@@ -706,12 +707,14 @@ def test_rules_are_read_from_their_data_document() -> None:
         "removed": ["listened"],
         "removed_suffixes": ["_created_at"],
         "sorted": ["inject_tags"],
+        "emptied_in_builtin_contracts": ["injector_contract_attack_patterns"],
     }
 
     assert NormalisationRules.from_document(document) == NormalisationRules(
         removed=frozenset({"listened"}),
         removed_suffixes=("_created_at",),
         sorted_lists=frozenset({"inject_tags"}),
+        emptied_in_builtin_contracts=frozenset({"injector_contract_attack_patterns"}),
     )
 
 
@@ -719,7 +722,7 @@ def test_rules_are_read_from_their_data_document() -> None:
     "document",
     [
         [],
-        {"removed": [], "removed_suffixes": []},
+        {"removed": [], "removed_suffixes": [], "sorted": []},
         {"removed": "x", "removed_suffixes": [], "sorted": []},
         {"removed": [], "removed_suffixes": [""], "sorted": []},
     ],
@@ -1323,3 +1326,45 @@ def test_other_escapes_in_a_json_text_field_are_accepted() -> None:
     implant = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Dump credentials"]
 
     assert implant["inject_content"] == text
+
+
+# Lists a built-in contract's copy gains from the instance
+
+
+def test_a_built_in_contract_copy_loses_what_the_instance_linked_to_it() -> None:
+    # The instance links its MITRE techniques to the contract once its collector imported them:
+    # the same platform version gives different copies, so the stored file would depend on it.
+    unlinked = copy.deepcopy(EXPORT)
+    _injects(unlinked)["Ransom note"]["inject_injector_contract"][
+        "injector_contract_attack_patterns"
+    ] = []
+    linked = copy.deepcopy(unlinked)
+    _injects(linked)["Ransom note"]["inject_injector_contract"][
+        "injector_contract_attack_patterns"
+    ] = [
+        {
+            "attack_pattern_id": "00000000-0000-4000-8000-0000000000ad",
+            "attack_pattern_external_id": "T1595.002",
+        }
+    ]
+
+    document = normalise(linked, EXTERNAL_ID, RULES).document
+
+    assert document == normalise(unlinked, EXTERNAL_ID, RULES).document
+    mail = _injects(document)["Ransom note"]["inject_injector_contract"]
+    assert mail["injector_contract_attack_patterns"] == []
+
+
+def test_a_contract_created_from_a_payload_keeps_its_techniques() -> None:
+    # Its techniques are the payload's own content, not the instance's.
+    document = normalise(EXPORT, EXTERNAL_ID, RULES).document
+
+    implant = _injects(document)["Dump credentials"]["inject_injector_contract"]
+    assert len(implant["injector_contract_attack_patterns"]) == 1
+
+
+def test_a_built_in_contract_copy_without_the_list_does_not_gain_it() -> None:
+    document = normalise(EXPORT, EXTERNAL_ID, RULES).document
+
+    mail = _injects(document)["Ransom note"]["inject_injector_contract"]
+    assert "injector_contract_attack_patterns" not in mail

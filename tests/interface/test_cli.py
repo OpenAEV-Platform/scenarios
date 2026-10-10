@@ -556,7 +556,8 @@ def test_policy_data_below_the_repository_root_is_refused(
     rogue = (entry if where == "entry" else entry.parent) / "policy" / "data"
     rogue.mkdir(parents=True)
     (rogue / "volatile-fields.yaml").write_text(
-        "removed: []\nremoved_suffixes: []\nsorted: []\n", encoding="utf-8"
+        "removed: []\nremoved_suffixes: []\nsorted: []\nemptied_in_builtin_contracts: []\n",
+        encoding="utf-8",
     )
 
     result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)

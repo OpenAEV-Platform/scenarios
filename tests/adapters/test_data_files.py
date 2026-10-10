@@ -38,7 +38,8 @@ OTHER_PASSWORD = base64.b64decode(
 def test_policy_data_is_read_by_name() -> None:
     rules = YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
 
-    assert set(rules) == {"removed", "removed_suffixes", "sorted"}
+    assert set(rules) == {"removed", "removed_suffixes", "sorted", "emptied_in_builtin_contracts"}
+    assert rules["emptied_in_builtin_contracts"] == ["injector_contract_attack_patterns"]
 
 
 @pytest.mark.parametrize("name", ["../secrets", "a/b", "", "Volatile"])

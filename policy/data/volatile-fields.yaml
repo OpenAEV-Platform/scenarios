@@ -16,6 +16,11 @@ removed:
 removed_suffixes:
   - _created_at
   - _updated_at
+# Lists a built-in contract's copy gains from the instance, such as the techniques its MITRE
+# collector links to the contract: emptied, so that the stored file does not depend on the
+# instance it was exported from. A contract created from a payload keeps its own.
+emptied_in_builtin_contracts:
+  - injector_contract_attack_patterns
 # Lists whose order carries no meaning: they are sorted, so that two exports of the same
 # scenario give the same file.
 sorted:
