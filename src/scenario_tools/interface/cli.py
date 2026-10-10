@@ -30,7 +30,7 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
-from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
+from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
@@ -256,11 +256,16 @@ def _entry_external_id(out: Path, given: str | None) -> str:
 def _policy_levels(out: Path) -> list[Path]:
     """OUT and those of its parents that hold policy data, from the deepest up."""
     resolved = Path(os.path.realpath(out))  # a loop of links is left as it is, not raised
-    return [
-        directory
-        for directory in (resolved, *resolved.parents)
-        if (directory / "policy" / "data").is_dir()
-    ]
+    try:
+        return [
+            directory
+            for directory in (resolved, *resolved.parents)
+            if (directory / "policy" / "data").is_dir()
+        ]
+    except OSError as error:  # a directory that cannot be searched, for instance
+        raise EnvironmentProblemError(
+            f"cannot look for policy data above {out}: {error.strerror}"
+        ) from error
 
 
 def _repository_root(levels: list[Path], out: Path) -> Path:
@@ -306,9 +311,13 @@ def normalize(
     # Absolute paths, so that findings are reported from the repository root.
     export, out = export.absolute(), out.absolute()
     levels: list[Path] = []
+    metadata = out / "scenario.yaml"
     try:
         levels = _policy_levels(out)
         root = _repository_root(levels, out)
+        # Decided once, before the external ID is chosen: a scenario.yaml that appears later
+        # is never read nor replaced, and the run stops before writing anything.
+        first = not (metadata.exists() or metadata.is_symlink())
         entry_id = _entry_external_id(out, external_id)
     except click.UsageError:
         raise
@@ -318,32 +327,34 @@ def normalize(
     mapping_file = mapping_file.absolute() if mapping_file else None
 
     def produce() -> Report:
+        loader = YamlDataLoader(root / "policy" / "data")
         prepared = prepare_entry(
             read_export(export),
             entry_id,
-            YamlDataLoader(root / "policy" / "data"),
+            loader,
             path=str(export),
             previous=read_json_file(previous_file) if previous_file else None,
             previous_path=str(previous_file) if previous_file else None,
             mapping=read_mapping(mapping_file) if mapping_file else None,
             mapping_path=str(mapping_file) if mapping_file else None,
+            start_at=repository_path(str(metadata.resolve()), root) if first else None,
         )
+        if prepared.metadata is not None:  # a first preparation: never written again
+            write_output(metadata, yaml_bytes(prepared.metadata), create=True)
         target = out / "scenario.json"
         write_output(target, prepared.scenario_json)
         where = repository_path(str(target.resolve()), root)
-        return Report(
-            "normalize",
-            tuple(
-                Finding(
-                    "VER-012",
-                    Severity.INFO,
-                    where,
-                    "",
-                    f"inject {inject} of the previous version is no longer in the export",
-                )
-                for inject in prepared.removed_injects
-            ),
+        findings = tuple(
+            Finding(
+                "VER-012",
+                Severity.INFO,
+                where,
+                "",
+                f"inject {inject} of the previous version is no longer in the export",
+            )
+            for inject in prepared.removed_injects
         )
+        return Report("normalize", findings + prepared.to_complete)
 
     _emit(ctx, "normalize", produce, root)
 

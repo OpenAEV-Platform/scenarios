@@ -21,6 +21,7 @@ from scenario_tools.adapters.safe_readers import (
     parse_yaml,
     read_json_file,
     read_yaml_file,
+    yaml_bytes,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -640,3 +641,61 @@ def test_refusal_names_its_code_and_path() -> None:
     error = UnsafeInputError("IO-001", "too large", "scenarios/x/scenario.json")
 
     assert str(error) == "IO-001 scenarios/x/scenario.json: too large"
+
+
+# Writing YAML that this reader reads back as it was written
+
+_TRICKY = [
+    "1e5", "1.5", "123", "-0", "true", "false", "null", "~", "", " lead", "trail ", "yes", "no",
+    "on", "1.0.0", ">=3.261005.0", "a: b", "#c", "- item", "[x]", "{y}", "*a", "&b", "!t", "%d",
+    "@e", "`f", "multi\nline", "tab\there", "é ü 漢", "'quote", '"double', "2001-12-14", "0x1F",
+    "1_000", ".inf", ".nan", "<<", "\x85", "a\x85b", "a\u2028b", "a\u2029b", "a\rb",
+    "a\r\nb", "line\nwith\x85break",
+]  # fmt: skip
+_texts = st.sampled_from(_TRICKY) | st.text(
+    st.characters(blacklist_categories=("Cs", "Cc"), blacklist_characters="﻿"), max_size=30
+)
+_documents = st.recursive(
+    st.none() | st.booleans() | st.integers(-(2**53) + 1, 2**53 - 1) | _texts,
+    lambda children: st.lists(children, max_size=4) | st.dictionaries(_texts, children, max_size=4),
+    max_leaves=12,
+)
+
+
+@given(st.dictionaries(_texts, _documents, max_size=6))
+def test_written_yaml_reads_back_as_it_was_written(document: dict[str, Any]) -> None:
+    assert parse_yaml(yaml_bytes(document)) == document
+
+
+@pytest.mark.parametrize("text", _TRICKY)
+def test_a_text_this_reader_would_type_stays_a_text(text: str) -> None:
+    assert parse_yaml(yaml_bytes({"name": text})) == {"name": text}
+
+
+def test_written_yaml_keeps_the_order_of_its_keys_and_is_stable() -> None:
+    document = {"version": "1.0.0", "name": "EASM", "requires": {"openaev": ">=3.261005.0"}}
+
+    data = yaml_bytes(document)
+
+    assert data == yaml_bytes(document)
+    assert data.decode("utf-8").splitlines()[0] == "version: 1.0.0"
+    assert data.endswith(b"\n")
+
+
+def test_a_value_used_twice_is_written_twice_not_as_an_alias() -> None:
+    # This reader refuses anchors and aliases, which the dumper writes for a shared object.
+    shared = ["Linux", "Windows"]
+
+    data = yaml_bytes({"platforms": shared, "again": shared})
+
+    assert b"&" not in data
+    assert parse_yaml(data) == {"platforms": shared, "again": shared}
+
+
+def test_a_text_of_several_lines_is_written_as_a_readable_block() -> None:
+    text = "First line.\n\n- a point\n- another point"
+
+    data = yaml_bytes({"description": text})
+
+    assert data.decode().startswith("description: |")
+    assert parse_yaml(data) == {"description": text}

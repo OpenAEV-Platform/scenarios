@@ -27,6 +27,8 @@ from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+INJECTOR_TYPE_LIMIT = 64  # characters, as the schema says for requires.injectors
+_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _IMPLANT = "openaev_implant"
 _FACETS = ("scenario_name", "scenario_severity", "scenario_category", "scenario_main_focus")
@@ -58,6 +60,8 @@ class BuiltinContracts:
         if not isinstance(document, Mapping):
             raise fail("the document must be a mapping")
         version = text(document, "platform_version")
+        if not _VERSION.fullmatch(version):  # it starts the requires.openaev of new entries
+            raise fail("platform_version must be a version such as 3.261005.0")
         items = document.get("contracts")
         if not isinstance(items, list):
             raise fail("contracts must be a list")
@@ -83,9 +87,10 @@ class BuiltinContracts:
             digest = item.get("copy_sha256")
             if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
                 raise fail(f"{identifier}: copy_sha256 must be a SHA-256 hex digest")
-            contracts[identifier] = InjectFacts(
-                text(item, "injector_type"), needs_executor, frozenset(platforms)
-            )
+            injector_type = text(item, "injector_type")
+            if len(injector_type) > INJECTOR_TYPE_LIMIT:  # it goes into requires.injectors
+                raise fail(f"injector_type must be at most {INJECTOR_TYPE_LIMIT} characters")
+            contracts[identifier] = InjectFacts(injector_type, needs_executor, frozenset(platforms))
             copies[identifier] = digest
         return cls(version, MappingProxyType(contracts), MappingProxyType(copies))
 

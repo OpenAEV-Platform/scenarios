@@ -322,3 +322,49 @@ def read_yaml_file(path: Path, *, limit: int = YAML_LIMIT, max_depth: int = MAX_
     return parse_yaml(
         read_regular_file(path, limit), path=str(path), limit=limit, max_depth=max_depth
     )
+
+
+class _Dumper(yaml.SafeDumper):
+    """Writes YAML that the reader above reads back unchanged: a text it would read as a
+    boolean, a number or null is quoted, on top of what the safe dumper quotes already, and a
+    value used twice is written twice, since the reader refuses anchors and aliases."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+
+_Dumper.yaml_implicit_resolvers = {
+    first: list(resolvers) for first, resolvers in yaml.SafeDumper.yaml_implicit_resolvers.items()
+}
+for _first, _resolvers in _Loader.yaml_implicit_resolvers.items():
+    _Dumper.yaml_implicit_resolvers.setdefault(_first, []).extend(_resolvers)
+
+
+# Line breaks of YAML other than "\n": unescaped, the reader folds them; double quotes escape
+# them.
+_OTHER_BREAKS = frozenset("\r\x85\u2028\u2029")
+
+
+def _represent_text(dumper: _Dumper, text: str) -> yaml.ScalarNode:
+    """A text of several lines as a block, which a person can edit; the emitter falls back to
+    quotes for a text a block cannot hold, such as one with trailing spaces. A text holding
+    another kind of line break is double-quoted, so that the break is escaped."""
+    style = '"' if _OTHER_BREAKS & set(text) else "|" if "\n" in text else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", text, style=style)
+
+
+_Dumper.add_representer(str, _represent_text)
+
+
+def yaml_bytes(document: object) -> bytes:
+    """``document`` as UTF-8 YAML, keys in their order, one value per line, the same bytes for
+    the same document."""
+    text = yaml.dump(
+        document,
+        Dumper=_Dumper,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=1_000_000,
+    )
+    return text.encode("utf-8")

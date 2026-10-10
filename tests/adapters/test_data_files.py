@@ -406,3 +406,22 @@ def test_the_documents_refusal_counts_them(tmp_path: Path) -> None:
     with pytest.raises(UnsafeInputError) as error:
         read_export(path)
     assert error.value.message.endswith("the export carries 2 documents")
+
+
+def test_a_file_written_only_if_new_is_created(tmp_path: Path) -> None:
+    write_output(tmp_path / "scenario.yaml", b"name: x\n", create=True)
+
+    assert (tmp_path / "scenario.yaml").read_bytes() == b"name: x\n"
+    assert (tmp_path / "scenario.yaml").stat().st_mode & 0o777 == 0o644
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
+
+
+def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: Path) -> None:
+    # Created in between, by a person or another run: it is theirs and stays.
+    (tmp_path / "scenario.yaml").write_bytes(b"completed: by hand\n")
+
+    with pytest.raises(EnvironmentProblemError, match="already exists"):
+        write_output(tmp_path / "scenario.yaml", b"name: x\n", create=True)
+
+    assert (tmp_path / "scenario.yaml").read_bytes() == b"completed: by hand\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
