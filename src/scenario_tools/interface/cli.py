@@ -246,9 +246,10 @@ def _entry_external_id(out: Path, given: str | None) -> str:
 
 def _policy_levels(out: Path) -> list[Path]:
     """OUT and those of its parents that hold policy data, from the deepest up."""
+    resolved = Path(os.path.realpath(out))  # a loop of links is left as it is, not raised
     return [
         directory
-        for directory in (out.resolve(), *out.resolve().parents)
+        for directory in (resolved, *resolved.parents)
         if (directory / "policy" / "data").is_dir()
     ]
 
@@ -345,7 +346,7 @@ def normalize(
 def archive(ctx: click.Context, entry: Path, out: Path) -> None:
     """Write the import archive of ENTRY to OUT: its scenario.json and attachments.zip as they
     are, in the layout the platform's importer reads, once the entry passes its checks."""
-    entry = entry.resolve()  # its place in the repository, whatever link names it
+    entry = Path(os.path.realpath(entry))  # its place in the repository, whatever link names it
     out = Path(os.path.normpath(out.absolute()))
     if _inside(out, entry):
         raise click.UsageError("OUT may not be inside the entry")

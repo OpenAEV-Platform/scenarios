@@ -366,3 +366,14 @@ def test_the_archive_is_never_written_inside_the_entry_through_a_link_to_a_folde
     assert code == 2
     assert "OUT may not be inside the entry" in stderr
     assert not (entry / "nested" / "child" / "out.zip").exists()
+
+
+def test_an_entry_named_through_a_loop_of_links_is_reported_not_raised(tmp_path: Path) -> None:
+    _entry(tmp_path, "easm-scenario")
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+
+    code, stdout, _ = _run("--format", "json", "archive", str(loop), "--out", str(tmp_path / "e"))
+
+    assert code == 1
+    assert [finding["code"] for finding in json.loads(stdout)["findings"]] == ["IO-013"]
