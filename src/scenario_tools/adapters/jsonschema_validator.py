@@ -10,6 +10,7 @@ before a final newline as in Python.
 """
 
 import functools
+import itertools
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
@@ -24,6 +25,7 @@ from scenario_tools.ports.schema import SchemaViolation
 
 _SUFFIX = ".schema.json"
 VIOLATION_LIMIT = 100  # as many as a report shows
+_NAMED = 5  # unexpected properties named in one message
 
 
 def json_pointer(path: Iterable[str | int]) -> str:
@@ -84,13 +86,15 @@ def _pattern_properties(
                 yield from validator.descend(value, subschema, path=name, schema_path=pattern)
 
 
-def _unexpected(schema: Mapping[str, Any], instance: Mapping[str, Any]) -> list[str]:
+def _unexpected(schema: Mapping[str, Any], instance: Mapping[str, Any]) -> Iterator[str]:
+    """The names of the instance the schema does not know, one at a time: an object can have
+    millions of them, and only as many as are reported are ever looked at."""
     known, patterns = schema.get("properties", {}), schema.get("patternProperties", {})
-    return [
+    return (
         name
         for name in instance
         if name not in known and not any(_regex(pattern).search(name) for pattern in patterns)
-    ]
+    )
 
 
 def _additional_properties(
@@ -102,8 +106,19 @@ def _additional_properties(
     if isinstance(additional, dict):
         for name in extras:
             yield from validator.descend(instance[name], additional, path=name)
-    elif additional is False and extras:
-        yield jsonschema.ValidationError(f"unexpected properties: {', '.join(map(repr, extras))}")
+    elif additional is False and (named := list(itertools.islice(extras, _NAMED + 1))):
+        # Each name is reported at its own pointer; the message names only the first few.
+        more = ", …" if len(named) > _NAMED else ""
+        names = ", ".join(map(repr, named[:_NAMED]))
+        yield jsonschema.ValidationError(f"unexpected properties: {names}{more}")
+
+
+def _max_items(
+    validator: Any, limit: int, instance: object, schema: Mapping[str, Any]
+) -> Iterator[jsonschema.ValidationError]:
+    """jsonschema's message would write the whole list out; this one gives its length."""
+    if isinstance(instance, list) and len(instance) > limit:
+        yield jsonschema.ValidationError(f"has {len(instance)} items, more than {limit}")
 
 
 # Every keyword that matches a pattern uses the ECMA-262 end anchor.
@@ -113,11 +128,12 @@ _Validator = jsonschema.validators.extend(  # type: ignore[no-untyped-call]  # u
         "pattern": _pattern,
         "patternProperties": _pattern_properties,
         "additionalProperties": _additional_properties,
+        "maxItems": _max_items,
     },
 )
 
 
-def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
+def _violations(error: jsonschema.ValidationError, budget: int) -> list[SchemaViolation]:
     """One violation per offending value. jsonschema reports unexpected properties on their
     parent object; each one is reported at its own pointer instead."""
     path = list(error.absolute_path)
@@ -127,7 +143,7 @@ def _violations(error: jsonschema.ValidationError) -> list[SchemaViolation]:
     schema = error.schema if isinstance(error.schema, dict) else {}
     unexpected = [
         SchemaViolation(json_pointer([*path, name]), "unexpected property")
-        for name in _unexpected(schema, error.instance)
+        for name in itertools.islice(_unexpected(schema, error.instance), budget)
     ]
     return unexpected or general  # never drop an error, even if no property can be named
 
@@ -153,12 +169,12 @@ class JsonSchemaValidator:
 
     def validate(self, schema: str, document: object) -> tuple[SchemaViolation, ...]:
         """The document's violations, at most ``VIOLATION_LIMIT`` of them: the validator stops
-        there, so a hostile document cannot make it build millions."""
+        there, so a hostile document cannot make it build millions. It also stops at a list
+        longer than its bound, which the schemas check before the list's items."""
         validator = self._validators[schema]
         violations: set[SchemaViolation] = set()
         for error in validator.iter_errors(document):
-            violations.update(_violations(error))
-            if len(violations) >= VIOLATION_LIMIT:
-                violations = set(sorted(violations, key=_violation_key)[:VIOLATION_LIMIT])
+            violations.update(_violations(error, VIOLATION_LIMIT - len(violations)))
+            if len(violations) >= VIOLATION_LIMIT or error.validator == "maxItems":
                 break
         return tuple(sorted(violations, key=_violation_key))

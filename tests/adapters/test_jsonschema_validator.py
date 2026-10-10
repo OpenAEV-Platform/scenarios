@@ -775,11 +775,49 @@ def test_the_validator_stops_once_it_has_enough(
     errors: list[object] = []
     original = validator_module._violations
 
-    def counted(error: Any) -> Any:
+    def counted(error: Any, budget: int) -> Any:
         errors.append(error)
-        return original(error)
+        return original(error, budget)
 
     monkeypatch.setattr(validator_module, "_violations", counted)
     validator.validate("manifest", _changed(MANIFEST, lambda d: d.__setitem__("items", [{}] * 500)))
 
     assert len(errors) <= VIOLATION_LIMIT
+
+
+@pytest.mark.parametrize("schema", ["scenario", "manifest"])
+def test_every_bound_is_checked_before_the_items(schema: str) -> None:
+    # jsonschema checks keywords in their order: the size first, so an oversized list fails
+    # before its items are walked.
+    document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text(encoding="utf-8"))
+
+    for pointer, node in _arrays(document):
+        keys = [key for key in node if key in ("maxItems", "minItems", "uniqueItems", "items")]
+        assert keys[0] == "maxItems", pointer
+
+
+def test_an_oversized_list_of_valid_items_is_refused_quickly(
+    validator: JsonSchemaValidator,
+) -> None:
+    items = _changed(MANIFEST, lambda d: d.__setitem__("items", d["items"] * 200_000))
+
+    started = time.monotonic()
+    violations = validator.validate("manifest", items)
+
+    assert [(v.pointer, v.message) for v in violations] == [
+        ("/items", "has 200000 items, more than 10000")  # the list itself is never written out
+    ]
+    assert time.monotonic() - started < 0.2
+
+
+def test_unexpected_properties_are_counted_within_the_cap(
+    validator: JsonSchemaValidator,
+) -> None:
+    extra = {f"extra_{n:07}": n for n in range(1_000_000)}
+    document = _changed(SCENARIO, lambda d: d.update(extra))
+
+    started = time.monotonic()
+    violations = validator.validate("scenario", document)
+
+    assert len(violations) == VIOLATION_LIMIT
+    assert time.monotonic() - started < 0.2  # only the names reported are looked at
