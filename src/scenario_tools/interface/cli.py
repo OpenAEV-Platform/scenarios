@@ -94,13 +94,21 @@ _WITHHELD = "withheld: it would show a secret"
 
 def _cut_in(text: str, hidden: str) -> bool:
     """Whether ``text`` was cut short in the middle of ``hidden``: it then ends with the start
-    of it, before the ellipsis."""
-    shown = text[:-1]
-    # No start longer than the text can end it: the work stays bounded by the text.
-    longest = min(len(hidden), len(shown))
-    return text.endswith("…") and any(
-        shown.endswith(hidden[:length]) for length in range(1, longest + 1)
-    )
+    of it, before the ellipsis, as it is or as JSON writes it."""
+    for ellipsis in ("…", "\\u2026"):
+        if text.endswith(ellipsis):
+            shown = text[: -len(ellipsis)]
+            # No start longer than the text can end it: the work stays bounded by the text.
+            longest = min(len(hidden), len(shown))
+            return any(shown.endswith(hidden[:length]) for length in range(1, longest + 1))
+    return False
+
+
+def _cut_in_any_form(text: str, hidden: str) -> bool:
+    """Whether ``text``, as the text or the JSON output writes it, was cut short in the middle
+    of ``hidden``: an escape can write the start of the token."""
+    forms = (_printable(text), json.dumps(text)[1:-1])
+    return any(_cut_in(form, hidden) for form in forms)
 
 
 def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
@@ -109,7 +117,7 @@ def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
     the token shows as it is or not at all."""
     output = render(message)
     if hidden and (
-        hidden in output or _cut_in(output, hidden) or _cut_in(shorten(message), hidden)
+        hidden in output or _cut_in(output, hidden) or _cut_in_any_form(shorten(message), hidden)
     ):
         return render(_WITHHELD)
     return output
@@ -122,7 +130,9 @@ def _render(report: Report, output_format: str) -> str:
 def _shows(output: str, report: Report, hidden: str) -> bool:
     """Whether ``hidden`` shows in the output, or its start in a message cut short. The token's
     characters are never escaped, so the token shows as it is or not at all."""
-    return hidden in output or any(_cut_in(finding.message, hidden) for finding in report.findings)
+    return hidden in output or any(
+        _cut_in_any_form(finding.message, hidden) for finding in report.findings
+    )
 
 
 def _withhold(report: Report, output_format: str, hidden: str) -> str:

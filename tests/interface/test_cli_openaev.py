@@ -524,6 +524,32 @@ def test_a_failed_import_tells_whether_the_scenario_may_exist(
     assert ("the scenario may have been created all the same" in error) is told
 
 
+@pytest.mark.parametrize("output_format", ["text", "json"])
+@pytest.mark.parametrize(
+    ("token", "end"),
+    [
+        ("u00e9-secret-value", "\u00e9-secret-value"),
+        ("x1bsec-secret-value", "\x1bsec-secret-value"),
+    ],
+    ids=["JSON escape", "text escape"],
+)
+@pytest.mark.parametrize("where", ["finding", "error"])
+def test_the_start_of_the_token_never_shows_where_escaping_writes_it(
+    output_format: str, token: str, end: str, where: str
+) -> None:
+    # Cut short just after the escaped character: the escape writes the start of the token.
+    message = "a" * 294 + end
+
+    def produce() -> Report:
+        if where == "error":
+            raise EnvironmentProblemError(message)
+        return _finding(message)()
+
+    output, _ = execute("openaev import", produce, output_format, hidden=token)
+
+    assert token[:7] not in output
+
+
 def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:
     archive = tmp_path / "scenario.zip"
     archive.write_bytes(EXPORT)
