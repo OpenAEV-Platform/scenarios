@@ -168,6 +168,14 @@ class _Loader(yaml.SafeLoader):
             raise _RefusedError("IO-003", "YAML anchor")
         return super().compose_node(parent, index)
 
+    def construct_scalar(self, node: Any) -> str:
+        # PyYAML would read a scalar tag on a mapping through its YAML 1.1 "value" key.
+        if not isinstance(node, yaml.ScalarNode):
+            raise yaml.constructor.ConstructorError(
+                None, None, f"a scalar tag on a {node.id}", node.start_mark
+            )
+        return super().construct_scalar(node)
+
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
         if not isinstance(node, yaml.MappingNode):  # a mapping tag on a list or a text
             raise yaml.constructor.ConstructorError(

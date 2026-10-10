@@ -336,8 +336,22 @@ def test_yaml_values_outside_json_are_refused(data: bytes) -> None:
         b"a: !!timestamp 2001-12-14\n",
         b"a: !!omap [1]\n",
         b"a: !!pairs x\n",
+        b"a: !!int {? !!value x : 12}\n",
+        b"a: !!str {? !!value k : hello}\n",
+        b"a: !!null {? !!value k : null}\n",
     ],
-    ids=["map on list", "map on text", "set on list", "bad date", "date", "omap", "pairs"],
+    ids=[
+        "map on list",
+        "map on text",
+        "set on list",
+        "bad date",
+        "date",
+        "omap",
+        "pairs",
+        "int on map with a value key",
+        "str on map with a value key",
+        "null on map with a value key",
+    ],
 )
 def test_yaml_tags_json_cannot_represent_are_refused(data: bytes) -> None:
     # Only the tags of JSON's own types are read, and only on a node of their kind.
@@ -377,7 +391,10 @@ _TAGS = [
     "!local",
     "!<tag:example.org,2026:x>",
 ]
-_BODIES = ["x", "1", "1.5", "true", "''", "[]", "[1, [2]]", "{}", "{a: 1}", "{a: [1]}"]
+_BODIES = [
+    *("x", "1", "1.5", "true", "''", "[]", "[1, [2]]", "{}", "{a: 1}", "{a: [1]}"),
+    "{? !!value k : 1}",
+]
 
 
 def test_no_tag_on_any_body_escapes_the_refusals() -> None:
