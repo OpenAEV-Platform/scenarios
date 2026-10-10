@@ -39,6 +39,7 @@ from scenario_tools.application.findings import finding_from_unsafe_input, repos
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.domain.catalogue.archive import belongs_to
+from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -332,13 +333,15 @@ def normalize(
             read_export(export),
             entry_id,
             loader,
-            path=str(export),
+            path=repository_path(str(export), root),
             previous=read_json_file(previous_file) if previous_file else None,
             previous_path=str(previous_file) if previous_file else None,
             mapping=read_mapping(mapping_file) if mapping_file else None,
             mapping_path=str(mapping_file) if mapping_file else None,
             start_at=repository_path(str(metadata.resolve()), root) if first else None,
         )
+        if prepared.refusals:
+            return Report("normalize", prepared.refusals)
         if prepared.metadata is not None:  # a first preparation: never written again
             write_output(metadata, yaml_bytes(prepared.metadata), create=True)
         target = out / "scenario.json"
@@ -414,7 +417,9 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
                 ).scenario_json
             ),
             contract_findings=lambda stored: (
-                export_facts(stored, builtin, path)[1] + copy_findings(stored, builtin, path)
+                export_facts(stored, builtin, path)[1]
+                + copy_findings(stored, builtin, path)
+                + hidden_character_findings(stored, path)
             ),
             check=lambda built: check_export_archive(built, str(out)),
             limit=ARCHIVE_LIMIT,

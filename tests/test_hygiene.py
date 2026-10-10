@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from scenario_tools.domain.shared.characters import hidden_in
+
 ROOT = Path(__file__).parents[1]
 THIS_FILE = Path(__file__).relative_to(ROOT)
 
@@ -150,3 +152,46 @@ def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exemp
         f"other/{THIS_FILE.name}": ["speckit"],
         "uv.lock": ["speckit"],
     }
+
+
+_BINARY = frozenset({".zip", ".png", ".jpg", ".pdf", ".gz"})
+
+
+def _files_with_hidden_characters(root: Path) -> dict[str, tuple[str, ...]]:
+    """Every committable file whose name, link target or text holds a hidden character. Text
+    that is not valid UTF-8 is read anyway, its invalid bytes left aside; only binary formats
+    are skipped."""
+    found = {}
+    for relative in _committable_files(root):
+        path = root / relative
+        texts = [relative.as_posix()]
+        if path.is_symlink():
+            texts.append(str(path.readlink()))  # what the repository stores for a link
+        elif path.is_file() and path.suffix not in _BINARY:
+            texts.append(path.read_bytes().decode("utf-8", errors="ignore"))
+        hidden = tuple(label for text in texts for label in hidden_in(text))
+        if hidden:
+            found[relative.as_posix()] = hidden
+    return found
+
+
+def test_no_repository_file_holds_a_hidden_character() -> None:
+    # The rule the tools apply to scenarios holds for the repository itself: tests write such
+    # characters by code point, never raw.
+    assert _files_with_hidden_characters(ROOT) == {}
+
+
+def test_a_hidden_character_in_a_committable_file_is_found(tmp_path: Path) -> None:
+    rlo = chr(0x202E)
+    (tmp_path / "tool.py").write_text(f"command = 'ls{rlo}'\n", encoding="utf-8")
+    (tmp_path / "notes.md").write_bytes(b"\xff not utf-8 " + rlo.encode())
+    (tmp_path / f"evil{rlo}gpj.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "link").symlink_to(f"target{rlo}")
+    (tmp_path / "export.zip").write_bytes(rlo.encode())  # binary formats are not text
+    (tmp_path / "clean.py").write_text("command = 'ls'\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
+
+    found = _files_with_hidden_characters(tmp_path)
+
+    assert sorted(found) == sorted(["tool.py", "notes.md", f"evil{rlo}gpj.py", "link"])
+    assert all(labels == ("U+202E (RIGHT-TO-LEFT OVERRIDE)",) for labels in found.values())

@@ -210,3 +210,15 @@ def test_an_export_whose_facts_cannot_be_read_is_refused_before_anything_is_writ
     with pytest.raises(UnsafeInputError) as error:
         prepare_entry(export, EXTERNAL_ID, RepositoryData(), path="e.zip", start_at="m.yaml")
     assert (error.value.code, error.value.path) == ("IO-014", "e.zip")
+
+
+def test_an_export_with_a_hidden_character_is_refused_with_every_occurrence() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"][0]["inject_title"] = f"No{chr(0x202E)}te{chr(0x200B)}"
+
+    prepared = prepare_entry(export, EXTERNAL_ID, FakeData(), path="export.zip")
+
+    assert [(f.code, f.path, f.field) for f in prepared.refusals] == [
+        ("IO-017", "export.zip", "/scenario_injects/0/inject_title")
+    ] * 2
+    assert prepare_entry(EXPORT, EXTERNAL_ID, FakeData(), path="e").refusals == ()

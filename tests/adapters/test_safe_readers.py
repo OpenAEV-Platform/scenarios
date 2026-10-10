@@ -653,7 +653,7 @@ _TRICKY = [
     "a\r\nb", "line\nwith\x85break",
 ]  # fmt: skip
 _texts = st.sampled_from(_TRICKY) | st.text(
-    st.characters(blacklist_categories=("Cs", "Cc"), blacklist_characters="﻿"), max_size=30
+    st.characters(blacklist_categories=("Cs", "Cc"), blacklist_characters=chr(0xFEFF)), max_size=30
 )
 _documents = st.recursive(
     st.none() | st.booleans() | st.integers(-(2**53) + 1, 2**53 - 1) | _texts,
