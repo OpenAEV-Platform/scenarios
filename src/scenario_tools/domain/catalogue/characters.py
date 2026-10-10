@@ -170,19 +170,21 @@ def _messages(text: str, where: str, decoded: bool) -> list[str]:
 def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...]:
     """An ``IO-017`` finding for each hidden character in each text of ``document``, at the
     pointer of its value or key, with its count, never the text. Past ``REPORT_LIMIT``, the last
-    finding counts the texts left, so that a flood of them stays small to report."""
+    finding counts the texts left, a text cut short included, so that a flood of them stays
+    small to report while the first ones are shown."""
     findings: list[Finding] = []
     left = 0
     for pointer, where, text, decoded in _texts(document):
         messages = _messages(text, where, decoded)
         if not messages:
             continue
-        if left or len(findings) + len(messages) > REPORT_LIMIT - 1:
-            left += 1  # a text is reported whole or counted in the summary
-            continue
+        room = REPORT_LIMIT - 1 - len(findings)  # never below zero: no more is ever added
         findings.extend(
-            Finding("IO-017", Severity.BLOCKING, path, pointer, message) for message in messages
+            Finding("IO-017", Severity.BLOCKING, path, pointer, message)
+            for message in messages[:room]
         )
+        if len(messages) > room:
+            left += 1  # a text cut short, or not reported, is counted in the summary
     if left:
         summary = f"{left} more {'texts hold' if left > 1 else 'text holds'} hidden characters"
         findings.append(Finding("IO-017", Severity.BLOCKING, path, "", summary))

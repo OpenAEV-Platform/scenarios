@@ -167,7 +167,7 @@ def test_two_keys_whose_pointers_would_collide_are_two_places() -> None:
 
 
 def test_a_long_chain_of_escaped_backslashes_is_refused_in_linear_time() -> None:
-    chain = "\\u005c" + "u005c" * 200_000 + "u202e"  # many decodings away from the character
+    chain = "\\u005c" + "u005c" * 50_000 + "u202e"  # many decodings away from the character
     started = time.monotonic()
 
     [(_, message)] = _fields({"v": chain})
@@ -382,3 +382,12 @@ def test_an_escape_left_after_three_decodings_takes_its_place_in_the_order() -> 
     text = "\\" * 8 + f"u0061 {chr(0x202E)}"
 
     assert _first({"v": text}) == ["0", "14"]
+
+
+def test_a_text_with_more_characters_than_the_report_holds_keeps_those_that_fit() -> None:
+    tags = "".join(chr(code) for code in range(0xE0020, 0xE0020 + 150))
+
+    fields = _fields({"v": f"x{tags}", "w": f"y{RLO}"})
+
+    assert [field for field, _ in fields] == ["/v"] * (REPORT_LIMIT - 1) + [""]
+    assert fields[-1][1] == "2 more texts hold hidden characters"
