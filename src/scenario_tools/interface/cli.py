@@ -18,6 +18,8 @@ import click
 
 from scenario_tools import __version__
 from scenario_tools.adapters.data_files import (
+    DOCUMENTS_NOT_SUPPORTED,
+    DocumentsNotSupportedError,
     YamlDataLoader,
     check_export_archive,
     read_attachments,
@@ -455,8 +457,11 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
             check_export_archive(data, str(out))
         except UnsafeInputError as error:
             # The platform has seen the token and chooses what the archive holds: the refusal
-            # gives the check that failed, never the content, however it would be written.
+            # gives the check that failed, never the content, however it would be written. That
+            # an export carries documents is said in the tool's own words.
             message = "the archive the platform exported fails this check"
+            if isinstance(error, DocumentsNotSupportedError):
+                message = DOCUMENTS_NOT_SUPPORTED
             raise UnsafeInputError(error.code, message, error.path) from error
 
     def produce() -> Report:

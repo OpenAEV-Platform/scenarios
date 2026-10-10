@@ -21,10 +21,14 @@ SCENARIO = "0a64b5ab-2016-426b-813f-9051d32e88b3"
 
 
 def _archive(*entries: tuple[str, bytes]) -> bytes:
+    """An archive as the platform writes it: a JSON entry carries the comment ``Scenario``."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, data in entries:
-            archive.writestr(name, data)
+            entry = zipfile.ZipInfo(name)
+            entry.comment = b"Scenario" if name.endswith(".json") else b""
+            entry.compress_type = zipfile.ZIP_DEFLATED  # as the platform writes its exports
+            archive.writestr(entry, data)
     return buffer.getvalue()
 
 
@@ -150,6 +154,32 @@ def test_a_refused_export_never_shows_what_the_platform_chose(
         "the archive the platform exported fails this check",
     )
     assert "secret" not in result.stdout
+
+
+def test_an_export_with_documents_says_so_and_shows_nothing_of_them(
+    platform: Platform, tmp_path: Path
+) -> None:
+    # The reason is the tool's own text; the document's name, chosen by the platform, never
+    # shows.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        scenario = zipfile.ZipInfo("EASM Scenario.json")
+        scenario.comment = b"Scenario"
+        archive.writestr(scenario, b'{"export_version": 1}')
+        document = zipfile.ZipInfo(f"{TOKEN}.pdf")
+        document.comment = b"Attachment"
+        archive.writestr(document, b"%PDF-1.4")
+    platform.answer(200, buffer.getvalue())
+
+    code, stdout, _ = _run(
+        platform, "--format", "json", "openaev", "export", SCENARIO, "--out", str(tmp_path / "e")
+    )
+
+    assert code == 1
+    [finding] = json.loads(stdout)["findings"]
+    assert (finding["code"], finding["message"]) == ("IO-014", "documents are not supported yet")
+    assert TOKEN not in stdout
+    assert not (tmp_path / "e").exists()
 
 
 @pytest.mark.parametrize("scenario", ["../../api/users", SCENARIO.upper(), "x"])

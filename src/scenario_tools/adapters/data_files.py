@@ -43,20 +43,41 @@ class YamlDataLoader:
         return read_yaml_file(self.directory / f"{name}.yaml")
 
 
+# The comments the platform's importer reads as an entry's type, whatever its name.
+_SCENARIO_ENTRY = b"Scenario"
+_DOCUMENT_ENTRY = b"Attachment"
+
+
+DOCUMENTS_NOT_SUPPORTED = "documents are not supported yet"
+
+
+class DocumentsNotSupportedError(UnsafeInputError):
+    """An export that carries documents: its message is the tool's own text and a count."""
+
+
 def _export_document(archive: CheckedArchive) -> Any:
-    entries = [name for name in archive.names if name.endswith(".json")]
+    documents = [name for name in archive.names if archive.comment(name) == _DOCUMENT_ENTRY]
+    if documents:
+        raise DocumentsNotSupportedError(
+            "IO-014",
+            f"{DOCUMENTS_NOT_SUPPORTED}: the export carries {len(documents)} document"
+            + ("s" if len(documents) > 1 else ""),
+            archive.path,
+        )
+    entries = [name for name in archive.names if archive.comment(name) == _SCENARIO_ENTRY]
     if len(entries) != 1:
         raise UnsafeInputError(
             "IO-014",
-            f"an export archive holds one scenario JSON entry, not {len(entries)}",
+            f"an export archive holds one scenario entry, not {len(entries)}",
             archive.path,
         )
     return parse_json(archive.read(entries[0]), path=archive.path)
 
 
 def check_export_archive(data: bytes, path: str) -> None:
-    """Refuse bytes that are not a safe export archive holding one scenario JSON entry; ``path``
-    names the archive in the refusal."""
+    """Refuse bytes that are not a safe export archive holding exactly one scenario entry (the
+    entry whose comment is ``Scenario``, whatever its name) and no document; ``path`` names the
+    archive in the refusal."""
     _export_document(archive_from_bytes(data, path=path))
 
 

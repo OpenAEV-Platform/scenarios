@@ -60,19 +60,58 @@ def test_an_exported_json_file_gives_its_scenario(tmp_path: Path) -> None:
     assert read_export(path) == {"scenario_information": {"scenario_name": "x"}}
 
 
-@pytest.mark.parametrize("names", [[], ["a.json", "b.json"]], ids=["none", "two"])
-def test_an_archive_needs_exactly_one_scenario_entry(tmp_path: Path, names: list[str]) -> None:
+def _export_zip(*entries: tuple[str, bytes, bytes]) -> bytes:
+    """An archive of (name, comment, data) entries, as the platform writes an export."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr("readme.txt", b"x")
-        for name in names:
-            archive.writestr(name, b"{}")
+        for name, comment, data in entries:
+            entry = zipfile.ZipInfo(name)
+            entry.comment = comment
+            archive.writestr(entry, data)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [("readme.txt", b"", b"x")],
+        [("a.json", b"Scenario", b"{}"), ("b.json", b"Scenario", b"{}")],
+        [("a.json", b"", b"{}")],
+    ],
+    ids=["none", "two", "a json entry without the comment"],
+)
+def test_an_archive_needs_exactly_one_scenario_entry(
+    tmp_path: Path, entries: list[tuple[str, bytes, bytes]]
+) -> None:
     path = tmp_path / "export.zip"
-    path.write_bytes(buffer.getvalue())
+    path.write_bytes(_export_zip(*entries))
 
     with pytest.raises(UnsafeInputError) as error:
         read_export(path)
     assert error.value.code == "IO-014"
+
+
+def test_the_scenario_entry_is_the_one_whose_comment_says_so(tmp_path: Path) -> None:
+    # As the importer reads it: by its comment, whatever its name.
+    path = tmp_path / "export.zip"
+    path.write_bytes(_export_zip(("notes.json", b"", b"[]"), ("EASM", b"Scenario", b"{}")))
+
+    assert read_export(path) == {}
+
+
+@pytest.mark.parametrize("name", ["report.pdf", "data.json"])
+def test_an_export_carrying_documents_is_refused_until_they_are_supported(
+    tmp_path: Path, name: str
+) -> None:
+    path = tmp_path / "export.zip"
+    path.write_bytes(_export_zip(("EASM.json", b"Scenario", b"{}"), (name, b"Attachment", b"x")))
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export(path)
+    assert (error.value.code, error.value.message) == (
+        "IO-014",
+        "documents are not supported yet: the export carries 1 document",
+    )
 
 
 def test_an_export_archive_in_memory_passes_the_same_checks() -> None:
@@ -101,12 +140,8 @@ def test_an_export_archive_file_gives_its_bytes_once_checked(tmp_path: Path) -> 
 def test_an_export_archive_file_needs_exactly_one_scenario_entry(
     tmp_path: Path, names: list[str]
 ) -> None:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        for name in names:
-            archive.writestr(name, b"{}")
     path = tmp_path / "export.zip"
-    path.write_bytes(buffer.getvalue())
+    path.write_bytes(_export_zip(*((name, b"Scenario", b"{}") for name in names)))
 
     with pytest.raises(UnsafeInputError) as error:
         read_export_archive(path)
@@ -360,3 +395,13 @@ def test_an_empty_mapping_file_is_refused(tmp_path: Path) -> None:
     with pytest.raises(UnsafeInputError) as error:
         read_mapping(mapping)
     assert error.value.code == "VER-011"
+
+
+def test_the_documents_refusal_counts_them(tmp_path: Path) -> None:
+    path = tmp_path / "export.zip"
+    documents = [(f"{n}.pdf", b"Attachment", b"x") for n in range(2)]
+    path.write_bytes(_export_zip(("EASM.json", b"Scenario", b"{}"), *documents))
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_export(path)
+    assert error.value.message.endswith("the export carries 2 documents")
