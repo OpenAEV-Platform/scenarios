@@ -181,3 +181,18 @@ def test_a_character_both_raw_and_escaped_is_counted_in_full() -> None:
     [(_, message)] = _fields({"v": f"{RLO} \\u202e"})
 
     assert "2 times" in message
+
+
+def _first(document: Any) -> list[str]:
+    return [
+        message.split("first at character ")[1].split(":")[0] for _, message in _fields(document)
+    ]
+
+
+def test_every_finding_gives_the_offset_of_the_first_occurrence_in_the_source() -> None:
+    assert _first({f"ab{RLO}": "x"}) == ["2"]  # in a key
+    assert _first({"v": "abc\\u202e"}) == ["3"]  # an escape: where it starts in the text
+    assert _first({"v": "x\\u005cu202e"}) == ["1"]  # two decodings away
+    assert _first({"v": f"{RLO} \\u202e"}) == ["0"]  # raw first
+    assert _first({"v": "ok \\u200d"}) == ["3"]  # an escaped joiner out of place
+    assert _first({"v": "\\u00e9 a\\u200d"}) == ["8"]  # after a shorter decoded escape

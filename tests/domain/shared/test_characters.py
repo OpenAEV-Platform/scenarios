@@ -76,8 +76,20 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         f"{chr(0x0645)}{ZWNJ}{chr(0x06CC)}",  # Persian letters kept apart
         f"{chr(0x0915)}{chr(0x094D)}{ZWJ}{chr(0x0937)}",  # Devanagari conjunct
         f"iPhone{ZWNJ}{chr(0x0647)}{chr(0x0627)}",  # a Persian suffix after a foreign word
+        f"{chr(0xA9)}{VS16}",  # the copyright sign shown as emoji
+        f"{chr(0x8FBB)}{chr(0xFE00)}",  # a CJK ideograph with a standardized variant
     ],
-    ids=["emoji", "emoji sequence", "family", "keycap", "persian", "devanagari", "suffix"],
+    ids=[
+        "emoji",
+        "emoji sequence",
+        "family",
+        "keycap",
+        "persian",
+        "devanagari",
+        "suffix",
+        "copyright",
+        "cjk variant",
+    ],
 )
 def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> None:
     assert hidden_in(text) == ()
@@ -96,6 +108,7 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"a{ZWNJ}{chr(0x0660)}", 0x200C),  # an Arabic-Indic digit is no suffix
         (f"{chr(0x0661)}{ZWJ}x", 0x200D),  # after an Arabic-Indic digit
         (f"{chr(0x060C)}{ZWNJ}x", 0x200C),  # after an Arabic comma
+        (f"{chr(0xE9)}{VS16}{ZWJ}x", 0xFE0F),  # an emoji selector after a letter
     ],
     ids=[
         "at the start",
@@ -108,6 +121,7 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "zwnj before an arabic digit",
         "after a digit",
         "after punctuation",
+        "emoji selector after a letter",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:

@@ -22,6 +22,7 @@ _RANGES = (
 HIDDEN = frozenset(chr(code) for first, last in _RANGES for code in range(first, last + 1))
 JOINERS = frozenset((chr(0x200C), chr(0x200D), *map(chr, range(0xFE00, 0xFE10))))
 _ZWNJ, _ZWJ, _VS16, _KEYCAP = chr(0x200C), chr(0x200D), chr(0xFE0F), chr(0x20E3)
+_PRESENTATION = frozenset((chr(0xFE0E), _VS16))
 # Arabic letters: a Persian suffix may follow a foreign word after a ZWNJ.
 _ARABIC = ((0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
 
@@ -55,9 +56,12 @@ def _misplaced(text: str, index: int) -> bool:
         keycap = character == _VS16 and before in "0123456789#*" and after == _KEYCAP
         suffix = character == _ZWNJ and before.isalpha() and _is_arabic(after)
         return not (keycap or suffix)
-    # Scripts and emoji put them after a letter, a mark (a virama) or a symbol (an emoji),
-    # never after a digit or a punctuation mark.
-    return unicodedata.category(before)[0] not in "LMS"
+    category = unicodedata.category(before)[0]
+    if character in _PRESENTATION:  # text or emoji presentation: only an emoji-capable symbol
+        return category != "S"
+    # Scripts and emoji put the others after a letter, a mark (a virama) or a symbol (an
+    # emoji), never after a digit or a punctuation mark.
+    return category not in "LMS"
 
 
 def _is_arabic(character: str) -> bool:

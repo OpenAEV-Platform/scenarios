@@ -5,19 +5,57 @@ its depth, encoding or validity: nothing is decoded here, so no nesting can brea
 hide a character from it."""
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, Hidden, hidden_occurrences
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, REPORT_LIMIT, Finding, Severity
 
-_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})(?:\\u([dD][c-fC-F][0-9a-fA-F]{2}))?")
-# An escaped backslash and the "u005c" that follow it: each makes one more decoding away.
-_ESCAPED_BACKSLASHES = re.compile(r"\\u005[cC](?:u005[cC])*")
+# An escape, possibly after escaped backslashes ("u005c"), each of which takes one more decoding
+# to reach it; and the low half of a surrogate pair in the same form.
+_LINK = r"\\(?:u005[cC])*u"
+_ESCAPE = re.compile(f"{_LINK}([0-9a-fA-F]{{4}})(?:{_LINK}([dD][c-fC-F][0-9a-fA-F]{{2}}))?")
 _TO_DO = "remove it on the platform and export the scenario again"
 
 
-def _texts(document: Any) -> Iterator[tuple[str, str, str, str]]:
+@dataclass(frozen=True)
+class Decoded:
+    """A text with the escapes it writes turned into the characters a JSON reader would make of
+    them, and where each such character's escape starts in the source text."""
+
+    text: str
+    sources: Mapping[int, int]  # decoded index of an escaped character -> its source index
+
+
+_NOTHING = Decoded("", MappingProxyType({}))
+
+
+def _decoded(text: str) -> Decoded:
+    """The decoded view of ``text``, so that a hidden character, or a joiner out of place, is
+    seen in its context; empty when ``text`` writes no escape. Linear in the text's length."""
+    pieces: list[str] = []
+    sources: dict[int, int] = {}
+    decoded = 0
+    last = 0
+    for match in _ESCAPE.finditer(text):
+        pieces.append(text[last : match.start()])
+        decoded += match.start() - last
+        code = int(match.group(1), 16)
+        if match.group(2) and 0xD800 <= code <= 0xDBFF:
+            code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
+        pieces.append(chr(code))
+        sources[decoded] = match.start()
+        decoded += 1
+        last = match.end()
+    if not sources:
+        return _NOTHING
+    pieces.append(text[last:])
+    return Decoded("".join(pieces), MappingProxyType(sources))
+
+
+def _texts(document: Any) -> Iterator[tuple[str, str, str, Decoded]]:
     """Every text of ``document`` as (pointer, where, text, decoded), walked without recursion:
     each value with the characters its escapes write, each key as it is."""
     stack: list[tuple[str, Any]] = [("", document)]
@@ -26,14 +64,14 @@ def _texts(document: Any) -> Iterator[tuple[str, str, str, str]]:
         if isinstance(value, dict):
             for key, child in reversed(value.items()):
                 child_pointer = f"{pointer}/{_shown(key)}"
-                yield child_pointer, " in a key", key, ""
+                yield child_pointer, " in a key", key, _NOTHING
                 stack.append((child_pointer, child))
         elif isinstance(value, list):
             stack.extend(
                 (f"{pointer}/{index}", child) for index, child in reversed(list(enumerate(value)))
             )
         elif isinstance(value, str):
-            yield pointer, "", value, _unescaped(value)
+            yield pointer, "", value, _decoded(value)
 
 
 def _shown(key: str) -> str:
@@ -45,43 +83,27 @@ def _shown(key: str) -> str:
     )
 
 
-def _unescaped(text: str) -> str:
-    """``text`` with the escapes it writes turned into the characters a JSON reader would make
-    of them, so that a hidden character, or a joiner out of place, is seen in its context; empty
-    when it writes none. An escaped backslash before an escape (two decodings away) is followed
-    down to the character."""
-    text = _ESCAPED_BACKSLASHES.sub(lambda _: "\\", text)  # one pass, any length
-    decoded, count = _ESCAPE.subn(_character, text)
-    return decoded if count else ""
-
-
-def _character(match: re.Match[str]) -> str:
-    code = int(match.group(1), 16)
-    if match.group(2) and 0xD800 <= code <= 0xDBFF:
-        code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
-    return chr(code)
-
-
 def _message(hidden: Hidden, where: str) -> str:
     times = "1 time" if hidden.count == 1 else f"{hidden.count} times"
-    first = "" if where else f", first at character {hidden.first}"
     what = f"invisible or bidirectional control character {hidden.label}{where}"
-    return f"{what}, {times}{first}: {_TO_DO}"
+    return f"{what}, {times}, first at character {hidden.first}: {_TO_DO}"
 
 
-def _merged(text: str, decoded: str, where: str) -> list[tuple[Hidden, str]]:
+def _merged(text: str, decoded: Decoded, where: str) -> list[tuple[Hidden, str]]:
     """The hidden characters of a text and where they show: the decoded view holds the raw
     characters too, so its count is the whole count; a character only the decoded view holds
-    came from an escape."""
+    came from an escape, whose place in the source is given."""
     raw = {hidden.label: hidden for hidden in hidden_occurrences(text)}
-    escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded)}
+    escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded.text)}
     merged = []
     for label in [*raw, *(label for label in escaped if label not in raw)]:
         if label in raw:
             count = escaped[label].count if label in escaped else raw[label].count
             merged.append((Hidden(label, count, raw[label].first), where))
         else:
-            merged.append((escaped[label], " as an escape"))
+            # Only an escape writes it, so its first occurrence is an escape's character.
+            first = decoded.sources[escaped[label].first]
+            merged.append((Hidden(label, escaped[label].count, first), " as an escape"))
     return merged
 
 
