@@ -328,6 +328,86 @@ def test_yaml_values_outside_json_are_refused(data: bytes) -> None:
 
 @pytest.mark.parametrize(
     "data",
+    [
+        b"a: !!map [1]\n",
+        b"a: !!map x\n",
+        b"a: !!set [1]\n",
+        b"a: !!timestamp x\n",
+        b"a: !!timestamp 2001-12-14\n",
+        b"a: !!omap [1]\n",
+        b"a: !!pairs x\n",
+        b"a: !!int {? !!value x : 12}\n",
+        b"a: !!str {? !!value k : hello}\n",
+        b"a: !!null {? !!value k : null}\n",
+    ],
+    ids=[
+        "map on list",
+        "map on text",
+        "set on list",
+        "bad date",
+        "date",
+        "omap",
+        "pairs",
+        "int on map with a value key",
+        "str on map with a value key",
+        "null on map with a value key",
+    ],
+)
+def test_yaml_tags_json_cannot_represent_are_refused(data: bytes) -> None:
+    # Only the tags of JSON's own types are read, and only on a node of their kind.
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(data)
+    assert _code(error) == "IO-006"
+
+
+def test_a_value_a_wider_reader_would_build_is_still_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A second defence: should a constructor ever build a type outside JSON, the value check
+    # still refuses it.
+    monkeypatch.setitem(_Loader.yaml_constructors, "!x", lambda loader, node: object())
+
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(b"a: !x 1\n")
+    assert (_code(error), error.value.message) == ("IO-006", "value of type object")
+
+
+def test_a_node_the_reader_cannot_build_is_refused_not_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(loader: Any, node: Any) -> Any:
+        raise TypeError("cannot unpack")
+
+    monkeypatch.setitem(_Loader.yaml_constructors, "!x", broken)
+
+    with pytest.raises(UnsafeInputError) as error:
+        parse_yaml(b"a: !x 1\n")
+    assert _code(error) == "IO-002"
+
+
+_TAGS = [
+    *(f"!!{name}" for name in ("str", "bool", "int", "float", "null", "seq", "map")),
+    *(f"!!{name}" for name in ("timestamp", "binary", "set", "omap", "pairs", "merge", "value")),
+    "!local",
+    "!<tag:example.org,2026:x>",
+]
+_BODIES = [
+    *("x", "1", "1.5", "true", "''", "[]", "[1, [2]]", "{}", "{a: 1}", "{a: [1]}"),
+    "{? !!value k : 1}",
+]
+
+
+def test_no_tag_on_any_body_escapes_the_refusals() -> None:
+    # Every combination is read or refused, never raised as another exception.
+    for tag in _TAGS:
+        for body in _BODIES:
+            for document in (f"{tag} {body}\n", f"a: {tag} {body}\n", f"- {tag} {body}\n"):
+                with contextlib.suppress(UnsafeInputError):  # anything else fails the test
+                    parse_yaml(document.encode())
+
+
+@pytest.mark.parametrize(
+    "data",
     [b"\xff\xfea: 1", b"a: [1, 2\n", b"a: 1\n---\nb: 2\n"],
     ids=["invalid utf-8", "syntax", "two documents"],
 )

@@ -168,7 +168,19 @@ class _Loader(yaml.SafeLoader):
             raise _RefusedError("IO-003", "YAML anchor")
         return super().compose_node(parent, index)
 
+    def construct_scalar(self, node: Any) -> str:
+        # PyYAML would read a scalar tag on a mapping through its YAML 1.1 "value" key.
+        if not isinstance(node, yaml.ScalarNode):
+            raise yaml.constructor.ConstructorError(
+                None, None, f"a scalar tag on a {node.id}", node.start_mark
+            )
+        return super().construct_scalar(node)
+
     def flatten_mapping(self, node: yaml.MappingNode) -> None:
+        if not isinstance(node, yaml.MappingNode):  # a mapping tag on a list or a text
+            raise yaml.constructor.ConstructorError(
+                None, None, f"a mapping tag on a {node.id}", node.start_mark
+            )
         if any(key.tag == _MERGE_TAG for key, _ in node.value):
             raise _RefusedError("IO-003", "YAML merge key")
 
@@ -247,6 +259,19 @@ def _construct_str(loader: _Loader, node: yaml.ScalarNode) -> str:
         return text
 
 
+# Only the tags of JSON's own types are read; any other tag (timestamp, binary, set, omap, pairs,
+# a local tag) is undefined, and refused as a value JSON cannot represent.
+_Loader.yaml_constructors = {
+    tag: constructor
+    for tag, constructor in yaml.SafeLoader.yaml_constructors.items()
+    if tag
+    in {
+        "tag:yaml.org,2002:null",
+        "tag:yaml.org,2002:seq",
+        "tag:yaml.org,2002:map",
+        None,  # an undefined tag: refused
+    }
+}
 _Loader.add_constructor("tag:yaml.org,2002:str", _construct_str)
 _Loader.add_constructor("tag:yaml.org,2002:bool", _construct_bool)
 _Loader.add_constructor("tag:yaml.org,2002:int", _construct_int)
@@ -269,6 +294,13 @@ def _parse_yaml(data: bytes, max_depth: int) -> Any:
         raise _RefusedError("IO-002", f"not valid YAML: {error}") from error
     except ValueError as error:
         raise _RefusedError("IO-002", f"not valid YAML: {error}") from error
+    except (
+        TypeError,
+        AttributeError,
+        KeyError,
+        IndexError,
+    ) as error:  # a node the reader cannot build
+        raise _RefusedError("IO-002", "not valid YAML: a value that cannot be built") from error
     _check_json_value(value, max_depth)
     return value
 
