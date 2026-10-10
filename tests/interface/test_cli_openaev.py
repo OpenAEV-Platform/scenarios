@@ -27,6 +27,7 @@ def _archive(*entries: tuple[str, bytes]) -> bytes:
         for name, data in entries:
             entry = zipfile.ZipInfo(name)
             entry.comment = b"Scenario" if name.endswith(".json") else b""
+            entry.compress_type = zipfile.ZIP_DEFLATED  # as the platform writes its exports
             archive.writestr(entry, data)
     return buffer.getvalue()
 
