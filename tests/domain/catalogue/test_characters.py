@@ -172,7 +172,7 @@ def test_a_long_chain_of_escaped_backslashes_is_refused_in_linear_time() -> None
 
     [(_, message)] = _fields({"v": chain})
 
-    assert message.startswith("escape still written after 3 decodings, 1 time, first at")
+    assert message.startswith("escape sequence encoded more than 3 levels deep, 1 time, first at")
     assert time.monotonic() - started < 1
 
 
@@ -274,7 +274,7 @@ def test_an_escape_still_written_after_three_decodings_is_refused() -> None:
 
     [(_, message)] = _fields({"v": deep})
 
-    assert message.startswith("escape still written after 3 decodings, 1 time, first at")
+    assert message.startswith("escape sequence encoded more than 3 levels deep, 1 time, first at")
     assert "first at character 13:" in message
 
 
@@ -338,7 +338,7 @@ def test_every_escape_still_written_after_three_decodings_is_counted() -> None:
     [(_, message)] = _fields({"v": f"{deep} {deep}"})
 
     assert message.startswith(
-        "escape still written after 3 decodings, 2 times, first at character 0:"
+        "escape sequence encoded more than 3 levels deep, 2 times, first at character 0:"
     )
 
 
@@ -347,3 +347,32 @@ def test_a_character_also_raw_is_not_said_to_be_an_escape() -> None:
 
     assert message.startswith("invisible or bidirectional control character U+202E")
     assert "OVERRIDE), 2 times, first at character 0:" in message
+
+
+@pytest.mark.parametrize("after", ["", "\\u0041"], ids=["after the last escape", "between two"])
+def test_a_raw_character_among_escapes_is_not_said_to_be_an_escape(after: str) -> None:
+    # Out of place only once decoded: the escape before it writes a colon.
+    [(_, message)] = _fields({"v": f"\\u003a{chr(0xAD)}{chr(0xE9)}{after}"})
+
+    assert "U+00AD (SOFT HYPHEN) out of place, 1 time, first at character 6:" in message
+
+
+@pytest.mark.parametrize("low", ["dc00", "dfff"])
+def test_a_surrogate_pair_of_adjacent_escapes_is_one_character(low: str) -> None:
+    assert _fields({"v": f"\\ud83d\\u{low}"}) == []
+
+
+def test_findings_of_a_text_come_in_the_order_of_their_place_in_the_source() -> None:
+    # The high half shows only in the second view, the low one in the first.
+    text = "\\\\ud83d\\udfff x"
+
+    assert _first({"v": text}) == ["0", "7"]
+
+
+def test_an_escape_left_after_three_decodings_says_how_to_fix_it() -> None:
+    [(_, message)] = _fields({"v": "\\" * 8 + "u202e"})
+
+    assert message == (
+        "escape sequence encoded more than 3 levels deep, 1 time, first at character 0: "
+        "encode it fewer times, or remove it on the platform and export the scenario again"
+    )

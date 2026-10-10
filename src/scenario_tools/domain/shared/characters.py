@@ -96,14 +96,18 @@ def hidden_occurrences(text: str) -> tuple[Hidden, ...]:
     """The hidden characters of ``text``, each once, in the order they first appear, with their
     count and the offset of the first; never the text around them."""
     found: dict[str, list[int]] = {}
+    labels: dict[tuple[str, bool], str] = {}  # each label made once, however many occurrences
     for index, character in enumerate(text):
         if character in HIDDEN:
-            label = _label(character, misplaced=False)
+            misplaced = False
         elif character in JOINERS and _misplaced(text, index):
-            label = _label(character, misplaced=True)
+            misplaced = True
         else:
             continue
-        found.setdefault(label, [0, index])[0] += 1
+        key = (character, misplaced)
+        if key not in labels:
+            labels[key] = _label(character, misplaced)
+        found.setdefault(labels[key], [0, index])[0] += 1
     return tuple(Hidden(label, count, first) for label, (count, first) in found.items())
 
 
