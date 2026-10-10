@@ -3,6 +3,7 @@
 import copy
 import json
 import re
+import time
 import warnings
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -10,7 +11,9 @@ from typing import Any
 
 import pytest
 
+import scenario_tools.adapters.jsonschema_validator as validator_module
 from scenario_tools.adapters.jsonschema_validator import (
+    VIOLATION_LIMIT,
     JsonSchemaValidator,
     ecma_to_python,
     json_pointer,
@@ -712,3 +715,120 @@ def test_a_manifest_carries_no_field_that_only_signing_would_protect(
     document = _changed(MANIFEST, lambda d: d.update({field: value}))
 
     assert [v.pointer for v in validator.validate("manifest", document)] == [f"/{field}"]
+
+
+def _arrays(node: Any, pointer: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    """Every array schema, wherever it sits: under an object, or in a list of subschemas such
+    as ``oneOf`` or ``prefixItems``."""
+    if isinstance(node, dict):
+        if node.get("type") == "array":
+            yield pointer, node
+        for key, child in node.items():
+            yield from _arrays(child, f"{pointer}/{key}")
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _arrays(child, f"{pointer}/{index}")
+
+
+def test_the_array_walk_reaches_lists_of_subschemas() -> None:
+    schema = {"oneOf": [{"type": "array"}, {"prefixItems": [{"type": "array"}]}]}
+
+    assert [pointer for pointer, _ in _arrays(schema)] == ["/oneOf/0", "/oneOf/1/prefixItems/0"]
+
+
+@pytest.mark.parametrize("schema", ["scenario", "manifest"])
+def test_every_list_has_a_bound(schema: str) -> None:
+    document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text(encoding="utf-8"))
+
+    unbounded = [pointer for pointer, node in _arrays(document) if "maxItems" not in node]
+
+    assert unbounded == []
+
+
+def test_a_list_past_its_bound_is_refused(validator: JsonSchemaValidator) -> None:
+    many = [{"placeholder": f"target-{n:03}", "description": "a host"} for n in range(101)]
+    targets = _changed(SCENARIO, lambda d: d.__setitem__("targets", many))
+
+    pointers = [violation.pointer for violation in validator.validate("scenario", targets)]
+
+    assert pointers == ["/targets"]
+    assert validator.validate("scenario", _changed(targets, lambda d: d["targets"].pop())) == ()
+
+
+def test_the_violations_reported_are_capped(validator: JsonSchemaValidator) -> None:
+    items = _changed(MANIFEST, lambda d: d.__setitem__("items", [{}] * 500))
+
+    assert len(validator.validate("manifest", items)) == VIOLATION_LIMIT
+
+
+def test_a_manifest_of_a_million_items_is_refused_quickly(validator: JsonSchemaValidator) -> None:
+    items = _changed(MANIFEST, lambda d: d.__setitem__("items", [{}] * 1_000_000))
+
+    started = time.monotonic()
+    violations = validator.validate("manifest", items)
+
+    assert violations
+    assert time.monotonic() - started < 1
+
+
+def test_the_cap_holds_when_one_error_names_many_values(validator: JsonSchemaValidator) -> None:
+    # One error about unexpected properties gives one violation per property.
+    extra = {f"extra_{n:03}": n for n in range(150)}
+    document = _changed(SCENARIO, lambda d: d.update(extra))
+
+    assert len(validator.validate("scenario", document)) == VIOLATION_LIMIT
+
+
+def test_the_validator_stops_once_it_has_enough(
+    validator: JsonSchemaValidator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each error the validator produces is turned into violations once: count them.
+    errors: list[object] = []
+    original = validator_module._violations
+
+    def counted(error: Any, budget: int) -> Any:
+        errors.append(error)
+        return original(error, budget)
+
+    monkeypatch.setattr(validator_module, "_violations", counted)
+    validator.validate("manifest", _changed(MANIFEST, lambda d: d.__setitem__("items", [{}] * 500)))
+
+    assert len(errors) <= VIOLATION_LIMIT
+
+
+@pytest.mark.parametrize("schema", ["scenario", "manifest"])
+def test_every_bound_is_checked_before_the_items(schema: str) -> None:
+    # jsonschema checks keywords in their order: the size first, so an oversized list fails
+    # before its items are walked.
+    document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text(encoding="utf-8"))
+
+    for pointer, node in _arrays(document):
+        keys = [key for key in node if key in ("maxItems", "minItems", "uniqueItems", "items")]
+        assert keys[0] == "maxItems", pointer
+
+
+def test_an_oversized_list_of_valid_items_is_refused_quickly(
+    validator: JsonSchemaValidator,
+) -> None:
+    items = _changed(MANIFEST, lambda d: d.__setitem__("items", d["items"] * 200_000))
+
+    started = time.monotonic()
+    violations = validator.validate("manifest", items)
+
+    assert [(v.pointer, v.message) for v in violations] == [
+        ("/items", "has 200000 items, more than 10000")  # the list itself is never written out
+    ]
+    assert time.monotonic() - started < 0.2
+
+
+def test_unexpected_properties_are_counted_within_the_cap(
+    validator: JsonSchemaValidator,
+) -> None:
+    extra = {f"extra_{n:07}": n for n in range(1_000_000)}
+    document = _changed(SCENARIO, lambda d: d.update(extra))
+
+    started = time.monotonic()
+    violations = validator.validate("scenario", document)
+
+    assert len(violations) == VIOLATION_LIMIT
+    assert time.monotonic() - started < 0.2  # only the names reported are looked at

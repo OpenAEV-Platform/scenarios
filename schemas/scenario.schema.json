@@ -76,6 +76,7 @@
     },
     "platforms": {
       "type": "array",
+      "maxItems": 10,
       "minItems": 1,
       "uniqueItems": true,
       "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject that needs an executor, which is checked against the export. At least one value, so that the scenario appears under some platform filter; for instance Generic for a scenario that runs on no endpoint.",
@@ -101,6 +102,7 @@
       "properties": {
         "cves": {
           "type": "array",
+          "maxItems": 100,
           "minItems": 1,
           "uniqueItems": true,
           "items": {
@@ -110,6 +112,7 @@
         },
         "intrusion_sets": {
           "type": "array",
+          "maxItems": 100,
           "minItems": 1,
           "uniqueItems": true,
           "items": {
@@ -120,6 +123,7 @@
         },
         "ttps": {
           "type": "array",
+          "maxItems": 100,
           "minItems": 1,
           "uniqueItems": true,
           "items": {
@@ -131,6 +135,7 @@
     },
     "sources": {
       "type": "array",
+      "maxItems": 20,
       "minItems": 1,
       "items": {
         "type": "object",
@@ -177,6 +182,7 @@
         },
         "injectors": {
           "type": "array",
+          "maxItems": 50,
           "uniqueItems": true,
           "items": {
             "type": "string",
@@ -186,6 +192,7 @@
         },
         "executors": {
           "type": "array",
+          "maxItems": 50,
           "uniqueItems": true,
           "items": {
             "type": "string",
@@ -197,12 +204,14 @@
     },
     "payloads": {
       "type": "array",
+      "maxItems": 1000,
       "items": {
         "$ref": "#/$defs/payload_reference"
       }
     },
     "targets": {
       "type": "array",
+      "maxItems": 100,
       "items": {
         "type": "object",
         "additionalProperties": false,
