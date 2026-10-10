@@ -43,12 +43,24 @@ class YamlDataLoader:
         return read_yaml_file(self.directory / f"{name}.yaml")
 
 
+# The comments the platform's importer reads as an entry's type, whatever its name.
+_SCENARIO_ENTRY = b"Scenario"
+_DOCUMENT_ENTRY = b"Attachment"
+
+
 def _export_document(archive: CheckedArchive) -> Any:
-    entries = [name for name in archive.names if name.endswith(".json")]
+    documents = [name for name in archive.names if archive.comment(name) == _DOCUMENT_ENTRY]
+    if documents:
+        raise UnsafeInputError(
+            "IO-014",
+            f"documents are not supported yet: the export carries {len(documents)}",
+            archive.path,
+        )
+    entries = [name for name in archive.names if archive.comment(name) == _SCENARIO_ENTRY]
     if len(entries) != 1:
         raise UnsafeInputError(
             "IO-014",
-            f"an export archive holds one scenario JSON entry, not {len(entries)}",
+            f"an export archive holds one scenario entry, not {len(entries)}",
             archive.path,
         )
     return parse_json(archive.read(entries[0]), path=archive.path)

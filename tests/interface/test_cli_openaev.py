@@ -21,10 +21,13 @@ SCENARIO = "0a64b5ab-2016-426b-813f-9051d32e88b3"
 
 
 def _archive(*entries: tuple[str, bytes]) -> bytes:
+    """An archive as the platform writes it: a JSON entry carries the comment ``Scenario``."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, data in entries:
-            archive.writestr(name, data)
+            entry = zipfile.ZipInfo(name)
+            entry.comment = b"Scenario" if name.endswith(".json") else b""
+            archive.writestr(entry, data)
     return buffer.getvalue()
 
 

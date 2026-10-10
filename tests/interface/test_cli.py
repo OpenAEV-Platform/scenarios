@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -333,6 +334,26 @@ def _normalize(
 ) -> Any:
     monkeypatch.chdir("/")  # the working directory plays no part
     return CliRunner().invoke(main, ["normalize", str(export), "--out", str(out), *options])
+
+
+def test_normalize_refuses_an_export_carrying_documents_and_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    export = tmp_path / "export.zip"
+    with zipfile.ZipFile(EASM) as source, zipfile.ZipFile(export, "w") as target:
+        for info in source.infolist():
+            target.writestr(info, source.read(info))
+        document = zipfile.ZipInfo("report.pdf")
+        document.comment = b"Attachment"  # as the platform writes a scenario's document
+        target.writestr(document, b"%PDF-1.4")
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, export=export)
+
+    assert result.exit_code == 1
+    assert "IO-014" in result.output
+    assert "documents are not supported yet" in result.output
+    assert list(entry.iterdir()) == []
 
 
 def test_normalize_writes_the_normalised_export(

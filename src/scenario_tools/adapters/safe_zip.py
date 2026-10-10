@@ -283,6 +283,10 @@ class CheckedArchive:
             raise self._refuse("IO-008", f"entry {info.filename!r} smaller than declared")
         return content
 
+    def comment(self, name: str) -> bytes:
+        """The entry's comment as stored, which the platform's importer reads as its type."""
+        return self._entries[name].comment
+
     def read(self, name: str, *, password: bytes | None = None) -> bytes:
         """Read one entry exactly as declared, or raise ``UnsafeInputError``."""
         info = self._entries[name]

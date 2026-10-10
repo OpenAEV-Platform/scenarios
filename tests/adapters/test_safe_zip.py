@@ -310,6 +310,16 @@ def test_a_unicode_path_field_that_repeats_the_name_is_accepted() -> None:
     assert archive_from_bytes(_unicode_path("a.txt", "a.txt")).names == ("a.txt",)
 
 
+def test_each_entry_comment_is_given_as_stored() -> None:
+    # The importer takes an entry's type from its comment.
+    scenario = zipfile.ZipInfo("s.json")
+    scenario.comment = b"Scenario"
+
+    archive = archive_from_bytes(_zip([(scenario, b"{}"), ("doc.pdf", b"x")]))
+
+    assert (archive.comment("s.json"), archive.comment("doc.pdf")) == (b"Scenario", b"")
+
+
 def test_dots_inside_a_name_are_not_a_parent_reference() -> None:
     assert archive_from_bytes(_zip([("notes..v2.txt", b"x")])).names == ("notes..v2.txt",)
 
