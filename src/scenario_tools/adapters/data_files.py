@@ -67,8 +67,9 @@ def _export_document(archive: CheckedArchive) -> Any:
 
 
 def check_export_archive(data: bytes, path: str) -> None:
-    """Refuse bytes that are not a safe export archive holding one scenario JSON entry; ``path``
-    names the archive in the refusal."""
+    """Refuse bytes that are not a safe export archive holding exactly one scenario entry (the
+    entry whose comment is ``Scenario``, whatever its name) and no document; ``path`` names the
+    archive in the refusal."""
     _export_document(archive_from_bytes(data, path=path))
 
 
