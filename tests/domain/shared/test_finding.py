@@ -1,5 +1,7 @@
 """Findings: what every command reports, in one stable shape."""
 
+import dataclasses
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -186,3 +188,13 @@ def test_the_count_is_blocking_only_when_a_finding_it_counts_is() -> None:
 
 def test_a_report_of_exactly_a_hundred_findings_is_shown_whole() -> None:
     assert len(Report("archive", _many(REPORT_LIMIT)).findings) == REPORT_LIMIT
+
+
+def test_a_report_with_changed_findings_is_not_limited_again() -> None:
+    report = Report("archive", _many(250))
+
+    changed = report.with_findings(lambda f: dataclasses.replace(f, message="changed"))
+
+    assert len(changed.findings) == REPORT_LIMIT + 1
+    assert [f.field for f in changed.findings] == [f.field for f in report.findings]
+    assert {f.message for f in changed.findings} == {"changed"}

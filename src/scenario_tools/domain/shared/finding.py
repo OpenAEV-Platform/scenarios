@@ -10,6 +10,7 @@ counts the rest.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -21,6 +22,7 @@ _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")  # RFC 6901: "~" only as "~0" o
 
 MESSAGE_LIMIT = 300
 REPORT_LIMIT = 100
+COUNT_CODE = "IO-016"  # the last finding of a report that holds more than it shows
 
 
 def shorten(message: str) -> str:
@@ -82,7 +84,7 @@ class Report:
             shown, hidden = findings[:REPORT_LIMIT], findings[REPORT_LIMIT:]
             blocking = any(finding.severity is Severity.BLOCKING for finding in hidden)
             count = Finding(
-                "IO-016",
+                COUNT_CODE,
                 Severity.BLOCKING if blocking else Severity.INFO,
                 "",
                 "",
@@ -90,6 +92,15 @@ class Report:
             )
             findings = (*shown, count)  # last, out of the sorted order
         object.__setattr__(self, "findings", findings)
+
+    def with_findings(self, change: Callable[[Finding], Finding]) -> "Report":
+        """The same report with each finding changed by ``change``, in the same order. Its
+        findings are already sorted and limited: building a report from them again would
+        count the count."""
+        report = object.__new__(Report)
+        object.__setattr__(report, "command", self.command)
+        object.__setattr__(report, "findings", tuple(change(f) for f in self.findings))
+        return report
 
     @property
     def ok(self) -> bool:
