@@ -145,12 +145,14 @@ def _not_followed(path: Path, error: OSError) -> Exception:
     return EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
 
 
-def write_output(path: Path, data: bytes) -> None:
+def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
     """Write ``data`` to ``path``, replacing a regular file at once: the data go to a new
     temporary file in the same directory, which is then renamed over the target. A failure
     leaves the previous output as it was, a hard link to another file never receives the data,
     and the mode is 0644 whatever the umask. Neither the output directory nor the target may be
-    a link, and the target must be a regular file if it exists."""
+    a link, and the target must be a regular file if it exists. With ``create``, the target is
+    only ever created: the temporary file is linked to its name, which fails if a file of that
+    name appeared in the meantime, and that file is left as it is."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
@@ -177,7 +179,14 @@ def write_output(path: Path, data: bytes) -> None:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            os.rename(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+            if create:
+                os.link(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+                os.unlink(temporary, dir_fd=directory)
+            else:
+                os.rename(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+        except FileExistsError as error:
+            os.unlink(temporary, dir_fd=directory)
+            raise EnvironmentProblemError(f"cannot write {path}: it already exists") from error
         except BaseException as error:  # an interruption too: no temporary file is left behind
             with contextlib.suppress(OSError):
                 os.unlink(temporary, dir_fd=directory)

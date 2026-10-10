@@ -169,3 +169,139 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
             )
         )
     return tuple(findings)
+
+
+# The bounds of scenario.schema.json that a starting scenario.yaml must respect, so that the
+# file stays small and every value it holds is one the schema accepts.
+DESCRIPTION_LIMIT = 2000
+NAME_LIMIT = 120
+FACET_LIMIT = 64
+SEVERITIES = ("low", "medium", "high", "critical")
+PLATFORMS = (
+    "Linux", "Windows", "MacOS", "Android", "iOS", "Container", "Service", "Generic", "Internal",
+    "Unknown",
+)  # fmt: skip
+
+_DEFAULTS = (
+    ("/version", "default 1.0.0: give this entry's version, the next one for a new version"),
+    ("/status", "default VERIFIED: review it before the pull request"),
+)
+_REQUIRES_DEFAULTS = (
+    (
+        "/requires/openaev",
+        "default: the platform version the built-in contracts were recorded on; give the "
+        "oldest version the scenario works on",
+    ),
+    ("/requires/edition", "default CE: give EE if the scenario needs the Enterprise Edition"),
+)
+_THREAT = (
+    "give at least one of threat.cves (CVE-YYYY-NNNN), threat.intrusion_sets (names) or "
+    "threat.ttps (MITRE ATT&CK IDs such as T1595)"
+)
+_SOURCES = "give at least one public source: {url: https://…, tlp: TLP:CLEAR}"
+_FIX_ON_THE_PLATFORM = (
+    "fix it on the platform, export the scenario again and write it in scenario.yaml too"
+)
+
+
+def _bounded(value: str, limit: int, field: str) -> tuple[str, tuple[str, str] | None]:
+    """The export's text for ``field``, or nothing and why, when the schema would refuse it."""
+    if not value.strip():
+        return "", (f"/{field}", f"the export has no {field}: {_FIX_ON_THE_PLATFORM}")
+    if len(value) > limit:
+        why = f"the export's {field} has {len(value)} characters, more than {limit}"
+        return "", (f"/{field}", f"{why}: {_FIX_ON_THE_PLATFORM}")
+    return value, None
+
+
+def starting_metadata(
+    facts: ExportFacts,
+    *,
+    external_id: str,
+    description: str,
+    platform_version: str,
+    unknown_injects: int,
+    path: str,
+) -> tuple[dict[str, object], tuple[Finding, ...]]:
+    """The ``scenario.yaml`` of a first preparation, in the order of the data model, and an
+    ``SCH-007`` finding for each default to review and each field left for a person or an agent
+    to complete. It takes what the export and the recorded contracts
+    establish, so that it passes the cross-checks, and only values the schema accepts: a text
+    over its bound or a value outside its list is left empty and reported, never copied whole,
+    so that the file stays small enough to read back."""
+    todo: dict[str, str] = dict(_DEFAULTS)
+    name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
+    if description.strip() and len(description) > DESCRIPTION_LIMIT:
+        why_description: tuple[str, str] | None = (
+            "/description",
+            f"the export's description has {len(description)} characters, more than "
+            f"{DESCRIPTION_LIMIT}: write a shorter one",
+        )
+        description = ""
+    elif not description.strip():
+        why_description = ("/description", "write a description: the export has none")
+        description = ""
+    else:
+        why_description = None
+    severity = facts.severity if facts.severity in SEVERITIES else ""
+    why_severity = (
+        None
+        if severity
+        else ("/severity", f"the export's severity is not one of {', '.join(SEVERITIES)}: "
+              f"{_FIX_ON_THE_PLATFORM}")
+    )  # fmt: skip
+    category, why_category = _bounded(facts.category, FACET_LIMIT, "category")
+    main_focus, why_main_focus = _bounded(facts.main_focus, FACET_LIMIT, "main_focus")
+    executors = [inject for inject in facts.injects if inject.needs_executor]
+    required = {platform for inject in executors for platform in inject.platforms}
+    platforms = sorted(required & set(PLATFORMS))
+    unknown_platforms = len(required - set(PLATFORMS))
+    for reason in (why_name, why_description, why_severity, why_category, why_main_focus):
+        if reason is not None:
+            todo[reason[0]] = reason[1]
+    if unknown_platforms:
+        plural = "s" if unknown_platforms > 1 else ""
+        todo["/platforms"] = (
+            f"{unknown_platforms} platform{plural} of the injects that run through an executor "
+            f"{'are' if plural else 'is'} not among {', '.join(PLATFORMS)}: left out"
+        )
+    todo["/threat"] = _THREAT
+    todo["/sources"] = _SOURCES
+    todo.update(_REQUIRES_DEFAULTS)
+    if unknown_injects:
+        plural = "s" if unknown_injects > 1 else ""
+        todo["/requires/injectors"] = (
+            f"complete requires.injectors: the injector type of {unknown_injects} "
+            f"inject{plural} cannot be established from the recorded built-in contracts"
+        )
+    if executors:
+        where = ", ".join(platforms) or "platforms left out above"
+        todo["/requires/executors"] = (
+            f"injects run through an executor on {where}: name the executors they need"
+        )
+    metadata: dict[str, object] = {
+        "schema_version": 1,
+        "external_id": external_id,
+        "version": "1.0.0",
+        "status": "VERIFIED",
+        "name": name,
+        "description": description,
+        "severity": severity,
+        "category": category,
+        "main_focus": main_focus,
+        "type": "time-based",
+        "platforms": platforms or ["Generic"],
+        "threat": {},
+        "sources": [],
+        "requires": {
+            "openaev": f">={platform_version}",
+            "edition": "CE",
+            "injectors": sorted({inject.injector_type for inject in facts.injects}),
+            "executors": [],
+        },
+        "payloads": [],
+    }
+    findings = tuple(
+        Finding("SCH-007", Severity.INFO, path, *todo_item) for todo_item in todo.items()
+    )
+    return metadata, findings

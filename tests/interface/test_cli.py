@@ -14,7 +14,8 @@ from hypothesis import strategies as st
 
 import scenario_tools
 import scenario_tools.interface.cli as cli_module
-from scenario_tools.adapters.safe_readers import read_json_file
+from scenario_tools.adapters.data_files import write_output
+from scenario_tools.adapters.safe_readers import parse_yaml, read_json_file
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -323,7 +324,8 @@ def _entry(tmp_path: Path, name: str = "entry") -> Path:
     data = tmp_path / "repository" / "policy" / "data"
     if not data.exists():
         data.mkdir(parents=True)
-        shutil.copy(REPOSITORY / "policy" / "data" / "volatile-fields.yaml", data)
+        for policy in ("volatile-fields.yaml", "builtin-contracts.yaml"):
+            shutil.copy(REPOSITORY / "policy" / "data" / policy, data)
     entry = tmp_path / "repository" / "scenarios" / name
     entry.mkdir(parents=True)
     return entry
@@ -364,10 +366,104 @@ def test_normalize_writes_the_normalised_export(
     result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["normalize: ok"]
+    assert result.stdout.splitlines()[-1] == "normalize: ok"  # after what is left to complete
     document = json.loads((entry / "scenario.json").read_text(encoding="utf-8"))
     assert document["scenario_information"]["scenario_name"] == "EASM Scenario"
-    assert sorted(path.name for path in entry.iterdir()) == ["scenario.json"]
+    assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
+
+
+def test_a_first_preparation_also_writes_a_starting_scenario_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    options = ["--out", str(entry), "--external-id", ENTRY_ID]
+
+    result = CliRunner().invoke(main, ["--format", "json", "normalize", str(EASM), *options])
+
+    assert result.exit_code == 0, result.output  # what is left to complete is information
+    metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
+    assert (metadata["external_id"], metadata["name"]) == (ENTRY_ID, "EASM Scenario")
+    assert metadata["requires"]["injectors"] == ["openaev_nmap", "openaev_nuclei"]
+    assert (entry / "scenario.yaml").stat().st_mode & 0o777 == 0o644
+    findings = json.loads(result.stdout)["findings"]
+    assert {(f["code"], f["severity"], f["path"]) for f in findings} == {
+        ("SCH-007", "info", "scenarios/entry/scenario.yaml")
+    }
+    assert [f["field"] for f in findings] == [  # the defaults to review, what is missing
+        "/requires/edition",
+        "/requires/openaev",
+        "/sources",
+        "/status",
+        "/threat",
+        "/version",
+    ]
+
+
+def _edited_export(tmp_path: Path, change: Callable[[dict[str, Any]], None]) -> Path:
+    """The reference EASM export, its scenario changed by ``change``."""
+    export = tmp_path / "export.zip"
+    with zipfile.ZipFile(EASM) as source, zipfile.ZipFile(export, "w") as target:
+        for info in source.infolist():
+            document = json.loads(source.read(info))
+            change(document)
+            target.writestr(info, json.dumps(document))
+    return export
+
+
+def test_an_export_whose_facts_cannot_be_read_is_refused_and_nothing_is_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    export = _edited_export(
+        tmp_path, lambda d: d["scenario_information"].update(scenario_main_focus=None)
+    )
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, export=export)
+
+    assert result.exit_code == 1, result.output
+    assert "IO-014" in result.stdout
+    assert list(entry.iterdir()) == []
+
+
+def test_hostile_texts_in_the_export_never_make_an_entry_the_tools_refuse(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    long = {"scenario_description": "d" * 300_000, "scenario_category": "c" * 300_000}
+    export = _edited_export(tmp_path, lambda d: d["scenario_information"].update(long))
+
+    first = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, export=export)
+    again = _normalize(monkeypatch, entry, export=export)
+
+    assert (first.exit_code, again.exit_code) == (0, 0), first.output + again.output
+    assert (entry / "scenario.yaml").stat().st_size < 4096
+
+
+def test_an_existing_scenario_yaml_is_never_written_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # What a person or an agent completed stays, whatever the export now says.
+    entry = _entry(tmp_path)
+    completed = f"external_id: {ENTRY_ID}\nname: completed by hand\n".encode()
+    (entry / "scenario.yaml").write_bytes(completed)
+
+    result = _normalize(monkeypatch, entry)
+
+    assert result.exit_code == 0, result.output
+    assert (entry / "scenario.yaml").read_bytes() == completed
+    assert "SCH-007" not in result.stdout
+
+
+def test_an_entry_prepared_from_an_export_archives_as_it_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # What the factory produces, an export archive, becomes an entry the tools accept.
+    entry = _entry(tmp_path)
+    _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    result = CliRunner().invoke(main, ["archive", str(entry), "--out", str(tmp_path / "e.zip")])
+
+    assert result.exit_code == 0, result.output
 
 
 def test_normalize_outside_a_repository_is_an_environment_problem(
@@ -632,3 +728,23 @@ def test_a_refused_export_given_by_a_relative_path_is_reported_from_the_root(
 
     assert result.exit_code == 1
     assert "IO-014 scenarios/entry/bad.json" in result.stdout
+
+
+def test_a_scenario_yaml_that_appears_meanwhile_leaves_the_entry_as_it_was(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The starting file is written first: if it cannot be, scenario.json is not replaced.
+    entry = _entry(tmp_path)
+
+    def appears_first(path: Path, data: bytes, *, create: bool = False) -> None:
+        if create:
+            path.write_bytes(b"completed: meanwhile\n")
+        write_output(path, data, create=create)
+
+    monkeypatch.setattr(cli_module, "write_output", appears_first)
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 3
+    assert (entry / "scenario.yaml").read_bytes() == b"completed: meanwhile\n"
+    assert not (entry / "scenario.json").exists()

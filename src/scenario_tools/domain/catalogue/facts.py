@@ -27,6 +27,7 @@ from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_VERSION = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _IMPLANT = "openaev_implant"
 _FACETS = ("scenario_name", "scenario_severity", "scenario_category", "scenario_main_focus")
@@ -58,6 +59,8 @@ class BuiltinContracts:
         if not isinstance(document, Mapping):
             raise fail("the document must be a mapping")
         version = text(document, "platform_version")
+        if not _VERSION.fullmatch(version):  # it starts the requires.openaev of new entries
+            raise fail("platform_version must be a version such as 3.261005.0")
         items = document.get("contracts")
         if not isinstance(items, list):
             raise fail("contracts must be a list")

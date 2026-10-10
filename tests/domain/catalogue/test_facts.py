@@ -290,6 +290,11 @@ def _first(d: dict[str, Any]) -> dict[str, Any]:
     [
         pytest.param(lambda d: d.clear(), "platform_version must be non-empty text", id="empty"),
         pytest.param(
+            lambda d: d.update(platform_version="3.26-rc"),
+            "platform_version must be a version such as 3.261005.0",
+            id="not a version",
+        ),
+        pytest.param(
             lambda d: d.update(platform_version=3),
             "platform_version must be non-empty text",
             id="version not text",

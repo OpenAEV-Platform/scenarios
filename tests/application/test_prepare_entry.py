@@ -2,15 +2,17 @@
 
 import copy
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import scenario_tools.application.prepare_entry as prepare_entry_module
-from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.prepare_entry import prepare_entry, start_metadata
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
+ROOT = Path(__file__).parents[2]
 EXTERNAL_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 INJECT = "00000000-0000-4000-8000-000000000002"
 BUILT_IN = "2790bd39-37d4-4e39-be7e-53f3ca783f86"  # a contract that ships with the platform
@@ -150,3 +152,61 @@ def test_unreadable_policy_data_is_an_environment_problem() -> None:
 
     with pytest.raises(EnvironmentProblemError, match="volatile-fields"):
         prepare_entry(EXPORT, EXTERNAL_ID, UnreadableData(), path="e")
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ValueError("builtin-contracts: contracts must be a list"),
+        UnsafeInputError("IO-002", "x", "f"),
+    ],
+    ids=["malformed", "unreadable"],
+)
+def test_builtin_contracts_that_cannot_be_used_are_an_environment_problem(
+    failure: Exception,
+) -> None:
+    class BrokenData:
+        def load(self, name: str) -> Any:
+            assert name == "builtin-contracts"
+            if isinstance(failure, UnsafeInputError):
+                raise failure
+            return {"platform_version": "3.261005.0"}  # no contracts
+
+    document = json.loads(prepare_entry(EXPORT, EXTERNAL_ID, FakeData(), path="e").scenario_json)
+
+    with pytest.raises(EnvironmentProblemError, match="policy data"):
+        start_metadata(document, EXTERNAL_ID, BrokenData(), path="scenario.yaml", source="e")
+
+
+class RepositoryData:
+    """The repository's own policy data, for the starting metadata."""
+
+    def load(self, name: str) -> Any:
+        from scenario_tools.adapters.data_files import YamlDataLoader
+
+        return YamlDataLoader(ROOT / "policy" / "data").load(name)
+
+
+def test_a_first_preparation_also_gives_the_starting_metadata() -> None:
+    export = json.loads(
+        (ROOT / "tests" / "golden" / "normalised" / "easm-scenario.json").read_bytes()
+    )
+
+    prepared = prepare_entry(export, EXTERNAL_ID, RepositoryData(), path="e.zip", start_at="m.yaml")
+
+    assert prepared.metadata is not None
+    assert prepared.metadata["name"] == "EASM Scenario"
+    assert {f.path for f in prepared.to_complete} == {"m.yaml"}
+    later = prepare_entry(export, EXTERNAL_ID, RepositoryData(), path="e.zip")
+    assert (later.metadata, later.to_complete) == (None, ())
+
+
+def test_an_export_whose_facts_cannot_be_read_is_refused_before_anything_is_written() -> None:
+    export = json.loads(
+        (ROOT / "tests" / "golden" / "normalised" / "easm-scenario.json").read_bytes()
+    )
+    export["scenario_information"]["scenario_main_focus"] = None
+
+    with pytest.raises(UnsafeInputError) as error:
+        prepare_entry(export, EXTERNAL_ID, RepositoryData(), path="e.zip", start_at="m.yaml")
+    assert (error.value.code, error.value.path) == ("IO-014", "e.zip")

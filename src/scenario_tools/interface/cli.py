@@ -30,7 +30,7 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
-from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
+from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
@@ -318,32 +318,36 @@ def normalize(
     mapping_file = mapping_file.absolute() if mapping_file else None
 
     def produce() -> Report:
+        loader = YamlDataLoader(root / "policy" / "data")
+        metadata = out / "scenario.yaml"
+        first = not (metadata.exists() or metadata.is_symlink())
         prepared = prepare_entry(
             read_export(export),
             entry_id,
-            YamlDataLoader(root / "policy" / "data"),
+            loader,
             path=str(export),
             previous=read_json_file(previous_file) if previous_file else None,
             previous_path=str(previous_file) if previous_file else None,
             mapping=read_mapping(mapping_file) if mapping_file else None,
             mapping_path=str(mapping_file) if mapping_file else None,
+            start_at=repository_path(str(metadata.resolve()), root) if first else None,
         )
+        if prepared.metadata is not None:  # a first preparation: never written again
+            write_output(metadata, yaml_bytes(prepared.metadata), create=True)
         target = out / "scenario.json"
         write_output(target, prepared.scenario_json)
         where = repository_path(str(target.resolve()), root)
-        return Report(
-            "normalize",
-            tuple(
-                Finding(
-                    "VER-012",
-                    Severity.INFO,
-                    where,
-                    "",
-                    f"inject {inject} of the previous version is no longer in the export",
-                )
-                for inject in prepared.removed_injects
-            ),
+        findings = tuple(
+            Finding(
+                "VER-012",
+                Severity.INFO,
+                where,
+                "",
+                f"inject {inject} of the previous version is no longer in the export",
+            )
+            for inject in prepared.removed_injects
         )
+        return Report("normalize", findings + prepared.to_complete)
 
     _emit(ctx, "normalize", produce, root)
 
