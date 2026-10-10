@@ -7,6 +7,8 @@ import time
 import tracemalloc
 from typing import Any
 
+import pytest
+
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.shared.finding import REPORT_LIMIT, Severity
 
@@ -199,6 +201,19 @@ def test_every_finding_gives_the_offset_of_the_first_occurrence_in_the_source() 
     assert _first({"v": "\\u00e9 a\\u200d"}) == ["8"]  # after a shorter decoded escape
     assert _first({"v": f"\\u202e x{RLO}"}) == ["0"]  # escaped first, then raw
     assert _first({"v": "\\u202e ab \\u200b"}) == ["0", "10"]  # two escapes
+
+
+@pytest.mark.parametrize(
+    ("text", "first"),
+    [("\\u00e9\\udc00\\ufe00", 12), ("\\u00e9\\udc00\\udc00\\ufe00", 18)],
+    ids=["one", "two in a row, no pair"],
+)
+def test_a_lone_low_surrogate_stays_in_the_decoded_context(text: str, first: int) -> None:
+    [(field, message)] = _fields({"v": text})  # no letter before the selector
+
+    assert field == "/v"
+    assert "U+FE00" in message
+    assert f"out of place as an escape, 1 time, first at character {first}:" in message
 
 
 def test_a_raw_selector_out_of_place_only_once_decoded_is_found_where_it_stands() -> None:

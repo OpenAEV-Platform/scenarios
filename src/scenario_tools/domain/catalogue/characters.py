@@ -12,19 +12,23 @@ from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, Hidden, hid
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, REPORT_LIMIT, Finding, Severity
 
 # An escape, possibly after escaped backslashes ("u005c"), each of which takes one more decoding
-# to reach it; and the low half of a surrogate pair in the same form.
+# to reach it: a surrogate pair, high half then low half, or any other one alone, a lone
+# surrogate included, which stays in the decoded context as a JSON reader may keep it.
 _LINK = r"\\(?:u005[cC])*u"
-_ESCAPE = re.compile(f"{_LINK}([0-9a-fA-F]{{4}})(?:{_LINK}([dD][c-fC-F][0-9a-fA-F]{{2}}))?")
+_HEX = "[0-9a-fA-F]"
+_ESCAPE = re.compile(
+    f"{_LINK}(?:([dD][89abAB]{_HEX}{{2}}){_LINK}([dD][c-fC-F]{_HEX}{{2}})|({_HEX}{{4}}))"
+)
 _TO_DO = "remove it on the platform and export the scenario again"
 _CHUNK = 4096  # pieces joined at a time, so that a text of many escapes stays small to decode
 
 
 def _character(match: re.Match[str]) -> str:
     """The character an escape writes, a surrogate pair's whole."""
-    code = int(match.group(1), 16)
-    if match.group(2) and 0xD800 <= code <= 0xDBFF:
-        code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
-    return chr(code)
+    if match.group(1):
+        high, low = int(match.group(1), 16), int(match.group(2), 16)
+        return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+    return chr(int(match.group(3), 16))
 
 
 def _decoded(text: str) -> str:
