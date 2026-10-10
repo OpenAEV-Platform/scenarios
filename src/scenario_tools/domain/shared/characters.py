@@ -4,10 +4,11 @@ A bidirectional control can make a command read differently from what runs ("Tro
 and a zero-width, tag or reserved invisible character can carry text no one sees. The list is
 closed and shared by every check, so that the cleaning of a text and the refusal of a
 contribution never drift apart. Tab and line breaks are allowed. The joiners and variation
-selectors that scripts and emoji need (U+034F, U+200C, U+200D, U+FE00 to U+FE0F) are allowed where
-text uses them, after a letter, a mark or a symbol (the presentation selectors after an emoji
-only), and a joiner or non-joiner before what it acts on; never at the start or the end of a
-text, after ASCII or a space, nor as a run, where they could carry hidden data.
+selectors that scripts and emoji need (U+034F, U+200C, U+200D, U+FE00 to U+FE0F) are allowed
+where text uses them, after a letter, a mark or a symbol (the presentation selectors after an
+emoji only), and a joiner, non-joiner or grapheme joiner before what it acts on; never at the
+start or the end of a text, after ASCII or a space, nor as a run, where they could carry
+hidden data.
 """
 
 import unicodedata
@@ -21,8 +22,9 @@ _RANGES = (
     (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
 )  # fmt: skip
 HIDDEN = frozenset(chr(code) for first, last in _RANGES for code in range(first, last + 1))
-JOINERS = frozenset((chr(0x034F), chr(0x200C), chr(0x200D), *map(chr, range(0xFE00, 0xFE10))))
-_ZWNJ, _ZWJ, _VS16, _KEYCAP = chr(0x200C), chr(0x200D), chr(0xFE0F), chr(0x20E3)
+_CGJ, _ZWNJ, _ZWJ = chr(0x034F), chr(0x200C), chr(0x200D)
+_VS16, _KEYCAP = chr(0xFE0F), chr(0x20E3)
+JOINERS = frozenset((_CGJ, _ZWNJ, _ZWJ, *map(chr, range(0xFE00, 0xFE10))))
 _PRESENTATION = frozenset((chr(0xFE0E), _VS16))
 # The emoji that are no symbol: a letter and punctuation marks Unicode draws as emoji too.
 _EMOJI_NOT_SYMBOL = frozenset(map(chr, (0x203C, 0x2049, 0x2139, 0x3030, 0x303D)))
@@ -53,7 +55,7 @@ def _misplaced(text: str, index: int) -> bool:
         return True
     before = text[index - 1]
     after = text[index + 1] if index + 1 < len(text) else ""
-    if character in (_ZWJ, _ZWNJ) and not _joins(character, after):
+    if character in (_CGJ, _ZWJ, _ZWNJ) and not _joins(character, after):
         return True
     if before in JOINERS:  # a run; only an emoji's VS16 may be followed by a ZWJ
         return not (before == _VS16 and character == _ZWJ)
@@ -70,8 +72,9 @@ def _misplaced(text: str, index: int) -> bool:
 
 
 def _joins(joiner: str, after: str) -> bool:
-    """Whether a joiner or non-joiner stands before what it can act on: a letter or a mark of a
-    script, or, for a joiner, an emoji; never ASCII, a digit, a space nor the end of the text."""
+    """Whether a joiner, a non-joiner or a grapheme joiner stands before what it can act on: a
+    letter or a mark of a script, or, for a joiner, an emoji; never ASCII, a digit, a space,
+    a punctuation mark nor the end of the text."""
     if after.isascii():  # the end of the text too, as an empty string is
         return False
     return unicodedata.category(after)[0] in ("LMS" if joiner == _ZWJ else "LM")

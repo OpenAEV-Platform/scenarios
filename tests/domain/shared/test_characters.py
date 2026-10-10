@@ -127,6 +127,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"{chr(0x0645)}{ZWNJ}{chr(0x1F642)}", 0x200C),  # a non-joiner keeps letters apart
         (f"a{CGJ}b", 0x034F),  # a grapheme joiner, invisible, after ASCII
         (f"{chr(0x05B8)}{CGJ}{CGJ}", 0x034F),  # or as a run
+        (f"{chr(0xE9)}{CGJ}", 0x034F),  # or at the end
+        (f"{chr(0x05B8)}{CGJ}{chr(0x05C3)}", 0x034F),  # or before a punctuation mark
     ],
     ids=[
         "at the start",
@@ -149,6 +151,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "zwnj before an emoji",
         "cgj after ascii",
         "cgj run",
+        "cgj at the end",
+        "cgj before punctuation",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:
