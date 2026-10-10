@@ -191,3 +191,20 @@ def test_these_lists_are_sets(key: str) -> None:
 @pytest.mark.parametrize("key", _ORDERED)
 def test_these_lists_keep_their_order(key: str) -> None:
     assert key not in _rules().sorted_lists
+
+
+def test_an_export_from_an_instance_that_linked_techniques_gives_the_reviewed_form() -> None:
+    # The same platform version, once its MITRE collector ran, links techniques to the built-in
+    # contracts: their copies in a later export carry them, and the stored file must not change.
+    export = read_export(EXPORTS / "easm-scenario.zip")
+    for inject in export["scenario_injects"]:
+        inject["inject_injector_contract"]["injector_contract_attack_patterns"] = [
+            {
+                "attack_pattern_id": "a443a0ba-2bf3-5328-8d32-578372eb6a16",
+                "attack_pattern_external_id": "T1595.002",
+                "attack_pattern_name": "Vulnerability Scanning",
+                "attack_pattern_kill_chain_phases": [],
+            }
+        ]
+
+    assert _normalise(export) == (NORMALISED / "easm-scenario.json").read_bytes()
