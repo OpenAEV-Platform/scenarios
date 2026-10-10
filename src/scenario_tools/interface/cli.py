@@ -25,7 +25,7 @@ from scenario_tools.adapters.data_files import (
     read_mapping,
     write_output,
 )
-from scenario_tools.adapters.openaev_http import HttpOpenAEV
+from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
@@ -127,7 +127,7 @@ def _shows(output: str, report: Report, hidden: str) -> bool:
 
 def _withhold(report: Report, output_format: str, hidden: str) -> str:
     """The output, with the messages, then the paths, of the findings withheld while it would
-    show ``hidden``: what then remains is the tool's own text."""
+    show ``hidden``: what then remains is the tool's own text, never the platform's."""
     output = _render(report, output_format)
     for paths_too in (False, True):
         if not hidden or not _shows(output, report, hidden):
@@ -359,7 +359,12 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
         )
 
     # The platform has seen the token: what it sends back never shows it.
-    _emit(ctx, "openaev export", produce, hidden=os.environ.get("OPENAEV_TOKEN", ""))
+    _emit(
+        ctx,
+        "openaev export",
+        produce,
+        hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
+    )
 
 
 @openaev.command(name="import")
@@ -375,4 +380,9 @@ def openaev_import(ctx: click.Context, archive: Path) -> None:
         data = read_export_archive(archive)
         return import_archive(platform, data, repository_path(str(archive), Path.cwd()))
 
-    _emit(ctx, "openaev import", produce, hidden=os.environ.get("OPENAEV_TOKEN", ""))
+    _emit(
+        ctx,
+        "openaev import",
+        produce,
+        hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
+    )

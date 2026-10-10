@@ -5,7 +5,11 @@ import pytest
 
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.ports.errors import UnsafeInputError
+from scenario_tools.ports.errors import (
+    EnvironmentProblemError,
+    OutcomeUnknownError,
+    UnsafeInputError,
+)
 from scenario_tools.ports.openaev import ImportResult, SkippedInject
 
 SCENARIO = "0a64b5ab-2016-426b-813f-9051d32e88b3"
@@ -77,6 +81,45 @@ def test_a_complete_import_is_ok() -> None:
     assert report.ok
     assert report.findings == ()
     assert platform.calls == [("import", b"archive")]
+
+
+def test_an_inject_without_a_name_or_type_is_reported_all_the_same() -> None:
+    platform = FakePlatform(skipped=(SkippedInject(None, None), SkippedInject("Injector", "")))
+
+    report = import_archive(platform, b"archive", "build/scenario.zip")
+
+    assert sorted(finding.message for finding in report.findings) == [
+        "the platform skipped an inject without a name: its Injector is missing on the instance",
+        "the platform skipped an inject without a name: its dependency is missing on the instance",
+    ]
+
+
+class _Failing(FakePlatform):
+    def __init__(self, error: EnvironmentProblemError) -> None:
+        super().__init__()
+        self.error = error
+
+    def import_scenario(self, archive: bytes) -> ImportResult:
+        raise self.error
+
+
+def test_a_failed_import_that_may_have_acted_says_the_scenario_may_exist() -> None:
+    platform = _Failing(OutcomeUnknownError("the platform answered HTTP 500"))
+
+    with pytest.raises(OutcomeUnknownError) as error:
+        import_archive(platform, b"archive", "build/scenario.zip")
+    assert str(error.value) == (
+        "the platform answered HTTP 500; the scenario may have been created all the same: "
+        "check the platform before trying again"
+    )
+
+
+def test_a_failed_import_that_never_reached_the_platform_says_only_what_failed() -> None:
+    platform = _Failing(EnvironmentProblemError("the platform refused the token (HTTP 401)"))
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        import_archive(platform, b"archive", "build/scenario.zip")
+    assert str(error.value) == "the platform refused the token (HTTP 401)"
 
 
 def test_each_skipped_inject_is_a_blocking_finding_on_the_archive() -> None:

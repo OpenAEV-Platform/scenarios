@@ -9,20 +9,29 @@ import time
 from collections.abc import Callable, Iterator
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from scenario_tools.adapters.openaev_http import (
     EXPORT_OPTIONS,
     HttpOpenAEV,
+    _HTTPConnection,
     _HTTPSConnection,
     _HTTPSHandler,
     _Watchdog,
+    usable_token,
 )
-from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from scenario_tools.ports.errors import (
+    EnvironmentProblemError,
+    OutcomeUnknownError,
+    UnsafeInputError,
+)
 from scenario_tools.ports.openaev import ImportResult, SkippedInject
 from tests.platform_server import Platform, platform_server
 
 TOKEN = "0b6c6f0e-token-secret"  # noqa: S105 - a test value, never a real token
 SCENARIO = "0a64b5ab-2016-426b-813f-9051d32e88b3"
+NOT_LOCAL = r"^OPENAEV_URL uses http, but the connection did not reach the local machine$"
 
 
 @pytest.fixture
@@ -222,6 +231,7 @@ def test_an_export_at_the_archive_limit_is_returned(platform: Platform) -> None:
         (401, "the platform refused the token \\(HTTP 401\\)"),
         (403, "the platform refused the token \\(HTTP 403\\)"),
         (404, "the scenario was not found on the platform \\(HTTP 404\\)"),
+        (400, "the platform answered HTTP 400"),
         (500, "the platform answered HTTP 500"),
         (204, "the platform answered HTTP 204"),
     ],
@@ -421,6 +431,7 @@ def _encrypted_connection(
 
     class Watchdog:
         create_connection = None
+        reached = False
 
         def watch(self, connection: object) -> None:
             events.append(("watch", connection is encrypted))
@@ -453,6 +464,7 @@ def test_the_encrypted_socket_is_watched_before_its_handshake(
         ("handshake",),
     ]
     assert connection.sock is encrypted
+    assert connection._watchdog.reached  # the request may now be sent
 
 
 def test_through_a_proxy_the_handshake_names_the_platform(
@@ -472,6 +484,7 @@ def test_a_failed_handshake_closes_the_encrypted_socket(monkeypatch: pytest.Monk
     with pytest.raises(TimeoutError):
         connection.connect()
     assert events[-1] == ("close",)
+    assert not connection._watchdog.reached
 
 
 def test_a_watched_socket_that_expires_late_is_cut_at_once(platform: Platform) -> None:
@@ -778,6 +791,172 @@ def test_a_boundary_found_in_the_archive_is_drawn_again(
     assert platform.received[0].headers["content-type"].endswith("boundary=" + "f" * 32)
 
 
+def test_a_skipped_inject_without_a_name_or_type_is_returned_as_such(platform: Platform) -> None:
+    # The platform names an inject by its title, else its resource, either of which may be empty.
+    platform.answer(
+        200, b'{"missingActions": [{"type": null, "name": null}, {"type": "Injector"}]}'
+    )
+
+    assert _client(platform).import_scenario(ARCHIVE) == ImportResult(
+        (SkippedInject(None, None), SkippedInject("Injector", None))
+    )
+
+
+class _Connected:
+    def __init__(self, address: tuple[object, ...]) -> None:
+        self.address, self.closed = address, False
+
+    def getpeername(self) -> tuple[object, ...]:
+        return self.address
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("address", "local"),
+    [
+        (("127.0.0.1", 80), True),
+        (("127.0.0.2", 80), True),
+        (("::1", 80, 0, 0), True),
+        (("192.0.2.10", 80), False),
+        (("::ffff:127.0.0.1", 80, 0, 0), False),  # not loopback for Python 3.12, which is pinned
+    ],
+)
+def test_a_plain_http_connection_must_reach_the_local_machine(
+    monkeypatch: pytest.MonkeyPatch, address: tuple[object, ...], local: bool
+) -> None:
+    # Checked on the connection itself, whatever resolved the name: the token goes in clear.
+    connected = _Connected(address)
+    monkeypatch.setattr(
+        http.client.HTTPConnection, "connect", lambda self: setattr(self, "sock", connected)
+    )
+    connection = _HTTPConnection("localhost", watchdog=_Watchdog(5))
+
+    if local:
+        connection.connect()
+    else:
+        with pytest.raises(EnvironmentProblemError, match=NOT_LOCAL):
+            connection.connect()
+    assert connected.closed is not local
+    assert connection._watchdog.reached is local  # only then may the request be sent
+
+
+def _import(platform: Platform) -> None:
+    _client(platform, timeout=0.3).import_scenario(ARCHIVE)
+
+
+def _export(platform: Platform) -> None:
+    _client(platform, timeout=0.3).export_scenario(SCENARIO)
+
+
+def _answer(status: int) -> Callable[[Platform], None]:
+    return lambda platform: platform.answer(status)
+
+
+def _raw(answer: bytes) -> Callable[[Platform], None]:
+    return lambda platform: setattr(platform, "raw", answer)
+
+
+def _late(platform: Platform) -> None:
+    platform.delay = 0.6  # the request is in: the platform takes too long to answer
+
+
+def _silent(platform: Platform) -> None:
+    platform.silent = True
+
+
+def _odd(platform: Platform) -> None:
+    platform.answer(200, b"[]")
+
+
+SHORT = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}"
+CHUNK_CUT = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nab"
+
+
+@pytest.mark.parametrize(
+    ("setup", "call", "may_have_acted"),
+    [
+        pytest.param(_late, _import, True, id="import late"),
+        pytest.param(_raw(SHORT), _import, True, id="import cut short"),
+        pytest.param(_raw(CHUNK_CUT), _import, True, id="import chunk cut"),
+        pytest.param(_raw(b"garbled\r\n\r\n"), _import, True, id="import garbled"),
+        pytest.param(_odd, _import, True, id="import unexpected"),
+        pytest.param(_silent, _import, True, id="import no answer"),
+        pytest.param(_answer(500), _import, True, id="import 500"),
+        pytest.param(_answer(503), _import, True, id="import 503"),
+        pytest.param(_answer(201), _import, True, id="import 201"),
+        pytest.param(_answer(401), _import, False, id="import 401"),
+        pytest.param(_answer(403), _import, False, id="import 403"),
+        pytest.param(_answer(400), _import, False, id="import 400"),
+        pytest.param(_answer(404), _import, False, id="import 404"),
+        pytest.param(_answer(302), _import, False, id="import redirect"),
+        pytest.param(_answer(500), _export, False, id="export 500"),
+        pytest.param(_raw(SHORT), _export, False, id="export cut short"),
+        pytest.param(_late, _export, False, id="export late"),
+    ],
+)
+def test_a_failure_says_whether_the_platform_may_have_acted(
+    platform: Platform,
+    setup: Callable[[Platform], None],
+    call: Callable[[Platform], None],
+    may_have_acted: bool,
+) -> None:
+    # Only an import can change the platform, and only once its request may have reached it.
+    setup(platform)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        call(platform)
+    assert isinstance(error.value, OutcomeUnknownError) is may_have_acted
+
+
+def test_an_import_refused_before_it_could_reach_the_platform_did_nothing() -> None:
+    with socket.socket() as bound:  # bound but not listening: refused before anything is sent
+        bound.bind(("127.0.0.1", 0))
+        client = HttpOpenAEV.from_environment(
+            {"OPENAEV_URL": f"http://127.0.0.1:{bound.getsockname()[1]}", "OPENAEV_TOKEN": TOKEN}
+        )
+
+        with pytest.raises(EnvironmentProblemError) as error:
+            client.import_scenario(ARCHIVE)
+    assert not isinstance(error.value, OutcomeUnknownError)
+
+
+def test_an_import_late_before_any_connection_did_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def slow(*args: object, **kwargs: object) -> list[object]:
+        time.sleep(1)
+        return []
+
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.socket.getaddrinfo", slow)
+    client = HttpOpenAEV.from_environment(
+        {"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": TOKEN}, timeout=0.2
+    )
+
+    with pytest.raises(EnvironmentProblemError, match="did not answer within") as error:
+        client.import_scenario(ARCHIVE)
+    assert not isinstance(error.value, OutcomeUnknownError)
+
+
+@given(
+    st.one_of(
+        st.text(max_size=40),
+        st.from_regex(r"[A-Za-z0-9._~+/-]{10,30}=*", fullmatch=True),
+        st.from_regex(r"[A-Za-z0-9 =]{14,18}", fullmatch=True),
+    )
+)
+def test_the_guard_hides_exactly_the_tokens_a_call_would_send(value: str) -> None:
+    try:
+        HttpOpenAEV.from_environment({"OPENAEV_URL": "https://a.example", "OPENAEV_TOKEN": value})
+    except EnvironmentProblemError:
+        sent = False
+    else:
+        sent = True
+
+    assert (usable_token(value) == value != "") is sent
+
+
 def test_import_returns_the_injects_the_platform_skipped(platform: Platform) -> None:
     platform.answer(
         200,
@@ -807,7 +986,6 @@ def test_import_returns_the_injects_the_platform_skipped(platform: Platform) -> 
         b"{}",
         b'{"missingActions": {}}',
         b'{"missingActions": ["Scan"]}',
-        b'{"missingActions": [{"type": "Injector"}]}',
         b'{"missingActions": [{"type": 1, "name": "Scan"}]}',
         b"[" * 10_000,
         b'{"missingActions": [], "padding": "' + b"x" * (1024 * 1024) + b'"}',
@@ -819,7 +997,6 @@ def test_import_returns_the_injects_the_platform_skipped(platform: Platform) -> 
         "no missing actions",
         "missing actions not a list",
         "action not an object",
-        "action without name",
         "type not text",
         "too deep",
         "too large",

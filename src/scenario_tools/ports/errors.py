@@ -15,3 +15,7 @@ class UnsafeInputError(Exception):
 class EnvironmentProblemError(Exception):
     """The environment cannot be used: a missing credential, an unreachable service. This is
     never the input's fault, so it is never reported as a finding (exit code 3)."""
+
+
+class OutcomeUnknownError(EnvironmentProblemError):
+    """A service failed after the request may have reached it: what it did is not known."""

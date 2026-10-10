@@ -26,7 +26,11 @@ from typing import Any
 
 from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
-from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from scenario_tools.ports.errors import (
+    EnvironmentProblemError,
+    OutcomeUnknownError,
+    UnsafeInputError,
+)
 from scenario_tools.ports.openaev import ImportResult, SkippedInject
 
 # Teams are kept, as the policy checks their names; players and variable values are internal.
@@ -42,13 +46,31 @@ _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 # A bearer token (RFC 6750): no output of the tools escapes these characters, so a token that
 # shows anywhere shows as it is, where the guard of the commands finds it.
 _TOKEN = re.compile(r"[A-Za-z0-9._~+/-]+=*")
-# Long enough never to be a part of the tools' own text, which has no run of 16 characters
-# without a space: a guard that withholds what would show the token can always fall back on it.
+# Long enough never to be a part of the fixed text a withheld message is replaced by, which
+# has no run of 16 characters without a space.
 TOKEN_LENGTH = 16
 _URL = re.compile(r"[\x21-\x7e]+")  # visible ASCII: nothing urlsplit would silently drop
 # A DNS label: letters, digits and inner hyphens; an internationalised name is written in its
 # ASCII form (xn--).
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+
+def token_problem(value: str) -> str:
+    """What makes ``value`` unfit as the token, or an empty string when it is fit: the one rule
+    for the calls, which send it, and for the commands, which keep it out of their output."""
+    if not value:
+        return "OPENAEV_TOKEN is not set"
+    if not _TOKEN.fullmatch(value):
+        return "OPENAEV_TOKEN is not a token: letters, digits and -._~+/ only, then = signs"
+    if len(value) < TOKEN_LENGTH:
+        return f"OPENAEV_TOKEN is not a token: at least {TOKEN_LENGTH} characters"
+    return ""
+
+
+def usable_token(value: str | None) -> str:
+    """``value`` when it is a token the calls would send, otherwise an empty string."""
+    token = value or ""
+    return "" if token_problem(token) else token
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -64,6 +86,7 @@ class _Watchdog:
 
     def __init__(self, seconds: float, *, loopback_only: bool = False) -> None:
         self.expired = False
+        self.reached = False  # set once connected: from then on, the request may be sent
         self._deadline = time.monotonic() + seconds
         self._loopback_only = loopback_only
         self._lock = threading.Lock()
@@ -168,7 +191,19 @@ def _cut(connection: socket.socket) -> None:
 class _HTTPConnection(http.client.HTTPConnection):
     def __init__(self, *args: Any, watchdog: _Watchdog, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self._watchdog = watchdog
         self._create_connection = watchdog.create_connection
+
+    def connect(self) -> None:
+        """Plain HTTP carries the token in clear, so it must reach the local machine: checked on
+        the connection itself, whatever made it."""
+        super().connect()
+        if not ipaddress.ip_address(self.sock.getpeername()[0]).is_loopback:
+            self.sock.close()
+            raise EnvironmentProblemError(
+                "OPENAEV_URL uses http, but the connection did not reach the local machine"
+            )
+        self._watchdog.reached = True
 
 
 class _HTTPSConnection(http.client.HTTPSConnection):
@@ -199,6 +234,7 @@ class _HTTPSConnection(http.client.HTTPSConnection):
             encrypted.close()
             raise
         self.sock = encrypted
+        self._watchdog.reached = True
 
 
 class _HTTPHandler(urllib.request.HTTPHandler):
@@ -284,17 +320,9 @@ class HttpOpenAEV:
         url = environment.get("OPENAEV_URL")
         if not url:
             raise EnvironmentProblemError("OPENAEV_URL is not set")
-        token = environment.get("OPENAEV_TOKEN")
-        if not token:
-            raise EnvironmentProblemError("OPENAEV_TOKEN is not set")
-        if not _TOKEN.fullmatch(token):
-            raise EnvironmentProblemError(
-                "OPENAEV_TOKEN is not a token: letters, digits and -._~+/ only, then = signs"
-            )
-        if len(token) < TOKEN_LENGTH:
-            raise EnvironmentProblemError(
-                f"OPENAEV_TOKEN is not a token: at least {TOKEN_LENGTH} characters"
-            )
+        token = environment.get("OPENAEV_TOKEN") or ""
+        if problem := token_problem(token):
+            raise EnvironmentProblemError(problem)
         return cls(url, token, timeout=timeout, archive_limit=archive_limit)
 
     def _call(
@@ -306,18 +334,24 @@ class HttpOpenAEV:
         body: bytes | None = None,
         content_type: str | None = None,
         not_found: str = "",
+        acts: bool = False,
     ) -> bytes:
-        """The body of a 200 answer, at most ``limit + 1`` bytes of it."""
+        """The body of a 200 answer, at most ``limit + 1`` bytes of it. A call that ``acts`` on
+        the platform tells, when it fails once connected, that the platform may have acted."""
         headers = {"Authorization": f"Bearer {self._token}"}
         if content_type:
             headers["Content-Type"] = content_type
         request = urllib.request.Request(  # noqa: S310 - the scheme is checked in _base_url
             self._url + path, data=body, headers=headers, method=method
         )
-        late = EnvironmentProblemError(
-            f"the platform did not answer within {self._timeout:g} seconds"
-        )
+        late = f"the platform did not answer within {self._timeout:g} seconds"
         with _Watchdog(self._timeout, loopback_only=self._local) as watchdog:
+
+            def failed(message: str, may_have_acted: bool = True) -> EnvironmentProblemError:
+                if acts and watchdog.reached and may_have_acted:
+                    return OutcomeUnknownError(message)
+                return EnvironmentProblemError(message)
+
             handlers: list[urllib.request.BaseHandler] = [
                 _NoRedirect(),
                 _HTTPHandler(watchdog),
@@ -337,22 +371,23 @@ class HttpOpenAEV:
                     owed = answer.length
             except urllib.error.HTTPError as error:
                 error.close()
-                raise EnvironmentProblemError(_problem(error.code, not_found)) from None
+                message, may_have_acted = _failure(error.code, not_found)
+                raise failed(message, may_have_acted) from None
             except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
                 reason = getattr(error, "reason", error)
                 # A timed-out operation and the watchdog share one deadline: either means late.
                 if watchdog.expired or isinstance(reason, TimeoutError):
-                    raise late from None
+                    raise failed(late) from None
                 kind = type(reason if isinstance(reason, BaseException) else error).__name__
-                raise EnvironmentProblemError(f"the platform cannot be reached ({kind})") from None
+                raise failed(f"the platform cannot be reached ({kind})") from None
         # The clock decides, not the timer, whose thread may run late; a body cut at the
         # deadline reads as a short one.
         if watchdog.left() <= 0:
-            raise late
-        if status != 200:
-            raise EnvironmentProblemError(_problem(status, not_found))
+            raise failed(late)
+        if status != 200:  # another success: urllib raises an error for every other answer
+            raise failed(f"the platform answered HTTP {status}")
         if owed and len(data) <= limit:  # past the limit, the rest is left unread on purpose
-            raise EnvironmentProblemError("the platform's answer was cut short")
+            raise failed("the platform's answer was cut short")
         return data
 
     def export_scenario(self, scenario_id: str) -> bytes:
@@ -386,22 +421,28 @@ class HttpOpenAEV:
             ANSWER_LIMIT,
             body=body,
             content_type=f"multipart/form-data; boundary={boundary}",
+            acts=True,
         )
         return _import_result(data)
 
 
-def _problem(status: int, not_found: str) -> str:
+def _failure(status: int, not_found: str) -> tuple[str, bool]:
+    """What an answer other than 200 says, and whether the platform may have acted all the
+    same: a refusal (3xx, 4xx) says it did not."""
+    may_have_acted = not 300 <= status < 500
     if status in (401, 403):
-        return f"the platform refused the token (HTTP {status})"
-    if status == 404 and not_found:
-        return f"{not_found} (HTTP 404)"
-    if 300 <= status < 400:
-        return f"the platform answered a redirect (HTTP {status}), which is never followed"
-    return f"the platform answered HTTP {status}"
+        message = f"the platform refused the token (HTTP {status})"
+    elif status == 404 and not_found:
+        message = f"{not_found} (HTTP 404)"
+    elif not may_have_acted and status < 400:
+        message = f"the platform answered a redirect (HTTP {status}), which is never followed"
+    else:
+        message = f"the platform answered HTTP {status}"
+    return message, may_have_acted
 
 
 def _import_result(data: bytes) -> ImportResult:
-    unexpected = EnvironmentProblemError(
+    unexpected = OutcomeUnknownError(
         "the platform's answer to the import is not the expected JSON object"
     )
     try:
@@ -416,7 +457,7 @@ def _import_result(data: bytes) -> ImportResult:
         if not isinstance(action, dict):
             raise unexpected
         kind, name = action.get("type"), action.get("name")
-        if not isinstance(kind, str) or not isinstance(name, str):
+        if not all(value is None or isinstance(value, str) for value in (kind, name)):
             raise unexpected
         skipped.append(SkippedInject(kind, name))
     return ImportResult(tuple(skipped))

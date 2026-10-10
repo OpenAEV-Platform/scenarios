@@ -476,6 +476,54 @@ def test_an_environment_error_cut_in_the_token_is_withheld_in_json() -> None:
     assert json.loads(output)["error"] == "withheld: it would show a secret"
 
 
+@pytest.mark.parametrize("command", ["export", "import"])
+@pytest.mark.parametrize(
+    ("token", "reason"),
+    [
+        ("e", "at least 16 characters"),
+        ("OPENAEV", "at least 16 characters"),
+        ("a b c d e f g h i", "letters, digits and -._~+/ only, then = signs"),
+        ("OPENAEV_TOKEN is not", "letters, digits and -._~+/ only, then = signs"),
+    ],
+)
+def test_a_token_that_is_not_one_is_reported_as_such(
+    tmp_path: Path, command: str, token: str, reason: str
+) -> None:
+    # The guard protects a token the platform could have seen: an invalid one is never sent,
+    # and hiding it would hide what is wrong with it.
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EXPORT)
+    arguments = (
+        [SCENARIO, "--out", str(tmp_path / "e.zip")] if command == "export" else [str(archive)]
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["openaev", command, *arguments],
+        env={"OPENAEV_URL": "https://platform.example.org", "OPENAEV_TOKEN": token},
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout.strip() == (
+        f"openaev {command}: environment error: OPENAEV_TOKEN is not a token: {reason}"
+    )
+
+
+@pytest.mark.parametrize(("status", "told"), [(500, True), (401, False)])
+def test_a_failed_import_tells_whether_the_scenario_may_exist(
+    platform: Platform, tmp_path: Path, status: int, told: bool
+) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EXPORT)
+    platform.answer(status)
+
+    code, stdout, _ = _run(platform, "--format", "json", "openaev", "import", str(archive))
+
+    assert code == 3
+    error = json.loads(stdout)["error"]
+    assert ("the scenario may have been created all the same" in error) is told
+
+
 def test_an_output_without_the_token_is_left_as_it_is(platform: Platform, tmp_path: Path) -> None:
     archive = tmp_path / "scenario.zip"
     archive.write_bytes(EXPORT)

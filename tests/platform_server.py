@@ -30,6 +30,7 @@ class Platform:
     drip: float = 0.0  # seconds between two bytes of the body, for a platform that crawls
     raw: bytes = b""  # sent as it is instead of a well-formed answer, dripped too
     hold: float = 0.0  # seconds of silence after the raw bytes, the connection left open
+    silent: bool = False  # read the request, then close without any answer
     received: list[Received] = field(default_factory=list)
 
     def answer(self, status: int, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
@@ -49,6 +50,9 @@ def _handler(platform: Platform) -> type[BaseHTTPRequestHandler]:
                 )
             )
             time.sleep(platform.delay)
+            if platform.silent:
+                self.close_connection = True
+                return
             try:
                 if platform.raw:
                     for byte in platform.raw:
