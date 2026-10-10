@@ -176,6 +176,7 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
 DESCRIPTION_LIMIT = 2000
 NAME_LIMIT = 120
 FACET_LIMIT = 64
+INJECTORS_LIMIT = 50
 SEVERITIES = ("low", "medium", "high", "critical")
 PLATFORMS = (
     "Linux", "Windows", "MacOS", "Android", "iOS", "Container", "Service", "Generic", "Internal",
@@ -269,6 +270,13 @@ def starting_metadata(
     todo["/threat"] = _THREAT
     todo["/sources"] = _SOURCES
     todo.update(_REQUIRES_DEFAULTS)
+    injectors = sorted({inject.injector_type for inject in facts.injects})
+    if len(injectors) > INJECTORS_LIMIT:
+        todo["/requires/injectors"] = (
+            f"the injects use {len(injectors)} injector types, more than {INJECTORS_LIMIT}: "
+            "list those the scenario needs"
+        )
+        injectors = []
     if unknown_injects:
         # Their facts are unknown: they may need an executor, on any platform.
         several = unknown_injects > 1
@@ -277,7 +285,11 @@ def starting_metadata(
             "a recorded built-in one"
         )
         they = "they" if several else "it"
-        todo["/requires/injectors"] = f"complete requires.injectors: {unknown}"
+        todo["/requires/injectors"] = "; ".join(
+            filter(
+                None, (todo.get("/requires/injectors"), f"complete requires.injectors: {unknown}")
+            )
+        )
         reasons.setdefault("/platforms", []).append(
             f"check them: {unknown}, so the platforms {they} run on are unknown"
         )
@@ -307,7 +319,7 @@ def starting_metadata(
         "requires": {
             "openaev": f">={platform_version}",
             "edition": "CE",
-            "injectors": sorted({inject.injector_type for inject in facts.injects}),
+            "injectors": injectors,
             "executors": [],
         },
         "payloads": [],

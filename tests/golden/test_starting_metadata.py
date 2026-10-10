@@ -10,10 +10,15 @@ from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.safe_readers import YAML_LIMIT, yaml_bytes
 from scenario_tools.application.prepare_entry import start_metadata
-from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
+from scenario_tools.domain.catalogue.facts import (
+    INJECTOR_TYPE_LIMIT,
+    BuiltinContracts,
+    export_facts,
+)
 from scenario_tools.domain.catalogue.metadata import (
     DESCRIPTION_LIMIT,
     FACET_LIMIT,
+    INJECTORS_LIMIT,
     NAME_LIMIT,
     PLATFORMS,
     SEVERITIES,
@@ -90,3 +95,8 @@ def test_the_bounds_of_the_starting_metadata_are_those_of_the_schema() -> None:
     assert properties["main_focus"]["maxLength"] == FACET_LIMIT
     assert tuple(properties["severity"]["enum"]) == SEVERITIES
     assert tuple(properties["platforms"]["items"]["enum"]) == PLATFORMS
+    injectors = properties["requires"]["properties"]["injectors"]
+    assert (injectors["maxItems"], injectors["items"]["maxLength"]) == (
+        INJECTORS_LIMIT,
+        INJECTOR_TYPE_LIMIT,
+    )

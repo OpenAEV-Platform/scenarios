@@ -10,6 +10,7 @@ from hypothesis import strategies as st
 from scenario_tools.domain.catalogue.metadata import (
     DESCRIPTION_LIMIT,
     FACET_LIMIT,
+    INJECTORS_LIMIT,
     NAME_LIMIT,
     ExportFacts,
     InjectFacts,
@@ -519,3 +520,14 @@ def test_the_unknown_contracts_are_counted_in_plain_words(count: int, words: str
     _, findings = _start(unknown_injects=count)
 
     assert words in _message(findings, "/requires/injectors")
+
+
+def test_more_injector_types_than_the_schema_allows_are_left_to_complete() -> None:
+    injects = tuple(_inject(f"injector_{n:02}") for n in range(INJECTORS_LIMIT + 1))
+
+    metadata, findings = _start(replace(FACTS, injects=injects))
+
+    assert metadata["requires"]["injectors"] == []
+    assert f"{INJECTORS_LIMIT + 1} injector types" in _message(findings, "/requires/injectors")
+    within, findings = _start(replace(FACTS, injects=injects[:INJECTORS_LIMIT]))
+    assert len(within["requires"]["injectors"]) == INJECTORS_LIMIT
