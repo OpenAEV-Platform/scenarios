@@ -166,13 +166,13 @@ def test_two_keys_whose_pointers_would_collide_are_two_places() -> None:
     assert len(_fields(document)) == 2
 
 
-def test_a_long_chain_of_escaped_backslashes_is_followed_in_linear_time() -> None:
+def test_a_long_chain_of_escaped_backslashes_is_refused_in_linear_time() -> None:
     chain = "\\u005c" + "u005c" * 200_000 + "u202e"  # many decodings away from the character
     started = time.monotonic()
 
     [(_, message)] = _fields({"v": chain})
 
-    assert "U+202E" in message
+    assert message.startswith("escape still written after 3 decodings, 1 time, first at")
     assert time.monotonic() - started < 1
 
 
@@ -228,15 +228,15 @@ def test_a_raw_selector_out_of_place_only_once_decoded_is_found_where_it_stands(
 
 
 def test_decoding_escapes_takes_memory_in_proportion_to_the_text() -> None:
-    for escape in ("\\u0061", "\\u200d"):
-        text = escape * 200_000
+    for piece in ("\\u0061", "\\u200d", "abcdef"):  # a text with no escape is not copied
+        text = piece * 200_000
         tracemalloc.start()
         try:
             hidden_character_findings({"v": text}, PATH)
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
-        assert peak < 2 * len(text), escape
+        assert peak < 2 * len(text), piece
 
 
 def test_walking_a_wide_list_holds_one_cursor_per_level_not_the_siblings() -> None:
@@ -256,14 +256,47 @@ def test_walking_a_wide_list_holds_one_cursor_per_level_not_the_siblings() -> No
         "\\u005c\\u0075202e",  # the u escaped
         "\\u005cu\\u0032\\u0030\\u0032\\u0065",  # the hex digits escaped
         "\\\\\\\\\\u0075202e",  # three decodings away
+        "\\u202\\u0065",  # a lowercase hex digit escaped, the backslash raw
+        "\\u202\\u0045",  # an uppercase one
+        "\\\\\\\\u20\\\\u0032e",  # a pair of backslashes, which a reader makes one
     ],
-    ids=["u", "hex digits", "three levels"],
+    ids=["u", "hex digits", "three levels", "lower hex", "upper hex", "backslash pairs"],
 )
-def test_an_escape_written_with_escapes_is_refused(text: str) -> None:
+def test_an_escape_written_with_escapes_is_decoded_as_a_reader_would(text: str) -> None:
     [(field, message)] = _fields({"v": text})
 
     assert field == "/v"
-    assert message.startswith("escape written with escapes, 1 time, first at character ")
+    assert "U+202E (RIGHT-TO-LEFT OVERRIDE) as an escape" in message
+
+
+def test_an_escape_still_written_after_three_decodings_is_refused() -> None:
+    deep = "\\u0041\\u0041 " + "\\" * 8 + "u202e"  # four decodings away, after two escapes
+
+    [(_, message)] = _fields({"v": deep})
+
+    assert message.startswith("escape still written after 3 decodings, 1 time, first at")
+    assert "first at character 13:" in message
+
+
+def test_a_lone_half_of_a_pair_is_found_where_a_reader_leaves_it() -> None:
+    # A pair of backslashes, then a low half: alone once decoded, the high half written later.
+    messages = [message for _, message in _fields({"v": "\\\\ud800\\udc41"})]
+
+    assert any("U+DC41 (LONE SURROGATE) as an escape" in message for message in messages)
+
+
+def test_a_soft_hyphen_is_placed_as_a_reader_decodes_its_neighbours() -> None:
+    text = "\\\\u0065\\u00ad" + chr(0xE9)  # after a digit once decoded, a letter only later
+
+    [(_, message)] = _fields({"v": text})
+
+    assert "U+00AD (SOFT HYPHEN) out of place as an escape" in message
+
+
+def test_literal_escapes_and_regex_or_path_escapes_in_a_json_text_are_allowed() -> None:
+    document = {"a": "alert \\\\u0061lert(1)", "b": "\\\\bword\\\\b C:\\\\bin \\\\fx"}
+
+    assert _fields(document) == []
 
 
 def test_a_surrogate_pair_split_across_decodings_is_refused() -> None:
@@ -299,7 +332,18 @@ def test_the_count_is_the_larger_of_the_two_views() -> None:
     assert "out of place, 2 times, first at character 6:" in message
 
 
-def test_every_escape_written_with_escapes_is_counted() -> None:
-    [(_, message)] = _fields({"v": "\\u005c\\u0075202e \\u005c\\u0075202e"})
+def test_every_escape_still_written_after_three_decodings_is_counted() -> None:
+    deep = "\\" * 8 + "u202e"
 
-    assert message.startswith("escape written with escapes, 2 times, first at character 0:")
+    [(_, message)] = _fields({"v": f"{deep} {deep}"})
+
+    assert message.startswith(
+        "escape still written after 3 decodings, 2 times, first at character 0:"
+    )
+
+
+def test_a_character_also_raw_is_not_said_to_be_an_escape() -> None:
+    [(_, message)] = _fields({"v": f"\\u202e x{RLO}"})  # the escape first
+
+    assert message.startswith("invisible or bidirectional control character U+202E")
+    assert "OVERRIDE), 2 times, first at character 0:" in message

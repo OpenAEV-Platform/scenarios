@@ -3,6 +3,7 @@
 Characters are written by code point, never raw, so that this file holds none of them."""
 
 import time
+import unicodedata
 
 import pytest
 from hypothesis import given
@@ -65,8 +66,17 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
     assert hidden_in(chr(0x1B)) == ("U+001B",)
 
 
-def test_a_lone_surrogate_is_named_as_such() -> None:
-    assert hidden_in(chr(0xDB40)) == ("U+DB40 (LONE SURROGATE)",)
+@pytest.mark.parametrize("code", [0xD800, 0xDB40, 0xDFFF])
+def test_a_lone_surrogate_is_named_as_such(code: int) -> None:
+    assert hidden_in(chr(code)) == (f"U+{code:04X} (LONE SURROGATE)",)
+
+
+@pytest.mark.parametrize("code", [0x180B, 0x180C, 0x180D, 0x180F])
+def test_a_mongolian_selector_is_allowed_after_a_letter_only(code: int) -> None:
+    assert hidden_in(f"{chr(0x1820)}{chr(code)}") == ()
+    assert hidden_in(f"a{chr(code)}") == (
+        f"U+{code:04X} ({unicodedata.name(chr(code))}) out of place",
+    )
 
 
 # Joiners and variation selectors are allowed where scripts and emoji use them, never as a run
