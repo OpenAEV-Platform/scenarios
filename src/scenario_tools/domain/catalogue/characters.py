@@ -91,15 +91,20 @@ def _message(hidden: Hidden, where: str) -> str:
 
 def _merged(text: str, decoded: Decoded, where: str) -> list[tuple[Hidden, str]]:
     """The hidden characters of a text and where they show: the decoded view holds the raw
-    characters too, so its count is the whole count; a character only the decoded view holds
-    came from an escape, whose place in the source is given."""
+    characters too, so its count is the whole count, and its first occurrence may be an escape
+    before the first raw one; a character only the decoded view holds came from an escape. An
+    escape's place is where it starts in the source."""
     raw = {hidden.label: hidden for hidden in hidden_occurrences(text)}
     escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded.text)}
     merged = []
     for label in [*raw, *(label for label in escaped if label not in raw)]:
         if label in raw:
-            count = escaped[label].count if label in escaped else raw[label].count
-            merged.append((Hidden(label, count, raw[label].first), where))
+            count, first = raw[label].count, raw[label].first
+            if label in escaped:
+                count = escaped[label].count
+                # An escape may come first: its place in the source is earlier than the raw one.
+                first = min(first, decoded.sources.get(escaped[label].first, first))
+            merged.append((Hidden(label, count, first), where))
         else:
             # Only an escape writes it, so its first occurrence is an escape's character.
             first = decoded.sources[escaped[label].first]

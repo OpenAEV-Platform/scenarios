@@ -196,3 +196,4 @@ def test_every_finding_gives_the_offset_of_the_first_occurrence_in_the_source() 
     assert _first({"v": f"{RLO} \\u202e"}) == ["0"]  # raw first
     assert _first({"v": "ok \\u200d"}) == ["3"]  # an escaped joiner out of place
     assert _first({"v": "\\u00e9 a\\u200d"}) == ["8"]  # after a shorter decoded escape
+    assert _first({"v": f"\\u202e x{RLO}"}) == ["0"]  # escaped first, then raw

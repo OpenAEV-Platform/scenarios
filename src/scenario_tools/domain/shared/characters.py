@@ -5,8 +5,9 @@ and a zero-width, tag or reserved invisible character can carry text no one sees
 closed and shared by every check, so that the cleaning of a text and the refusal of a
 contribution never drift apart. Tab and line breaks are allowed. The joiners and variation
 selectors that scripts and emoji need (U+200C, U+200D, U+FE00 to U+FE0F) are allowed where
-text uses them, after a letter or a symbol, never at the start of a text, after ASCII or a
-space, nor as a run, where they could carry hidden data.
+text uses them, after a letter, a mark or a symbol (the presentation selectors after an emoji
+only), never at the start of a text, after ASCII or a space, nor as a run, where they could
+carry hidden data.
 """
 
 import unicodedata
@@ -23,6 +24,8 @@ HIDDEN = frozenset(chr(code) for first, last in _RANGES for code in range(first,
 JOINERS = frozenset((chr(0x200C), chr(0x200D), *map(chr, range(0xFE00, 0xFE10))))
 _ZWNJ, _ZWJ, _VS16, _KEYCAP = chr(0x200C), chr(0x200D), chr(0xFE0F), chr(0x20E3)
 _PRESENTATION = frozenset((chr(0xFE0E), _VS16))
+# The emoji that are no symbol: a letter and punctuation marks Unicode draws as emoji too.
+_EMOJI_NOT_SYMBOL = frozenset(map(chr, (0x203C, 0x2049, 0x2139, 0x3030, 0x303D)))
 # Arabic letters: a Persian suffix may follow a foreign word after a ZWNJ.
 _ARABIC = ((0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
 
@@ -57,8 +60,8 @@ def _misplaced(text: str, index: int) -> bool:
         suffix = character == _ZWNJ and before.isalpha() and _is_arabic(after)
         return not (keycap or suffix)
     category = unicodedata.category(before)[0]
-    if character in _PRESENTATION:  # text or emoji presentation: only an emoji-capable symbol
-        return category != "S"
+    if character in _PRESENTATION:  # text or emoji presentation: only after an emoji
+        return category != "S" and before not in _EMOJI_NOT_SYMBOL
     # Scripts and emoji put the others after a letter, a mark (a virama) or a symbol (an
     # emoji), never after a digit or a punctuation mark.
     return category not in "LMS"

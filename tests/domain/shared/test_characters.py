@@ -78,6 +78,9 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         f"iPhone{ZWNJ}{chr(0x0647)}{chr(0x0627)}",  # a Persian suffix after a foreign word
         f"{chr(0xA9)}{VS16}",  # the copyright sign shown as emoji
         f"{chr(0x8FBB)}{chr(0xFE00)}",  # a CJK ideograph with a standardized variant
+        f"{chr(0x2139)}{VS16}",  # information source, a letter shown as emoji
+        f"{chr(0x203C)}{VS16}",  # double exclamation mark shown as emoji
+        f"{chr(0x3030)}{chr(0xFE0E)}",  # wavy dash shown as text
     ],
     ids=[
         "emoji",
@@ -89,6 +92,9 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         "suffix",
         "copyright",
         "cjk variant",
+        "information source",
+        "double exclamation",
+        "wavy dash as text",
     ],
 )
 def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> None:
@@ -109,6 +115,7 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"{chr(0x0661)}{ZWJ}x", 0x200D),  # after an Arabic-Indic digit
         (f"{chr(0x060C)}{ZWNJ}x", 0x200C),  # after an Arabic comma
         (f"{chr(0xE9)}{VS16}{ZWJ}x", 0xFE0F),  # an emoji selector after a letter
+        (f"{chr(0x00A1)}{VS16}", 0xFE0F),  # after a punctuation mark no emoji is drawn from
     ],
     ids=[
         "at the start",
@@ -122,6 +129,7 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "after a digit",
         "after punctuation",
         "emoji selector after a letter",
+        "emoji selector after punctuation",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:
