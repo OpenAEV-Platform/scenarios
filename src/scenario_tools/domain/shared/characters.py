@@ -59,7 +59,8 @@ def _misplaced(text: str, index: int) -> bool:
 
 
 def _is_arabic(character: str) -> bool:
-    return bool(character) and any(first <= ord(character) <= last for first, last in _ARABIC)
+    """Whether ``character`` is an Arabic letter, not a digit or a punctuation mark."""
+    return character.isalpha() and any(first <= ord(character) <= last for first, last in _ARABIC)
 
 
 def hidden_occurrences(text: str) -> tuple[Hidden, ...]:

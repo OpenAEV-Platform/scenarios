@@ -149,3 +149,14 @@ def test_an_escaped_joiner_is_placed_as_if_it_were_the_character() -> None:
 
 def test_a_character_both_raw_and_escaped_in_a_value_is_reported_once() -> None:
     assert len(_fields({"v": f"{RLO} \\u202e"})) == 1
+
+
+def test_a_key_and_its_value_are_two_places() -> None:
+    assert [where for where, _ in _fields({f"k{RLO}": RLO})] == ["/k\\u202e", "/k\\u202e"]
+
+
+def test_two_keys_whose_pointers_would_collide_are_two_places() -> None:
+    long = "k" * 400
+    document = {long + "a": f"x{RLO}", long + "b": f"y{RLO}"}
+
+    assert len(_fields(document)) == 2

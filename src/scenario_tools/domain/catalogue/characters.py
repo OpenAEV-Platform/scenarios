@@ -16,24 +16,27 @@ _ESCAPED_BACKSLASH = re.compile(r"\\u005[cC]")
 _TO_DO = "remove it on the platform and export the scenario again"
 
 
-def _texts(document: Any) -> Iterator[tuple[str, str, str]]:
-    """Every text of ``document`` as (pointer, where, text), walked without recursion: each
-    value as it is and as the escapes it writes, each key as it is."""
+def _texts(document: Any) -> Iterator[tuple[int, str, str, str]]:
+    """Every text of ``document`` as (place, pointer, where, text), walked without recursion:
+    each value as it is and as the escapes it writes, each key as it is. ``place`` tells the
+    texts apart where pointers cannot: a key and its value, or two keys cut alike."""
     stack: list[tuple[str, Any]] = [("", document)]
+    places = iter(range(1 << 62))
     while stack:
         pointer, value = stack.pop()
         if isinstance(value, dict):
             for key, child in reversed(value.items()):
                 child_pointer = f"{pointer}/{_shown(key)}"
-                yield child_pointer, " in a key", key
+                yield next(places), child_pointer, " in a key", key
                 stack.append((child_pointer, child))
         elif isinstance(value, list):
             stack.extend(
                 (f"{pointer}/{index}", child) for index, child in reversed(list(enumerate(value)))
             )
         elif isinstance(value, str):
-            yield pointer, "", value
-            yield pointer, " as an escape", _unescaped(value)
+            place = next(places)
+            yield place, pointer, "", value
+            yield place, pointer, " as an escape", _unescaped(value)
 
 
 def _shown(key: str) -> str:
@@ -75,11 +78,11 @@ def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...
     pointer of its value or key, with its count, never the text. Past ``REPORT_LIMIT``, the last
     finding counts the texts left, so that a flood of them stays small to report."""
     findings: list[Finding] = []
-    seen: set[tuple[str, str]] = set()  # a character found as it is is not reported again
+    seen: set[tuple[int, str]] = set()  # a character found as it is is not reported again
     left = 0
-    for pointer, where, text in _texts(document):
-        occurrences = [o for o in hidden_occurrences(text) if (pointer, o.label) not in seen]
-        seen.update((pointer, o.label) for o in occurrences)
+    for place, pointer, where, text in _texts(document):
+        occurrences = [o for o in hidden_occurrences(text) if (place, o.label) not in seen]
+        seen.update((place, o.label) for o in occurrences)
         if not occurrences:
             continue
         if left or len(findings) + len(occurrences) > REPORT_LIMIT - 1:
