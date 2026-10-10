@@ -139,8 +139,8 @@ def _message(what: str, count: int, first: int, to_do: str = _TO_DO) -> str:
 def _messages(text: str, where: str, decoded: bool) -> list[str]:
     """The findings of a text: each hidden character once, whatever view shows it, with the
     larger count of any view and the earliest place in the source (for an escape, where it
-    starts), in the order of these places; then the escapes still written after the last
-    decoding, if any."""
+    starts), and the escapes still written after the last decoding, if any: all in the order of
+    their first place."""
     views = _views(text) if decoded else [text]
     found = [{hidden.label: hidden for hidden in hidden_occurrences(view)} for view in views]
     deepest = views[-1] if len(views) > _DECODINGS else ""
@@ -158,13 +158,13 @@ def _messages(text: str, where: str, decoded: bool) -> list[str]:
         what = f"invisible or bidirectional control character {label}{place}"
         count = max(hidden.count for _, hidden in seen)
         characters.append((first, label, _message(what, count, first)))
-    messages = [message for _, _, message in sorted(characters)]
     if first_left is not None:
         what = f"escape sequence encoded more than {_DECODINGS} levels deep"
         first = sources[(_DECODINGS, first_left.start())][0]
         count = 1 + sum(1 for _ in left_matches)
-        messages.append(_message(what, count, first, f"encode it fewer times, or {_TO_DO}"))
-    return messages
+        to_do = f"encode it fewer times, or {_TO_DO}"
+        characters.append((first, what, _message(what, count, first, to_do)))
+    return [message for _, _, message in sorted(characters)]
 
 
 def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...]:

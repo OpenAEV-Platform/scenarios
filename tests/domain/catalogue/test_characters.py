@@ -376,3 +376,9 @@ def test_an_escape_left_after_three_decodings_says_how_to_fix_it() -> None:
         "escape sequence encoded more than 3 levels deep, 1 time, first at character 0: "
         "encode it fewer times, or remove it on the platform and export the scenario again"
     )
+
+
+def test_an_escape_left_after_three_decodings_takes_its_place_in_the_order() -> None:
+    text = "\\" * 8 + f"u0061 {chr(0x202E)}"
+
+    assert _first({"v": text}) == ["0", "14"]
