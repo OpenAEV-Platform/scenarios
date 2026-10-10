@@ -15,6 +15,9 @@ class SchemaViolation:
 
 class SchemaValidator(Protocol):
     def validate(self, schema: str, document: object) -> tuple[SchemaViolation, ...]:
-        """Every violation of ``document`` against the schema named ``schema``, in a stable
-        order; an empty tuple when it conforms."""
+        """The violations of ``document`` against the schema named ``schema``, in a stable
+        order; an empty tuple when it conforms. A hostile document could break the schema in
+        millions of places, so an adapter may stop after a bounded number of violations (100
+        for the repository's validator): a non-empty result then means the document is refused,
+        not that every violation is listed."""
         ...

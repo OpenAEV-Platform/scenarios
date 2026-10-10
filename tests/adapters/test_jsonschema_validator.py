@@ -718,11 +718,22 @@ def test_a_manifest_carries_no_field_that_only_signing_would_protect(
 
 
 def _arrays(node: Any, pointer: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    """Every array schema, wherever it sits: under an object, or in a list of subschemas such
+    as ``oneOf`` or ``prefixItems``."""
     if isinstance(node, dict):
         if node.get("type") == "array":
             yield pointer, node
         for key, child in node.items():
             yield from _arrays(child, f"{pointer}/{key}")
+    elif isinstance(node, list):
+        for index, child in enumerate(node):
+            yield from _arrays(child, f"{pointer}/{index}")
+
+
+def test_the_array_walk_reaches_lists_of_subschemas() -> None:
+    schema = {"oneOf": [{"type": "array"}, {"prefixItems": [{"type": "array"}]}]}
+
+    assert [pointer for pointer, _ in _arrays(schema)] == ["/oneOf/0", "/oneOf/1/prefixItems/0"]
 
 
 @pytest.mark.parametrize("schema", ["scenario", "manifest"])
