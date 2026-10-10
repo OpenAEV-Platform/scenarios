@@ -256,11 +256,16 @@ def _entry_external_id(out: Path, given: str | None) -> str:
 def _policy_levels(out: Path) -> list[Path]:
     """OUT and those of its parents that hold policy data, from the deepest up."""
     resolved = Path(os.path.realpath(out))  # a loop of links is left as it is, not raised
-    return [
-        directory
-        for directory in (resolved, *resolved.parents)
-        if (directory / "policy" / "data").is_dir()
-    ]
+    try:
+        return [
+            directory
+            for directory in (resolved, *resolved.parents)
+            if (directory / "policy" / "data").is_dir()
+        ]
+    except OSError as error:  # a directory that cannot be searched, for instance
+        raise EnvironmentProblemError(
+            f"cannot look for policy data above {out}: {error.strerror}"
+        ) from error
 
 
 def _repository_root(levels: list[Path], out: Path) -> Path:
@@ -307,12 +312,12 @@ def normalize(
     export, out = export.absolute(), out.absolute()
     levels: list[Path] = []
     metadata = out / "scenario.yaml"
-    # Decided once, before the external ID is chosen: a scenario.yaml that appears later is
-    # never read nor replaced, and the run stops before writing anything.
-    first = not (metadata.exists() or metadata.is_symlink())
     try:
         levels = _policy_levels(out)
         root = _repository_root(levels, out)
+        # Decided once, before the external ID is chosen: a scenario.yaml that appears later
+        # is never read nor replaced, and the run stops before writing anything.
+        first = not (metadata.exists() or metadata.is_symlink())
         entry_id = _entry_external_id(out, external_id)
     except click.UsageError:
         raise

@@ -769,3 +769,17 @@ def test_a_scenario_yaml_that_appears_after_the_external_id_was_chosen_stops_the
 
     assert result.exit_code == 3, result.output
     assert not (entry / "scenario.json").exists()
+
+
+def test_an_entry_that_cannot_be_searched_is_an_environment_problem(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    entry.chmod(0o600)  # no search permission: whether scenario.yaml exists cannot be known
+    try:
+        result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+    finally:
+        entry.chmod(0o755)
+
+    assert result.exit_code == 3, result.output
+    assert "Traceback" not in result.output
