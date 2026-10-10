@@ -48,12 +48,19 @@ _SCENARIO_ENTRY = b"Scenario"
 _DOCUMENT_ENTRY = b"Attachment"
 
 
+DOCUMENTS_NOT_SUPPORTED = "documents are not supported yet"
+
+
+class DocumentsNotSupportedError(UnsafeInputError):
+    """An export that carries documents: its message is the tool's own text and a count."""
+
+
 def _export_document(archive: CheckedArchive) -> Any:
     documents = [name for name in archive.names if archive.comment(name) == _DOCUMENT_ENTRY]
     if documents:
-        raise UnsafeInputError(
+        raise DocumentsNotSupportedError(
             "IO-014",
-            f"documents are not supported yet: the export carries {len(documents)}",
+            f"{DOCUMENTS_NOT_SUPPORTED}: the export carries {len(documents)}",
             archive.path,
         )
     entries = [name for name in archive.names if archive.comment(name) == _SCENARIO_ENTRY]
