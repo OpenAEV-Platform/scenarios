@@ -333,6 +333,10 @@ def archive_from_bytes(
             )
         if _is_unsafe_name(info.orig_filename):
             raise UnsafeInputError("IO-010", f"unsafe entry name {info.orig_filename!r}", path)
+        if info.filename != info.orig_filename:  # an extra field (0x7075) renamed the entry
+            raise UnsafeInputError(
+                "IO-010", f"entry name {info.orig_filename!r} changed by an extra field", path
+            )
         if stat.S_ISLNK(info.external_attr >> 16):
             raise UnsafeInputError("IO-011", f"link entry {info.filename!r}", path)
         key = unicodedata.normalize("NFC", info.filename).casefold()

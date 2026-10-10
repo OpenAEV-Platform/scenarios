@@ -286,6 +286,30 @@ def test_an_empty_name_is_refused() -> None:
     assert _refused(_zip([(zipfile.ZipInfo(""), b"x")])) == "IO-010"
 
 
+def _unicode_path(declared: str, published: str) -> bytes:
+    """An entry declared as ``declared`` whose Info-ZIP Unicode path field (0x7075) names
+    ``published``, the name the zip library then reports."""
+    name = published.encode()
+    entry = zipfile.ZipInfo(declared)
+    entry.extra = struct.pack("<HHBI", 0x7075, 5 + len(name), 1, zlib.crc32(declared.encode()))
+    entry.extra += name
+    return _zip([(entry, b"x")])
+
+
+@pytest.mark.parametrize("published", ["../../evil.txt", "b.txt"])
+def test_a_name_an_extra_field_would_change_is_refused(published: str) -> None:
+    # The name checked is the one declared; the zip library would report the field's.
+    with pytest.raises(UnsafeInputError) as refusal:
+        archive_from_bytes(_unicode_path("a.txt", published))
+
+    assert refusal.value.code == "IO-010"
+    assert "a.txt" in refusal.value.message
+
+
+def test_a_unicode_path_field_that_repeats_the_name_is_accepted() -> None:
+    assert archive_from_bytes(_unicode_path("a.txt", "a.txt")).names == ("a.txt",)
+
+
 def test_dots_inside_a_name_are_not_a_parent_reference() -> None:
     assert archive_from_bytes(_zip([("notes..v2.txt", b"x")])).names == ("notes..v2.txt",)
 
