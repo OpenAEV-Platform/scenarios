@@ -20,6 +20,9 @@ _ESCAPE = re.compile(
     f"{_LINK}(?:([dD][89abAB]{_HEX}{{2}}){_LINK}([dD][c-fC-F]{_HEX}{{2}})|({_HEX}{{4}}))"
 )
 _TO_DO = "remove it on the platform and export the scenario again"
+# What an escape written with escapes is made of: a reader decoding once more would find it.
+_ESCAPE_PARTS = frozenset("\\u0123456789abcdefABCDEF")
+_NESTED = "escape written with escapes"
 _CHUNK = 4096  # pieces joined at a time, so that a text of many escapes stays small to decode
 
 
@@ -34,8 +37,9 @@ def _character(match: re.Match[str]) -> str:
 def _decoded(text: str) -> str:
     """``text`` with the escapes it writes turned into the characters a JSON reader would make
     of them, so that a hidden character, or a joiner out of place, is seen in its context.
-    Empty when no escape writes a hidden character or a joiner and ``text`` holds no joiner, whose
-    context an escape could change: the decoded view would show nothing more. Linear in time and
+    Empty when no escape writes a hidden character, a joiner or a part of another escape, and
+    ``text`` holds no joiner, whose context an escape could change: the decoded view would show
+    nothing more. Linear in time and
     in memory: the pieces are joined as they come."""
     chunks: list[str] = []
     pieces: list[str] = []
@@ -44,6 +48,7 @@ def _decoded(text: str) -> str:
     for match in _ESCAPE.finditer(text):
         character = _character(match)
         candidate = candidate or character in HIDDEN or character in JOINERS
+        candidate = candidate or character in _ESCAPE_PARTS
         pieces += (text[last : match.start()], character)
         last = match.end()
         if len(pieces) >= _CHUNK:
@@ -112,7 +117,20 @@ def _shown(key: str) -> str:
 def _message(hidden: Hidden, where: str) -> str:
     times = "1 time" if hidden.count == 1 else f"{hidden.count} times"
     what = f"invisible or bidirectional control character {hidden.label}{where}"
+    if hidden.label == _NESTED:
+        what = _NESTED
     return f"{what}, {times}, first at character {hidden.first}: {_TO_DO}"
+
+
+def _nested(decoded: str) -> tuple[Hidden, ...]:
+    """The escapes the decoded view still writes: every one is made of a character an escape
+    wrote, as the raw text's own were all decoded, so it hides its character one decoding
+    further, where nothing is checked. Refused whatever it writes, at any depth."""
+    matches = _ESCAPE.finditer(decoded)
+    first = next(matches, None)
+    if first is None:
+        return ()
+    return (Hidden(_NESTED, 1 + sum(1 for _ in matches), first.start()),)
 
 
 def _merged(text: str, decoded: str, where: str) -> list[tuple[Hidden, str]]:
@@ -123,13 +141,16 @@ def _merged(text: str, decoded: str, where: str) -> list[tuple[Hidden, str]]:
     starts in the source."""
     raw = {hidden.label: hidden for hidden in hidden_occurrences(text)}
     escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded)}
-    places = _places(text, [hidden.first for hidden in escaped.values()])
-    merged = []
+    nested = _nested(decoded)
+    wanted = [hidden.first for hidden in (*escaped.values(), *nested)]
+    places = _places(text, wanted)
+    merged = [(Hidden(_NESTED, n.count, places[n.first][0]), "") for n in nested]
     for label in [*raw, *(label for label in escaped if label not in raw)]:
         if label in raw:
             count, first = raw[label].count, raw[label].first
             if label in escaped:
-                count = escaped[label].count
+                # Each view counts what it sees: the larger count, the earlier place.
+                count = max(count, escaped[label].count)
                 first = min(first, places[escaped[label].first][0])
             merged.append((Hidden(label, count, first), where))
         else:

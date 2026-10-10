@@ -209,11 +209,12 @@ def test_every_finding_gives_the_offset_of_the_first_occurrence_in_the_source() 
     ids=["one", "two in a row, no pair"],
 )
 def test_a_lone_low_surrogate_stays_in_the_decoded_context(text: str, first: int) -> None:
-    [(field, message)] = _fields({"v": text})  # no letter before the selector
+    fields = _fields({"v": text})  # no letter before the selector, and the surrogate refused
+    [message] = [message for _, message in fields if "U+FE00" in message]
 
-    assert field == "/v"
-    assert "U+FE00" in message
+    assert {field for field, _ in fields} == {"/v"}
     assert f"out of place as an escape, 1 time, first at character {first}:" in message
+    assert any("(LONE SURROGATE) as an escape" in message for _, message in fields)
 
 
 def test_a_raw_selector_out_of_place_only_once_decoded_is_found_where_it_stands() -> None:
@@ -247,3 +248,58 @@ def test_walking_a_wide_list_holds_one_cursor_per_level_not_the_siblings() -> No
     finally:
         tracemalloc.stop()
     assert peak < 100_000
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\\u005c\\u0075202e",  # the u escaped
+        "\\u005cu\\u0032\\u0030\\u0032\\u0065",  # the hex digits escaped
+        "\\\\\\\\\\u0075202e",  # three decodings away
+    ],
+    ids=["u", "hex digits", "three levels"],
+)
+def test_an_escape_written_with_escapes_is_refused(text: str) -> None:
+    [(field, message)] = _fields({"v": text})
+
+    assert field == "/v"
+    assert message.startswith("escape written with escapes, 1 time, first at character ")
+
+
+def test_a_surrogate_pair_split_across_decodings_is_refused() -> None:
+    messages = [message for _, message in _fields({"v": "\\udb40\\\\udc41"})]
+
+    assert len(messages) == 2
+    assert all("(LONE SURROGATE) as an escape" in message for message in messages)
+
+
+def test_escapes_of_json_encoded_twice_and_of_plain_letters_are_allowed() -> None:
+    assert _fields({"v": "caf\\\\u00e9", "w": "\\u0041\\u0062"}) == []
+
+
+def test_a_key_is_taken_as_written_never_decoded() -> None:
+    assert _fields({"\\u202e": 1}) == []
+
+
+def test_the_count_covers_the_occurrence_given_first() -> None:
+    # A raw non-joiner out of place only as written, then an escaped one out of place.
+    text = f"\\u0645{chr(0x200C)}\\u0645 \\u200c"
+
+    [(_, message)] = _fields({"v": text})
+
+    assert "out of place, 1 time, first at character 6:" in message
+
+
+def test_the_count_is_the_larger_of_the_two_views() -> None:
+    # Two non-joiners out of place as written; once decoded, the first stands between letters.
+    text = f"\\u0645{chr(0x200C)}\\u0645{chr(0x200C)}x"
+
+    [(_, message)] = _fields({"v": text})
+
+    assert "out of place, 2 times, first at character 6:" in message
+
+
+def test_every_escape_written_with_escapes_is_counted() -> None:
+    [(_, message)] = _fields({"v": "\\u005c\\u0075202e \\u005c\\u0075202e"})
+
+    assert message.startswith("escape written with escapes, 2 times, first at character 0:")

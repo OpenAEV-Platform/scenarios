@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from scenario_tools.domain.shared.characters import HIDDEN, hidden_in, hidden_occurrences
+from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, hidden_in, hidden_occurrences
 
 # The contract's list, restated independently of the implementation.
 CONTRACT_RANGES = [
@@ -17,13 +17,15 @@ CONTRACT_RANGES = [
     (0x2060, 0x206F), (0x3164, 0x3164), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFFB),
     (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3),
     (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x2800, 0x2800),  # fillers and blanks, invisible
+    (0xD800, 0xDFFF),  # lone surrogates, which only an escape can write
 ]  # fmt: skip
 ALLOWED = [chr(code) for code in (
     0x09, 0x0A, 0x0D, 0x85, 0x2028, 0x2029,  # tab and line breaks
-    0xAD, 0xE9, 0x6F22, 0x1F642, 0x20, 0xA0, 0x115F, 0x2800,
+    0xAD, 0xE9, 0x6F22, 0x1F642, 0x20, 0xA0,
 )]  # fmt: skip
 RLO, ZWSP, ZWJ, ZWNJ, VS16 = chr(0x202E), chr(0x200B), chr(0x200D), chr(0x200C), chr(0xFE0F)
-CGJ = chr(0x034F)
+CGJ, SHY, FVS1 = chr(0x034F), chr(0x00AD), chr(0x180B)
 
 
 def test_the_list_is_exactly_the_contract_s_one() -> None:
@@ -63,6 +65,10 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
     assert hidden_in(chr(0x1B)) == ("U+001B",)
 
 
+def test_a_lone_surrogate_is_named_as_such() -> None:
+    assert hidden_in(chr(0xDB40)) == ("U+DB40 (LONE SURROGATE)",)
+
+
 # Joiners and variation selectors are allowed where scripts and emoji use them, never as a run
 # or out of place, where they could carry hidden data.
 
@@ -83,6 +89,8 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         f"{chr(0x203C)}{VS16}",  # double exclamation mark shown as emoji
         f"{chr(0x3030)}{chr(0xFE0E)}",  # wavy dash shown as text
         f"{chr(0x05D1)}{chr(0x05B8)}{CGJ}{chr(0x05B7)}",  # Hebrew vowel points kept in order
+        f"{chr(0x1820)}{FVS1}",  # a Mongolian letter in a variant form
+        f"{chr(0xE9)}{SHY}{chr(0xE9)}",  # a soft hyphen between two letters
     ],
     ids=[
         "emoji",
@@ -98,6 +106,8 @@ def test_a_control_character_has_no_name_but_its_code_point() -> None:
         "double exclamation",
         "wavy dash as text",
         "hebrew grapheme joiner",
+        "mongolian selector",
+        "soft hyphen",
     ],
 )
 def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> None:
@@ -114,9 +124,9 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"{chr(0x0645)}{ZWNJ}{ZWNJ}", 0x200C),
         (f"1{VS16}", 0xFE0F),
         (f"12{ZWNJ}x", 0x200C),
-        (f"a{ZWNJ}{chr(0x0660)}", 0x200C),  # an Arabic-Indic digit is no suffix
-        (f"{chr(0x0661)}{ZWJ}x", 0x200D),  # after an Arabic-Indic digit
-        (f"{chr(0x060C)}{ZWNJ}x", 0x200C),  # after an Arabic comma
+        (f"a{ZWNJ}{chr(0x064B)}", 0x200C),  # an Arabic mark is no suffix
+        (f"{chr(0x0661)}{ZWJ}{chr(0x0645)}", 0x200D),  # after an Arabic-Indic digit
+        (f"{chr(0x060C)}{ZWNJ}{chr(0x0645)}", 0x200C),  # after an Arabic comma
         (f"{chr(0xE9)}{VS16}{ZWJ}{chr(0x1F525)}", 0xFE0F),  # an emoji selector after a letter
         (f"{chr(0x00A1)}{VS16}", 0xFE0F),  # after a punctuation mark no emoji is drawn from
         (f"{chr(0x1F642)}{ZWJ}x", 0x200D),  # a joiner joins nothing ASCII
@@ -129,6 +139,18 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"{chr(0x05B8)}{CGJ}{CGJ}", 0x034F),  # or as a run
         (f"{chr(0xE9)}{CGJ}", 0x034F),  # or at the end
         (f"{chr(0x05B8)}{CGJ}{chr(0x05C3)}", 0x034F),  # or before a punctuation mark
+        (f"{chr(0x2764)}{VS16}{VS16}", 0xFE0F),  # an emoji selector run
+        (f"{chr(0x2764)}{VS16}{CGJ}{chr(0xE9)}", 0x034F),  # only a joiner after VS16
+        (f"1{chr(0xFE0E)}{chr(0x20E3)}", 0xFE0E),  # a keycap takes VS16, not VS15
+        (f"1{ZWNJ}{chr(0x0645)}", 0x200C),  # no suffix after an ASCII digit
+        (f".{ZWNJ}{chr(0x0645)}", 0x200C),  # nor after ASCII punctuation
+        (f"a{FVS1}", 0x180B),  # a Mongolian selector after ASCII
+        (f"{chr(0x1820)}{FVS1}{FVS1}", 0x180B),  # or as a run
+        (f"{SHY}a", 0x00AD),  # a soft hyphen at the start
+        (f"a{SHY}", 0x00AD),  # at the end
+        (f"a{SHY} b", 0x00AD),  # before a space
+        (f"a{SHY}{SHY}b", 0x00AD),  # or as a run
+        (f"1{SHY}a", 0x00AD),  # or after a digit
     ],
     ids=[
         "at the start",
@@ -138,7 +160,7 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "two joiners",
         "no keycap",
         "zwnj between ascii",
-        "zwnj before an arabic digit",
+        "zwnj before an arabic mark",
         "after a digit",
         "after punctuation",
         "emoji selector after a letter",
@@ -153,6 +175,18 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "cgj run",
         "cgj at the end",
         "cgj before punctuation",
+        "vs16 run",
+        "vs16 then cgj",
+        "text keycap",
+        "zwnj after an ascii digit",
+        "zwnj after ascii punctuation",
+        "mongolian selector after ascii",
+        "mongolian run",
+        "soft hyphen at the start",
+        "soft hyphen at the end",
+        "soft hyphen before a space",
+        "soft hyphen run",
+        "soft hyphen after a digit",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:
@@ -164,8 +198,7 @@ def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> N
 
 @given(st.text(st.characters(codec="utf-8", exclude_characters=sorted(HIDDEN)), max_size=50))
 def test_a_text_of_ordinary_characters_has_none(text: str) -> None:
-    allowed_invisible = {ZWJ, ZWNJ, *map(chr, range(0xFE00, 0xFE10))}
-    if not allowed_invisible & set(text):
+    if JOINERS.isdisjoint(text):
         assert hidden_in(text) == ()
 
 

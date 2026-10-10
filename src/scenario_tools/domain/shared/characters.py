@@ -3,12 +3,12 @@
 A bidirectional control can make a command read differently from what runs ("Trojan Source"),
 and a zero-width, tag or reserved invisible character can carry text no one sees. The list is
 closed and shared by every check, so that the cleaning of a text and the refusal of a
-contribution never drift apart. Tab and line breaks are allowed. The joiners and variation
-selectors that scripts and emoji need (U+034F, U+200C, U+200D, U+FE00 to U+FE0F) are allowed
-where text uses them, after a letter, a mark or a symbol (the presentation selectors after an
-emoji only), and a joiner, non-joiner or grapheme joiner before what it acts on; never at the
-start or the end of a text, after ASCII or a space, nor as a run, where they could carry
-hidden data.
+contribution never drift apart. Tab and line breaks are allowed. A soft hyphen is allowed
+between two letters. The joiners and variation selectors that scripts and emoji need (U+034F,
+U+180B to U+180D, U+180F, U+200C, U+200D, U+FE00 to U+FE0F) are allowed where text uses them,
+after a letter, a mark or a symbol (the presentation selectors after an emoji only), and a
+joiner, non-joiner or grapheme joiner before what it acts on; never at the start or the end of
+a text, after ASCII or a space, nor as a run, where they could carry hidden data.
 """
 
 import unicodedata
@@ -20,11 +20,14 @@ _RANGES = (
     (0x2060, 0x206F), (0x3164, 0x3164), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFFB),
     (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3),
     (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x2800, 0x2800),  # fillers and blanks, invisible
+    (0xD800, 0xDFFF),  # lone surrogates, which only an escape can write
 )  # fmt: skip
 HIDDEN = frozenset(chr(code) for first, last in _RANGES for code in range(first, last + 1))
-_CGJ, _ZWNJ, _ZWJ = chr(0x034F), chr(0x200C), chr(0x200D)
+_SHY, _CGJ, _ZWNJ, _ZWJ = chr(0x00AD), chr(0x034F), chr(0x200C), chr(0x200D)
 _VS16, _KEYCAP = chr(0xFE0F), chr(0x20E3)
-JOINERS = frozenset((_CGJ, _ZWNJ, _ZWJ, *map(chr, range(0xFE00, 0xFE10))))
+_MONGOLIAN = (chr(0x180B), chr(0x180C), chr(0x180D), chr(0x180F))  # free variation selectors
+JOINERS = frozenset((_SHY, _CGJ, _ZWNJ, _ZWJ, *_MONGOLIAN, *map(chr, range(0xFE00, 0xFE10))))
 _PRESENTATION = frozenset((chr(0xFE0E), _VS16))
 # The emoji that are no symbol: a letter and punctuation marks Unicode draws as emoji too.
 _EMOJI_NOT_SYMBOL = frozenset(map(chr, (0x203C, 0x2049, 0x2139, 0x3030, 0x303D)))
@@ -44,6 +47,8 @@ class Hidden:
 def _label(character: str, misplaced: bool) -> str:
     code = f"U+{ord(character):04X}"
     name = unicodedata.name(character, "")
+    if not name and 0xD800 <= ord(character) <= 0xDFFF:
+        name = "LONE SURROGATE"
     label = f"{code} ({name})" if name else code
     return f"{label} out of place" if misplaced else label
 
@@ -55,11 +60,13 @@ def _misplaced(text: str, index: int) -> bool:
         return True
     before = text[index - 1]
     after = text[index + 1] if index + 1 < len(text) else ""
+    if character == _SHY:  # a word break: between two letters, any script
+        return not (before.isalpha() and after.isalpha())
     if character in (_CGJ, _ZWJ, _ZWNJ) and not _joins(character, after):
         return True
     if before in JOINERS:  # a run; only an emoji's VS16 may be followed by a ZWJ
         return not (before == _VS16 and character == _ZWJ)
-    if before.isascii() or before.isspace():
+    if before.isascii():
         keycap = character == _VS16 and before in "0123456789#*" and after == _KEYCAP
         suffix = character == _ZWNJ and before.isalpha() and _is_arabic(after)
         return not (keycap or suffix)
