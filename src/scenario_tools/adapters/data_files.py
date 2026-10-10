@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from scenario_tools.adapters.safe_readers import (
+    JSON_LIMIT,
     parse_json,
     read_json_file,
     read_regular_file,
@@ -63,6 +64,28 @@ def read_export_archive(path: Path) -> bytes:
     """The bytes of an export archive file that passes the same checks."""
     data = read_regular_file(path, ARCHIVE_LIMIT)
     check_export_archive(data, str(path))
+    return data
+
+
+# The password the importer opens attachments with, and contributors encrypt them with.
+ATTACHMENTS_PASSWORD = b"infected"
+
+
+def read_stored_scenario(path: Path) -> tuple[bytes, Any]:
+    """The bytes of a stored ``scenario.json``, and the document they hold."""
+    data = read_regular_file(path, JSON_LIMIT)
+    return data, parse_json(data, path=str(path))
+
+
+def read_attachments(path: Path) -> bytes | None:
+    """The bytes of an entry's attachments archive, once every entry opens with the shared
+    password, as the importer will open them; ``None`` when the entry has none."""
+    if not path.exists() and not path.is_symlink():
+        return None
+    data = read_regular_file(path, ARCHIVE_LIMIT)
+    archive = archive_from_bytes(data, path=str(path))
+    for name in archive.names:
+        archive.read(name, password=ATTACHMENTS_PASSWORD)
     return data
 
 

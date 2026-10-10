@@ -20,17 +20,24 @@ from scenario_tools import __version__
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
     check_export_archive,
+    read_attachments,
     read_export,
     read_export_archive,
     read_mapping,
+    read_stored_scenario,
     write_output,
 )
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file
+from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
+from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
+from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.application.transfer import export_scenario, import_archive
+from scenario_tools.domain.catalogue.archive import belongs_to
+from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.shared.finding import Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -220,8 +227,7 @@ def _entry_external_id(out: Path, given: str | None) -> str:
     declared = None
     metadata = out / "scenario.yaml"
     if metadata.exists() or metadata.is_symlink():
-        document = read_yaml_file(metadata)
-        declared = document.get("external_id") if isinstance(document, dict) else None
+        declared = _declared_external_id(metadata)
     if given is not None and declared is not None and given != declared:
         raise click.UsageError(f"--external-id contradicts {metadata}: {shorten(repr(declared))}")
     if given is None and declared is not None:
@@ -240,9 +246,10 @@ def _entry_external_id(out: Path, given: str | None) -> str:
 
 def _policy_levels(out: Path) -> list[Path]:
     """OUT and those of its parents that hold policy data, from the deepest up."""
+    resolved = Path(os.path.realpath(out))  # a loop of links is left as it is, not raised
     return [
         directory
-        for directory in (out.resolve(), *out.resolve().parents)
+        for directory in (resolved, *resolved.parents)
         if (directory / "policy" / "data").is_dir()
     ]
 
@@ -330,6 +337,92 @@ def normalize(
         )
 
     _emit(ctx, "normalize", produce, root)
+
+
+@main.command(name="archive")
+@click.argument("entry", type=click.Path(path_type=Path))
+@click.option("--out", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def archive(ctx: click.Context, entry: Path, out: Path) -> None:
+    """Write the import archive of ENTRY to OUT: its scenario.json and attachments.zip as they
+    are, in the layout the platform's importer reads, once the entry passes its checks."""
+    entry = Path(os.path.realpath(entry))  # its place in the repository, whatever link names it
+    out = Path(os.path.normpath(out.absolute()))
+    if _inside(out, entry):
+        raise click.UsageError("OUT may not be inside the entry")
+    if out.is_dir():
+        raise click.UsageError("OUT is a directory: give the path of the archive file")
+    scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
+    levels: list[Path] = []
+    try:
+        levels = _policy_levels(entry)
+        root = _repository_root(levels, entry)
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, "archive", _refused(error), levels[-1] if levels else None)
+
+    def produce() -> Report:
+        loader = YamlDataLoader(root / "policy" / "data")
+        external_id = _declared_external_id(metadata)
+        if not isinstance(external_id, str) or not _CANONICAL_UUID.fullmatch(external_id):
+            message = "external_id must be a UUID in lower case with hyphens"
+            where = repository_path(str(metadata), root)
+            return Report(
+                "archive", (Finding("SCH-001", Severity.BLOCKING, where, "/external_id", message),)
+            )
+        try:
+            builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+        except ValueError as error:
+            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+        path = repository_path(str(scenario), root)
+        data, document = read_stored_scenario(scenario)
+        report, built = build_archive(
+            document,
+            data,
+            read_attachments(entry / "attachments.zip"),
+            path,
+            str(out),
+            ZipArchiveBuilder(),
+            # Normalised again with itself as the previous version, unless it is another
+            # entry's: then what normalisation writes for this one differs anyway.
+            renormalised=lambda stored: (
+                prepare_entry(
+                    stored,
+                    external_id,
+                    loader,
+                    path=path,
+                    previous=stored if belongs_to(stored, external_id) else None,
+                ).scenario_json
+            ),
+            contract_findings=lambda stored: (
+                export_facts(stored, builtin, path)[1] + copy_findings(stored, builtin, path)
+            ),
+            check=lambda built: check_export_archive(built, str(out)),
+            limit=ARCHIVE_LIMIT,
+        )
+        if built is not None:
+            write_output(out, built)
+        return report
+
+    _emit(ctx, "archive", produce, root)
+
+
+def _declared_external_id(metadata: Path) -> object:
+    """What ``scenario.yaml`` declares as the external ID, ``None`` when it declares none."""
+    document = read_yaml_file(metadata)
+    return document.get("external_id") if isinstance(document, dict) else None
+
+
+def _inside(path: Path, directory: Path) -> bool:
+    """Whether ``path`` is ``directory`` or lies within it, compared by file identity on the
+    path the write resolves to: a link to the directory or to a folder of it, or another case
+    on a case-insensitive disk, still names a place inside it."""
+    if not directory.is_dir():
+        return False
+    resolved = Path(os.path.realpath(path))
+    return any(
+        candidate.exists() and candidate.samefile(directory)
+        for candidate in (resolved, *resolved.parents)
+    )
 
 
 @main.group(name="openaev")

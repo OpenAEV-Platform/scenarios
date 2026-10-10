@@ -48,7 +48,7 @@ _JSON_TEXT_FIELDS = ("inject_content", "injector_contract_content")
 _INFORMATION, _INJECTS = "scenario_information", "scenario_injects"
 _ARTICLES = "scenario_articles"
 # Parts of an export whose identifiers have no agreed rule yet: refused when not empty.
-_NOT_SUPPORTED = (
+NOT_SUPPORTED = (
     ("scenario_workflow", "chained scenarios"),
     ("scenario_objectives", "objectives"),
     ("scenario_lessons_categories", "lessons"),
@@ -538,7 +538,7 @@ def normalise(
             text = item.get(field)
             if isinstance(text, str) and _ESCAPED_ID_CHARACTER.search(text):
                 raise _refuse(f"{field} writes an identifier character as an escape")
-    for key, what in _NOT_SUPPORTED:
+    for key, what in NOT_SUPPORTED:
         if export.get(key):
             raise _refuse(f"{what} are not supported yet")
     if previous is not None and not isinstance(previous, dict):

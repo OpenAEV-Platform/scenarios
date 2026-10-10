@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader
-from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
+from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.catalogue.metadata import InjectFacts, is_tabletop
 
 ROOT = Path(__file__).parents[2]
@@ -73,6 +73,12 @@ def test_recorded_facts_agree_with_the_platform_s_copies_in_the_references(name:
             contract["injector_contract_needs_executor"],
             frozenset(contract["injector_contract_platforms"]),
         ), contract["injector_contract_id"]
+
+
+@pytest.mark.parametrize("name", sorted(REFERENCES))
+def test_the_recorded_copy_of_each_contract_is_the_platform_s(name: str) -> None:
+    # The references are the platform's own exports, normalised: their copies are the record.
+    assert copy_findings(_load(name), BUILTIN, f"{name}.json") == ()
 
 
 def test_the_recorded_contracts_are_exactly_those_in_use_in_order() -> None:
