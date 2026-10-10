@@ -12,7 +12,8 @@ from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, Hidden, hid
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, REPORT_LIMIT, Finding, Severity
 
 _ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})(?:\\u([dD][c-fC-F][0-9a-fA-F]{2}))?")
-_ESCAPED_BACKSLASH = re.compile(r"\\u005[cC]")
+# An escaped backslash and the "u005c" that follow it: each makes one more decoding away.
+_ESCAPED_BACKSLASHES = re.compile(r"\\u005[cC](?:u005[cC])*")
 _TO_DO = "remove it on the platform and export the scenario again"
 
 
@@ -53,8 +54,7 @@ def _unescaped(text: str) -> str:
     of them, so that a hidden character, or a joiner out of place, is seen in its context; empty
     when it writes none. An escaped backslash before an escape (two decodings away) is followed
     down to the character."""
-    while (reduced := _ESCAPED_BACKSLASH.sub(lambda _: "\\", text)) != text:
-        text = reduced
+    text = _ESCAPED_BACKSLASHES.sub(lambda _: "\\", text)  # one pass, any length
     decoded, count = _ESCAPE.subn(_character, text)
     return decoded if count else ""
 

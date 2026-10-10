@@ -3,6 +3,7 @@
 Characters are written by code point, never raw, so that this file holds none of them."""
 
 import json
+import time
 from typing import Any
 
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -160,3 +161,17 @@ def test_two_keys_whose_pointers_would_collide_are_two_places() -> None:
     document = {long + "a": f"x{RLO}", long + "b": f"y{RLO}"}
 
     assert len(_fields(document)) == 2
+
+
+def test_a_long_chain_of_escaped_backslashes_is_followed_in_linear_time() -> None:
+    chain = "\\u005c" + "u005c" * 200_000 + "u202e"  # many decodings away from the character
+    started = time.monotonic()
+
+    [(_, message)] = _fields({"v": chain})
+
+    assert "U+202E" in message
+    assert time.monotonic() - started < 1
+
+
+def test_escaped_backslashes_in_any_case_are_followed() -> None:
+    assert len(_fields({"v": "\\u005Cu005cu202E"})) == 1
