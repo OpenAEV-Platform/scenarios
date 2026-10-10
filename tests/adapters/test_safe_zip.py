@@ -994,3 +994,12 @@ def test_a_corrupted_archive_is_read_or_refused(changes: list[tuple[int, int]]) 
         data[position] = value
     with contextlib.suppress(UnsafeInputError):
         _read_all(bytes(data))
+
+
+def test_the_entry_count_stops_at_a_directory_record_that_is_not_one() -> None:
+    # Deterministic, so that coverage never depends on what the property tests happen to draw.
+    data = bytearray(_zip([("a.txt", b"x"), ("b.txt", b"y")]))
+    second = data.find(b"PK\x01\x02", data.find(b"PK\x01\x02") + 4)
+    data[second : second + 4] = b"XXXX"
+
+    assert safe_zip_module._count_entries(bytes(data), 10) == 1

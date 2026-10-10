@@ -410,6 +410,23 @@ def _edited_export(tmp_path: Path, change: Callable[[dict[str, Any]], None]) -> 
     return export
 
 
+def test_an_export_with_a_hidden_character_is_refused_and_nothing_is_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    export = _edited_export(
+        tmp_path,
+        lambda d: d["scenario_injects"][0].update(inject_title=f"Scan{chr(0x2066)}"),
+    )
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID, export=export)
+
+    assert result.exit_code == 1, result.output
+    assert "IO-017" in result.stdout
+    assert "U+2066" in result.stdout
+    assert list(entry.iterdir()) == []
+
+
 def test_an_export_whose_facts_cannot_be_read_is_refused_and_nothing_is_written(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

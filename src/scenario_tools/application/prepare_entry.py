@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.catalogue.identifiers import (
     InjectMatchingError,
@@ -37,6 +38,8 @@ class PreparedEntry:
     removed_injects: tuple[str, ...]
     metadata: dict[str, object] | None = None
     to_complete: tuple[Finding, ...] = ()
+    # Hidden characters in the normalised form: when there is one, nothing is to be written.
+    refusals: tuple[Finding, ...] = ()
 
 
 def prepare_entry(
@@ -72,8 +75,11 @@ def prepare_entry(
         raise UnsafeInputError(
             "IO-001", f"normalised form larger than {MAX_STORED_SIZE} bytes", path
         )
-    if start_at is None:
-        return PreparedEntry(stored_form(normalised.document), normalised.removed_injects)
+    refusals = hidden_character_findings(normalised.document, path)
+    if start_at is None or refusals:
+        return PreparedEntry(
+            stored_form(normalised.document), normalised.removed_injects, refusals=refusals
+        )
     metadata, to_complete = start_metadata(
         normalised.document, external_id, data, path=start_at, source=path
     )

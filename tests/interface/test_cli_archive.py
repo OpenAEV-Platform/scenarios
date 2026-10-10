@@ -413,3 +413,14 @@ def test_hostile_content_cannot_flood_the_report(tmp_path: Path) -> None:
     assert len(lines) <= 102  # at most 101 findings, then the summary line
     assert max(len(line) for line in lines) < 1_000
     assert "more findings not shown" in stdout
+
+
+def test_a_stored_scenario_with_a_hidden_character_is_refused(tmp_path: Path) -> None:
+    entry = _entry(tmp_path, "easm-scenario")
+    _edit(entry, lambda d: d["scenario_injects"][0].update(inject_title=f"x{chr(0x202E)}y"))
+
+    code, stdout, _ = _run("--format", "json", "archive", str(entry), "--out", str(tmp_path / "e"))
+
+    assert code == 1
+    assert "IO-017" in {finding["code"] for finding in json.loads(stdout)["findings"]}
+    assert not (tmp_path / "e").exists()
