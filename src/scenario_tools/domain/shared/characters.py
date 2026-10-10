@@ -55,7 +55,9 @@ def _misplaced(text: str, index: int) -> bool:
         keycap = character == _VS16 and before in "0123456789#*" and after == _KEYCAP
         suffix = character == _ZWNJ and before.isalpha() and _is_arabic(after)
         return not (keycap or suffix)
-    return False
+    # Scripts and emoji put them after a letter, a mark (a virama) or a symbol (an emoji),
+    # never after a digit or a punctuation mark.
+    return unicodedata.category(before)[0] not in "LMS"
 
 
 def _is_arabic(character: str) -> bool:

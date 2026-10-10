@@ -175,3 +175,9 @@ def test_a_long_chain_of_escaped_backslashes_is_followed_in_linear_time() -> Non
 
 def test_escaped_backslashes_in_any_case_are_followed() -> None:
     assert len(_fields({"v": "\\u005Cu005cu202E"})) == 1
+
+
+def test_a_character_both_raw_and_escaped_is_counted_in_full() -> None:
+    [(_, message)] = _fields({"v": f"{RLO} \\u202e"})
+
+    assert "2 times" in message

@@ -94,6 +94,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"1{VS16}", 0xFE0F),
         (f"12{ZWNJ}x", 0x200C),
         (f"a{ZWNJ}{chr(0x0660)}", 0x200C),  # an Arabic-Indic digit is no suffix
+        (f"{chr(0x0661)}{ZWJ}x", 0x200D),  # after an Arabic-Indic digit
+        (f"{chr(0x060C)}{ZWNJ}x", 0x200C),  # after an Arabic comma
     ],
     ids=[
         "at the start",
@@ -104,6 +106,8 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "no keycap",
         "zwnj between ascii",
         "zwnj before an arabic digit",
+        "after a digit",
+        "after punctuation",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:

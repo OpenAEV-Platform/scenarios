@@ -17,27 +17,23 @@ _ESCAPED_BACKSLASHES = re.compile(r"\\u005[cC](?:u005[cC])*")
 _TO_DO = "remove it on the platform and export the scenario again"
 
 
-def _texts(document: Any) -> Iterator[tuple[int, str, str, str]]:
-    """Every text of ``document`` as (place, pointer, where, text), walked without recursion:
-    each value as it is and as the escapes it writes, each key as it is. ``place`` tells the
-    texts apart where pointers cannot: a key and its value, or two keys cut alike."""
+def _texts(document: Any) -> Iterator[tuple[str, str, str, str]]:
+    """Every text of ``document`` as (pointer, where, text, decoded), walked without recursion:
+    each value with the characters its escapes write, each key as it is."""
     stack: list[tuple[str, Any]] = [("", document)]
-    places = iter(range(1 << 62))
     while stack:
         pointer, value = stack.pop()
         if isinstance(value, dict):
             for key, child in reversed(value.items()):
                 child_pointer = f"{pointer}/{_shown(key)}"
-                yield next(places), child_pointer, " in a key", key
+                yield child_pointer, " in a key", key, ""
                 stack.append((child_pointer, child))
         elif isinstance(value, list):
             stack.extend(
                 (f"{pointer}/{index}", child) for index, child in reversed(list(enumerate(value)))
             )
         elif isinstance(value, str):
-            place = next(places)
-            yield place, pointer, "", value
-            yield place, pointer, " as an escape", _unescaped(value)
+            yield pointer, "", value, _unescaped(value)
 
 
 def _shown(key: str) -> str:
@@ -73,24 +69,38 @@ def _message(hidden: Hidden, where: str) -> str:
     return f"{what}, {times}{first}: {_TO_DO}"
 
 
+def _merged(text: str, decoded: str, where: str) -> list[tuple[Hidden, str]]:
+    """The hidden characters of a text and where they show: the decoded view holds the raw
+    characters too, so its count is the whole count; a character only the decoded view holds
+    came from an escape."""
+    raw = {hidden.label: hidden for hidden in hidden_occurrences(text)}
+    escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded)}
+    merged = []
+    for label in [*raw, *(label for label in escaped if label not in raw)]:
+        if label in raw:
+            count = escaped[label].count if label in escaped else raw[label].count
+            merged.append((Hidden(label, count, raw[label].first), where))
+        else:
+            merged.append((escaped[label], " as an escape"))
+    return merged
+
+
 def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...]:
     """An ``IO-017`` finding for each hidden character in each text of ``document``, at the
     pointer of its value or key, with its count, never the text. Past ``REPORT_LIMIT``, the last
     finding counts the texts left, so that a flood of them stays small to report."""
     findings: list[Finding] = []
-    seen: set[tuple[int, str]] = set()  # a character found as it is is not reported again
     left = 0
-    for place, pointer, where, text in _texts(document):
-        occurrences = [o for o in hidden_occurrences(text) if (place, o.label) not in seen]
-        seen.update((place, o.label) for o in occurrences)
+    for pointer, where, text, decoded in _texts(document):
+        occurrences = _merged(text, decoded, where)
         if not occurrences:
             continue
         if left or len(findings) + len(occurrences) > REPORT_LIMIT - 1:
             left += 1  # a text is reported whole or counted in the summary
             continue
         findings.extend(
-            Finding("IO-017", Severity.BLOCKING, path, pointer, _message(hidden, where))
-            for hidden in occurrences
+            Finding("IO-017", Severity.BLOCKING, path, pointer, _message(hidden, place))
+            for hidden, place in occurrences
         )
     if left:
         summary = f"{left} more {'texts hold' if left > 1 else 'text holds'} hidden characters"
