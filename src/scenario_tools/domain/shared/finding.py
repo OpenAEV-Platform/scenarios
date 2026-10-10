@@ -2,9 +2,11 @@
 
 A finding has a code (two or three capital letters, a hyphen and three digits), a severity, the
 path of the file relative to the repository root (empty when the input is not a file), the JSON
-pointer of the field (empty for the whole input) and a message, shortened to ``MESSAGE_LIMIT``
-characters regardless of who builds the finding. A report is ok when it holds no blocking finding,
-and lists its findings in a stable order.
+pointer of the field (empty for the whole input) and a message. The path, the field and the
+message are shortened to ``MESSAGE_LIMIT`` characters regardless of who builds the finding, since
+all three may carry contributor content. A report is ok when it holds no blocking finding, lists
+its findings in a stable order, and shows at most ``REPORT_LIMIT`` of them: one last finding
+counts the rest.
 """
 
 import re
@@ -18,12 +20,20 @@ _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")  # RFC 6901: "~" only as "~0" o
 
 
 MESSAGE_LIMIT = 300
+REPORT_LIMIT = 100
 
 
 def shorten(message: str) -> str:
     """A message is shortened to ``MESSAGE_LIMIT`` characters, so that a long value read from the
     content is never echoed in full."""
     return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
+
+
+def _shorten_pointer(pointer: str) -> str:
+    """A pointer shortened like a message, without leaving a "~" whose escape was cut off."""
+    if len(pointer) <= MESSAGE_LIMIT:
+        return pointer
+    return pointer[: MESSAGE_LIMIT - 1].removesuffix("~") + "…"
 
 
 class Severity(Enum):
@@ -53,6 +63,8 @@ class Finding:
             raise ValueError(f"finding field {self.field!r} is not a JSON pointer")
         if not self.message:
             raise ValueError("finding message is empty")
+        object.__setattr__(self, "path", shorten(self.path))
+        object.__setattr__(self, "field", _shorten_pointer(self.field))
         object.__setattr__(self, "message", shorten(self.message))
 
     def _sort_key(self) -> tuple[str, str, str, str, str]:
@@ -65,7 +77,19 @@ class Report:
     findings: tuple[Finding, ...] = field(default=())
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "findings", tuple(sorted(self.findings, key=Finding._sort_key)))
+        findings = tuple(sorted(self.findings, key=Finding._sort_key))
+        if len(findings) > REPORT_LIMIT:
+            shown, hidden = findings[:REPORT_LIMIT], findings[REPORT_LIMIT:]
+            blocking = any(finding.severity is Severity.BLOCKING for finding in hidden)
+            count = Finding(
+                "IO-016",
+                Severity.BLOCKING if blocking else Severity.INFO,
+                "",
+                "",
+                f"{len(hidden)} more findings not shown",
+            )
+            findings = (*shown, count)  # last, out of the sorted order
+        object.__setattr__(self, "findings", findings)
 
     @property
     def ok(self) -> bool:

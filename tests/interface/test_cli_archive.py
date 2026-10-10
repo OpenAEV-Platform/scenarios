@@ -388,3 +388,28 @@ def test_an_existing_directory_as_out_is_a_usage_error(tmp_path: Path) -> None:
 
     assert (code, stdout) == (2, "")
     assert "OUT is a directory" in stderr
+
+
+def test_hostile_content_cannot_flood_the_report(tmp_path: Path) -> None:
+    # A key of a megabyte and five hundred refused injects stay a bounded report.
+    entry = _entry(tmp_path, "easm-scenario")
+
+    def change(document: dict[str, Any]) -> None:
+        inject = document["scenario_injects"][0]
+        unknown = json.loads(json.dumps(inject))
+        unknown["inject_injector_contract"]["injector_contract_id"] = (
+            "00000000-0000-4000-8000-00000000dead"
+        )
+        inject["inject_content"] = {"k" * 1_000_000: {"injector_contract_payload": {}}}
+        copies = [dict(unknown, inject_id=f"00000000-0000-4000-8000-{n:012x}") for n in range(500)]
+        document["scenario_injects"] = [inject, *copies]
+
+    _edit(entry, change)
+
+    code, stdout, _ = _run("archive", str(entry), "--out", str(tmp_path / "e"))
+
+    lines = stdout.splitlines()
+    assert code == 1
+    assert len(lines) <= 102  # at most 101 findings, then the summary line
+    assert max(len(line) for line in lines) < 1_000
+    assert "more findings not shown" in stdout
