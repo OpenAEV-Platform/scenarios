@@ -38,7 +38,7 @@ from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.domain.catalogue.archive import belongs_to
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
-from scenario_tools.domain.shared.finding import Finding, Report, Severity, shorten
+from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -135,25 +135,32 @@ def _render(report: Report, output_format: str) -> str:
 
 
 def _shows(output: str, report: Report, hidden: str) -> bool:
-    """Whether ``hidden`` shows in the output, or its start in a message cut short. The token's
-    characters are never escaped, so the token shows as it is or not at all."""
+    """Whether ``hidden`` shows in the output, or its start in a message, a path or a field cut
+    short. The token's characters are never escaped, so the token shows as it is or not at all."""
     return hidden in output or any(
-        _cut_in_any_form(finding.message, hidden) for finding in report.findings
+        _cut_in_any_form(text, hidden)
+        for finding in report.findings
+        for text in (finding.message, finding.path, finding.field)
     )
 
 
 def _withhold(report: Report, output_format: str, hidden: str) -> str:
-    """The output, with the messages, then the paths, of the findings withheld while it would
-    show ``hidden``: what then remains is the tool's own text, never the platform's."""
+    """The output, with the messages, then the paths and fields, of the findings withheld while
+    it would show ``hidden``: what then remains is the tool's own text, never the platform's.
+    The finding that counts those a report does not show is the tool's own text, and stays."""
     output = _render(report, output_format)
     for paths_too in (False, True):
         if not hidden or not _shows(output, report, hidden):
             break
-        findings = tuple(
-            dataclasses.replace(f, message=_WITHHELD, path="" if paths_too else f.path)
-            for f in report.findings
-        )
-        report = Report(report.command, findings)
+
+        def withheld(f: Finding, paths_too: bool = paths_too) -> Finding:
+            if f.code == COUNT_CODE:
+                return f
+            if paths_too:
+                return dataclasses.replace(f, message=_WITHHELD, path="", field="")
+            return dataclasses.replace(f, message=_WITHHELD)
+
+        report = report.with_findings(withheld)
         output = _render(report, output_format)
     return output
 

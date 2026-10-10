@@ -380,6 +380,42 @@ def test_an_environment_error_never_shows_the_token(
         )
 
 
+@pytest.mark.parametrize("output_format", ["text", "json"])
+@pytest.mark.parametrize("part", ["path", "field"])
+def test_a_path_or_field_cut_in_the_token_never_shows_its_start(
+    output_format: str, part: str
+) -> None:
+    # Cut to the limit, a path or a field can end with the start of the token.
+    long = {"path": "d" * 290 + TOKEN, "field": "/" + "k" * 289 + TOKEN}[part]
+    finding = Finding("OAV-001", Severity.BLOCKING, "", "", "skipped")
+    finding = Finding(**{**finding.__dict__, part: long})
+
+    output, code = execute(
+        "openaev import", lambda: Report("openaev import", (finding,)), output_format, hidden=TOKEN
+    )
+
+    assert code == 1
+    assert TOKEN[:4] not in output
+
+
+def test_a_long_report_is_withheld_without_losing_its_count() -> None:
+    findings = tuple(
+        Finding("OAV-001", Severity.BLOCKING, "", f"/{n:03}", f"skipped near {TOKEN}")
+        for n in range(250)
+    )
+
+    output, code = execute(
+        "openaev import", lambda: Report("openaev import", findings), "json", hidden=TOKEN
+    )
+
+    shown = json.loads(output)["findings"]
+    assert code == 1
+    assert TOKEN not in output
+    assert len(shown) == 101
+    assert [f["code"] for f in shown].count("IO-016") == 1
+    assert shown[-1]["message"] == "150 more findings not shown"
+
+
 def test_an_internal_error_never_shows_the_token() -> None:
     def produce() -> Report:
         raise RuntimeError(f"failed near {TOKEN}")

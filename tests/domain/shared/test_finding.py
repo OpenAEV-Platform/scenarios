@@ -1,10 +1,19 @@
 """Findings: what every command reports, in one stable shape."""
 
+import dataclasses
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity, shorten
+from scenario_tools.domain.shared.finding import (
+    MESSAGE_LIMIT,
+    REPORT_LIMIT,
+    Finding,
+    Report,
+    Severity,
+    shorten,
+)
 
 
 def _finding(**changes: object) -> Finding:
@@ -123,3 +132,69 @@ def test_every_finding_message_is_at_most_the_limit(length: int) -> None:
 
     assert finding.message == shorten(message)
     assert len(finding.message) <= MESSAGE_LIMIT
+
+
+def test_a_long_path_and_field_are_shortened_like_the_message() -> None:
+    # Both carry contributor content: a key or a directory name of any length.
+    finding = _finding(path="d/" + "p" * 1_000_000, field="/" + "k" * 1_000_000)
+
+    assert (len(finding.path), len(finding.field)) == (MESSAGE_LIMIT, MESSAGE_LIMIT)
+    assert finding.path.endswith("…")
+    assert finding.field.endswith("…")
+
+
+@pytest.mark.parametrize("cut", [MESSAGE_LIMIT - 2, MESSAGE_LIMIT - 3])
+def test_a_shortened_field_is_still_a_json_pointer(cut: int) -> None:
+    # Cut right after a "~", the escape would be broken; the "~" goes with the rest.
+    field = "/" + "k" * (cut - 1) + "~1" + "k" * 10
+
+    shortened = _finding(field=field).field
+
+    assert len(shortened) <= MESSAGE_LIMIT
+    assert not shortened.removesuffix("…").endswith("~")
+    Finding("SCH-001", Severity.BLOCKING, "", shortened, "m")  # still accepted as a pointer
+
+
+def _many(count: int, severity: Severity = Severity.BLOCKING) -> tuple[Finding, ...]:
+    return tuple(_finding(field=f"/items/{index:04}", severity=severity) for index in range(count))
+
+
+def test_a_report_shows_at_most_a_hundred_findings_then_counts_the_rest() -> None:
+    report = Report("archive", _many(250))
+
+    assert len(report.findings) == REPORT_LIMIT + 1
+    assert report.findings[:REPORT_LIMIT] == Report("archive", _many(REPORT_LIMIT)).findings
+    last = report.findings[-1]
+    assert (last.code, last.severity, last.path, last.field) == (
+        "IO-016",
+        Severity.BLOCKING,
+        "",
+        "",
+    )
+    assert last.message == "150 more findings not shown"
+    assert not report.ok
+
+
+def test_the_count_is_blocking_only_when_a_finding_it_counts_is() -> None:
+    shown = _many(REPORT_LIMIT, Severity.INFO)
+    hidden = (_finding(field="/zz", severity=Severity.INFO),)
+
+    assert Report("archive", shown + hidden).findings[-1].severity is Severity.INFO
+    assert Report("archive", shown + hidden).ok
+    blocking = (_finding(field="/zz", severity=Severity.BLOCKING),)
+    assert Report("archive", shown + blocking).findings[-1].severity is Severity.BLOCKING
+    assert not Report("archive", shown + blocking).ok
+
+
+def test_a_report_of_exactly_a_hundred_findings_is_shown_whole() -> None:
+    assert len(Report("archive", _many(REPORT_LIMIT)).findings) == REPORT_LIMIT
+
+
+def test_a_report_with_changed_findings_is_not_limited_again() -> None:
+    report = Report("archive", _many(250))
+
+    changed = report.with_findings(lambda f: dataclasses.replace(f, message="changed"))
+
+    assert len(changed.findings) == REPORT_LIMIT + 1
+    assert [f.field for f in changed.findings] == [f.field for f in report.findings]
+    assert {f.message for f in changed.findings} == {"changed"}
