@@ -410,12 +410,15 @@ def _declared_external_id(metadata: Path) -> object:
 
 
 def _inside(path: Path, directory: Path) -> bool:
-    """Whether ``path`` is ``directory`` or lies within it, compared by file identity: a link,
-    or another case on a case-insensitive disk, still names the same directory."""
+    """Whether ``path`` is ``directory`` or lies within it, compared by file identity on the
+    path the write resolves to: a link to the directory or to a folder of it, or another case
+    on a case-insensitive disk, still names a place inside it."""
     if not directory.is_dir():
         return False
+    resolved = Path(os.path.realpath(path))
     return any(
-        candidate.exists() and candidate.samefile(directory) for candidate in (path, *path.parents)
+        candidate.exists() and candidate.samefile(directory)
+        for candidate in (resolved, *resolved.parents)
     )
 
 

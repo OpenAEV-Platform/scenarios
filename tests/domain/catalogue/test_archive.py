@@ -127,6 +127,16 @@ def test_a_part_normalisation_leaves_empty_is_accepted_empty(part: str, empty: A
     assert archive_findings(document, PATH) == ()
 
 
+@pytest.mark.parametrize("value", [0, False, "", " "], ids=["zero", "false", "empty text", "text"])
+def test_a_part_left_empty_must_be_an_empty_collection_or_null(value: Any) -> None:
+    # Scalars survive normalisation unchanged: only the empty forms it leaves are accepted.
+    document = copy.deepcopy(DOCUMENT)
+    document["scenario_workflow"] = value
+
+    with pytest.raises(ExportStructureError):
+        archive_findings(document, PATH)
+
+
 def test_every_part_of_a_normalised_scenario_is_accepted() -> None:
     document = copy.deepcopy(DOCUMENT)
     for part in STORED_PARTS:

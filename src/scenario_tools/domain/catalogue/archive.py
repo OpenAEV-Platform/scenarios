@@ -61,8 +61,8 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
     """The blocking findings that keep the scenario at ``path`` out of an import archive."""
     export = require_object(document, "the export")
     for part in sorted(set(export) - STORED_PARTS):
-        if part in _LEFT_EMPTY and not export[part]:
-            continue  # normalisation leaves these parts in place, empty
+        if part in _LEFT_EMPTY and export[part] in (None, [], {}):
+            continue  # normalisation leaves these parts in place, empty; a scalar stays as it is
         raise not_an_export(f"{part} is not a part of a stored scenario")
     information = require_object(export.get(INFORMATION), INFORMATION)
     injects = export.get(INJECTS)

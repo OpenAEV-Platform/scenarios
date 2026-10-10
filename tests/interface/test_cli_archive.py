@@ -329,3 +329,18 @@ def test_an_entry_that_does_not_exist_is_an_environment_problem(tmp_path: Path) 
 
     assert code == 3
     assert "no policy/data directory" in stdout
+
+
+def test_the_archive_is_never_written_inside_the_entry_through_a_link_to_a_folder_of_it(
+    tmp_path: Path,
+) -> None:
+    entry = _entry(tmp_path, "easm-scenario")
+    (entry / "nested" / "child").mkdir(parents=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(entry / "nested", target_is_directory=True)
+
+    code, _, stderr = _run("archive", str(entry), "--out", str(alias / "child" / "out.zip"))
+
+    assert code == 2
+    assert "OUT may not be inside the entry" in stderr
+    assert not (entry / "nested" / "child" / "out.zip").exists()
