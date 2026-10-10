@@ -2,6 +2,7 @@
 
 import io
 import json
+import time
 import zipfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -435,6 +436,24 @@ def _finding(message: str) -> Callable[[], Report]:
 
 def test_a_message_cut_after_one_character_of_the_token_is_withheld() -> None:
     output, _ = execute("openaev import", _finding("a" * 298 + TOKEN), "text", hidden=TOKEN)
+
+    assert output.splitlines()[0] == "BLOCKING OAV-001: withheld: it would show a secret"
+
+
+def test_a_long_token_keeps_the_guard_quick() -> None:
+    token = "t" * 1_000_000  # no maximum length: the guard must not grow with it
+
+    start = time.monotonic()
+    output, _ = execute("openaev import", _finding("a" * 400), "text", hidden=token)
+
+    assert time.monotonic() - start < 0.5
+    assert output.splitlines()[0].startswith("BLOCKING OAV-001: aaa")
+
+
+def test_a_message_made_only_of_the_start_of_a_long_token_is_withheld() -> None:
+    token = "a" + "t" * 399  # longer than a message: only its start can show
+
+    output, _ = execute("openaev import", _finding(token), "text", hidden=token)
 
     assert output.splitlines()[0] == "BLOCKING OAV-001: withheld: it would show a secret"
 

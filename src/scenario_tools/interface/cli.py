@@ -95,8 +95,11 @@ _WITHHELD = "withheld: it would show a secret"
 def _cut_in(text: str, hidden: str) -> bool:
     """Whether ``text`` was cut short in the middle of ``hidden``: it then ends with the start
     of it, before the ellipsis."""
+    shown = text[:-1]
+    # No start longer than the text can end it: the work stays bounded by the text.
+    longest = min(len(hidden), len(shown))
     return text.endswith("…") and any(
-        text[:-1].endswith(hidden[:length]) for length in range(1, len(hidden))
+        shown.endswith(hidden[:length]) for length in range(1, longest + 1)
     )
 
 
