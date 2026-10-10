@@ -1,5 +1,6 @@
 """Policy data and export files: read safely, written without following a link."""
 
+import base64
 import errno
 import io
 import os
@@ -13,15 +14,25 @@ import pytest
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
     check_export_archive,
+    read_attachments,
     read_export,
     read_export_archive,
     read_mapping,
+    read_stored_scenario,
     write_output,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from tests.adapters.test_safe_zip import ENCRYPTED
 
 ROOT = Path(__file__).parents[2]
 GOLDEN = ROOT / "tests" / "golden" / "exports"
+ATTACHMENTS = ENCRYPTED  # one entry, encrypted with the conventional password "infected"
+# The same entry, made with `zip -P other`: an archive the importer could not open.
+OTHER_PASSWORD = base64.b64decode(
+    "UEsDBAoACQAAAAo7Sl2MsuviEwAAAAcAAAAFAAAAcy50eHTWN1T4MN5xv8YduY2BwrtUhn5+UEsHCIyy6+ITAAAABw"
+    "AAAFBLAQIeAwoACQAAAAo7Sl2MsuviEwAAAAcAAAAFAAAAAAAAAAEAAAC0gQAAAABzLnR4dFBLBQYAAAAAAQABADMA"
+    "AABGAAAAAAA="
+)
 
 
 def test_policy_data_is_read_by_name() -> None:
@@ -100,6 +111,61 @@ def test_an_export_archive_file_needs_exactly_one_scenario_entry(
     with pytest.raises(UnsafeInputError) as error:
         read_export_archive(path)
     assert (error.value.code, error.value.path) == ("IO-014", str(path))
+
+
+def test_a_stored_scenario_gives_its_bytes_and_document(tmp_path: Path) -> None:
+    path = tmp_path / "scenario.json"
+    path.write_bytes(b'{"scenario_information": {}}\n')
+
+    assert read_stored_scenario(path) == (
+        b'{"scenario_information": {}}\n',
+        {"scenario_information": {}},
+    )
+
+
+def test_a_stored_scenario_that_is_not_json_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "scenario.json"
+    path.write_bytes(b"{")
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_stored_scenario(path)
+    assert error.value.path == str(path)
+
+
+def test_no_attachments_file_means_no_attachments(tmp_path: Path) -> None:
+    assert read_attachments(tmp_path / "attachments.zip") is None
+
+
+def test_attachments_given_as_a_link_are_refused_even_dangling(tmp_path: Path) -> None:
+    path = tmp_path / "attachments.zip"
+    path.symlink_to(tmp_path / "nowhere.zip")
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_attachments(path)
+    assert error.value.code == "IO-013"
+
+
+def test_attachments_that_open_with_the_shared_password_are_read(tmp_path: Path) -> None:
+    path = tmp_path / "attachments.zip"
+    path.write_bytes(ATTACHMENTS)
+
+    assert read_attachments(path) == ATTACHMENTS
+
+
+@pytest.mark.parametrize(
+    ("content", "code"),
+    [(b"not a zip", "IO-007"), (OTHER_PASSWORD, "IO-007")],
+    ids=["not a zip", "another password"],
+)
+def test_attachments_the_importer_could_not_open_are_refused(
+    tmp_path: Path, content: bytes, code: str
+) -> None:
+    path = tmp_path / "attachments.zip"
+    path.write_bytes(content)
+
+    with pytest.raises(UnsafeInputError) as error:
+        read_attachments(path)
+    assert (error.value.code, error.value.path) == (code, str(path))
 
 
 def test_an_output_is_written_and_replaced(tmp_path: Path) -> None:

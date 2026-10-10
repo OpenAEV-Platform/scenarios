@@ -14,13 +14,21 @@ from types import MappingProxyType
 from typing import Any
 
 from scenario_tools.domain.catalogue.metadata import ExportFacts, InjectFacts
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.catalogue.structure import (
+    CONTRACT,
+    INFORMATION,
+    INJECTS,
+    PAYLOAD,
+    not_an_export,
+    require_object,
+    require_text,
+)
+from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _IMPLANT = "openaev_implant"
-_INFORMATION, _INJECTS = "scenario_information", "scenario_injects"
-_CONTRACT, _PAYLOAD = "inject_injector_contract", "injector_contract_payload"
 _FACETS = ("scenario_name", "scenario_severity", "scenario_category", "scenario_main_focus")
 
 
@@ -30,6 +38,9 @@ class BuiltinContracts:
 
     platform_version: str
     contracts: Mapping[str, InjectFacts]
+    # The SHA-256 of the canonical form of each contract's normalised copy, as the platform
+    # exports it: an instance that lacks the contract builds it from the copy.
+    copies: Mapping[str, str]
 
     @classmethod
     def from_document(cls, document: object) -> "BuiltinContracts":
@@ -51,6 +62,7 @@ class BuiltinContracts:
         if not isinstance(items, list):
             raise fail("contracts must be a list")
         contracts: dict[str, InjectFacts] = {}
+        copies: dict[str, str] = {}
         for item in items:
             if not isinstance(item, Mapping):
                 raise fail("each contract must be a mapping")
@@ -68,10 +80,14 @@ class BuiltinContracts:
                 isinstance(platform, str) and platform for platform in platforms
             ):
                 raise fail(f"{identifier}: platforms must be a list of names")
+            digest = item.get("copy_sha256")
+            if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+                raise fail(f"{identifier}: copy_sha256 must be a SHA-256 hex digest")
             contracts[identifier] = InjectFacts(
                 text(item, "injector_type"), needs_executor, frozenset(platforms)
             )
-        return cls(version, MappingProxyType(contracts))
+            copies[identifier] = digest
+        return cls(version, MappingProxyType(contracts), MappingProxyType(copies))
 
     @property
     def identifiers(self) -> tuple[str, ...]:
@@ -83,46 +99,27 @@ class BuiltinContracts:
         return self.contracts.get(identifier)
 
 
-def _refuse(what: str) -> ExportStructureError:
-    error = ExportStructureError(f"not an OpenAEV scenario export: {what}")
-    error.what = what
-    return error
-
-
-def _mapping(value: object, where: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise _refuse(f"{where} must be an object")
-    return value
-
-
-def _text(item: Mapping[str, Any], key: str, where: str) -> str:
-    value = item.get(key)
-    if not isinstance(value, str):
-        raise _refuse(f"{where}.{key} must be text")
-    return value
-
-
 def _payload_facts(payload: object) -> InjectFacts:
-    platforms = _mapping(payload, _PAYLOAD).get("payload_platforms")
+    platforms = require_object(payload, PAYLOAD).get("payload_platforms")
     # A payload on no platform would need an executor without requiring any platform.
     if (
         not isinstance(platforms, list)
         or not platforms
         or not all(isinstance(item, str) and item for item in platforms)
     ):
-        raise _refuse(f"{_PAYLOAD}.payload_platforms must name at least one platform")
+        raise not_an_export(f"{PAYLOAD}.payload_platforms must name at least one platform")
     return InjectFacts(_IMPLANT, True, frozenset(platforms))
 
 
 def _inject_facts(inject: object, builtin: BuiltinContracts) -> InjectFacts | None:
-    value = _mapping(inject, _INJECTS).get(_CONTRACT)
+    value = require_object(inject, INJECTS).get(CONTRACT)
     if value is None:
         return None
-    contract = _mapping(value, _CONTRACT)
-    payload = contract.get(_PAYLOAD)
+    contract = require_object(value, CONTRACT)
+    payload = contract.get(PAYLOAD)
     if payload not in (None, {}):  # an empty object counts as no payload, as in normalisation
         return _payload_facts(payload)
-    return builtin.facts(_text(contract, "injector_contract_id", _CONTRACT))
+    return builtin.facts(require_text(contract, "injector_contract_id", CONTRACT))
 
 
 def export_facts(
@@ -130,14 +127,14 @@ def export_facts(
 ) -> tuple[ExportFacts, tuple[Finding, ...]]:
     """The facts of a stored scenario, and an ``SCH-005`` finding for each inject whose facts
     cannot be established; such an inject is left out of the facts."""
-    export = _mapping(document, "the export")
-    information = _mapping(export.get(_INFORMATION), _INFORMATION)
+    export = require_object(document, "the export")
+    information = require_object(export.get(INFORMATION), INFORMATION)
     name, severity, category, main_focus = (
-        _text(information, facet, _INFORMATION) for facet in _FACETS
+        require_text(information, facet, INFORMATION) for facet in _FACETS
     )
-    injects = export.get(_INJECTS)
+    injects = export.get(INJECTS)
     if not isinstance(injects, list):
-        raise _refuse(f"{_INJECTS} must be a list")
+        raise not_an_export(f"{INJECTS} must be a list")
     known: list[InjectFacts] = []
     findings: list[Finding] = []
     for index, inject in enumerate(injects):
@@ -148,7 +145,7 @@ def export_facts(
                     "SCH-005",
                     Severity.BLOCKING,
                     path,
-                    f"/{_INJECTS}/{index}",
+                    f"/{INJECTS}/{index}",
                     "the inject's contract is neither a recorded built-in contract nor created "
                     "from a payload: its injector type, executor need and platforms cannot be "
                     "established",
@@ -157,3 +154,31 @@ def export_facts(
         else:
             known.append(facts)
     return ExportFacts(name, severity, category, main_focus, tuple(known)), tuple(findings)
+
+
+def copy_findings(document: object, builtin: BuiltinContracts, path: str) -> tuple[Finding, ...]:
+    """An ``SCH-006`` finding for each inject whose recorded built-in contract carries a copy
+    other than the recorded one: an instance that lacks the contract would build it from the
+    copy, its domains and attack patterns included."""
+    injects = require_object(document, "the export").get(INJECTS)
+    if not isinstance(injects, list):
+        raise not_an_export(f"{INJECTS} must be a list")
+    findings = []
+    for index, inject in enumerate(injects):
+        contract = require_object(inject, INJECTS).get(CONTRACT)
+        if contract is None:
+            continue
+        contract_copy = require_object(contract, CONTRACT)
+        recorded = builtin.copies.get(str(contract_copy.get("injector_contract_id")))
+        if recorded is not None and ContentHash.of_json(contract_copy).hex != recorded:
+            findings.append(
+                Finding(
+                    "SCH-006",
+                    Severity.BLOCKING,
+                    path,
+                    f"/{INJECTS}/{index}",
+                    "the copy of this built-in contract is not the recorded one: an instance "
+                    "that lacks the contract would build it from this copy",
+                )
+            )
+    return tuple(findings)
