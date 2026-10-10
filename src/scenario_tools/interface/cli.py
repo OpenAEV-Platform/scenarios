@@ -306,6 +306,10 @@ def normalize(
     # Absolute paths, so that findings are reported from the repository root.
     export, out = export.absolute(), out.absolute()
     levels: list[Path] = []
+    metadata = out / "scenario.yaml"
+    # Decided once, before the external ID is chosen: a scenario.yaml that appears later is
+    # never read nor replaced, and the run stops before writing anything.
+    first = not (metadata.exists() or metadata.is_symlink())
     try:
         levels = _policy_levels(out)
         root = _repository_root(levels, out)
@@ -319,8 +323,6 @@ def normalize(
 
     def produce() -> Report:
         loader = YamlDataLoader(root / "policy" / "data")
-        metadata = out / "scenario.yaml"
-        first = not (metadata.exists() or metadata.is_symlink())
         prepared = prepare_entry(
             read_export(export),
             entry_id,

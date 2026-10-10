@@ -509,3 +509,13 @@ def test_both_reasons_are_given_when_a_field_has_two() -> None:
     executors = _message(findings, "/requires/executors")
     assert "Linux" in executors
     assert "1 inject" in executors
+
+
+@pytest.mark.parametrize(
+    ("count", "words"),
+    [(1, "1 inject uses a contract"), (2, "2 injects use a contract")],
+)
+def test_the_unknown_contracts_are_counted_in_plain_words(count: int, words: str) -> None:
+    _, findings = _start(unknown_injects=count)
+
+    assert words in _message(findings, "/requires/injectors")

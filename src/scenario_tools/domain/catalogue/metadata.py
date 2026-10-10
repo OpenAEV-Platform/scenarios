@@ -271,14 +271,18 @@ def starting_metadata(
     todo.update(_REQUIRES_DEFAULTS)
     if unknown_injects:
         # Their facts are unknown: they may need an executor, on any platform.
-        injects = f"{unknown_injects} inject{'s' if unknown_injects > 1 else ''}"
-        unknown = f"the contract of {injects} is not a recorded built-in one"
+        several = unknown_injects > 1
+        unknown = (
+            f"{unknown_injects} inject{'s use' if several else ' uses'} a contract that is not "
+            "a recorded built-in one"
+        )
+        they = "they" if several else "it"
         todo["/requires/injectors"] = f"complete requires.injectors: {unknown}"
         reasons.setdefault("/platforms", []).append(
-            f"check them: {unknown}, so the platforms it runs on are unknown"
+            f"check them: {unknown}, so the platforms {they} run on are unknown"
         )
         reasons.setdefault("/requires/executors", []).append(
-            f"check them: {unknown}, so whether it needs an executor is unknown"
+            f"check them: {unknown}, so whether {they} need an executor is unknown"
         )
     if executors:
         where = ", ".join(platforms) or "platforms left out above"

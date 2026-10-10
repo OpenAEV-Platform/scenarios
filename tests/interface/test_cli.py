@@ -748,3 +748,24 @@ def test_a_scenario_yaml_that_appears_meanwhile_leaves_the_entry_as_it_was(
     assert result.exit_code == 3
     assert (entry / "scenario.yaml").read_bytes() == b"completed: meanwhile\n"
     assert not (entry / "scenario.json").exists()
+
+
+def test_a_scenario_yaml_that_appears_after_the_external_id_was_chosen_stops_the_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run decided on a first preparation: a file that appears later is never trusted nor
+    # replaced, and no scenario.json is written for an identifier it may contradict.
+    entry = _entry(tmp_path)
+    choose = cli_module._entry_external_id
+
+    def then_appears(out: Path, given: str | None) -> str:
+        chosen = choose(out, given)
+        (out / "scenario.yaml").write_text("external_id: 00000000-0000-4000-8000-000000000009\n")
+        return chosen
+
+    monkeypatch.setattr(cli_module, "_entry_external_id", then_appears)
+
+    result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
+
+    assert result.exit_code == 3, result.output
+    assert not (entry / "scenario.json").exists()
