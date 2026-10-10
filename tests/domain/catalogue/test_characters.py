@@ -4,6 +4,7 @@ Characters are written by code point, never raw, so that this file holds none of
 
 import json
 import time
+import tracemalloc
 from typing import Any
 
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -197,3 +198,26 @@ def test_every_finding_gives_the_offset_of_the_first_occurrence_in_the_source() 
     assert _first({"v": "ok \\u200d"}) == ["3"]  # an escaped joiner out of place
     assert _first({"v": "\\u00e9 a\\u200d"}) == ["8"]  # after a shorter decoded escape
     assert _first({"v": f"\\u202e x{RLO}"}) == ["0"]  # escaped first, then raw
+    assert _first({"v": "\\u202e ab \\u200b"}) == ["0", "10"]  # two escapes
+
+
+def test_a_raw_selector_out_of_place_only_once_decoded_is_found_where_it_stands() -> None:
+    keycap = f"\\u0041{chr(0xFE0F)}{chr(0x20E3)}"  # a keycap in the text, an "A" once decoded
+
+    [(field, message)] = _fields({"v": keycap})
+
+    assert field == "/v"
+    assert "U+FE0F" in message
+    assert "out of place, 1 time, first at character 6:" in message
+
+
+def test_decoding_escapes_takes_memory_in_proportion_to_the_text() -> None:
+    for escape in ("\\u0061", "\\u200d"):
+        text = escape * 200_000
+        tracemalloc.start()
+        try:
+            hidden_character_findings({"v": text}, PATH)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert peak < 2 * len(text), escape

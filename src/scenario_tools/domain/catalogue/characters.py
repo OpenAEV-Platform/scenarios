@@ -5,9 +5,7 @@ its depth, encoding or validity: nothing is decoded here, so no nesting can brea
 hide a character from it."""
 
 import re
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
-from types import MappingProxyType
+from collections.abc import Iterator
 from typing import Any
 
 from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, Hidden, hidden_occurrences
@@ -18,44 +16,61 @@ from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, REPORT_LIMIT, Fi
 _LINK = r"\\(?:u005[cC])*u"
 _ESCAPE = re.compile(f"{_LINK}([0-9a-fA-F]{{4}})(?:{_LINK}([dD][c-fC-F][0-9a-fA-F]{{2}}))?")
 _TO_DO = "remove it on the platform and export the scenario again"
+_CHUNK = 4096  # pieces joined at a time, so that a text of many escapes stays small to decode
 
 
-@dataclass(frozen=True)
-class Decoded:
-    """A text with the escapes it writes turned into the characters a JSON reader would make of
-    them, and where each such character's escape starts in the source text."""
-
-    text: str
-    sources: Mapping[int, int]  # decoded index of an escaped character -> its source index
-
-
-_NOTHING = Decoded("", MappingProxyType({}))
+def _character(match: re.Match[str]) -> str:
+    """The character an escape writes, a surrogate pair's whole."""
+    code = int(match.group(1), 16)
+    if match.group(2) and 0xD800 <= code <= 0xDBFF:
+        code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
+    return chr(code)
 
 
-def _decoded(text: str) -> Decoded:
-    """The decoded view of ``text``, so that a hidden character, or a joiner out of place, is
-    seen in its context; empty when ``text`` writes no escape. Linear in the text's length."""
+def _decoded(text: str) -> str:
+    """``text`` with the escapes it writes turned into the characters a JSON reader would make
+    of them, so that a hidden character, or a joiner out of place, is seen in its context.
+    Empty when no escape writes a hidden character or a joiner and ``text`` holds no joiner, whose
+    context an escape could change: the decoded view would show nothing more. Linear in time and
+    in memory: the pieces are joined as they come."""
+    chunks: list[str] = []
     pieces: list[str] = []
-    sources: dict[int, int] = {}
-    decoded = 0
+    candidate = False
     last = 0
     for match in _ESCAPE.finditer(text):
-        pieces.append(text[last : match.start()])
-        decoded += match.start() - last
-        code = int(match.group(1), 16)
-        if match.group(2) and 0xD800 <= code <= 0xDBFF:
-            code = 0x10000 + ((code - 0xD800) << 10) + (int(match.group(2), 16) - 0xDC00)
-        pieces.append(chr(code))
-        sources[decoded] = match.start()
-        decoded += 1
+        character = _character(match)
+        candidate = candidate or character in HIDDEN or character in JOINERS
+        pieces += (text[last : match.start()], character)
         last = match.end()
-    if not sources:
-        return _NOTHING
+        if len(pieces) >= _CHUNK:
+            chunks.append("".join(pieces))
+            pieces.clear()
+    if not candidate and JOINERS.isdisjoint(text):
+        return ""
     pieces.append(text[last:])
-    return Decoded("".join(pieces), MappingProxyType(sources))
+    chunks.append("".join(pieces))
+    return "".join(chunks)
 
 
-def _texts(document: Any) -> Iterator[tuple[str, str, str, Decoded]]:
+def _places(text: str, wanted: list[int]) -> dict[int, tuple[int, bool]]:
+    """Where in ``text`` each ``wanted`` index of its decoded view comes from, and whether an
+    escape wrote it there: one pass, however many are wanted."""
+    targets = sorted(wanted, reverse=True)  # the next one last, to take it in constant time
+    places: dict[int, tuple[int, bool]] = {}
+    decoded = last = 0  # where the text after the last escape starts, decoded and in the source
+    for match in _ESCAPE.finditer(text):
+        escape = decoded + match.start() - last
+        while targets and targets[-1] <= escape:
+            target = targets.pop()
+            places[target] = (
+                (match.start(), True) if target == escape else (last + target - decoded, False)
+            )
+        decoded, last = escape + 1, match.end()
+    places.update((target, (last + target - decoded, False)) for target in targets)
+    return places
+
+
+def _texts(document: Any) -> Iterator[tuple[str, str, str, str]]:
     """Every text of ``document`` as (pointer, where, text, decoded), walked without recursion:
     each value with the characters its escapes write, each key as it is."""
     stack: list[tuple[str, Any]] = [("", document)]
@@ -64,7 +79,7 @@ def _texts(document: Any) -> Iterator[tuple[str, str, str, Decoded]]:
         if isinstance(value, dict):
             for key, child in reversed(value.items()):
                 child_pointer = f"{pointer}/{_shown(key)}"
-                yield child_pointer, " in a key", key, _NOTHING
+                yield child_pointer, " in a key", key, ""
                 stack.append((child_pointer, child))
         elif isinstance(value, list):
             stack.extend(
@@ -89,26 +104,31 @@ def _message(hidden: Hidden, where: str) -> str:
     return f"{what}, {times}, first at character {hidden.first}: {_TO_DO}"
 
 
-def _merged(text: str, decoded: Decoded, where: str) -> list[tuple[Hidden, str]]:
+def _merged(text: str, decoded: str, where: str) -> list[tuple[Hidden, str]]:
     """The hidden characters of a text and where they show: the decoded view holds the raw
     characters too, so its count is the whole count, and its first occurrence may be an escape
-    before the first raw one; a character only the decoded view holds came from an escape. An
-    escape's place is where it starts in the source."""
+    before the first raw one; a character only the decoded view holds came from an escape, or
+    stands out of place only once its neighbours are decoded. An escape's place is where it
+    starts in the source."""
     raw = {hidden.label: hidden for hidden in hidden_occurrences(text)}
-    escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded.text)}
+    escaped = {hidden.label: hidden for hidden in hidden_occurrences(decoded)}
+    places = _places(text, [hidden.first for hidden in escaped.values()])
     merged = []
     for label in [*raw, *(label for label in escaped if label not in raw)]:
         if label in raw:
             count, first = raw[label].count, raw[label].first
             if label in escaped:
                 count = escaped[label].count
-                # An escape may come first: its place in the source is earlier than the raw one.
-                first = min(first, decoded.sources.get(escaped[label].first, first))
+                first = min(first, places[escaped[label].first][0])
             merged.append((Hidden(label, count, first), where))
         else:
-            # Only an escape writes it, so its first occurrence is an escape's character.
-            first = decoded.sources[escaped[label].first]
-            merged.append((Hidden(label, escaped[label].count, first), " as an escape"))
+            first, by_escape = places[escaped[label].first]
+            merged.append(
+                (
+                    Hidden(label, escaped[label].count, first),
+                    " as an escape" if by_escape else where,
+                )
+            )
     return merged
 
 

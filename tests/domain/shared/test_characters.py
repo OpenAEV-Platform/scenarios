@@ -114,8 +114,14 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         (f"a{ZWNJ}{chr(0x0660)}", 0x200C),  # an Arabic-Indic digit is no suffix
         (f"{chr(0x0661)}{ZWJ}x", 0x200D),  # after an Arabic-Indic digit
         (f"{chr(0x060C)}{ZWNJ}x", 0x200C),  # after an Arabic comma
-        (f"{chr(0xE9)}{VS16}{ZWJ}x", 0xFE0F),  # an emoji selector after a letter
+        (f"{chr(0xE9)}{VS16}{ZWJ}{chr(0x1F525)}", 0xFE0F),  # an emoji selector after a letter
         (f"{chr(0x00A1)}{VS16}", 0xFE0F),  # after a punctuation mark no emoji is drawn from
+        (f"{chr(0x1F642)}{ZWJ}x", 0x200D),  # a joiner joins nothing ASCII
+        (f"{chr(0x0645)}{ZWNJ}x", 0x200C),
+        (f"{chr(0x1F642)}{ZWJ}", 0x200D),  # nor nothing at all
+        (f"{chr(0x0645)}{ZWNJ}", 0x200C),
+        (f"{chr(0x1F642)}{ZWJ}{chr(0x0661)}", 0x200D),  # nor a digit
+        (f"{chr(0x0645)}{ZWNJ}{chr(0x1F642)}", 0x200C),  # a non-joiner keeps letters apart
     ],
     ids=[
         "at the start",
@@ -130,6 +136,12 @@ def test_joiners_and_selectors_where_text_uses_them_are_allowed(text: str) -> No
         "after punctuation",
         "emoji selector after a letter",
         "emoji selector after punctuation",
+        "zwj before ascii",
+        "zwnj before ascii",
+        "zwj at the end",
+        "zwnj at the end",
+        "zwj before a digit",
+        "zwnj before an emoji",
     ],
 )
 def test_joiners_and_selectors_out_of_place_are_found(text: str, code: int) -> None:

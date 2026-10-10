@@ -6,8 +6,8 @@ closed and shared by every check, so that the cleaning of a text and the refusal
 contribution never drift apart. Tab and line breaks are allowed. The joiners and variation
 selectors that scripts and emoji need (U+200C, U+200D, U+FE00 to U+FE0F) are allowed where
 text uses them, after a letter, a mark or a symbol (the presentation selectors after an emoji
-only), never at the start of a text, after ASCII or a space, nor as a run, where they could
-carry hidden data.
+only), and a joiner or non-joiner before what it acts on; never at the start or the end of a
+text, after ASCII or a space, nor as a run, where they could carry hidden data.
 """
 
 import unicodedata
@@ -52,10 +52,12 @@ def _misplaced(text: str, index: int) -> bool:
     if index == 0:
         return True
     before = text[index - 1]
+    after = text[index + 1] if index + 1 < len(text) else ""
+    if character in (_ZWJ, _ZWNJ) and not _joins(character, after):
+        return True
     if before in JOINERS:  # a run; only an emoji's VS16 may be followed by a ZWJ
         return not (before == _VS16 and character == _ZWJ)
     if before.isascii() or before.isspace():
-        after = text[index + 1] if index + 1 < len(text) else ""
         keycap = character == _VS16 and before in "0123456789#*" and after == _KEYCAP
         suffix = character == _ZWNJ and before.isalpha() and _is_arabic(after)
         return not (keycap or suffix)
@@ -65,6 +67,14 @@ def _misplaced(text: str, index: int) -> bool:
     # Scripts and emoji put the others after a letter, a mark (a virama) or a symbol (an
     # emoji), never after a digit or a punctuation mark.
     return category not in "LMS"
+
+
+def _joins(joiner: str, after: str) -> bool:
+    """Whether a joiner or non-joiner stands before what it can act on: a letter or a mark of a
+    script, or, for a joiner, an emoji; never ASCII, a digit, a space nor the end of the text."""
+    if after.isascii():  # the end of the text too, as an empty string is
+        return False
+    return unicodedata.category(after)[0] in ("LMS" if joiner == _ZWJ else "LM")
 
 
 def _is_arabic(character: str) -> bool:
