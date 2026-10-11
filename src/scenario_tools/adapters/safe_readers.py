@@ -332,6 +332,15 @@ class _Dumper(yaml.SafeDumper):
     def ignore_aliases(self, data: Any) -> bool:
         return True
 
+    def analyze_scalar(self, scalar: str) -> Any:
+        """The emitter's analysis of ``scalar``, a tab being allowed in a block as YAML allows
+        it: the emitter would quote the whole text for one tab inside a line. A tab is judged
+        as a space would be, so one ending a line still keeps the text out of a block."""
+        analysis = super().analyze_scalar(scalar)
+        if "\t" in scalar and not analysis.allow_block:
+            analysis.allow_block = super().analyze_scalar(scalar.replace("\t", " ")).allow_block
+        return analysis
+
 
 _Dumper.yaml_implicit_resolvers = {
     first: list(resolvers) for first, resolvers in yaml.SafeDumper.yaml_implicit_resolvers.items()
