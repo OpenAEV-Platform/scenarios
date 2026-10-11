@@ -191,3 +191,20 @@ def test_the_help_says_which_checks_run_yet(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert "not run yet" in " ".join(result.output.split())
     assert "data model" not in result.output
+
+
+def test_a_repository_reached_through_a_link_of_the_operator_s_is_validated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The links refused are those inside the repository, which a pull request could bring; the
+    # path to the repository is the operator's, such as a workspace or /tmp on macOS.
+    entry = _complete_entry(monkeypatch, _repository(tmp_path))
+    (tmp_path / "workspace").symlink_to(tmp_path / "repository")
+
+    result = _invoke(
+        monkeypatch,
+        "validate",
+        str(tmp_path / "workspace" / entry.relative_to(tmp_path / "repository")),
+    )
+
+    assert result.exit_code == 0, result.output
