@@ -390,6 +390,7 @@ def test_a_first_preparation_also_writes_a_starting_scenario_yaml(
         ("SCH-007", "info", "scenarios/entry/scenario.yaml")
     }
     assert [f["field"] for f in findings] == [  # the defaults to review, what is missing
+        "/description",
         "/requires/edition",
         "/requires/openaev",
         "/sources",
@@ -397,6 +398,9 @@ def test_a_first_preparation_also_writes_a_starting_scenario_yaml(
         "/threat",
         "/version",
     ]
+    # The export's description ends a line with a blank: cleaned, it is written as a block.
+    assert findings[0]["message"].endswith("1 line end trimmed; nothing to do")
+    assert b"description: |" in (entry / "scenario.yaml").read_bytes()
 
 
 def _edited_export(tmp_path: Path, change: Callable[[dict[str, Any]], None]) -> Path:

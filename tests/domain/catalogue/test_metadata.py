@@ -1,5 +1,6 @@
 """Scenario metadata and its cross-checks against the export."""
 
+import unicodedata
 from dataclasses import replace
 from typing import Any
 
@@ -16,6 +17,7 @@ from scenario_tools.domain.catalogue.metadata import (
     InjectFacts,
     Requirements,
     ScenarioMetadata,
+    clean,
     cross_check,
     is_tabletop,
     starting_metadata,
@@ -439,7 +441,9 @@ def test_platforms_the_schema_does_not_know_are_left_out_and_listed() -> None:
     assert "x" * 100 not in _message(findings, "/platforms")
 
 
-@pytest.mark.parametrize("description", ["", "   \n"], ids=["empty", "blank"])
+@pytest.mark.parametrize(
+    "description", ["", "   \n", chr(0x0B)], ids=["empty", "blank", "other white space"]
+)
 def test_an_empty_description_is_left_to_write(description: str) -> None:
     metadata, findings = _start(description=description)
 
@@ -452,7 +456,7 @@ def test_a_description_longer_than_the_schema_allows_is_left_to_write() -> None:
     metadata, findings = _start(description="d" * (DESCRIPTION_LIMIT + 1))
 
     assert metadata["description"] == ""
-    assert f"{DESCRIPTION_LIMIT + 1} characters" in _message(findings, "/description")
+    assert f"{DESCRIPTION_LIMIT + 1} characters, more than" in _message(findings, "/description")
     kept, findings = _start(description="d" * DESCRIPTION_LIMIT)
     assert kept["description"] == "d" * DESCRIPTION_LIMIT
     assert "/description" not in _todo(findings)
@@ -531,3 +535,173 @@ def test_more_injector_types_than_the_schema_allows_are_left_to_complete() -> No
     assert f"{INJECTORS_LIMIT + 1} injector types" in _message(findings, "/requires/injectors")
     within, findings = _start(replace(FACTS, injects=injects[:INJECTORS_LIMIT]))
     assert len(within["requires"]["injectors"]) == INJECTORS_LIMIT
+
+
+# The texts of the starting scenario.yaml, cleaned. Characters are written by code point.
+
+NEL, LS, PS, NBSP, IDEOGRAPHIC = chr(0x85), chr(0x2028), chr(0x2029), chr(0xA0), chr(0x3000)
+
+
+@pytest.mark.parametrize(
+    ("text", "cleaned"),
+    [
+        ("a\r\nb\rc", "a\nb\nc"),
+        (f"a{NEL}b{LS}c{PS}d", "a\nb\nc\nd"),
+        ("a \t\nb", "a\nb"),
+        (f"a{NBSP}{IDEOGRAPHIC}\nb", "a\nb"),
+        ("\n\n  a\n  b\n\n", "  a\n  b"),
+        ("a\n\n\nb", "a\n\n\nb"),
+        (f"a{NBSP}b", f"a{NBSP}b"),
+    ],
+    ids=[
+        "crlf and cr",
+        "unicode breaks",
+        "trailing tab",
+        "trailing zs",
+        "outer",
+        "blank lines",
+        "inner",
+    ],
+)
+def test_a_text_is_cleaned_of_breaks_trailing_blanks_and_outer_blanks(
+    text: str, cleaned: str
+) -> None:
+    assert clean(text).text == cleaned
+
+
+def test_what_cleaning_changed_is_counted() -> None:
+    cleaned = clean(f"\n a  \r\nb\t{LS}c  \nd \n")
+
+    assert cleaned.text == " a\nb\nc\nd"  # the first line's indentation is kept
+    assert (cleaned.breaks, cleaned.trimmed, cleaned.hard_breaks, cleaned.outer) == (2, 4, 2, True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a  \n", "a  ", "a  \n\nb", "a\n  \nb", "  \na", "a  \n  \n", "a \nb"],
+    ids=[
+        "then a break",
+        "at the end",
+        "before a blank line",
+        "blank line",
+        "leading",
+        "trailing",
+        "one space",
+    ],
+)
+def test_two_spaces_with_no_line_of_text_after_are_no_hard_break(text: str) -> None:
+    assert clean(text).hard_breaks == 0
+
+
+def test_every_unicode_space_ending_a_line_is_trimmed() -> None:
+    spaces = [chr(code) for code in range(0x110000) if unicodedata.category(chr(code)) == "Zs"]
+
+    assert all(clean(f"a{space}\nb").text == "a\nb" for space in spaces)
+
+
+def test_a_clean_text_is_unchanged_and_counts_nothing() -> None:
+    cleaned = clean("a\n  b")
+
+    assert (cleaned.text, cleaned.breaks, cleaned.trimmed, cleaned.hard_breaks, cleaned.outer) == (
+        "a\n  b",
+        0,
+        0,
+        0,
+        False,
+    )
+
+
+@given(
+    st.one_of(
+        st.text(max_size=60),
+        st.text(
+            alphabet=st.sampled_from(["a", " ", "\t", "\n", "\r", NEL, LS, PS, NBSP]), max_size=30
+        ),
+    )
+)
+def test_cleaning_twice_changes_nothing(text: str) -> None:
+    once = clean(text).text
+
+    assert clean(once).text == once
+    assert not clean(once).changed
+
+
+def test_the_description_is_cleaned_and_what_changed_is_reported_by_counts() -> None:
+    metadata, findings = _start(description="Steps:  \r\n1. scan  \r\n2. report \n")
+
+    assert metadata["description"] == "Steps:\n1. scan\n2. report"
+    message = _message(findings, "/description")
+    assert message == (
+        "the export's description was cleaned for scenario.yaml: 2 line breaks unified, "
+        "3 line ends trimmed, the blank lines around the text removed; 2 Markdown hard breaks "
+        "(two spaces ending a line) are lost: check its layout"
+    )
+    assert "scan" not in message
+
+
+def test_a_single_change_is_said_in_the_singular() -> None:
+    _, findings = _start(description="a  \rb")
+
+    assert _message(findings, "/description") == (
+        "the export's description was cleaned for scenario.yaml: 1 line break unified, "
+        "1 line end trimmed; 1 Markdown hard break (two spaces ending a line) is lost: "
+        "check its layout"
+    )
+
+
+def test_a_description_with_only_blank_lines_around_says_so() -> None:
+    metadata, findings = _start(description="\nA crisis exercise.\n")
+
+    assert metadata["description"] == "A crisis exercise."
+    assert _message(findings, "/description") == (
+        "the export's description was cleaned for scenario.yaml: the blank lines around the "
+        "text removed; nothing to do"
+    )
+
+
+def test_a_clean_description_is_not_reported() -> None:
+    _, findings = _start(description="A crisis exercise.\n\nIn two phases.")
+
+    assert "/description" not in _todo(findings)
+
+
+def test_the_bound_applies_to_the_cleaned_description() -> None:
+    metadata, findings = _start(description="d" * DESCRIPTION_LIMIT + " \n ")
+
+    assert metadata["description"] == "d" * DESCRIPTION_LIMIT
+    assert "cleaned" in _message(findings, "/description")
+    too_long, findings = _start(description="d" * (DESCRIPTION_LIMIT + 1) + " ")
+    assert too_long["description"] == ""
+    assert f"{DESCRIPTION_LIMIT + 1} characters once cleaned" in _message(findings, "/description")
+
+
+@pytest.mark.parametrize("field", ["name", "category", "main_focus"])
+@pytest.mark.parametrize(
+    ("value", "what"),
+    [
+        ("Crisis ", "blanks around it"),
+        (" Crisis", "blanks around it"),
+        ("\nCrisis", "blanks around it"),
+        ("Crisis\r\nexercise", "line breaks other than \\n"),
+        ("Crisis  \nexercise", "blanks ending a line"),
+    ],
+    ids=["after", "before", "before a line", "break", "inner line end"],
+)
+def test_a_name_or_facet_that_would_need_cleaning_is_copied_as_it_is_and_listed(
+    field: str, value: str, what: str
+) -> None:
+    facts = replace(
+        FACTS,
+        name=value if field == "name" else FACTS.name,
+        category=value if field == "category" else FACTS.category,
+        main_focus=value if field == "main_focus" else FACTS.main_focus,
+    )
+
+    metadata, findings = _start(facts)
+
+    assert metadata[field] == value  # it must equal the export's
+    assert _message(findings, f"/{field}") == (
+        f"the export's {field} has {what}: kept as it is, since it must equal the export's; "
+        "fix it on the platform when you can, export the scenario again and write it in "
+        "scenario.yaml too"
+    )

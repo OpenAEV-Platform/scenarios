@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 import yaml
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from scenario_tools.adapters.safe_readers import (
@@ -699,3 +699,39 @@ def test_a_text_of_several_lines_is_written_as_a_readable_block() -> None:
 
     assert data.decode().startswith("description: |")
     assert parse_yaml(data) == {"description": text}
+
+
+def test_a_text_with_tabs_inside_its_lines_is_still_written_as_a_block() -> None:
+    # YAML allows tabs in a block's content; the emitter would quote the whole text.
+    text = "step\tname\n\tindented\nnext"
+
+    data = yaml_bytes({"description": text})
+
+    assert data.decode().startswith("description: |")
+    assert parse_yaml(data) == {"description": text}
+
+
+_LINES = st.text(st.sampled_from(["a", " ", "\t", "-", "#", ":", '"', "\n"]), max_size=40)
+
+
+@given(_LINES)
+def test_a_text_with_tabs_reads_back_as_it_was_written(text: str) -> None:
+    assert parse_yaml(yaml_bytes({"description": text})) == {"description": text}
+
+
+def test_a_text_starting_with_a_tab_stays_quoted() -> None:
+    # A block's first line may not start with a tab for stricter readers.
+    data = yaml_bytes({"description": "\ta\nb"})
+
+    assert not data.decode().startswith("description: |")
+    assert parse_yaml(data) == {"description": "\ta\nb"}
+
+
+@pytest.mark.skipif(not yaml.__with_libyaml__, reason="libyaml is not installed")
+@given(_LINES)
+@example("\ta\nb")
+@example("a\n\tb\n\t")
+def test_a_text_with_tabs_is_read_back_by_libyaml_too(text: str) -> None:
+    data = yaml_bytes({"description": text})
+
+    assert yaml.load(data, Loader=yaml.CSafeLoader) == {"description": text}
