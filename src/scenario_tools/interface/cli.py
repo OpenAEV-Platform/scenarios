@@ -438,24 +438,27 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     of the repository that holds them; exit with 1 if anything blocks one of them.
 
     The policy rules, versioning against the previous release, the generated README.md, the
-    payload references and the CHANGELOG.md sections are not run yet: an entry that passes
-    may still fail them.
+    payload references, the CHANGELOG.md sections and the private deny-list are not run yet:
+    an entry that passes may still fail them.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""
     # Not resolved: a link on the way is refused when the entry is read, never followed.
-    directories = list(dict.fromkeys(Path(os.path.normpath(entry.absolute())) for entry in entries))
+    directories = [Path(os.path.normpath(entry.absolute())) for entry in entries]
     levels: list[Path] = []
-    roots: set[Path] = set()
+    roots: dict[tuple[int, int], Path] = {}  # each repository once, however it is reached
+    relatives: list[str] = []
     try:
         for directory in directories:
             levels = _levels_as_given(directory)
-            roots.add(_repository_root(levels, directory))
+            root = _repository_root(levels, directory)
+            roots.setdefault(_identity(root), root)
+            relatives.append(directory.relative_to(root).as_posix())
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
         _emit(ctx, "validate", _refused(error), levels[-1] if levels else None)
     if len(roots) > 1:
         raise click.UsageError("the entries belong to different repositories")
-    [root] = roots
+    [root] = roots.values()
 
     def produce() -> Report:
         loader = YamlDataLoader(root / "policy" / "data")
@@ -466,15 +469,23 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
         source = RepositoryEntries(root)
         schema = JsonSchemaValidator(root / "schemas")
         renormalised = renormaliser(loader)
-        findings: tuple[Finding, ...] = ()
-        for directory in directories:
-            entry = directory.relative_to(root).as_posix()
+        findings: list[Finding] = []
+        for entry in dict.fromkeys(relatives):  # an entry given twice is checked once
             findings += validate_entry(
                 entry, source, schema=schema, builtin=builtin, renormalised=renormalised
             )
-        return Report("validate", findings)
+        return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+def _identity(root: Path) -> tuple[int, int]:
+    """Which directory ``root`` is, whatever path reaches it."""
+    try:
+        status = root.stat()
+    except OSError as error:
+        raise EnvironmentProblemError(f"cannot read {root}: {error.strerror}") from error
+    return status.st_dev, status.st_ino
 
 
 def _levels_as_given(directory: Path) -> list[Path]:

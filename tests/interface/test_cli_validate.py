@@ -192,6 +192,7 @@ def test_the_help_says_which_checks_run_yet(monkeypatch: pytest.MonkeyPatch) -> 
     assert "not run yet" in " ".join(result.output.split())
     assert "data model" not in result.output
     assert "No symbolic link inside the repository is followed" in " ".join(result.output.split())
+    assert "private deny-list" in " ".join(result.output.split())
 
 
 def test_a_repository_reached_through_a_link_of_the_operator_s_is_validated(
@@ -209,3 +210,37 @@ def test_a_repository_reached_through_a_link_of_the_operator_s_is_validated(
     )
 
     assert result.exit_code == 0, result.output
+
+
+def test_one_repository_reached_by_two_paths_is_one_repository(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _complete_entry(monkeypatch, _repository(tmp_path))
+    (entry / "README.md").write_text(f"# EASM {chr(0x202E)}\n", encoding="utf-8")
+    (tmp_path / "workspace").symlink_to(tmp_path / "repository")
+    linked = tmp_path / "workspace" / entry.relative_to(tmp_path / "repository")
+
+    result = _invoke(monkeypatch, "validate", str(entry), str(linked))
+
+    assert result.exit_code == 1, result.output
+    assert _findings(result) == [("IO-017", "scenarios/techniques/easm/README.md", "")]
+
+
+def test_a_repository_that_cannot_be_looked_at_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    stat = Path.stat
+
+    def failing(self: Path, **options: Any) -> Any:
+        if self == root:
+            raise PermissionError(13, "Permission denied")
+        return stat(self, **options)
+
+    monkeypatch.setattr(Path, "stat", failing)
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3
+    assert "cannot read" in json.loads(result.stdout)["error"]
