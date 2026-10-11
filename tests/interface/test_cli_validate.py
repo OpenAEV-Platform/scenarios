@@ -191,6 +191,7 @@ def test_the_help_says_which_checks_run_yet(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert "not run yet" in " ".join(result.output.split())
     assert "data model" not in result.output
+    assert "No symbolic link inside the repository is followed" in " ".join(result.output.split())
 
 
 def test_a_repository_reached_through_a_link_of_the_operator_s_is_validated(

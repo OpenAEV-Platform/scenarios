@@ -439,7 +439,10 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
 
     The policy rules, versioning against the previous release, the generated README.md, the
     payload references and the CHANGELOG.md sections are not run yet: an entry that passes
-    may still fail them."""
+    may still fail them.
+
+    No symbolic link inside the repository is followed; the path that leads to the repository
+    may go through one."""
     # Not resolved: a link on the way is refused when the entry is read, never followed.
     directories = list(dict.fromkeys(Path(os.path.normpath(entry.absolute())) for entry in entries))
     levels: list[Path] = []
