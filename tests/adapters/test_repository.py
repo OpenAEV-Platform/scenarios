@@ -263,7 +263,7 @@ def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
     assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
     assert (entry / "scenario.yaml").read_bytes() == b"a: 1\n"
     assert oct(entry.stat().st_mode & 0o777) == oct(0o755)
-    assert [path.name for path in entry.parent.iterdir()] == ["akira"]  # no staging left
+    assert [path.name for path in entry.parent.iterdir()] == ["akira"]  # nothing else left
 
 
 def test_a_new_entry_that_cannot_be_written_whole_leaves_nothing(
@@ -304,13 +304,17 @@ def test_an_update_replaces_the_files_given(tmp_path: Path) -> None:
     assert (directory / "scenario.yaml").read_text() == "external_id: one\n"
 
 
-def test_a_staging_that_cannot_be_renamed_is_the_environment_s_fault(
+def test_a_place_that_cannot_be_reserved_is_the_environment_s_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def failing(self: Path, target: Path) -> Path:
-        raise OSError(18, "Invalid cross-device link")
+    made = Path.mkdir
 
-    monkeypatch.setattr(Path, "rename", failing)
+    def failing(self: Path, *arguments: object, **options: object) -> None:
+        if self.name == "akira":
+            raise OSError(28, "No space left on device")
+        made(self, *arguments, **options)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "mkdir", failing)
 
     with pytest.raises(EnvironmentProblemError, match="cannot write"):
         RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"b"}, new=True)
@@ -321,3 +325,13 @@ def test_a_hidden_directory_left_by_an_interrupted_write_is_no_entry(tmp_path: P
     _entry(tmp_path, "scenarios/ransomware/.akira.k3j9", "one")
 
     assert RepositoryEntries(tmp_path).entries() == ()
+
+
+def test_an_entry_without_a_usable_external_id_still_holds_its_name(tmp_path: Path) -> None:
+    directory = _entry(tmp_path, ENTRY, "one")
+    (directory / "scenario.yaml").write_text("external_id: 5\nname: Akira crisis\n")
+
+    source = RepositoryEntries(tmp_path)
+
+    assert source.entries() == (CatalogueEntry(ENTRY, "", "Akira crisis"),)
+    assert source.external_ids() == {}

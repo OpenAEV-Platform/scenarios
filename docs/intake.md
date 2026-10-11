@@ -88,5 +88,5 @@ apart by the plan: none is written when the request is refused. Remove an earlie
 `plan.json` before running, or read its `blocking` count, so that a plan left by another run is
 never taken for this one's.
 
-A run stopped before its end may leave a hidden directory `.<slug>.*` beside the entry's
-place: it is no entry, and is never read as one; remove it before committing.
+A run that fails while writing removes what it wrote. A run killed while writing may leave an
+incomplete entry: remove its directory before running again.

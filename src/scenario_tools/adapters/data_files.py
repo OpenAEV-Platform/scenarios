@@ -147,19 +147,29 @@ def _not_followed(path: Path, error: OSError) -> Exception:
 
 def check_output(path: Path) -> None:
     """Refuse, before anything is written, an output ``write_output`` would refuse: a directory
-    that is a link or cannot be opened, a target that is a link or not a regular file."""
+    that is a link, cannot be opened or written in, a target that is a link or not a regular
+    file."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _not_followed(path.parent, error) from error
     try:
-        existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
-    except FileNotFoundError:
-        return
+        try:
+            existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not stat.S_ISREG(existing.st_mode):
+            raise UnsafeInputError("IO-013", "a symbolic link or not a regular file", str(path))
+        # A file is made and removed beside it, as the write will, to know it can be.
+        probe = f".{path.name}.{secrets.token_hex(8)}"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        try:
+            os.close(os.open(probe, flags, 0o600, dir_fd=directory))
+            os.unlink(probe, dir_fd=directory)
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
     finally:
         os.close(directory)
-    if not stat.S_ISREG(existing.st_mode):
-        raise UnsafeInputError("IO-013", "a symbolic link or not a regular file", str(path))
 
 
 def write_output(path: Path, data: bytes, *, create: bool = False) -> None:

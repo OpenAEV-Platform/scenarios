@@ -441,3 +441,17 @@ def test_an_output_is_checked_before_anything_is_written(tmp_path: Path) -> None
     (tmp_path / "linked").symlink_to(tmp_path)
     with pytest.raises(UnsafeInputError):
         check_output(tmp_path / "linked" / "plan.json")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_an_output_in_a_directory_that_cannot_be_written_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "locked").mkdir()
+    (tmp_path / "locked").chmod(0o555)
+    try:
+        with pytest.raises(EnvironmentProblemError, match="cannot write"):
+            check_output(tmp_path / "locked" / "plan.json")
+    finally:
+        (tmp_path / "locked").chmod(0o755)
+    assert list((tmp_path / "locked").iterdir()) == []

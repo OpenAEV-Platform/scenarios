@@ -5,7 +5,6 @@ import errno
 import os
 import shutil
 import stat
-import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TypeVar
@@ -134,30 +133,28 @@ class RepositoryEntries:
         return current
 
     def write_entry(self, entry: str, files: Mapping[str, bytes], *, new: bool) -> None:
-        """Write ``files``, by name, in the entry at ``entry``. A new entry appears whole or not
-        at all: its files are written in a hidden directory beside it, which is then renamed to
-        it, and never over anything that appeared there. An existing entry has the files given
-        replaced, each at once."""
+        """Write ``files``, by name, in the entry at ``entry``. A new entry's place is reserved
+        at once, never over anything there, and what this write made is removed if it cannot
+        end. An existing entry has the files given replaced, each at once."""
         if not new:
             directory = self.directory(entry)
             for name, data in files.items():
                 write_output(directory / name, data)
             return
         parent_path, slug = entry.rsplit("/", 1)
-        parent = self.make_directory(parent_path)
-        staging = Path(tempfile.mkdtemp(prefix=f".{slug}.", dir=parent))
+        target = self.make_directory(parent_path) / slug
         try:
-            staging.chmod(0o755)
+            target.mkdir(mode=0o755)  # fails if anything is there, even made a moment ago
+        except FileExistsError as error:
+            raise EnvironmentProblemError(f"cannot write {entry}: it already exists") from error
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
+        try:
+            target.chmod(0o755)
             for name, data in files.items():
-                write_output(staging / name, data, create=True)
-            if _exists(parent / slug):
-                raise EnvironmentProblemError(f"cannot write {entry}: it already exists")
-            try:
-                staging.rename(parent / slug)
-            except OSError as error:
-                raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
+                write_output(target / name, data, create=True)
         except BaseException:
-            shutil.rmtree(staging, ignore_errors=True)
+            shutil.rmtree(target, ignore_errors=True)
             raise
 
     def exists(self, path: str) -> bool:
@@ -176,7 +173,8 @@ class RepositoryEntries:
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         found: dict[str, list[str]] = {}
         for entry in self.entries():
-            found.setdefault(entry.external_id, []).append(entry.path)
+            if entry.external_id:
+                found.setdefault(entry.external_id, []).append(entry.path)
         return {external_id: tuple(found[external_id]) for external_id in sorted(found)}
 
     def _read_entries(self) -> tuple[CatalogueEntry, ...]:
@@ -193,9 +191,13 @@ class RepositoryEntries:
                     continue  # the entry's own check says why it is refused
                 fields = document if isinstance(document, dict) else {}
                 external_id, name = fields.get("external_id"), fields.get("name")
-                if isinstance(external_id, str):
-                    path = f"scenarios/{domain}/{slug}"
+                if isinstance(external_id, str) or isinstance(name, str):
+                    # Its name counts even when its identifier does not: no other may take it.
                     found.append(
-                        CatalogueEntry(path, external_id, name if isinstance(name, str) else "")
+                        CatalogueEntry(
+                            f"scenarios/{domain}/{slug}",
+                            external_id if isinstance(external_id, str) else "",
+                            name if isinstance(name, str) else "",
+                        )
                     )
         return tuple(found)
