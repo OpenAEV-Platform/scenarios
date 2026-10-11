@@ -121,6 +121,19 @@ def test_an_update_elsewhere_than_the_entry_is_refused() -> None:
     assert "scenarios/techniques/akira" in findings[0].message
 
 
+@pytest.mark.parametrize("first", [True, False], ids=["listed-first", "listed-last"])
+def test_an_update_of_an_identifier_several_entries_have_is_refused(first: bool) -> None:
+    entry = CatalogueEntry("scenarios/ransomware/akira-crisis", ID, "Akira crisis")
+    other = CatalogueEntry("scenarios/techniques/akira", ID, "Akira")
+
+    findings = _refusals(
+        _request(mode="update"), "Akira crisis", *([entry, other][:: 1 if first else -1])
+    )
+
+    assert _codes(findings) == [("ITK-001", REQUEST, "/external_id")]
+    assert "scenarios/ransomware/akira-crisis, scenarios/techniques/akira" in findings[0].message
+
+
 def test_an_update_with_another_scenario_name_is_refused_unless_rewritten() -> None:
     entry = CatalogueEntry("scenarios/ransomware/akira-crisis", ID, "Akira crisis")
 

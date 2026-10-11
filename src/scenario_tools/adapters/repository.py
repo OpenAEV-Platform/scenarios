@@ -88,12 +88,18 @@ def _replaced(directory: int, path: Path, files: Mapping[str, bytes]) -> Iterato
             kept[name] = aside
             write_in(directory, path / name, data)
         yield
-    except BaseException:
+    except BaseException as failure:
+        lost: list[str] = []
         for name, aside in kept.items():
-            with contextlib.suppress(OSError):
+            try:
                 os.rename(aside, name, src_dir_fd=directory, dst_dir_fd=directory)
+            except OSError:
+                lost.append(f"{path / name} (the previous one is kept as {aside})")
+                continue
             with contextlib.suppress(OSError):  # left by a rename over the same file
                 os.unlink(aside, dir_fd=directory)
+        if lost:
+            raise EnvironmentProblemError(f"cannot put back {'; '.join(lost)}") from failure
         raise
     for aside in kept.values():
         with contextlib.suppress(OSError):
@@ -257,8 +263,14 @@ class RepositoryEntries:
                 yield
             finally:
                 os.close(directory)
-        except BaseException:
-            shutil.rmtree(slug, dir_fd=parent, ignore_errors=True)
+        except BaseException as failure:
+            try:
+                shutil.rmtree(slug, dir_fd=parent)
+            except OSError as error:
+                raise EnvironmentProblemError(
+                    f"cannot remove {entry}, which this run left incomplete: {error.strerror}; "
+                    "remove it by hand"
+                ) from failure
             raise
 
     def exists(self, path: str) -> bool:

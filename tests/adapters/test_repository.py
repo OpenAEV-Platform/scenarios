@@ -531,3 +531,42 @@ def test_a_lock_that_fails_otherwise_is_the_environment_s_fault(
 
     with pytest.raises(EnvironmentProblemError, match="No locks available"):
         _hold(tmp_path)
+
+
+def test_an_update_that_cannot_be_put_back_keeps_the_previous_file_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    renamed = os.rename
+
+    def failing(source: str, target: str, **options: Any) -> None:
+        if source.endswith(".previous"):
+            raise OSError(5, "Input/output error")
+        renamed(source, target, **options)
+
+    monkeypatch.setattr(os, "rename", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="kept as") as error:
+        _interrupted(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    assert isinstance(error.value.__cause__, RuntimeError)  # the run's own failure
+    kept = [path for path in directory.iterdir() if path.name.endswith(".previous")]
+    assert [path.read_text() for path in kept] == ['{"a": 1}']
+    assert kept[0].name in str(error.value)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_new_entry_that_cannot_be_removed_says_so(tmp_path: Path) -> None:
+    parent = tmp_path / "scenarios" / "ransomware"
+
+    def run() -> None:
+        with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=True):
+            parent.chmod(0o555)  # the entry can no longer be removed from it
+            raise RuntimeError("the plan cannot be written")
+
+    try:
+        with pytest.raises(EnvironmentProblemError, match=f"cannot remove {ENTRY}") as error:
+            run()
+    finally:
+        parent.chmod(0o755)
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert (tmp_path / ENTRY).is_dir()  # left, and said so

@@ -119,7 +119,11 @@ def intake_refusals(
         return _name_taken(name, entries, export_path)
     if not same:
         return refused("ITK-004", request_path, "/external_id", "no entry has it")
-    [entry] = same[:1]
+    if len(same) > 1:  # which entry the identifier names is not known
+        where = ", ".join(sorted(entry.path for entry in same))
+        message = f"several entries have it: {where}; give it to one only first"
+        return refused("ITK-001", request_path, "/external_id", message)
+    [entry] = same
     if entry.path != request.entry:
         message = f"the entry with this external_id is {entry.path}, not {request.entry}"
         return refused("ITK-005", request_path, "/slug", message)
