@@ -14,12 +14,12 @@ import pytest
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
     check_export_archive,
-    check_output,
     read_attachments,
     read_export,
     read_export_archive,
     read_mapping,
     read_stored_scenario,
+    reserve_output,
     write_output,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -428,20 +428,22 @@ def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: P
     assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
 
 
-def test_an_output_is_checked_before_anything_is_written(tmp_path: Path) -> None:
-    check_output(tmp_path / "plan.json")  # absent: it may be written
-    assert list(tmp_path.iterdir()) == []  # the probe leaves nothing behind
-    (tmp_path / "plan.json").write_text("{}")
-    check_output(tmp_path / "plan.json")  # a regular file: it may be replaced
+def test_an_output_is_reserved_before_anything_is_written(tmp_path: Path) -> None:
+    reserve_output(tmp_path / "plan.json")
 
-    (tmp_path / "link.json").symlink_to(tmp_path / "plan.json")
-    with pytest.raises(UnsafeInputError):
-        check_output(tmp_path / "link.json")
+    assert (tmp_path / "plan.json").read_bytes() == b""  # empty, until it is written
+    assert oct((tmp_path / "plan.json").stat().st_mode & 0o777) == oct(0o644)
+    with pytest.raises(EnvironmentProblemError, match="already exists"):
+        reserve_output(tmp_path / "plan.json")  # never over anything there
+    (tmp_path / "link.json").symlink_to(tmp_path / "elsewhere.json")
+    with pytest.raises(EnvironmentProblemError, match="already exists"):
+        reserve_output(tmp_path / "link.json")  # a link is something there, never followed
+    assert not (tmp_path / "elsewhere.json").exists()
     with pytest.raises(EnvironmentProblemError):
-        check_output(tmp_path / "missing" / "plan.json")
+        reserve_output(tmp_path / "missing" / "plan.json")
     (tmp_path / "linked").symlink_to(tmp_path)
     with pytest.raises(UnsafeInputError):
-        check_output(tmp_path / "linked" / "plan.json")
+        reserve_output(tmp_path / "linked" / "other.json")
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
@@ -452,7 +454,7 @@ def test_an_output_in_a_directory_that_cannot_be_written_is_the_environment_s_fa
     (tmp_path / "locked").chmod(0o555)
     try:
         with pytest.raises(EnvironmentProblemError, match="cannot write"):
-            check_output(tmp_path / "locked" / "plan.json")
+            reserve_output(tmp_path / "locked" / "plan.json")
     finally:
         (tmp_path / "locked").chmod(0o755)
     assert list((tmp_path / "locked").iterdir()) == []

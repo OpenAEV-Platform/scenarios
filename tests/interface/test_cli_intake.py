@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from scenario_tools.adapters.git import head_commit
+from scenario_tools.adapters.data_files import read_export
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface.cli import main
@@ -324,19 +324,32 @@ def test_a_plan_already_there_is_a_usage_error(
     assert not (root / "scenarios").exists()
 
 
-def test_a_plan_that_appears_during_the_run_is_never_replaced(
+def test_a_plan_that_appears_before_it_is_reserved_stops_the_run_unwritten(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
 
-    def racing(directory: Path) -> str:
+    def racing(path: Path) -> object:
         plan.write_text("another run's")
-        return head_commit(directory)
+        return read_export(path)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.head_commit", racing)
+    monkeypatch.setattr("scenario_tools.interface.cli.read_export", racing)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 3, result.output
     assert plan.read_text() == "another run's"
+    assert not (root / "scenarios").exists()
+
+
+def test_a_run_that_fails_after_reserving_its_plan_leaves_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path, commit=False)  # the commit cannot be read
+    plan = tmp_path / "plan.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert not plan.exists()

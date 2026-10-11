@@ -90,5 +90,6 @@ apart by the plan: none is written when the request is refused, and when one is,
 `blocking` count says how many findings are left. The plan must not exist before the run, so
 that a plan left by another run is never taken for this one's.
 
-A run that fails while writing removes what it wrote. A run killed while writing may leave an
-incomplete entry: remove its directory before running again.
+The plan's place is taken as the run starts, by an empty file, so that no other run can take
+it. A run that fails removes what it wrote, that empty file included. A run killed while
+writing may leave an incomplete entry and an empty plan: remove both before running again.
