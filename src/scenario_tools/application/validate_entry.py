@@ -75,10 +75,13 @@ def _scenario_findings(
     try:
         facts, unknown = export_facts(document, builtin, path)
         findings += unknown + copy_findings(document, builtin, path)
-        if renormalised is not None and renormalised() != stored:  # it may refuse the file
+    except ExportStructureError as error:
+        return (*findings, _refused(error, path)), None
+    try:  # a refusal here leaves the facts established: the cross-checks still run
+        if renormalised is not None and renormalised() != stored:
             findings += (not_normalised(path),)
     except (ExportStructureError, UnsafeInputError) as error:
-        return (*findings, _refused(error, path)), None
+        findings += (_refused(error, path),)
     return findings, facts
 
 

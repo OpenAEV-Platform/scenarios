@@ -373,3 +373,12 @@ def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
+
+
+def test_a_renormalisation_refused_still_lets_the_metadata_be_cross_checked() -> None:
+    def broken(document: object, external_id: str, path: str) -> bytes:
+        raise UnsafeInputError("IO-014", "a chained scenario is not supported", JSON)
+
+    findings = _validate({YAML: _changed(name="Other"), JSON: SCENARIO}, renormalised=broken)
+
+    assert _codes(findings) == [("IO-014", JSON, ""), ("SCH-002", YAML, "/name")]
