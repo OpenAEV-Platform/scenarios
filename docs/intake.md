@@ -82,7 +82,8 @@ propose (`changed`), each file written with its SHA-256, the pull request's `tit
   files in place, then run `scenario-tools validate` on the entry. To start again from the
   export instead, remove the entry's directory first.
 - `2`: a usage error, nothing is run.
-- `3`: the checkout, its rules, or the plan's place cannot be used; nothing is written.
+- `3`: the checkout, its rules, or the plan's place cannot be used (a link included), or
+  another run holds the checkout: one run at a time writes in it; nothing is written.
 
 The findings are printed on standard output, one per line, or as one JSON document with
 `--format json` (`{command, ok, findings}`). A script tells the two cases of exit code `1`

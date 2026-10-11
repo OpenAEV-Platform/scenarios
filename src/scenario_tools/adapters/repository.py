@@ -4,6 +4,7 @@ at a time through descriptors, so that nothing swapped meanwhile leads a write e
 
 import contextlib
 import errno
+import fcntl
 import os
 import secrets
 import shutil
@@ -152,6 +153,30 @@ class RepositoryEntries:
 
     def read_text(self, path: str) -> str:
         return self._read(path, read_text_file)
+
+    @contextlib.contextmanager
+    def locked(self) -> Iterator[None]:
+        """Hold the repository for this run alone while the block runs, so that no other run
+        checks the catalogue or writes in it meanwhile; one already holding it is the
+        environment's matter. The lock goes with the run, however it ends."""
+        try:
+            descriptor = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY)
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot read {self._root}: {error.strerror}") from error
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise EnvironmentProblemError(
+                    f"cannot hold {self._root}: another run is writing in it"
+                ) from error
+            except OSError as error:
+                raise EnvironmentProblemError(
+                    f"cannot hold {self._root}: {error.strerror}"
+                ) from error
+            yield
+        finally:
+            os.close(descriptor)  # which releases the lock
 
     def _opened(self, relative: str, *, make: bool) -> int:
         """A descriptor of the directory at ``relative``, reached from the root one directory

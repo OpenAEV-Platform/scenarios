@@ -114,3 +114,13 @@ def hidden_occurrences(text: str) -> tuple[Hidden, ...]:
 def hidden_in(text: str) -> tuple[str, ...]:
     """The labels of the hidden characters of ``text``, in the order they first appear."""
     return tuple(hidden.label for hidden in hidden_occurrences(text))
+
+
+def visible(text: str) -> str:
+    """``text`` without the hidden characters ``hidden_occurrences`` finds in it, the joiners
+    and selectors that scripts and emoji need kept where they stand."""
+    return "".join(
+        character
+        for index, character in enumerate(text)
+        if character not in HIDDEN and not (character in JOINERS and _misplaced(text, index))
+    )

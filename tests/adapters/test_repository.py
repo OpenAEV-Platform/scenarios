@@ -1,6 +1,7 @@
 """Reading the repository's entries: never through a symbolic link, parent directories included,
 within the input limits, every refusal naming the file by its path in the repository."""
 
+import fcntl
 import os
 from pathlib import Path
 from typing import Any
@@ -499,3 +500,34 @@ def test_an_entry_without_a_usable_external_id_still_holds_its_name(tmp_path: Pa
 
     assert source.entries() == (CatalogueEntry(ENTRY, "", "Akira crisis"),)
     assert source.external_ids() == {}
+
+
+def _hold(root: Path) -> None:
+    with RepositoryEntries(root).locked():
+        pass
+
+
+def test_the_repository_is_held_by_one_run_at_a_time(tmp_path: Path) -> None:
+    with (
+        RepositoryEntries(tmp_path).locked(),
+        pytest.raises(EnvironmentProblemError, match="another run"),
+    ):
+        _hold(tmp_path)
+    _hold(tmp_path)  # released once the block ends
+
+
+def test_a_repository_that_cannot_be_held_is_the_environment_s_fault(tmp_path: Path) -> None:
+    with pytest.raises(EnvironmentProblemError, match="cannot read"):
+        _hold(tmp_path / "missing")
+
+
+def test_a_lock_that_fails_otherwise_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(descriptor: int, operation: int) -> None:
+        raise OSError(37, "No locks available")
+
+    monkeypatch.setattr(fcntl, "flock", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="No locks available"):
+        _hold(tmp_path)

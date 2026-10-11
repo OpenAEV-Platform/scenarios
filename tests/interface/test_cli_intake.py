@@ -1,8 +1,10 @@
 """The intake command: an export and a request become an entry in place, with a plan a pull
 request is opened from; a refused request leaves the repository as it was."""
 
+import fcntl
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import zipfile
@@ -404,3 +406,36 @@ def test_a_plan_that_cannot_be_published_puts_an_update_back(
         "scenario.yaml",
     ]
     assert not plan.exists()
+
+
+def test_a_repository_another_run_holds_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    held = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+    finally:
+        os.close(held)
+
+    assert result.exit_code == 3, result.output
+    assert "another run" in result.output
+    assert not (root / "scenarios").exists()
+    assert not plan.exists()
+
+
+def test_a_plan_whose_directory_is_a_link_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "plans").symlink_to(tmp_path / "real")
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plans" / "plan.json")
+
+    assert result.exit_code == 3, result.output
+    assert list((tmp_path / "real").iterdir()) == []
+    assert not (root / "scenarios").exists()

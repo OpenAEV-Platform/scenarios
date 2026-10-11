@@ -318,6 +318,20 @@ def test_an_invisible_character_does_not_make_another_name() -> None:
     assert same_name("akira", "aki" + chr(0xAD) + "ra")
 
 
+@pytest.mark.parametrize("hidden", [0x3164, 0xFFA0, 0x2800, 0xFE00], ids=hex)
+def test_a_character_the_checks_find_hidden_does_not_make_another_name(hidden: int) -> None:
+    assert same_name("akira", "aki" + chr(hidden) + "ra")
+
+
+def test_the_body_holds_no_character_the_checks_find_hidden() -> None:
+    message = "a" + chr(0x3164) + "b" + chr(0x2800) + "c" + chr(0xFE00) + "d"
+    hostile = Finding("SCH-007", Severity.INFO, "p", "/f", message)
+
+    body = _plan(checklist=(hostile,))["body"]
+
+    assert "- [ ] `p` `/f`: `abcd`" in body
+
+
 def test_the_body_holds_no_invisible_or_bidirectional_control() -> None:
     message = "a" + chr(0x202E) + "b" + chr(0x2066) + "c" + chr(0x200B) + "d"
     hostile = Finding("SCH-007", Severity.INFO, "p", "/f", message)

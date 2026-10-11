@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from scenario_tools.domain.shared.characters import visible
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 NEW, UPDATE = "new", "update"
@@ -151,14 +152,16 @@ _BREAKS = re.compile("[\\x00-\\x1f\\x7f-\\x9f" + chr(0x2028) + chr(0x2029) + "]+
 
 
 def _visible(text: str) -> str:
-    """``text`` without its invisible format characters, bidirectional controls included."""
-    return "".join(character for character in text if unicodedata.category(character) != "Cf")
+    """``text`` without what the checks find hidden in it, nor any invisible format character,
+    bidirectional controls included."""
+    return "".join(c for c in visible(text) if unicodedata.category(c) != "Cf")
 
 
 def _span(text: str) -> str:
     """``text`` as inert Markdown: on one line, in a code span, with no invisible or
     bidirectional control, where no mention, link or HTML takes effect."""
-    return "`" + _BREAKS.sub(" ", _visible(text).replace("`", "'")) + "`"
+    # Line breaks first, so that one the checks find hidden still parts the words around it.
+    return "`" + _visible(_BREAKS.sub(" ", text)).replace("`", "'") + "`"
 
 
 def _checklist(findings: Iterable[Finding]) -> list[Finding]:

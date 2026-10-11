@@ -543,37 +543,49 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
 
     def produce() -> Report:
         source = RepositoryEntries(root)
-        rules = _rules(source)
-        result = intake_entry(
-            read_export(export),
-            read_yaml_file(request, limit=REQUEST_LIMIT),
-            request_path=repository_path(str(request), root),
-            export_path=repository_path(str(export), root),
-            source=source,
-            data=rules.loader,
-            schema=rules.schema,
-            domains=rules.domains,
-        )
-        if result.refusals or result.request is None:
-            return Report("intake", result.refusals)
-        # The plan's place is taken first, so that no other run can take it, then whatever
-        # could stop the run is found before the repository is touched. The entry stays
-        # written only once its plan is: a run that does not end leaves both as they were.
-        reserve_output(plan)
-        try:
-            base = head_commit(root)
-            files = intake_files(result, yaml_bytes)
-            new = result.metadata is not None
-            with source.writing(result.request.entry, files, new=new):
-                findings = rules.validate(result.request.entry, RepositoryEntries(root))
-                document = plan_document(result, files, base, findings)
-                write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
-        except BaseException:
-            plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
-            raise
-        return Report("intake", (*result.to_complete, *findings))
+        # From the catalogue's check to the plan, no other run may check or write in it.
+        with source.locked():
+            return _intake_held(source, export, request, root, plan)
 
     _emit(ctx, "intake", produce, root)
+
+
+def _intake_held(
+    source: RepositoryEntries, export: Path, request: Path, root: Path, plan: Path
+) -> Report:
+    """The intake of a run that holds the repository."""
+    rules = _rules(source)
+    result = intake_entry(
+        read_export(export),
+        read_yaml_file(request, limit=REQUEST_LIMIT),
+        request_path=repository_path(str(request), root),
+        export_path=repository_path(str(export), root),
+        source=source,
+        data=rules.loader,
+        schema=rules.schema,
+        domains=rules.domains,
+    )
+    if result.refusals or result.request is None:
+        return Report("intake", result.refusals)
+    # The plan's place is taken first, so that no other run can take it, then whatever
+    # could stop the run is found before the repository is touched. The entry stays
+    # written only once its plan is: a run that does not end leaves both as they were.
+    try:
+        reserve_output(plan)
+    except UnsafeInputError as error:  # the plan's place cannot be used: no refusal
+        raise EnvironmentProblemError(f"cannot write {plan}: {error.message}") from error
+    try:
+        base = head_commit(root)
+        files = intake_files(result, yaml_bytes)
+        new = result.metadata is not None
+        with source.writing(result.request.entry, files, new=new):
+            findings = rules.validate(result.request.entry, RepositoryEntries(root))
+            document = plan_document(result, files, base, findings)
+            write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
+    except BaseException:
+        plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
+        raise
+    return Report("intake", (*result.to_complete, *findings))
 
 
 def _identity(root: Path) -> tuple[int, int]:
