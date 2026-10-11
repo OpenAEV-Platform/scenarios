@@ -190,16 +190,17 @@ def intake_plan(
     verb = "add" if request.mode == NEW else "update"
     findings = _checklist(checklist)
     lines = [f"Closes #{request.issue}", ""]
-    if not changed:
-        lines.append("The export gives the stored scenario.json again: nothing to propose.")
-    else:
+    if changed:
         lines.append(f"Entry {_span(request.entry)}, from a platform export.")
-        left = [
-            f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
-            for finding in findings
-        ]
-        if left:
-            lines += ["", "Left to complete or review:", *left]
+    else:
+        lines.append("The export gives the stored scenario.json again: nothing to propose.")
+    left = [
+        f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
+        for finding in findings
+    ]
+    if left:
+        lines += ["", "Left to complete or review:", *left]
+    if files:
         lines += [
             "",
             "Files:",

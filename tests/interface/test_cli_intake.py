@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from scenario_tools.adapters.git import head_commit
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface.cli import main
@@ -307,3 +308,35 @@ def test_a_plan_that_cannot_be_written_stops_the_run_before_any_entry(
 
     assert result.exit_code == 3, result.output
     assert not (root / "scenarios").exists()
+
+
+def test_a_plan_already_there_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    plan.write_text("{}")
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 2
+    assert "remove" in result.stderr
+    assert not (root / "scenarios").exists()
+
+
+def test_a_plan_that_appears_during_the_run_is_never_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+
+    def racing(directory: Path) -> str:
+        plan.write_text("another run's")
+        return head_commit(directory)
+
+    monkeypatch.setattr("scenario_tools.interface.cli.head_commit", racing)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert plan.read_text() == "another run's"

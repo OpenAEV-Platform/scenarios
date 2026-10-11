@@ -71,7 +71,12 @@
         "required": [
           "threat",
           "sources"
-        ]
+        ],
+        "not": {
+          "required": [
+            "rewrite"
+          ]
+        }
       }
     },
     {

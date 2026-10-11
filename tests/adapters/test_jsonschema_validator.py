@@ -889,3 +889,7 @@ def test_a_new_entry_needs_threat_and_sources_and_an_update_takes_none(
     bare = {key: value for key, value in INTAKE.items() if key not in ("threat", "sources")}
     assert validator.validate("intake-request", bare)
     assert validator.validate("intake-request", {**INTAKE, "mode": "update"})
+
+
+def test_a_new_entry_request_cannot_ask_for_a_rewrite(validator: JsonSchemaValidator) -> None:
+    assert validator.validate("intake-request", {**INTAKE, "rewrite": True})

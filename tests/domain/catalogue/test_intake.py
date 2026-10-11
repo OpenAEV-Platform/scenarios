@@ -197,6 +197,7 @@ def test_an_unchanged_update_plans_nothing_to_propose() -> None:
     assert plan["changed"] is False
     assert plan["files"] == []
     assert "nothing to propose" in plan["body"]
+    assert "Files:" not in plan["body"]
 
 
 def test_a_request_without_generated_by_gives_no_such_field() -> None:
@@ -324,3 +325,13 @@ def test_the_body_holds_no_invisible_or_bidirectional_control() -> None:
     body = _plan(checklist=(hostile,))["body"]
 
     assert "- [ ] `p` `/f`: `abcd`" in body
+
+
+def test_an_unchanged_update_still_lists_what_blocks_its_entry() -> None:
+    blocking = Finding("SCH-009", Severity.BLOCKING, "p", "/description", "ends with the mark")
+
+    plan = _plan(request={"mode": "update"}, changed=False, files={}, checklist=(blocking,))
+
+    assert plan["blocking"] == 1
+    assert "- [ ] `p` `/description`: `ends with the mark`" in plan["body"]
+    assert "nothing to propose" in plan["body"]

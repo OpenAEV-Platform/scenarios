@@ -528,6 +528,11 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
     entries = root / "scenarios"
     if entries in (plan, *plan.parents) or _inside(plan, entries):
         raise click.UsageError("--plan may not be inside the entries of the repository")
+    if os.path.lexists(plan):
+        raise click.UsageError(
+            "--plan names a file that already exists: remove the earlier plan first, so that it "
+            "is never taken for this run's"
+        )
     for given in (export, request):
         place = Path(os.path.normpath(given.absolute()))
         if entries in place.parents or _inside(place, entries):
@@ -559,7 +564,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
             source.write_entry(result.request.entry, files, new=result.metadata is not None)
         findings = rules.validate(result.request.entry, RepositoryEntries(root))
         document = plan_document(result, files, base, findings)
-        write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
+        write_output(plan, json.dumps(document, indent=2).encode() + b"\n", create=True)
         return Report("intake", (*result.to_complete, *findings))
 
     _emit(ctx, "intake", produce, root)

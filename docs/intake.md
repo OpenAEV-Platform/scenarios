@@ -11,8 +11,8 @@ scenario-tools intake export.zip --request request.yaml --repo . --plan ../plan.
 - `export.zip`: the scenario as the platform exports it.
 - `--request`: what the export cannot say (below).
 - `--repo`: the root of a checkout of this repository, at the commit the change starts from.
-- `--plan`: where the plan is written; it may not be inside `scenarios/`, and neither may the
-  export nor the request.
+- `--plan`: where the plan is written; nothing may be there yet, and it may not be inside
+  `scenarios/`, nor may the export or the request.
 
 ## The request
 
@@ -63,7 +63,9 @@ Nothing is written when the request is refused:
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
 
-Scenario names are compared without case, outer blanks or runs of blanks.
+Scenario names are compared in their Unicode compatibility form, without case, invisible
+format characters, outer blanks or runs of blanks: names that look different in the data may
+still be the same name. Letters of other scripts that merely look alike stay different.
 
 ## The plan
 
@@ -84,9 +86,9 @@ propose (`changed`), each file written with its SHA-256, the pull request's `tit
 
 The findings are printed on standard output, one per line, or as one JSON document with
 `--format json` (`{command, ok, findings}`). A script tells the two cases of exit code `1`
-apart by the plan: none is written when the request is refused. Remove an earlier
-`plan.json` before running, or read its `blocking` count, so that a plan left by another run is
-never taken for this one's.
+apart by the plan: none is written when the request is refused, and when one is, its
+`blocking` count says how many findings are left. The plan must not exist before the run, so
+that a plan left by another run is never taken for this one's.
 
 A run that fails while writing removes what it wrote. A run killed while writing may leave an
 incomplete entry: remove its directory before running again.
