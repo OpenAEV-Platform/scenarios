@@ -333,11 +333,12 @@ class _Dumper(yaml.SafeDumper):
         return True
 
     def analyze_scalar(self, scalar: str) -> Any:
-        """The emitter's analysis of ``scalar``, a tab being allowed in a block as YAML allows
-        it: the emitter would quote the whole text for one tab inside a line. A tab is judged
-        as a space would be, so one ending a line still keeps the text out of a block."""
+        """The emitter's analysis of ``scalar``, with tabs inside a line allowed in a block, as
+        YAML allows them, where the emitter would quote the whole text. A tab is judged as a
+        space, so one ending a line still forces quotes; a text starting with one is quoted
+        too, since stricter readers refuse a block whose first line starts with a tab."""
         analysis = super().analyze_scalar(scalar)
-        if "\t" in scalar and not analysis.allow_block:
+        if "\t" in scalar and not scalar.startswith("\t") and not analysis.allow_block:
             analysis.allow_block = super().analyze_scalar(scalar.replace("\t", " ")).allow_block
         return analysis
 
