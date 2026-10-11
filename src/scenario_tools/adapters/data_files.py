@@ -155,13 +155,19 @@ def reserve_output(path: Path) -> None:
         raise _not_followed(path.parent, error) from error
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
-        descriptor = os.open(path.name, flags, 0o600, dir_fd=directory)
-        os.fchmod(descriptor, 0o644)
-        os.close(descriptor)
-    except FileExistsError as error:
-        raise EnvironmentProblemError(f"cannot write {path}: it already exists") from error
-    except OSError as error:
-        raise _not_followed(path, error) from error
+        try:
+            descriptor = os.open(path.name, flags, 0o600, dir_fd=directory)
+        except FileExistsError as error:
+            raise EnvironmentProblemError(f"cannot write {path}: it already exists") from error
+        except OSError as error:
+            raise _not_followed(path, error) from error
+        try:
+            os.fchmod(descriptor, 0o644)
+        except OSError as error:  # the file is this run's own: nothing is left behind
+            os.unlink(path.name, dir_fd=directory)
+            raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
+        finally:
+            os.close(descriptor)
     finally:
         os.close(directory)
 
@@ -178,6 +184,16 @@ def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _not_followed(path.parent, error) from error
+    try:
+        write_in(directory, path, data, create=create)
+    finally:
+        os.close(directory)
+
+
+def write_in(directory: int, path: Path, data: bytes, *, create: bool = False) -> None:
+    """Write ``data`` as ``write_output`` does, in the directory open as ``directory``, which is
+    never looked up again by its path: ``path`` names the file in what is reported, and its name
+    is the file written."""
     temporary = f".{path.name}.{secrets.token_hex(8)}"
     try:
         try:
@@ -216,5 +232,3 @@ def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
             raise
     except OSError as error:  # the target's status could not be read
         raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
-    finally:
-        os.close(directory)

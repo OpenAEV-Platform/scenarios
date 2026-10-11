@@ -557,19 +557,20 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
         if result.refusals or result.request is None:
             return Report("intake", result.refusals)
         # The plan's place is taken first, so that no other run can take it, then whatever
-        # could stop the run is found before the repository is touched.
+        # could stop the run is found before the repository is touched. The entry stays
+        # written only once its plan is: a run that does not end leaves both as they were.
         reserve_output(plan)
         try:
             base = head_commit(root)
             files = intake_files(result, yaml_bytes)
-            if files:
-                source.write_entry(result.request.entry, files, new=result.metadata is not None)
-            findings = rules.validate(result.request.entry, RepositoryEntries(root))
-            document = plan_document(result, files, base, findings)
+            new = result.metadata is not None
+            with source.writing(result.request.entry, files, new=new):
+                findings = rules.validate(result.request.entry, RepositoryEntries(root))
+                document = plan_document(result, files, base, findings)
+                write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
         except BaseException:
             plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
             raise
-        write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
         return Report("intake", (*result.to_complete, *findings))
 
     _emit(ctx, "intake", produce, root)

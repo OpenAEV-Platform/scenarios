@@ -3,10 +3,11 @@ within the input limits, every refusal naming the file by its path in the reposi
 
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from scenario_tools.adapters import repository
+from scenario_tools.adapters import data_files, repository
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -202,20 +203,27 @@ def test_whether_a_path_exists_is_told_without_following_links(tmp_path: Path) -
     assert source.exists("scenarios/techniques/linked")  # a dangling link is something there
 
 
-def test_an_entry_directory_is_made_without_following_links(tmp_path: Path) -> None:
-    source = RepositoryEntries(tmp_path)
+def _write(root: Path, files: dict[str, bytes], *, new: bool) -> None:
+    with RepositoryEntries(root).writing(ENTRY, files, new=new):
+        pass
 
-    made = source.make_directory("scenarios/ransomware/new-entry")
 
-    assert made == tmp_path / "scenarios" / "ransomware" / "new-entry"
-    assert made.is_dir()
-    assert source.make_directory("scenarios/ransomware/new-entry") == made  # already there
+def _interrupted(root: Path, files: dict[str, bytes], *, new: bool) -> bytes:
+    """Write ``files``, then fail before the block ends: what ``scenario.json`` was meanwhile."""
+    seen: list[bytes] = []
+
+    def run() -> None:
+        with RepositoryEntries(root).writing(ENTRY, files, new=new):
+            seen.append((root / ENTRY / "scenario.json").read_bytes())
+            raise RuntimeError("the plan cannot be written")
+
+    with pytest.raises(RuntimeError):
+        run()
+    return seen[0]
 
 
 @pytest.mark.parametrize("kind", ["link", "file"])
-def test_an_entry_directory_is_never_made_through_a_link_or_a_file(
-    tmp_path: Path, kind: str
-) -> None:
+def test_an_entry_is_never_written_through_a_link_or_a_file(tmp_path: Path, kind: str) -> None:
     (tmp_path / "elsewhere").mkdir()
     if kind == "link":
         (tmp_path / "scenarios").symlink_to(tmp_path / "elsewhere")
@@ -223,9 +231,129 @@ def test_an_entry_directory_is_never_made_through_a_link_or_a_file(
         (tmp_path / "scenarios").write_text("not a directory")
 
     with pytest.raises(UnsafeInputError) as error:
-        RepositoryEntries(tmp_path).make_directory("scenarios/ransomware/new-entry")
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
     assert _refusal(error) == ("IO-013", "scenarios")
-    assert not (tmp_path / "elsewhere" / "ransomware").exists()
+    assert list((tmp_path / "elsewhere").iterdir()) == []
+
+
+def test_an_existing_entry_that_is_a_link_is_never_written_through(tmp_path: Path) -> None:
+    real = _entry(tmp_path, "scenarios/ransomware/real")
+    (tmp_path / ENTRY).symlink_to(real)
+
+    with pytest.raises(UnsafeInputError) as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert _refusal(error) == ("IO-013", ENTRY)
+    assert (real / "scenario.json").read_text() == '{"a": 1}'
+
+
+def test_a_directory_swapped_for_a_link_while_an_entry_is_written_is_never_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+    (tmp_path / "outside").mkdir()
+    made = os.mkdir
+
+    def racing(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        if Path(path).name == "akira":  # its parent is swapped once it has been reached
+            (tmp_path / "scenarios" / "ransomware").rename(tmp_path / "moved")
+            (tmp_path / "scenarios" / "ransomware").symlink_to(tmp_path / "outside")
+        made(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "mkdir", racing)
+
+    _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+    assert list((tmp_path / "outside").iterdir()) == []
+    assert (tmp_path / "moved" / "akira" / "scenario.json").read_bytes() == b"{}"
+
+
+def test_a_directory_above_made_by_another_run_meanwhile_is_written_into(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = os.mkdir
+
+    def raced(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        made(path, mode, dir_fd=dir_fd)
+        if Path(path).name == "ransomware":  # another run made it first
+            raise FileExistsError(17, "File exists")
+
+    monkeypatch.setattr(os, "mkdir", raced)
+
+    _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+    assert (tmp_path / ENTRY / "scenario.json").read_bytes() == b"{}"
+
+
+def _descriptors(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:
+    """The descriptors opened and closed from now on."""
+    opened: list[int] = []
+    closed: list[int] = []
+    real_open, real_close = os.open, os.close
+
+    def spied_open(*arguments: Any, **options: Any) -> int:
+        descriptor = real_open(*arguments, **options)
+        opened.append(descriptor)
+        return descriptor
+
+    def spied_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    monkeypatch.setattr(os, "open", spied_open)
+    monkeypatch.setattr(os, "close", spied_close)
+    return opened, closed
+
+
+@pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
+def test_a_write_leaves_no_directory_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, new: bool
+) -> None:
+    if not new:
+        _entry(tmp_path)
+    opened, closed = _descriptors(monkeypatch)
+
+    _write(tmp_path, {"scenario.json": b"{}"}, new=new)
+
+    assert opened
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_refused_write_leaves_no_directory_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "scenarios").symlink_to(tmp_path / "elsewhere")
+    opened, closed = _descriptors(monkeypatch)
+
+    with pytest.raises(UnsafeInputError):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert opened
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_file_of_an_entry_that_is_a_link_is_never_replaced(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+    (tmp_path / "elsewhere.json").write_text("kept")
+    (directory / "scenario.json").unlink()
+    (directory / "scenario.json").symlink_to(tmp_path / "elsewhere.json")
+
+    with pytest.raises(UnsafeInputError):
+        _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    assert (directory / "scenario.json").is_symlink()  # put back as it was
+    assert (tmp_path / "elsewhere.json").read_text() == "kept"
+    names = sorted(path.name for path in directory.iterdir())
+    assert names == ["README.md", "scenario.json", "scenario.yaml"]
+
+
+def test_a_repository_that_cannot_be_opened_is_the_environment_s_fault(tmp_path: Path) -> None:
+    with pytest.raises(EnvironmentProblemError, match="cannot read"):
+        _write(tmp_path / "missing", {"scenario.json": b"{}"}, new=True)
+
+
+def test_an_entry_to_update_that_is_missing_is_the_environment_s_fault(tmp_path: Path) -> None:
+    with pytest.raises(EnvironmentProblemError, match="cannot read scenarios: it is missing"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert not (tmp_path / ENTRY).exists()  # never made for an update
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
@@ -233,8 +361,8 @@ def test_a_directory_that_cannot_be_made_is_the_environment_s_fault(tmp_path: Pa
     (tmp_path / "scenarios").mkdir()
     (tmp_path / "scenarios").chmod(0o555)
     try:
-        with pytest.raises(EnvironmentProblemError):
-            RepositoryEntries(tmp_path).make_directory("scenarios/ransomware")
+        with pytest.raises(EnvironmentProblemError, match="cannot make scenarios/ransomware"):
+            _write(tmp_path, {"scenario.json": b"{}"}, new=True)
     finally:
         (tmp_path / "scenarios").chmod(0o755)
 
@@ -244,20 +372,22 @@ def test_nothing_is_where_a_directory_above_is_missing(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
-def test_a_directory_that_cannot_be_searched_cannot_be_made_into(tmp_path: Path) -> None:
+def test_a_directory_that_cannot_be_searched_cannot_be_written_into(tmp_path: Path) -> None:
     (tmp_path / "scenarios").mkdir()
     (tmp_path / "scenarios").chmod(0o644)  # listed, but nothing in it can be looked at
     try:
         with pytest.raises(EnvironmentProblemError, match="cannot read"):
-            RepositoryEntries(tmp_path).make_directory("scenarios/ransomware")
+            _write(tmp_path, {"scenario.json": b"{}"}, new=True)
     finally:
         (tmp_path / "scenarios").chmod(0o755)
 
 
 def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
-    source = RepositoryEntries(tmp_path)
-
-    source.write_entry(ENTRY, {"scenario.yaml": b"a: 1\n", "scenario.json": b"{}"}, new=True)
+    umask = os.umask(0o077)  # the modes hold whatever the umask
+    try:
+        _write(tmp_path, {"scenario.yaml": b"a: 1\n", "scenario.json": b"{}"}, new=True)
+    finally:
+        os.umask(umask)
 
     entry = tmp_path / ENTRY
     assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
@@ -266,23 +396,34 @@ def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
     assert [path.name for path in entry.parent.iterdir()] == ["akira"]  # nothing else left
 
 
+def test_nothing_to_write_writes_nothing(tmp_path: Path) -> None:
+    _write(tmp_path, {}, new=True)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_a_new_entry_that_cannot_be_written_whole_leaves_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[str] = []
+    written = data_files.write_in
 
-    def failing(path: Path, data: bytes, *, create: bool = False) -> None:
+    def failing(directory: int, path: Path, data: bytes, *, create: bool = False) -> None:
         calls.append(path.name)
         if len(calls) == 2:
             raise EnvironmentProblemError("disk full")
-        path.write_bytes(data)
+        written(directory, path, data, create=create)
 
-    monkeypatch.setattr(repository, "write_output", failing)
+    monkeypatch.setattr("scenario_tools.adapters.repository.write_in", failing)
 
     with pytest.raises(EnvironmentProblemError):
-        RepositoryEntries(tmp_path).write_entry(
-            ENTRY, {"scenario.yaml": b"a", "scenario.json": b"b"}, new=True
-        )
+        _write(tmp_path, {"scenario.yaml": b"a", "scenario.json": b"b"}, new=True)
+    assert list((tmp_path / "scenarios" / "ransomware").iterdir()) == []
+
+
+def test_a_new_entry_is_removed_when_the_run_does_not_end(tmp_path: Path) -> None:
+    assert _interrupted(tmp_path, {"scenario.json": b"{}"}, new=True) == b"{}"
+
     assert list((tmp_path / "scenarios" / "ransomware").iterdir()) == []
 
 
@@ -290,35 +431,58 @@ def test_a_new_entry_never_replaces_what_appeared_at_its_place(tmp_path: Path) -
     (tmp_path / ENTRY).mkdir(parents=True)
 
     with pytest.raises(EnvironmentProblemError, match="already exists"):
-        RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"b"}, new=True)
+        _write(tmp_path, {"scenario.json": b"b"}, new=True)
     assert list((tmp_path / ENTRY).iterdir()) == []
     assert [path.name for path in (tmp_path / ENTRY).parent.iterdir()] == ["akira"]
-
-
-def test_an_update_replaces_the_files_given(tmp_path: Path) -> None:
-    directory = _entry(tmp_path)
-
-    RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"{}\n"}, new=False)
-
-    assert (directory / "scenario.json").read_bytes() == b"{}\n"
-    assert (directory / "scenario.yaml").read_text() == "external_id: one\n"
 
 
 def test_a_place_that_cannot_be_reserved_is_the_environment_s_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    made = Path.mkdir
+    made = os.mkdir
 
-    def failing(self: Path, *arguments: object, **options: object) -> None:
-        if self.name == "akira":
+    def failing(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        if Path(path).name == "akira":
             raise OSError(28, "No space left on device")
-        made(self, *arguments, **options)  # type: ignore[arg-type]
+        made(path, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(Path, "mkdir", failing)
+    monkeypatch.setattr(os, "mkdir", failing)
 
     with pytest.raises(EnvironmentProblemError, match="cannot write"):
-        RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"b"}, new=True)
+        _write(tmp_path, {"scenario.json": b"b"}, new=True)
     assert list((tmp_path / "scenarios" / "ransomware").iterdir()) == []
+
+
+def test_an_update_replaces_the_files_given(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+
+    _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+
+    assert (directory / "scenario.json").read_bytes() == b"{}\n"
+    assert (directory / "scenario.yaml").read_text() == "external_id: one\n"
+    names = sorted(path.name for path in directory.iterdir())
+    assert names == ["README.md", "scenario.json", "scenario.yaml"]  # nothing kept aside
+
+
+def test_an_update_is_put_back_when_the_run_does_not_end(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+
+    assert _interrupted(tmp_path, {"scenario.json": b"{}\n"}, new=False) == b"{}\n"
+
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+    names = sorted(path.name for path in directory.iterdir())
+    assert names == ["README.md", "scenario.json", "scenario.yaml"]
+
+
+def test_an_update_of_a_file_that_cannot_be_kept_aside_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+    (directory / "scenario.json").unlink()
+
+    with pytest.raises(EnvironmentProblemError, match="cannot write"):
+        _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    assert sorted(path.name for path in directory.iterdir()) == ["README.md", "scenario.yaml"]
 
 
 def test_a_hidden_directory_left_by_an_interrupted_write_is_no_entry(tmp_path: Path) -> None:

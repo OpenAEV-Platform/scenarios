@@ -8,6 +8,7 @@ import secrets
 import stat
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -444,6 +445,50 @@ def test_an_output_is_reserved_before_anything_is_written(tmp_path: Path) -> Non
     (tmp_path / "linked").symlink_to(tmp_path)
     with pytest.raises(UnsafeInputError):
         reserve_output(tmp_path / "linked" / "other.json")
+
+
+def _descriptors(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:
+    """The descriptors opened and closed from now on."""
+    opened: list[int] = []
+    closed: list[int] = []
+    real_open, real_close = os.open, os.close
+
+    def spied_open(*arguments: Any, **options: Any) -> int:
+        descriptor = real_open(*arguments, **options)
+        opened.append(descriptor)
+        return descriptor
+
+    def spied_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    monkeypatch.setattr(os, "open", spied_open)
+    monkeypatch.setattr(os, "close", spied_close)
+    return opened, closed
+
+
+def test_an_output_leaves_nothing_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    opened, closed = _descriptors(monkeypatch)
+
+    write_output(tmp_path / "scenario.json", b"x")
+
+    assert opened
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_reservation_that_cannot_end_leaves_nothing_open_nor_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(descriptor: int, mode: int) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    opened, closed = _descriptors(monkeypatch)
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot write"):
+        reserve_output(tmp_path / "plan.json")
+    assert sorted(opened) == sorted(closed)
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")

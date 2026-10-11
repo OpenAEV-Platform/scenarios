@@ -110,7 +110,7 @@ def plan_document(
 ) -> dict[str, Any]:
     """The plan of the pull request: the files written with their digests, from the commit
     ``base``, and what is left, from intake and from the checks of the entry written."""
-    if result.request is None:
+    if result.request is None or result.refusals:
         raise ValueError("a refused request has no plan")
     entry = result.request.entry
     digests = {f"{entry}/{name}": ContentHash.of_bytes(data).hex for name, data in files.items()}

@@ -276,6 +276,15 @@ def test_a_refused_request_has_no_plan() -> None:
         plan_document(_intake({**NEW, "mode": "replace"}), {}, "f" * 40, ())
 
 
+def test_a_request_refused_after_its_schema_has_no_plan() -> None:
+    result = _intake({**NEW, "domain": "malware"})
+    assert result.request is not None
+    assert result.refusals
+
+    with pytest.raises(ValueError, match="no plan"):
+        plan_document(result, {}, "f" * 40, ())
+
+
 def test_a_request_holding_a_hidden_character_is_refused_before_anything() -> None:
     result = _intake({**NEW, "generated_by": f"run {chr(0x202E)}42"})
 

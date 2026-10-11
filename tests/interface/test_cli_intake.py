@@ -16,6 +16,7 @@ from scenario_tools.adapters.data_files import read_export
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface.cli import main
+from scenario_tools.ports.errors import EnvironmentProblemError
 
 REPOSITORY = Path(__file__).parents[2]
 EASM = REPOSITORY / "tests" / "golden" / "exports" / "easm-scenario.zip"
@@ -352,4 +353,54 @@ def test_a_run_that_fails_after_reserving_its_plan_leaves_no_plan(
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 3, result.output
+    assert not plan.exists()
+
+
+def _unpublished(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The plan cannot be published, once the entry is written."""
+
+    def failing(path: Path, data: bytes, *, create: bool = False) -> None:
+        raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+
+    monkeypatch.setattr("scenario_tools.interface.cli.write_output", failing)
+
+
+def test_a_plan_that_cannot_be_published_leaves_no_new_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    _unpublished(monkeypatch)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert not (root / ENTRY).exists()
+    assert not plan.exists()
+
+
+def test_a_plan_that_cannot_be_published_puts_an_update_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    stored = (root / ENTRY / "scenario.json").read_bytes()
+    update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
+    plan = tmp_path / "update.json"
+    _unpublished(monkeypatch)
+
+    result = _intake(
+        monkeypatch,
+        root,
+        _request(tmp_path, {**update, "issue": 13}, "update.yaml"),
+        plan,
+        _changed_export(tmp_path),
+    )
+
+    assert result.exit_code == 3, result.output
+    assert (root / ENTRY / "scenario.json").read_bytes() == stored
+    assert sorted(path.name for path in (root / ENTRY).iterdir()) == [
+        "scenario.json",
+        "scenario.yaml",
+    ]
     assert not plan.exists()

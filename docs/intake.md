@@ -91,5 +91,7 @@ apart by the plan: none is written when the request is refused, and when one is,
 that a plan left by another run is never taken for this one's.
 
 The plan's place is taken as the run starts, by an empty file, so that no other run can take
-it. A run that fails removes what it wrote, that empty file included. A run killed while
-writing may leave an incomplete entry and an empty plan: remove both before running again.
+it. The entry is kept only once its plan is written: a run that fails before then leaves the
+repository as it was, a new entry removed and an updated file put back, and removes the empty
+plan. A run killed while writing may leave an incomplete entry, an empty plan, or the previous
+`scenario.json` of an update kept aside under a hidden name: remove them before running again.
