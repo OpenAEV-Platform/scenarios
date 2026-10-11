@@ -203,15 +203,97 @@ _SOURCES = "give at least one public source: {url: https://…, tlp: TLP:CLEAR}"
 _FIX_ON_THE_PLATFORM = (
     "fix it on the platform, export the scenario again and write it in scenario.yaml too"
 )
+_WHEN_YOU_CAN = (
+    "fix it on the platform when you can, export the scenario again and write it in "
+    "scenario.yaml too"
+)
+
+
+# Line breaks other than "\n", and the blanks that may end a line: a tab or a space (Zs).
+_BREAKS = ("\r", chr(0x85), chr(0x2028), chr(0x2029))
+_TRAILING = "".join(
+    map(chr, (0x09, 0x20, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x202F, 0x205F, 0x3000))
+)
+
+
+@dataclass(frozen=True)
+class Cleaned:
+    """A text cleaned for ``scenario.yaml``, and what cleaning it changed, by counts only."""
+
+    text: str
+    breaks: int  # line breaks made a plain "\n"
+    trimmed: int  # lines whose ending blanks were removed
+    hard_breaks: int  # of them, Markdown hard breaks lost: two spaces or more, then a line
+    outer: bool  # blank lines before or after the text removed
+
+    @property
+    def changed(self) -> bool:
+        """Whether cleaning changed anything."""
+        return bool(self.breaks or self.trimmed or self.outer)
+
+
+def clean(text: str) -> Cleaned:
+    """``text`` with every line break a plain ``\n``, no tab or space ending a line, and no
+    blank line before or after it, so that it is written as a block a person can edit; the
+    first line's indentation is kept, as it may open a Markdown list or code block. Cleaning
+    twice changes nothing."""
+    breaks = text.count("\r\n")
+    plain = text.replace("\r\n", "\n")
+    for other in _BREAKS:
+        breaks += plain.count(other)
+        plain = plain.replace(other, "\n")
+    lines = plain.split("\n")
+    kept = [line.rstrip(_TRAILING) for line in lines]
+    trimmed = sum(1 for line, short in zip(lines, kept, strict=True) if line != short)
+    # A hard break shows only between two lines of text.
+    hard_breaks = sum(
+        1 for index in range(len(lines) - 1)
+        if lines[index].endswith("  ") and kept[index] and kept[index + 1]
+    )  # fmt: skip
+    joined = "\n".join(kept)
+    cleaned = joined.strip("\n")
+    return Cleaned(cleaned, breaks, trimmed, hard_breaks, cleaned != joined)
+
+
+def _times(count: int, one: str, several: str) -> str:
+    return f"{count} {one if count == 1 else several}"
+
+
+def _cleaned_reason(cleaned: Cleaned) -> str:
+    """What cleaning the export's description changed, by counts, never its text."""
+    changes = []
+    if cleaned.breaks:
+        changes.append(f"{_times(cleaned.breaks, 'line break', 'line breaks')} unified")
+    if cleaned.trimmed:
+        changes.append(f"{_times(cleaned.trimmed, 'line end', 'line ends')} trimmed")
+    if cleaned.outer:
+        changes.append("the blank lines around the text removed")
+    reason = f"the export's description was cleaned for scenario.yaml: {', '.join(changes)}"
+    if cleaned.hard_breaks:
+        lost = _times(cleaned.hard_breaks, "Markdown hard break", "Markdown hard breaks")
+        verb = "is" if cleaned.hard_breaks == 1 else "are"
+        return f"{reason}; {lost} (two spaces ending a line) {verb} lost: check its layout"
+    return f"{reason}; nothing to do"
 
 
 def _bounded(value: str, limit: int, field: str) -> tuple[str, tuple[str, str] | None]:
-    """The export's text for ``field``, or nothing and why, when the schema would refuse it."""
+    """The export's text for ``field``, or nothing and why, when the schema would refuse it; a
+    text that would need cleaning is kept as it is, since it must equal the export's, and why
+    it should be fixed is given."""
     if not value.strip():
         return "", (f"/{field}", f"the export has no {field}: {_FIX_ON_THE_PLATFORM}")
     if len(value) > limit:
         why = f"the export's {field} has {len(value)} characters, more than {limit}"
         return "", (f"/{field}", f"{why}: {_FIX_ON_THE_PLATFORM}")
+    cleaned = clean(value)
+    if cleaned.changed or value != value.strip():  # a name has no indentation to keep
+        what = (
+            "blanks around it" if value != value.strip()
+            else "line breaks other than \\n" if cleaned.breaks
+            else "blanks ending a line"
+        )  # fmt: skip
+        kept = "kept as it is, since it must equal the export's"
+        return value, (f"/{field}", f"the export's {field} has {what}: {kept}; {_WHEN_YOU_CAN}")
     return value, None
 
 
@@ -232,16 +314,21 @@ def starting_metadata(
     so that the file stays small enough to read back."""
     todo: dict[str, str] = dict(_DEFAULTS)
     name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
-    if description.strip() and len(description) > DESCRIPTION_LIMIT:
+    cleaned = clean(description)
+    description = cleaned.text
+    if len(description) > DESCRIPTION_LIMIT:
         why_description: tuple[str, str] | None = (
             "/description",
-            f"the export's description has {len(description)} characters, more than "
-            f"{DESCRIPTION_LIMIT}: write a shorter one",
+            f"the export's description has {len(description)} characters"
+            f"{' once cleaned' if cleaned.changed else ''}, more than {DESCRIPTION_LIMIT}: "
+            "write a shorter one",
         )
         description = ""
     elif not description.strip():
         why_description = ("/description", "write a description: the export has none")
         description = ""
+    elif cleaned.changed:
+        why_description = ("/description", _cleaned_reason(cleaned))
     else:
         why_description = None
     severity = facts.severity if facts.severity in SEVERITIES else ""
