@@ -457,16 +457,17 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
 
     def produce() -> Report:
         source = RepositoryEntries(root)
-        # The rules the checks read are the repository's too: never through a link either.
-        loader = YamlDataLoader(source.directory("policy/data"))
+        # The rules the checks read are the maintainers', read like the entries, never through
+        # a link; rules that cannot be used are the environment's fault, never an entry's.
         try:
+            loader = YamlDataLoader(source.directory("policy/data"))
             builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
-        except ValueError as error:
+        except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
             raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
         try:
             schemas = source.directory("schemas")
             schema = JsonSchemaValidator(schemas)
-        except (OSError, ValueError, EnvironmentProblemError) as error:
+        except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
             raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
         if not (schemas / "scenario.schema.json").is_file():
             raise EnvironmentProblemError("schemas cannot be used: scenario.schema.json is missing")

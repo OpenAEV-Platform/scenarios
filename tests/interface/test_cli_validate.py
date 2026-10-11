@@ -277,8 +277,10 @@ def test_rules_reached_through_a_link_inside_the_repository_are_refused(
 
     result = _invoke(monkeypatch, "validate", str(entry))
 
-    assert result.exit_code == 1, result.output
-    assert _findings(result) == [("IO-013", linked, "")]
+    assert result.exit_code == 3, result.output  # the maintainers' rules, not the entry
+    error = json.loads(result.stdout)["error"]
+    assert "cannot be used" in error
+    assert "symbolic link" in error
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
@@ -295,3 +297,24 @@ def test_an_entry_behind_a_directory_that_cannot_be_searched_is_the_environment_
         locked.chmod(0o755)
 
     assert result.exit_code == 3, result.output
+
+
+@pytest.mark.parametrize(
+    ("damaged", "content"),
+    [
+        ("policy/data/builtin-contracts.yaml", "contracts: ["),
+        ("schemas/scenario.schema.json", "{"),
+    ],
+    ids=["policy data", "schema"],
+)
+def test_rules_that_cannot_be_read_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, damaged: str, content: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / damaged).write_text(content)
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3, result.output
+    assert "cannot be used" in json.loads(result.stdout)["error"]
