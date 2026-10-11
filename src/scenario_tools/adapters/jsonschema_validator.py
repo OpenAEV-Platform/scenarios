@@ -18,9 +18,11 @@ from typing import Any
 
 import jsonschema
 from jsonschema import Draft202012Validator
+from referencing.exceptions import Unresolvable
 
 from scenario_tools.adapters.safe_readers import read_json_file
 from scenario_tools.domain.shared.finding import shorten
+from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.schema import SchemaViolation
 
 _SUFFIX = ".schema.json"
@@ -173,8 +175,13 @@ class JsonSchemaValidator:
         longer than its bound, which the schemas check before the list's items."""
         validator = self._validators[schema]
         violations: set[SchemaViolation] = set()
-        for error in validator.iter_errors(document):
-            violations.update(_violations(error, VIOLATION_LIMIT - len(violations)))
-            if len(violations) >= VIOLATION_LIMIT or error.validator == "maxItems":
-                break
+        try:
+            for error in validator.iter_errors(document):
+                violations.update(_violations(error, VIOLATION_LIMIT - len(violations)))
+                if len(violations) >= VIOLATION_LIMIT or error.validator == "maxItems":
+                    break
+        except Unresolvable as error:  # the maintainers' schemas, not the document
+            raise EnvironmentProblemError(
+                f"schema {schema}: a reference cannot be resolved: {error}"
+            ) from error
         return tuple(sorted(violations, key=_violation_key))
