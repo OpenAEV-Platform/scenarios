@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.intake import (
     NEW,
     IntakeRequest,
@@ -70,13 +71,19 @@ def intake_entry(
             ),
         )
     request = IntakeRequest.from_document(request_document)
-    refusals = domain_refusals(request, domains, request_path) or intake_refusals(
-        request,
-        _scenario_name(export),
-        source.entries(),
-        request_path=request_path,
-        export_path=export_path,
-        place_taken=request.mode == NEW and source.exists(request.entry),
+    # What the request writes is checked as the export is, before anything is written.
+    refusals = hidden_character_findings(request_document, request_path)
+    refusals = (
+        refusals
+        or domain_refusals(request, domains, request_path)
+        or intake_refusals(
+            request,
+            _scenario_name(export),
+            source.entries(),
+            request_path=request_path,
+            export_path=export_path,
+            place_taken=request.mode == NEW and source.exists(request.entry),
+        )
     )
     if refusals:
         return IntakeResult(request, refusals)

@@ -32,9 +32,10 @@ class EntrySource(Protocol):
         ...
 
     def entries(self) -> tuple[CatalogueEntry, ...]:
-        """Every entry with its directory, external ID and scenario name, in path order; an
-        entry whose ``scenario.yaml`` cannot be read, or declares no external ID, is left out:
-        its own check says why."""
+        """Every entry with its directory, external ID and scenario name, in path order. An entry
+        whose ``scenario.yaml`` declares a name but no usable external ID is kept, with an empty
+        one, so that no other entry takes its name; one that cannot be read, or declares
+        neither, is left out: its own check says why."""
         ...
 
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:

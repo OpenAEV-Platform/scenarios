@@ -274,3 +274,10 @@ def test_injects_the_update_no_longer_has_are_reported() -> None:
 def test_a_refused_request_has_no_plan() -> None:
     with pytest.raises(ValueError, match="no plan"):
         plan_document(_intake({**NEW, "mode": "replace"}), {}, "f" * 40, ())
+
+
+def test_a_request_holding_a_hidden_character_is_refused_before_anything() -> None:
+    result = _intake({**NEW, "generated_by": f"run {chr(0x202E)}42"})
+
+    assert _codes(result.refusals) == [("IO-017", REQUEST, "/generated_by")]
+    assert result.scenario_json is None
