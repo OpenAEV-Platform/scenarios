@@ -22,6 +22,7 @@ from scenario_tools.domain.catalogue.metadata import (
     NAME_LIMIT,
     PLATFORMS,
     SEVERITIES,
+    TRUNCATION_MARK,
     ScenarioMetadata,
     cross_check,
 )
@@ -45,10 +46,12 @@ def test_a_starting_metadata_is_valid_once_threat_and_sources_are_given(referenc
 
     validator = JsonSchemaValidator(ROOT / "schemas")
     long = len(document["scenario_information"]["scenario_description"]) > DESCRIPTION_LIMIT
-    to_complete = {"/threat", "/sources"} | ({"/description"} if long else set())
-    # Every value written is one the schema accepts; an empty one is left to complete.
+    to_complete = {"/threat", "/sources"}
+    # Every value written is one the schema accepts; an empty one is left to complete, and a
+    # description over its bound is cut, marked, and left to review.
     assert {v.pointer for v in validator.validate("scenario", metadata)} == to_complete
-    assert to_complete <= {finding.field for finding in findings}
+    assert to_complete | ({"/description"} if long else set()) <= {f.field for f in findings}
+    assert str(metadata["description"]).endswith(TRUNCATION_MARK) is long
     assert len(yaml_bytes(metadata)) < YAML_LIMIT
     complete = {**metadata, **THREAT_AND_SOURCES, "description": "A scenario."}
     assert validator.validate("scenario", complete) == ()
