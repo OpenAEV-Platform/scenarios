@@ -23,6 +23,7 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 
 JSON_LIMIT = 20 * 1024 * 1024
 YAML_LIMIT = 256 * 1024
+TEXT_LIMIT = 1024 * 1024  # a README or a CHANGELOG
 MAX_DEPTH = 64
 
 _MERGE_TAG = "tag:yaml.org,2002:merge"
@@ -105,6 +106,14 @@ def _decode(data: bytes) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as error:
         raise _RefusedError("IO-002", "not valid UTF-8") from error
+
+
+def read_text_file(path: Path, *, limit: int = TEXT_LIMIT) -> str:
+    """Read a UTF-8 text file within its limit, or raise ``UnsafeInputError``."""
+    try:
+        return _decode(read_regular_file(path, limit))
+    except _RefusedError as refusal:
+        raise UnsafeInputError(refusal.code, refusal.message, str(path)) from refusal
 
 
 # JSON

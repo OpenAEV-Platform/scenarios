@@ -1,9 +1,10 @@
 """Preparing an entry: the export, normalised with the rules kept as data, in stored form."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from scenario_tools.domain.catalogue.archive import belongs_to
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.catalogue.identifiers import (
@@ -112,3 +113,17 @@ def start_metadata(
         unknown_injects=len(unknown),
         path=path,
     )
+
+
+def renormaliser(data: DataLoader) -> Callable[[object, str, str], bytes]:
+    """What normalisation writes for a stored scenario, given its entry's external ID and its
+    path: normalised again with itself as the previous version, unless it is another entry's,
+    when what normalisation writes for this one differs anyway."""
+
+    def renormalised(document: object, external_id: str, path: str) -> bytes:
+        previous = document if belongs_to(document, external_id) else None
+        return prepare_entry(
+            document, external_id, data, path=path, previous=previous
+        ).scenario_json
+
+    return renormalised

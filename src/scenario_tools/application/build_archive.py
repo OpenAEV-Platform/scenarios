@@ -2,9 +2,10 @@
 
 from collections.abc import Callable
 
+from scenario_tools.application.findings import not_normalised
 from scenario_tools.domain.catalogue.archive import archive_findings
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
-from scenario_tools.domain.shared.finding import Finding, Report, Severity
+from scenario_tools.domain.shared.finding import Finding, Report
 from scenario_tools.ports.archive import ArchiveBuilder
 from scenario_tools.ports.errors import UnsafeInputError
 
@@ -35,17 +36,7 @@ def build_archive(
     except ExportStructureError as error:
         raise UnsafeInputError(error.code, str(error), path) from error
     if renormalised(document) != scenario:
-        findings += (
-            Finding(
-                "GEN-002",
-                Severity.BLOCKING,
-                path,
-                "",
-                "the file is not what normalisation writes for the external ID in "
-                "scenario.yaml: it was edited by hand, or normalised with another external ID; "
-                "normalise the export again with this one",
-            ),
-        )
+        findings += (not_normalised(path),)
     if findings:
         return Report("archive", findings), None
     data = builder.build(scenario, attachments)

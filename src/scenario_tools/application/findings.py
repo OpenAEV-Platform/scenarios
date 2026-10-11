@@ -34,3 +34,17 @@ def finding_from_unsafe_input(error: UnsafeInputError, root: PurePath) -> Findin
     return Finding(
         error.code, Severity.BLOCKING, repository_path(error.path, root), "", error.message
     )
+
+
+def not_normalised(path: str) -> Finding:
+    """The ``GEN-002`` finding of a stored ``scenario.json`` at ``path`` that is not what
+    normalisation writes for the entry."""
+    return Finding(
+        "GEN-002",
+        Severity.BLOCKING,
+        path,
+        "",
+        "the file is not what normalisation writes for the external ID in scenario.yaml: it was "
+        "edited by hand, or normalised with another external ID; normalise the export again "
+        "with this one",
+    )

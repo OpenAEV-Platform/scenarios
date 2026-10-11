@@ -29,16 +29,18 @@ from scenario_tools.adapters.data_files import (
     read_stored_scenario,
     write_output,
 )
+from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
+from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
-from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
-from scenario_tools.domain.catalogue.archive import belongs_to
+from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
@@ -407,15 +409,7 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
             ZipArchiveBuilder(),
             # Normalised again with itself as the previous version, unless it is another
             # entry's: then what normalisation writes for this one differs anyway.
-            renormalised=lambda stored: (
-                prepare_entry(
-                    stored,
-                    external_id,
-                    loader,
-                    path=path,
-                    previous=stored if belongs_to(stored, external_id) else None,
-                ).scenario_json
-            ),
+            renormalised=lambda stored: renormaliser(loader)(stored, external_id, path),
             contract_findings=lambda stored: (
                 export_facts(stored, builtin, path)[1]
                 + copy_findings(stored, builtin, path)
@@ -429,6 +423,70 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
         return report
 
     _emit(ctx, "archive", produce, root)
+
+
+@main.command(name="validate")
+@click.argument(
+    "entries",
+    nargs=-1,
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+)
+@click.pass_context
+def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
+    """Check each of ENTRIES, an entry directory, against the schemas and the rules of an entry
+    of the repository that holds them; exit with 1 if anything blocks one of them.
+
+    The policy rules, versioning against the previous release, the generated README.md, the
+    payload references and the CHANGELOG.md sections are not run yet: an entry that passes
+    may still fail them."""
+    # Not resolved: a link on the way is refused when the entry is read, never followed.
+    directories = list(dict.fromkeys(Path(os.path.normpath(entry.absolute())) for entry in entries))
+    levels: list[Path] = []
+    roots: set[Path] = set()
+    try:
+        for directory in directories:
+            levels = _levels_as_given(directory)
+            roots.add(_repository_root(levels, directory))
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, "validate", _refused(error), levels[-1] if levels else None)
+    if len(roots) > 1:
+        raise click.UsageError("the entries belong to different repositories")
+    [root] = roots
+
+    def produce() -> Report:
+        loader = YamlDataLoader(root / "policy" / "data")
+        try:
+            builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+        except ValueError as error:
+            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+        source = RepositoryEntries(root)
+        schema = JsonSchemaValidator(root / "schemas")
+        renormalised = renormaliser(loader)
+        findings: tuple[Finding, ...] = ()
+        for directory in directories:
+            entry = directory.relative_to(root).as_posix()
+            findings += validate_entry(
+                entry, source, schema=schema, builtin=builtin, renormalised=renormalised
+            )
+        return Report("validate", findings)
+
+    _emit(ctx, "validate", produce, root)
+
+
+def _levels_as_given(directory: Path) -> list[Path]:
+    """DIRECTORY and those of its parents that hold policy data, from the deepest up, the path
+    taken as given: a link on it is refused later, when the entry is read."""
+    try:
+        return [
+            level
+            for level in (directory, *directory.parents)
+            if (level / "policy" / "data").is_dir()
+        ]
+    except OSError as error:  # a directory that cannot be searched, for instance
+        raise EnvironmentProblemError(
+            f"cannot look for policy data above {directory}: {error.strerror}"
+        ) from error
 
 
 def _declared_external_id(metadata: Path) -> object:

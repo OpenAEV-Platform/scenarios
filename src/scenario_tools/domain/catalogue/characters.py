@@ -5,10 +5,11 @@ every one of these views is checked. An escape still written after the last deco
 whatever it writes, so that no depth of encoding hides a character from the check."""
 
 import re
-from collections.abc import Iterator
+import unicodedata
+from collections.abc import Collection, Iterator
 from typing import Any
 
-from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, hidden_occurrences
+from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, Hidden, hidden_occurrences
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, REPORT_LIMIT, Finding, Severity
 
 # What one decoding of a JSON string turns into a single character: a pair of backslashes, an
@@ -19,6 +20,7 @@ _HEX = "[0-9a-fA-F]"
 _ESCAPE = re.compile(
     rf"\\(?:(\\)|u(?:([dD][89abAB]{_HEX}{{2}})\\u([dD][c-fC-F]{_HEX}{{2}})|({_HEX}{{4}})))"
 )
+_YAML_BREAKS = frozenset((chr(0x85), chr(0x2028), chr(0x2029)))
 _LEFT = re.compile(rf"\\u{_HEX}{{4}}")  # an escape a further decoding would read
 _DECODINGS = 3
 _TO_DO = "remove it on the platform and export the scenario again"
@@ -136,11 +138,14 @@ def _message(what: str, count: int, first: int, to_do: str = _TO_DO) -> str:
     return f"{what}, {times}, first at character {first}: {to_do}"
 
 
-def _messages(text: str, where: str, decoded: bool) -> list[str]:
+def _messages(
+    text: str, where: str, decoded: bool, written: Collection[str], to_do: str
+) -> list[str]:
     """The findings of a text: each hidden character once, whatever view shows it, with the
     larger count of any view and the earliest place in the source (for an escape, where it
     starts), and the escapes still written after the last decoding, if any: all in the order of
-    their first place."""
+    their first place. A character whose label is in ``written`` is left out: the file was
+    found holding it as written already."""
     views = _views(text) if decoded else [text]
     found = [{hidden.label: hidden for hidden in hidden_occurrences(view)} for view in views]
     deepest = views[-1] if len(views) > _DECODINGS else ""
@@ -151,31 +156,105 @@ def _messages(text: str, where: str, decoded: bool) -> list[str]:
         wanted.append((_DECODINGS, first_left.start()))
     sources = _sources(views, wanted)
     characters = []
-    for label in dict.fromkeys(label for view in found for label in view):
+    for label in dict.fromkeys(label for view in found for label in view if label not in written):
         seen = [(level, view[label]) for level, view in enumerate(found) if label in view]
         first, by_escape = min(sources[(level, hidden.first)] for level, hidden in seen)
         place = " as an escape" if by_escape and label not in found[0] else where
         what = f"invisible or bidirectional control character {label}{place}"
         count = max(hidden.count for _, hidden in seen)
-        characters.append((first, label, _message(what, count, first)))
+        characters.append((first, label, _message(what, count, first, to_do)))
     if first_left is not None:
         what = f"escape sequence encoded more than {_DECODINGS} levels deep"
         first = sources[(_DECODINGS, first_left.start())][0]
         count = 1 + sum(1 for _ in left_matches)
-        to_do = f"encode it fewer times, or {_TO_DO}"
-        characters.append((first, what, _message(what, count, first, to_do)))
+        fewer = f"encode it fewer times, or {to_do}"
+        characters.append((first, what, _message(what, count, first, fewer)))
     return [message for _, _, message in sorted(characters)]
 
 
-def hidden_character_findings(document: object, path: str) -> tuple[Finding, ...]:
+def _breaks(text: str) -> tuple[Hidden, ...]:
+    """The line breaks of ``text`` that YAML reads, ending a comment for instance, while a
+    reviewer may not see them, each once with its count and the offset of the first."""
+    found: dict[str, list[int]] = {}
+    for index, character in enumerate(text):
+        if character in _YAML_BREAKS:
+            found.setdefault(character, [0, index])[0] += 1
+    return tuple(
+        Hidden(_name(character), count, first) for character, (count, first) in found.items()
+    )
+
+
+def _name(character: str) -> str:
+    code = f"U+{ord(character):04X}"
+    name = unicodedata.name(character, "")
+    return f"{code} ({name})" if name else code
+
+
+def text_findings(text: str, path: str, *, breaks: bool = False) -> tuple[Finding, ...]:
+    """An ``IO-017`` finding for each hidden character of ``text``, a file a person writes, such
+    as Markdown: checked as written, never decoded, since its escapes are text to read; with
+    ``breaks``, for YAML, each line break other than ``\\n`` and ``\\r`` too, which YAML reads
+    while a reviewer may not see it. Past ``REPORT_LIMIT``, the last finding counts the
+    characters left."""
+    lines = tuple(
+        Finding(
+            "IO-017",
+            Severity.BLOCKING,
+            path,
+            "",
+            _message(
+                f"line break {hidden.label} other than \\n, which YAML reads while a reviewer "
+                "may not see it",
+                hidden.count,
+                hidden.first,
+                "remove it from the file",
+            ),
+        )
+        for hidden in (_breaks(text) if breaks else ())
+    )
+    return lines + _hidden_text_findings(text, path)
+
+
+def _hidden_text_findings(text: str, path: str) -> tuple[Finding, ...]:
+    occurrences = hidden_occurrences(text)
+    shown = occurrences if len(occurrences) <= REPORT_LIMIT else occurrences[: REPORT_LIMIT - 1]
+    findings = tuple(
+        Finding(
+            "IO-017",
+            Severity.BLOCKING,
+            path,
+            "",
+            _message(
+                f"invisible or bidirectional control character {hidden.label}",
+                hidden.count,
+                hidden.first,
+                "remove it from the file",
+            ),
+        )
+        for hidden in shown
+    )
+    if len(shown) == len(occurrences):
+        return findings
+    message = f"{len(occurrences) - len(shown)} more hidden characters in the file: remove them"
+    return (*findings, Finding("IO-017", Severity.BLOCKING, path, "", message))
+
+
+def hidden_character_findings(
+    document: object,
+    path: str,
+    *,
+    written: Collection[str] = frozenset(),
+    to_do: str = _TO_DO,
+) -> tuple[Finding, ...]:
     """An ``IO-017`` finding for each hidden character in each text of ``document``, at the
-    pointer of its value or key, with its count, never the text. Past ``REPORT_LIMIT``, the last
-    finding counts the texts left, a text cut short included, so that a flood of them stays
-    small to report while the first ones are shown."""
+    pointer of its value or key, with its count, never the text, and ``to_do``. A character whose
+    label is in ``written`` is left out, the file it was read from being reported as holding it.
+    Past ``REPORT_LIMIT``, the last finding counts the texts left, a text cut short included, so
+    that a flood of them stays small to report while the first ones are shown."""
     findings: list[Finding] = []
     left = 0
     for pointer, where, text, decoded in _texts(document):
-        messages = _messages(text, where, decoded)
+        messages = _messages(text, where, decoded, written, to_do)
         if not messages:
             continue
         room = REPORT_LIMIT - 1 - len(findings)  # never below zero: no more is ever added
