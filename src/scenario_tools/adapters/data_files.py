@@ -147,8 +147,10 @@ def _not_followed(path: Path, error: OSError) -> Exception:
 
 def reserve_output(path: Path) -> None:
     """Reserve ``path`` for an output written later: make it as an empty file, never over
-    anything there nor through a link, so that no other run can take it meanwhile and a
-    directory that cannot be written in is known before anything else is written."""
+    anything there nor through a link at its place, the file or its directory, so that no other
+    run can take it meanwhile and a directory that cannot be written in is known before anything
+    else is written. The directories above are the path the caller was given, links included,
+    as ``write_output`` takes them."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:

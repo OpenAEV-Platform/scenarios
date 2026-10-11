@@ -274,15 +274,17 @@ def test_a_directory_above_made_by_another_run_meanwhile_is_written_into(
     made = os.mkdir
 
     def raced(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
-        made(path, mode, dir_fd=dir_fd)
-        if Path(path).name == "ransomware":  # another run made it first
+        if Path(path).name == "ransomware":  # another run made it first, its own way
+            made(path, 0o700, dir_fd=dir_fd)
             raise FileExistsError(17, "File exists")
+        made(path, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "mkdir", raced)
 
     _write(tmp_path, {"scenario.json": b"{}"}, new=True)
 
     assert (tmp_path / ENTRY / "scenario.json").read_bytes() == b"{}"
+    assert oct((tmp_path / ENTRY).parent.stat().st_mode & 0o777) == oct(0o700)  # not ours
 
 
 def _descriptors(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:
@@ -393,7 +395,8 @@ def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
     entry = tmp_path / ENTRY
     assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
     assert (entry / "scenario.yaml").read_bytes() == b"a: 1\n"
-    assert oct(entry.stat().st_mode & 0o777) == oct(0o755)
+    for directory in (entry, entry.parent, entry.parent.parent):  # those made by the run too
+        assert oct(directory.stat().st_mode & 0o777) == oct(0o755), directory
     assert [path.name for path in entry.parent.iterdir()] == ["akira"]  # nothing else left
 
 
@@ -570,3 +573,15 @@ def test_a_new_entry_that_cannot_be_removed_says_so(tmp_path: Path) -> None:
         parent.chmod(0o755)
     assert isinstance(error.value.__cause__, RuntimeError)
     assert (tmp_path / ENTRY).is_dir()  # left, and said so
+
+
+def test_a_directory_made_whose_mode_cannot_be_set_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(descriptor: int, mode: int) -> None:
+        raise OSError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot make scenarios"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)

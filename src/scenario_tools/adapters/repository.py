@@ -207,14 +207,26 @@ class RepositoryEntries:
                     try:
                         os.mkdir(part, 0o755, dir_fd=descriptor)
                     except FileExistsError:
-                        pass  # made a moment ago: opened as any other, never through a link
+                        made = False  # by another a moment ago: opened as any other
                     except OSError as error:
                         raise EnvironmentProblemError(
                             f"cannot make {where}: {error.strerror}"
                         ) from error
+                    else:
+                        made = True
                     child = _child(descriptor, part, where)
+                else:
+                    made = False
                 os.close(descriptor)
                 descriptor = child
+                if made:
+                    try:
+                        # A directory of the repository, read by all, whatever the umask.
+                        os.fchmod(descriptor, 0o755)  # nosec B103
+                    except OSError as error:
+                        raise EnvironmentProblemError(
+                            f"cannot make {where}: {error.strerror}"
+                        ) from error
         except BaseException:
             os.close(descriptor)
             raise
