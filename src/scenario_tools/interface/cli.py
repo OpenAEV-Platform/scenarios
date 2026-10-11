@@ -467,7 +467,13 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
         except ValueError as error:
             raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
         source = RepositoryEntries(root)
-        schema = JsonSchemaValidator(root / "schemas")
+        schemas = root / "schemas"
+        try:
+            schema = JsonSchemaValidator(schemas)
+        except (OSError, ValueError) as error:
+            raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
+        if not (schemas / "scenario.schema.json").is_file():
+            raise EnvironmentProblemError("schemas cannot be used: scenario.schema.json is missing")
         renormalised = renormaliser(loader)
         findings: list[Finding] = []
         for entry in dict.fromkeys(relatives):  # an entry given twice is checked once

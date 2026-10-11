@@ -244,3 +244,20 @@ def test_a_repository_that_cannot_be_looked_at_is_the_environment_s_fault(
 
     assert result.exit_code == 3
     assert "cannot read" in json.loads(result.stdout)["error"]
+
+
+@pytest.mark.parametrize("damage", ["missing", "invalid"])
+def test_unusable_schemas_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, damage: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    if damage == "missing":
+        shutil.rmtree(root / "schemas")
+    else:
+        (root / "schemas" / "scenario.schema.json").write_text('{"type": 5}')
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3, result.output
+    assert "schemas cannot be used" in json.loads(result.stdout)["error"]
