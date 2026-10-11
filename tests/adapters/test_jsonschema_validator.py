@@ -19,6 +19,7 @@ from scenario_tools.adapters.jsonschema_validator import (
     json_pointer,
 )
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT
+from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.schema import SchemaViolation
 
 SCHEMAS = Path(__file__).parents[2] / "schemas"
@@ -832,3 +833,14 @@ def test_unexpected_properties_are_counted_within_the_cap(
 
     assert len(violations) == VIOLATION_LIMIT
     assert time.monotonic() - started < 0.2  # only the names reported are looked at
+
+
+def test_a_reference_the_schemas_cannot_resolve_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "broken.schema.json").write_text(
+        '{"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "missing.json"}'
+    )
+
+    with pytest.raises(EnvironmentProblemError, match="cannot be resolved"):
+        JsonSchemaValidator(tmp_path).validate("broken", {})

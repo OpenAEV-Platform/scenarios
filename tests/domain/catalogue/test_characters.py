@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.domain.catalogue.characters import hidden_character_findings
+from scenario_tools.domain.catalogue.characters import hidden_character_findings, text_findings
 from scenario_tools.domain.shared.finding import REPORT_LIMIT, Severity
 
 PATH = "scenarios/x/y/scenario.json"
@@ -391,3 +391,69 @@ def test_a_text_with_more_characters_than_the_report_holds_keeps_those_that_fit(
 
     assert [field for field, _ in fields] == ["/v"] * (REPORT_LIMIT - 1) + [""]
     assert fields[-1][1] == "2 more texts hold hidden characters"
+
+
+def test_a_markdown_text_is_checked_as_written_never_decoded() -> None:
+    text = f"# Title\n\nUse \\u202e with care.\n{RLO}x{ZWSP}\n{RLO}"
+
+    findings = text_findings(text, "scenarios/x/y/README.md")
+
+    assert [(f.code, f.severity, f.path, f.field) for f in findings] == [
+        ("IO-017", Severity.BLOCKING, "scenarios/x/y/README.md", "")
+    ] * 2
+    assert [f.message for f in findings] == [
+        "invisible or bidirectional control character U+202E (RIGHT-TO-LEFT OVERRIDE), "
+        "2 times, first at character 31: remove it from the file",
+        "invisible or bidirectional control character U+200B (ZERO WIDTH SPACE), 1 time, first "
+        "at character 33: remove it from the file",
+    ]
+    assert text_findings("# Clean\n", "scenarios/x/y/README.md") == ()
+
+
+def test_a_text_full_of_hidden_characters_gives_a_bounded_number_of_findings() -> None:
+    text = "".join(chr(code) for code in range(0xE0000, 0xE0000 + 300))
+
+    findings = text_findings(text, "scenarios/x/y/README.md")
+
+    assert len(findings) == REPORT_LIMIT
+    assert findings[-1].message == "201 more hidden characters in the file: remove them"
+    assert findings[-1].severity is Severity.BLOCKING
+
+
+def test_a_text_with_as_many_hidden_characters_as_the_report_holds_shows_them_all() -> None:
+    text = "".join(chr(code) for code in range(0xE0000, 0xE0000 + REPORT_LIMIT))
+
+    findings = text_findings(text, "scenarios/x/y/README.md")
+
+    assert len(findings) == REPORT_LIMIT
+    assert all("U+E00" in finding.message for finding in findings)
+
+
+def test_characters_already_reported_as_written_are_not_reported_again() -> None:
+    label = "U+202E (RIGHT-TO-LEFT OVERRIDE)"
+    document = {"a": f"x{RLO}", "b": f"y{ZWSP}"}
+
+    findings = hidden_character_findings(
+        document, PATH, written=frozenset({label}), to_do="remove it from the file"
+    )
+
+    assert [(f.field, f.message.split(",")[0]) for f in findings] == [
+        ("/b", "invisible or bidirectional control character U+200B (ZERO WIDTH SPACE)")
+    ]
+    assert findings[0].message.endswith(": remove it from the file")
+
+
+def test_line_breaks_yaml_reads_but_a_reviewer_may_not_see_are_found_when_asked() -> None:
+    text = f"a: 1 # note{chr(0x2028)}b: 2{chr(0x85)}c: 3{chr(0x2028)}d{chr(0x2029)}"
+
+    assert text_findings(text, "scenarios/x/y/scenario.yaml") == ()
+    findings = text_findings(text, "scenarios/x/y/scenario.yaml", breaks=True)
+
+    assert [f.message for f in findings] == [
+        "line break U+2028 (LINE SEPARATOR) other than \\n, which YAML reads while a reviewer "
+        "may not see it, 2 times, first at character 11: remove it from the file",
+        "line break U+0085 other than \\n, which YAML reads while a reviewer may not see it, "
+        "1 time, first at character 16: remove it from the file",
+        "line break U+2029 (PARAGRAPH SEPARATOR) other than \\n, which YAML reads while a "
+        "reviewer may not see it, 1 time, first at character 23: remove it from the file",
+    ]
