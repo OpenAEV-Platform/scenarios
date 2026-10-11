@@ -60,9 +60,8 @@ class RepositoryEntries:
             try:
                 mode = os.lstat(current).st_mode
             except OSError as error:
-                raise EnvironmentProblemError(
-                    f"cannot read {relative}: {error.strerror}"
-                ) from error
+                where = "/".join(parts[: index + 1])
+                raise EnvironmentProblemError(f"cannot read {where}: {error.strerror}") from error
             if stat.S_ISLNK(mode):
                 where = "/".join(parts[: index + 1])
                 raise UnsafeInputError(
@@ -78,8 +77,13 @@ class RepositoryEntries:
                 raise  # it names a directory of the path already
             raise UnsafeInputError(error.code, error.message, relative) from error
 
+    def directory(self, relative: str) -> Path:
+        """The directory at ``relative``, once neither it nor a directory above it in the
+        repository is a link, such as the policy data or the schemas the checks read."""
+        return self._checked(f"{relative}/-").parent
+
     def names(self, entry: str) -> frozenset[str]:
-        directory = self._checked(f"{entry}/-").parent  # every directory of it checked
+        directory = self.directory(entry)
         try:
             return frozenset(child.name for child in directory.iterdir())
         except OSError as error:

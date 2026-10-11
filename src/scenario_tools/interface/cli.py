@@ -426,12 +426,7 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
 
 
 @main.command(name="validate")
-@click.argument(
-    "entries",
-    nargs=-1,
-    required=True,
-    type=click.Path(path_type=Path, file_okay=False, exists=True),
-)
+@click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
 @click.pass_context
 def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     """Check each of ENTRIES, an entry directory, against the schemas and the rules of an entry
@@ -461,16 +456,17 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     [root] = roots.values()
 
     def produce() -> Report:
-        loader = YamlDataLoader(root / "policy" / "data")
+        source = RepositoryEntries(root)
+        # The rules the checks read are the repository's too: never through a link either.
+        loader = YamlDataLoader(source.directory("policy/data"))
         try:
             builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
         except ValueError as error:
             raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
-        source = RepositoryEntries(root)
-        schemas = root / "schemas"
         try:
+            schemas = source.directory("schemas")
             schema = JsonSchemaValidator(schemas)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, EnvironmentProblemError) as error:
             raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
         if not (schemas / "scenario.schema.json").is_file():
             raise EnvironmentProblemError("schemas cannot be used: scenario.schema.json is missing")

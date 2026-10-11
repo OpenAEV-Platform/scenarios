@@ -2,6 +2,7 @@
 it, whatever the working directory; its exit code says whether anything blocks it."""
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -246,7 +247,7 @@ def test_a_repository_that_cannot_be_looked_at_is_the_environment_s_fault(
     assert "cannot read" in json.loads(result.stdout)["error"]
 
 
-@pytest.mark.parametrize("damage", ["missing", "invalid"])
+@pytest.mark.parametrize("damage", ["missing", "no scenario schema", "invalid"])
 def test_unusable_schemas_are_the_environment_s_fault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, damage: str
 ) -> None:
@@ -254,6 +255,8 @@ def test_unusable_schemas_are_the_environment_s_fault(
     entry = _complete_entry(monkeypatch, root)
     if damage == "missing":
         shutil.rmtree(root / "schemas")
+    elif damage == "no scenario schema":
+        (root / "schemas" / "scenario.schema.json").unlink()
     else:
         (root / "schemas" / "scenario.schema.json").write_text('{"type": 5}')
 
@@ -261,3 +264,34 @@ def test_unusable_schemas_are_the_environment_s_fault(
 
     assert result.exit_code == 3, result.output
     assert "schemas cannot be used" in json.loads(result.stdout)["error"]
+
+
+@pytest.mark.parametrize("linked", ["policy", "policy/data", "schemas"])
+def test_rules_reached_through_a_link_inside_the_repository_are_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, linked: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / linked).rename(tmp_path / "moved")
+    (root / linked).symlink_to(tmp_path / "moved")
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 1, result.output
+    assert _findings(result) == [("IO-013", linked, "")]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_an_entry_behind_a_directory_that_cannot_be_searched_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    locked = root / "scenarios" / "techniques"
+    locked.chmod(0o644)
+    try:
+        result = _invoke(monkeypatch, "validate", str(entry))
+    finally:
+        locked.chmod(0o755)
+
+    assert result.exit_code == 3, result.output
