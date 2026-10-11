@@ -11,6 +11,7 @@ import shutil
 import stat
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import TypeVar
 
 from scenario_tools.adapters.data_files import read_stored_scenario, write_in
@@ -112,6 +113,7 @@ class RepositoryEntries:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._entries: tuple[CatalogueEntry, ...] | None = None
+        self._external_ids: Mapping[str, tuple[str, ...]] | None = None
 
     def _checked(self, relative: str) -> Path:
         """``relative``, a path in the repository, once no directory of it is a link."""
@@ -299,11 +301,16 @@ class RepositoryEntries:
         return self._entries
 
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
-        found: dict[str, list[str]] = {}
-        for entry in self.entries():
-            if entry.external_id:
-                found.setdefault(entry.external_id, []).append(entry.path)
-        return {external_id: tuple(found[external_id]) for external_id in sorted(found)}
+        """Built once a run from the entries, and shared: never changed by a reader."""
+        if self._external_ids is None:
+            found: dict[str, list[str]] = {}
+            for entry in self.entries():
+                if entry.external_id:
+                    found.setdefault(entry.external_id, []).append(entry.path)
+            self._external_ids = MappingProxyType(
+                {external_id: tuple(found[external_id]) for external_id in sorted(found)}
+            )
+        return self._external_ids
 
     def _read_entries(self) -> tuple[CatalogueEntry, ...]:
         found: list[CatalogueEntry] = []

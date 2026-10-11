@@ -135,6 +135,9 @@ def test_the_external_ids_are_read_once_a_run(tmp_path: Path) -> None:
     _entry(tmp_path, "scenarios/techniques/later", "two")
 
     assert source.external_ids() == first == {"one": (ENTRY,)}
+    assert source.external_ids() is first  # built once, however many entries are checked
+    with pytest.raises(TypeError):
+        first["two"] = ()  # type: ignore[index]  # shared, so never changed by a reader
 
 
 def test_an_entry_that_cannot_be_read_is_the_environment_s_fault(
