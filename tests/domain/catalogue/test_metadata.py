@@ -1,5 +1,6 @@
 """Scenario metadata and its cross-checks against the export."""
 
+import hashlib
 import unicodedata
 from dataclasses import replace
 from typing import Any
@@ -17,6 +18,7 @@ from scenario_tools.domain.catalogue.metadata import (
     InjectFacts,
     Requirements,
     ScenarioMetadata,
+    bound,
     clean,
     cross_check,
     is_tabletop,
@@ -451,12 +453,19 @@ def test_an_empty_description_is_left_to_write(description: str) -> None:
     assert "/description" in _todo(findings)
 
 
-def test_a_description_longer_than_the_schema_allows_is_left_to_write() -> None:
+def test_a_description_too_long_with_no_place_to_cut_is_left_to_write() -> None:
     # Copied whole, it would make a file the reader refuses; the export keeps the text.
-    metadata, findings = _start(description="d" * (DESCRIPTION_LIMIT + 1))
+    text = "d" * (DESCRIPTION_LIMIT + 1)
+    metadata, findings = _start(description=text)
 
     assert metadata["description"] == ""
-    assert f"{DESCRIPTION_LIMIT + 1} characters, more than" in _message(findings, "/description")
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    assert _message(findings, "/description") == (
+        f"the export's description has {DESCRIPTION_LIMIT + 1} characters, more than "
+        f"{DESCRIPTION_LIMIT} (SHA-256 {digest}), and no paragraph, sentence or word end between "
+        f"1000 and {DESCRIPTION_LIMIT - 1} characters to cut at: write a shorter one; "
+        "scenario.json keeps the whole text"
+    )
     kept, findings = _start(description="d" * DESCRIPTION_LIMIT)
     assert kept["description"] == "d" * DESCRIPTION_LIMIT
     assert "/description" not in _todo(findings)
@@ -672,7 +681,9 @@ def test_the_bound_applies_to_the_cleaned_description() -> None:
     assert "cleaned" in _message(findings, "/description")
     too_long, findings = _start(description="d" * (DESCRIPTION_LIMIT + 1) + " ")
     assert too_long["description"] == ""
-    assert f"{DESCRIPTION_LIMIT + 1} characters once cleaned" in _message(findings, "/description")
+    assert f"{DESCRIPTION_LIMIT + 1} characters once cleaned, more" in _message(
+        findings, "/description"
+    )
 
 
 @pytest.mark.parametrize("field", ["name", "category", "main_focus"])
@@ -705,3 +716,153 @@ def test_a_name_or_facet_that_would_need_cleaning_is_copied_as_it_is_and_listed(
         "fix it on the platform when you can, export the scenario again and write it in "
         "scenario.yaml too"
     )
+
+
+# A description over its bound, cut where a reader can tell, and marked.
+
+MARK = chr(0x2026)
+
+
+def _words(count: int, word: str = "word") -> str:
+    return " ".join([word] * count)
+
+
+def test_a_text_within_the_bound_is_kept_whole() -> None:
+    text = "a" * DESCRIPTION_LIMIT
+
+    assert bound(text) == (text, "")
+
+
+def test_a_long_text_is_cut_at_its_last_paragraph_break_in_reach() -> None:
+    first = "First paragraph. " * 70  # about 1,190 characters
+    text = f"{first.strip()}\n\nSecond. " + "More words here. " * 100
+
+    kept, kind = bound(text)
+
+    assert kept == first.strip() + MARK
+    assert kind == "paragraph"
+
+
+def test_without_a_paragraph_break_it_is_cut_at_a_sentence_end() -> None:
+    text = "One sentence ends here. " * 120  # 2,880 characters
+
+    kept, kind = bound(text)
+
+    assert kept.endswith(f"here.{MARK}")
+    assert len(kept) <= DESCRIPTION_LIMIT
+    assert len(kept) > DESCRIPTION_LIMIT - 30  # the last sentence end in reach
+    assert kind == "sentence"
+
+
+@pytest.mark.parametrize("end", ["!", "?"])
+def test_a_sentence_may_end_with_an_exclamation_or_a_question(end: str) -> None:
+    text = f"Is it a sentence{end} " * 150
+
+    kept, kind = bound(text)
+
+    assert kept.endswith(f"sentence{end}{MARK}")
+    assert kind == "sentence"
+
+
+def test_without_a_sentence_end_it_is_cut_at_a_blank() -> None:
+    kept, kind = bound(_words(600))
+
+    assert kept.endswith(f"word{MARK}")
+    assert len(kept) <= DESCRIPTION_LIMIT
+    assert kind == "word"
+
+
+def test_a_cut_that_would_end_with_a_colon_is_skipped() -> None:
+    head = "x" * 1500
+    text = f"{head} items:\n\n- a\n- b " + "y" * 600
+
+    kept, kind = bound(text)
+
+    assert not kept.removesuffix(MARK).rstrip().endswith(":")
+    assert kind == "word"
+
+
+def test_a_place_to_cut_before_1000_characters_is_not_taken() -> None:
+    text = "a" * 500 + "\n\n" + "b" * 2000
+
+    assert bound(text) == ("", "")
+
+
+def test_a_cut_never_exceeds_the_bound_with_its_mark() -> None:
+    text = "w" * (DESCRIPTION_LIMIT - 1) + " " + "z" * 50
+
+    kept, kind = bound(text)
+
+    assert kept == "w" * (DESCRIPTION_LIMIT - 1) + MARK
+    assert len(kept) == DESCRIPTION_LIMIT
+    assert kind == "word"
+
+
+def test_a_long_description_is_cut_and_marked_and_reported_without_the_text() -> None:
+    text = ("Intro paragraph. " * 70).strip() + "\n\nDropped secret part." * 60
+
+    metadata, findings = _start(description=text)
+
+    assert metadata["description"].endswith(MARK)
+    assert len(metadata["description"]) <= DESCRIPTION_LIMIT
+    message = _message(findings, "/description")
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    assert message == (
+        f"the export's description has {len(text)} characters, more than {DESCRIPTION_LIMIT} "
+        f"(SHA-256 {digest}): cut at a paragraph end and marked {MARK}; review the cut, close any "
+        "code block or link left open, remove the mark; scenario.json keeps the whole text"
+    )
+    assert "Dropped" not in message
+
+
+def test_a_cut_may_keep_exactly_the_floor() -> None:
+    text = "a" * 1000 + " " + "b" * 1500
+
+    assert bound(text) == ("a" * 1000 + MARK, "word")
+
+
+def test_a_place_that_would_keep_the_whole_bound_is_not_taken() -> None:
+    text = "w" * DESCRIPTION_LIMIT + " " + "z" * 50  # its mark would exceed the bound
+
+    assert bound(text) == ("", "")
+
+
+def test_no_blank_is_left_before_the_mark() -> None:
+    text = "  ".join(["word"] * 500)  # two blanks between words
+
+    kept, _ = bound(text)
+
+    assert kept.endswith(f"word{MARK}")
+
+
+def test_the_digest_is_of_the_export_s_description_as_it_is() -> None:
+    text = ("Intro paragraph. " * 70).strip() + "  \n\nMore." * 200  # cleaning changes it
+
+    _, findings = _start(description=text)
+
+    assert hashlib.sha256(text.encode()).hexdigest() in _message(findings, "/description")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a" * 990 + " " * 20 + "b" * 1500, " " * 1500 + "x" * 600],
+    ids=["blanks before the floor", "only blanks before"],
+)
+def test_a_cut_that_would_keep_less_than_the_floor_is_not_taken(text: str) -> None:
+    assert bound(text) == ("", "")
+
+
+def test_the_report_of_a_huge_description_keeps_its_whole_digest() -> None:
+    text = "Some words. " * 2_000_000  # 24,000,000 characters, more than an export may hold
+
+    _, findings = _start(description=text)
+
+    message = _message(findings, "/description")
+    assert hashlib.sha256(text.encode()).hexdigest() in message
+    assert len(message) <= MESSAGE_LIMIT
+
+
+def test_a_paragraph_break_at_the_last_position_in_reach_is_found() -> None:
+    head = "a" * (DESCRIPTION_LIMIT - 1)  # the break starts where the last cut may be
+
+    assert bound(head + "\n\n" + "b" * 100) == (head + MARK, "paragraph")

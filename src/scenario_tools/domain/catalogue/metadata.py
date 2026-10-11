@@ -8,7 +8,9 @@ contract, never from the copy the export carries. Whether a scenario is tabletop
 never declared.
 """
 
-from collections.abc import Mapping
+import hashlib
+import re
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -174,6 +176,9 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
 # The bounds of scenario.schema.json that a starting scenario.yaml must respect, so that the
 # file stays small and every value it holds is one the schema accepts.
 DESCRIPTION_LIMIT = 2000
+DESCRIPTION_FLOOR = 1000  # a cut keeps at least this much of the text
+TRUNCATION_MARK = chr(0x2026)
+_SENTENCE = re.compile(r"[.!?](?=\s)")  # where a sentence ends: after its mark, before a blank
 NAME_LIMIT = 120
 FACET_LIMIT = 64
 INJECTORS_LIMIT = 50
@@ -255,6 +260,31 @@ def clean(text: str) -> Cleaned:
     return Cleaned(cleaned, breaks, trimmed, hard_breaks, cleaned != joined)
 
 
+def _cuts(text: str) -> Iterator[tuple[str, Iterator[int]]]:
+    """The places a text may be cut at, by kind, from the one a reader notices least: before a
+    paragraph break, after the end of a sentence, before a blank."""
+    yield "paragraph", (match.start() for match in re.finditer("\n\n", text))
+    yield "sentence", (match.end() for match in _SENTENCE.finditer(text))
+    yield "word", (match.start() for match in re.finditer(r"\s", text))
+
+
+def bound(text: str) -> tuple[str, str]:
+    """``text`` within ``DESCRIPTION_LIMIT``, and where it was cut: whole when it fits, else cut
+    at its last place of the first kind that keeps between ``DESCRIPTION_FLOOR`` and one less
+    than the limit, never where the kept text announces a list with a colon, and marked with
+    ``TRUNCATION_MARK``; empty, and cut nowhere, when no such place exists: never cut in the
+    middle of a word."""
+    if len(text) <= DESCRIPTION_LIMIT:
+        return text, ""
+    reach = text[: DESCRIPTION_LIMIT + 1]  # no cut lies beyond it, however long the text
+    for kind, places in _cuts(reach):
+        kept = [reach[:place].rstrip() for place in places if place < DESCRIPTION_LIMIT]
+        kept = [part for part in kept if len(part) >= DESCRIPTION_FLOOR and not part.endswith(":")]
+        if kept:
+            return kept[-1] + TRUNCATION_MARK, kind
+    return "", ""
+
+
 def _times(count: int, one: str, several: str) -> str:
     return f"{count} {one if count == 1 else several}"
 
@@ -307,23 +337,34 @@ def starting_metadata(
     path: str,
 ) -> tuple[dict[str, object], tuple[Finding, ...]]:
     """The ``scenario.yaml`` of a first preparation, in the order of the data model, and an
-    ``SCH-007`` finding for each default to review and each field left for a person or an agent
-    to complete. It takes what the export and the recorded contracts
-    establish, so that it passes the cross-checks, and only values the schema accepts: a text
-    over its bound or a value outside its list is left empty and reported, never copied whole,
-    so that the file stays small enough to read back."""
+    ``SCH-007`` finding for each default to review and each field left for a contributor to
+    complete. It takes what the export and the recorded contracts establish, so that it passes
+    the cross-checks, and only values the schema accepts, so that the file stays small enough to
+    read back: a description over its bound once cleaned is cut where a reader can tell and
+    marked, or left empty when it cannot be; another text over its bound or a value outside its
+    list is left empty; each is reported, never copied whole."""
     todo: dict[str, str] = dict(_DEFAULTS)
     name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
     cleaned = clean(description)
+    digest = hashlib.sha256(description.encode()).hexdigest()
     description = cleaned.text
     if len(description) > DESCRIPTION_LIMIT:
-        why_description: tuple[str, str] | None = (
-            "/description",
+        too_long = (
             f"the export's description has {len(description)} characters"
-            f"{' once cleaned' if cleaned.changed else ''}, more than {DESCRIPTION_LIMIT}: "
-            "write a shorter one",
+            f"{' once cleaned' if cleaned.changed else ''}, more than {DESCRIPTION_LIMIT} "
+            f"(SHA-256 {digest})"
         )
-        description = ""
+        description, kind = bound(description)
+        why = (
+            f"{too_long}: cut at a {kind} end and marked {TRUNCATION_MARK}; review the cut, close "
+            "any code block or link left open, remove the mark; scenario.json keeps the whole "
+            "text"
+            if kind
+            else f"{too_long}, and no paragraph, sentence or word end between {DESCRIPTION_FLOOR} "
+            f"and {DESCRIPTION_LIMIT - 1} characters to cut at: write a shorter one; "
+            "scenario.json keeps the whole text"
+        )
+        why_description: tuple[str, str] | None = ("/description", why)
     elif not description.strip():
         why_description = ("/description", "write a description: the export has none")
         description = ""

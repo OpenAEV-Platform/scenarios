@@ -5,7 +5,7 @@ older than the one its built-in contracts were recorded on."""
 import re
 from collections.abc import Iterable, Mapping
 
-from scenario_tools.domain.catalogue.metadata import clean
+from scenario_tools.domain.catalogue.metadata import TRUNCATION_MARK, clean
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
@@ -13,7 +13,6 @@ REQUIRED = ("scenario.yaml", "scenario.json")
 SLUG_LIMIT = 64
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _CONSTRAINT = re.compile(r"(?:>=|>|==|~=)([0-9]+(?:\.[0-9]+)*)")
-TRUNCATION_MARK = chr(0x2026)
 _NAMED = 3  # entries a duplicate finding names, so that none is cut out of its message
 
 
