@@ -430,6 +430,7 @@ def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: P
 
 def test_an_output_is_checked_before_anything_is_written(tmp_path: Path) -> None:
     check_output(tmp_path / "plan.json")  # absent: it may be written
+    assert list(tmp_path.iterdir()) == []  # the probe leaves nothing behind
     (tmp_path / "plan.json").write_text("{}")
     check_output(tmp_path / "plan.json")  # a regular file: it may be replaced
 
