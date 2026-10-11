@@ -6,6 +6,7 @@ Characters are written by code point, never raw, so that this file holds none of
 import pytest
 
 from scenario_tools.domain.catalogue.entry import (
+    domains_from_document,
     duplicate_findings,
     layout_findings,
     truncation_findings,
@@ -16,6 +17,7 @@ from scenario_tools.domain.shared.finding import Finding, Severity
 ENTRY = "scenarios/ransomware/akira-crisis"
 METADATA = f"{ENTRY}/scenario.yaml"
 MARK = chr(0x2026)
+DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
 
 
 def _one(findings: tuple[Finding, ...]) -> Finding:
@@ -27,7 +29,10 @@ def _one(findings: tuple[Finding, ...]) -> Finding:
     "domain", ["vulnerabilities", "intrusion-sets", "ransomware", "techniques"]
 )
 def test_an_entry_at_its_place_has_no_layout_finding(domain: str) -> None:
-    assert layout_findings(f"scenarios/{domain}/a-slug-2", ("scenario.yaml", "scenario.json")) == ()
+    assert (
+        layout_findings(f"scenarios/{domain}/a-slug-2", ("scenario.yaml", "scenario.json"), DOMAINS)
+        == ()
+    )
 
 
 @pytest.mark.parametrize(
@@ -45,7 +50,7 @@ def test_an_entry_at_its_place_has_no_layout_finding(domain: str) -> None:
     ids=["too short", "too deep", "elsewhere", "domain", "case", "double", "leading", "long"],
 )
 def test_an_entry_out_of_its_place_is_reported(path: str, why: str) -> None:
-    finding = _one(layout_findings(path, ("scenario.yaml", "scenario.json")))
+    finding = _one(layout_findings(path, ("scenario.yaml", "scenario.json"), DOMAINS))
 
     assert (finding.code, finding.severity, finding.path, finding.field) == (
         "SCH-008",
@@ -58,7 +63,9 @@ def test_an_entry_out_of_its_place_is_reported(path: str, why: str) -> None:
 
 def test_a_slug_of_64_characters_is_allowed() -> None:
     assert (
-        layout_findings("scenarios/ransomware/" + "a" * 64, ("scenario.yaml", "scenario.json"))
+        layout_findings(
+            "scenarios/ransomware/" + "a" * 64, ("scenario.yaml", "scenario.json"), DOMAINS
+        )
         == ()
     )
 
@@ -67,7 +74,7 @@ def test_a_slug_of_64_characters_is_allowed() -> None:
 def test_a_missing_file_of_the_entry_is_reported_at_its_path(missing: str) -> None:
     present = tuple(name for name in ("scenario.yaml", "scenario.json") if name != missing)
 
-    finding = _one(layout_findings(ENTRY, present))
+    finding = _one(layout_findings(ENTRY, present, DOMAINS))
 
     assert (finding.code, finding.path) == ("SCH-008", f"{ENTRY}/{missing}")
     assert finding.message == f"the entry has no {missing}"
@@ -174,7 +181,7 @@ def test_a_version_of_any_length_is_compared_without_failing() -> None:
 
 
 def test_a_wrong_domain_and_a_wrong_slug_are_both_reported() -> None:
-    findings = layout_findings("scenarios/Bad/My_Slug", ("scenario.yaml", "scenario.json"))
+    findings = layout_findings("scenarios/Bad/My_Slug", ("scenario.yaml", "scenario.json"), DOMAINS)
 
     assert [finding.message.split(" ")[1] for finding in findings] == ["domain", "slug"]
 
@@ -194,3 +201,27 @@ def test_four_duplicates_are_three_named_and_one_counted() -> None:
     others = {"b": tuple(f"scenarios/techniques/e{n}" for n in range(4))}
 
     assert _one(duplicate_findings("b", METADATA, others)).message.endswith(" and 1 more")
+
+
+def test_the_domains_are_read_from_their_data_document() -> None:
+    assert domains_from_document({"domains": ["ransomware", "techniques"]}) == (
+        "ransomware",
+        "techniques",
+    )
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        [],
+        {},
+        {"domains": "ransomware"},
+        {"domains": []},
+        {"domains": ["Ransomware"]},
+        {"domains": [1]},
+    ],
+    ids=["not a mapping", "missing", "not a list", "empty", "not kebab-case", "not text"],
+)
+def test_a_domains_document_that_cannot_be_used_is_refused(document: object) -> None:
+    with pytest.raises(ValueError, match="domains"):
+        domains_from_document(document)

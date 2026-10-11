@@ -145,6 +145,23 @@ def _not_followed(path: Path, error: OSError) -> Exception:
     return EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
 
 
+def check_output(path: Path) -> None:
+    """Refuse, before anything is written, an output ``write_output`` would refuse: a directory
+    that is a link or cannot be opened, a target that is a link or not a regular file."""
+    try:
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as error:
+        raise _not_followed(path.parent, error) from error
+    try:
+        existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    finally:
+        os.close(directory)
+    if not stat.S_ISREG(existing.st_mode):
+        raise UnsafeInputError("IO-013", "a symbolic link or not a regular file", str(path))
+
+
 def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
     """Write ``data`` to ``path``, replacing a regular file at once: the data go to a new
     temporary file in the same directory, which is then renamed over the target. A failure

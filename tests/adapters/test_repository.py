@@ -8,6 +8,7 @@ import pytest
 
 from scenario_tools.adapters import repository
 from scenario_tools.adapters.repository import RepositoryEntries
+from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 ENTRY = "scenarios/ransomware/akira"
@@ -177,3 +178,146 @@ def test_an_entry_that_cannot_be_searched_is_the_environment_s_fault(tmp_path: P
             RepositoryEntries(tmp_path).external_ids()
     finally:
         directory.chmod(0o755)
+
+
+def test_every_entry_is_listed_with_its_external_id_and_name(tmp_path: Path) -> None:
+    directory = _entry(tmp_path, ENTRY, "one")
+    (directory / "scenario.yaml").write_text("external_id: one\nname: Akira crisis\n")
+    _entry(tmp_path, "scenarios/techniques/b", "two")  # no name: an empty one
+
+    assert RepositoryEntries(tmp_path).entries() == (
+        CatalogueEntry(ENTRY, "one", "Akira crisis"),
+        CatalogueEntry("scenarios/techniques/b", "two", ""),
+    )
+
+
+def test_whether_a_path_exists_is_told_without_following_links(tmp_path: Path) -> None:
+    _entry(tmp_path)
+    source = RepositoryEntries(tmp_path)
+    (tmp_path / "scenarios" / "techniques").mkdir()
+    (tmp_path / "scenarios" / "techniques" / "linked").symlink_to(tmp_path / "nowhere")
+
+    assert source.exists(ENTRY)
+    assert not source.exists("scenarios/ransomware/other")
+    assert source.exists("scenarios/techniques/linked")  # a dangling link is something there
+
+
+def test_an_entry_directory_is_made_without_following_links(tmp_path: Path) -> None:
+    source = RepositoryEntries(tmp_path)
+
+    made = source.make_directory("scenarios/ransomware/new-entry")
+
+    assert made == tmp_path / "scenarios" / "ransomware" / "new-entry"
+    assert made.is_dir()
+    assert source.make_directory("scenarios/ransomware/new-entry") == made  # already there
+
+
+@pytest.mark.parametrize("kind", ["link", "file"])
+def test_an_entry_directory_is_never_made_through_a_link_or_a_file(
+    tmp_path: Path, kind: str
+) -> None:
+    (tmp_path / "elsewhere").mkdir()
+    if kind == "link":
+        (tmp_path / "scenarios").symlink_to(tmp_path / "elsewhere")
+    else:
+        (tmp_path / "scenarios").write_text("not a directory")
+
+    with pytest.raises(UnsafeInputError) as error:
+        RepositoryEntries(tmp_path).make_directory("scenarios/ransomware/new-entry")
+    assert _refusal(error) == ("IO-013", "scenarios")
+    assert not (tmp_path / "elsewhere" / "ransomware").exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_directory_that_cannot_be_made_is_the_environment_s_fault(tmp_path: Path) -> None:
+    (tmp_path / "scenarios").mkdir()
+    (tmp_path / "scenarios").chmod(0o555)
+    try:
+        with pytest.raises(EnvironmentProblemError):
+            RepositoryEntries(tmp_path).make_directory("scenarios/ransomware")
+    finally:
+        (tmp_path / "scenarios").chmod(0o755)
+
+
+def test_nothing_is_where_a_directory_above_is_missing(tmp_path: Path) -> None:
+    assert not RepositoryEntries(tmp_path).exists("scenarios/ransomware/akira")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_directory_that_cannot_be_searched_cannot_be_made_into(tmp_path: Path) -> None:
+    (tmp_path / "scenarios").mkdir()
+    (tmp_path / "scenarios").chmod(0o644)  # listed, but nothing in it can be looked at
+    try:
+        with pytest.raises(EnvironmentProblemError, match="cannot read"):
+            RepositoryEntries(tmp_path).make_directory("scenarios/ransomware")
+    finally:
+        (tmp_path / "scenarios").chmod(0o755)
+
+
+def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
+    source = RepositoryEntries(tmp_path)
+
+    source.write_entry(ENTRY, {"scenario.yaml": b"a: 1\n", "scenario.json": b"{}"}, new=True)
+
+    entry = tmp_path / ENTRY
+    assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
+    assert (entry / "scenario.yaml").read_bytes() == b"a: 1\n"
+    assert oct(entry.stat().st_mode & 0o777) == oct(0o755)
+    assert [path.name for path in entry.parent.iterdir()] == ["akira"]  # no staging left
+
+
+def test_a_new_entry_that_cannot_be_written_whole_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def failing(path: Path, data: bytes, *, create: bool = False) -> None:
+        calls.append(path.name)
+        if len(calls) == 2:
+            raise EnvironmentProblemError("disk full")
+        path.write_bytes(data)
+
+    monkeypatch.setattr(repository, "write_output", failing)
+
+    with pytest.raises(EnvironmentProblemError):
+        RepositoryEntries(tmp_path).write_entry(
+            ENTRY, {"scenario.yaml": b"a", "scenario.json": b"b"}, new=True
+        )
+    assert list((tmp_path / "scenarios" / "ransomware").iterdir()) == []
+
+
+def test_a_new_entry_never_replaces_what_appeared_at_its_place(tmp_path: Path) -> None:
+    (tmp_path / ENTRY).mkdir(parents=True)
+
+    with pytest.raises(EnvironmentProblemError, match="already exists"):
+        RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"b"}, new=True)
+    assert list((tmp_path / ENTRY).iterdir()) == []
+    assert [path.name for path in (tmp_path / ENTRY).parent.iterdir()] == ["akira"]
+
+
+def test_an_update_replaces_the_files_given(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+
+    RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"{}\n"}, new=False)
+
+    assert (directory / "scenario.json").read_bytes() == b"{}\n"
+    assert (directory / "scenario.yaml").read_text() == "external_id: one\n"
+
+
+def test_a_staging_that_cannot_be_renamed_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(self: Path, target: Path) -> Path:
+        raise OSError(18, "Invalid cross-device link")
+
+    monkeypatch.setattr(Path, "rename", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot write"):
+        RepositoryEntries(tmp_path).write_entry(ENTRY, {"scenario.json": b"b"}, new=True)
+    assert list((tmp_path / "scenarios" / "ransomware").iterdir()) == []
+
+
+def test_a_hidden_directory_left_by_an_interrupted_write_is_no_entry(tmp_path: Path) -> None:
+    _entry(tmp_path, "scenarios/ransomware/.akira.k3j9", "one")
+
+    assert RepositoryEntries(tmp_path).entries() == ()

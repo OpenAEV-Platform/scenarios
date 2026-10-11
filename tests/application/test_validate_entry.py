@@ -11,6 +11,7 @@ import pytest
 
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.facts import BuiltinContracts
+from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.domain.catalogue.metadata import InjectFacts
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -23,6 +24,7 @@ README, CHANGELOG = f"{ENTRY}/README.md", f"{ENTRY}/CHANGELOG.md"
 ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 RLO = chr(0x202E)
 BUILTIN = BuiltinContracts("3.261005.0", {}, {})
+DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
 STORED = b"{stored}"
 METADATA: dict[str, Any] = {
     "schema_version": 1,
@@ -90,6 +92,12 @@ class FakeSource:
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         return self.others
 
+    def exists(self, path: str) -> bool:
+        raise AssertionError("validate never asks")
+
+    def entries(self) -> tuple[CatalogueEntry, ...]:
+        raise AssertionError("validate never asks")
+
 
 class FakeSchema:
     def __init__(self, *violations: SchemaViolation) -> None:
@@ -119,6 +127,7 @@ def _validate(
         schema=schema or FakeSchema(),
         builtin=BUILTIN,
         renormalised=renormalised,
+        domains=DOMAINS,
     )
 
 
@@ -299,6 +308,7 @@ def test_an_entry_the_readers_cannot_list_is_a_finding_of_the_entry() -> None:
         schema=FakeSchema(),
         builtin=BUILTIN,
         renormalised=_same,
+        domains=DOMAINS,
     )
 
     assert findings == (Finding("IO-013", Severity.BLOCKING, ENTRY, "", "a symbolic link"),)
@@ -331,6 +341,7 @@ def test_a_built_in_contract_copy_other_than_the_recorded_one_is_refused() -> No
         schema=FakeSchema(),
         builtin=builtin,
         renormalised=_same,
+        domains=DOMAINS,
     )
 
     assert _codes(findings) == [("SCH-006", JSON, "/scenario_injects/0")]
@@ -346,7 +357,7 @@ def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
     source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw={YAML: f"# a note {RLO}\n"})
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same
+        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -357,7 +368,7 @@ def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
     source = FakeSource({YAML: _changed(generated_by=f"x{RLO}"), JSON: SCENARIO}, raw=raw)
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same
+        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -369,7 +380,7 @@ def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None
     source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw=raw)
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same
+        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]

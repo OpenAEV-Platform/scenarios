@@ -1,0 +1,6 @@
+# The domains of the catalogue: an entry sits at scenarios/<domain>/<slug>/.
+domains:
+  - vulnerabilities
+  - intrusion-sets
+  - ransomware
+  - techniques

@@ -22,6 +22,7 @@ from scenario_tools.adapters.data_files import (
     DocumentsNotSupportedError,
     YamlDataLoader,
     check_export_archive,
+    check_output,
     read_attachments,
     read_export,
     read_export_archive,
@@ -29,6 +30,7 @@ from scenario_tools.adapters.data_files import (
     read_stored_scenario,
     write_output,
 )
+from scenario_tools.adapters.git import head_commit
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.repository import RepositoryEntries
@@ -38,10 +40,12 @@ from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
+from scenario_tools.application.intake_entry import intake_entry, intake_files, plan_document
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
+from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -457,29 +461,108 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
 
     def produce() -> Report:
         source = RepositoryEntries(root)
-        # The rules the checks read are the maintainers', read like the entries, never through
-        # a link; rules that cannot be used are the environment's fault, never an entry's.
-        try:
-            loader = YamlDataLoader(source.directory("policy/data"))
-            builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
-        except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
-            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
-        try:
-            schemas = source.directory("schemas")
-            schema = JsonSchemaValidator(schemas)
-        except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
-            raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
-        if not (schemas / "scenario.schema.json").is_file():
-            raise EnvironmentProblemError("schemas cannot be used: scenario.schema.json is missing")
-        renormalised = renormaliser(loader)
+        rules = _rules(source)
         findings: list[Finding] = []
         for entry in dict.fromkeys(relatives):  # an entry given twice is checked once
-            findings += validate_entry(
-                entry, source, schema=schema, builtin=builtin, renormalised=renormalised
-            )
+            findings += rules.validate(entry, source)
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Rules:
+    """The maintainers' rules the checks of an entry read."""
+
+    loader: YamlDataLoader
+    builtin: BuiltinContracts
+    domains: tuple[str, ...]
+    schema: JsonSchemaValidator
+
+    def validate(self, entry: str, source: RepositoryEntries) -> tuple[Finding, ...]:
+        return validate_entry(
+            entry,
+            source,
+            schema=self.schema,
+            builtin=self.builtin,
+            renormalised=renormaliser(self.loader),
+            domains=self.domains,
+        )
+
+
+def _rules(source: RepositoryEntries) -> _Rules:
+    """The rules of the repository ``source`` reads, read like the entries, never through a
+    link; rules that cannot be used are the environment's fault, never an entry's."""
+    try:
+        loader = YamlDataLoader(source.directory("policy/data"))
+        builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+        domains = domains_from_document(loader.load("domains"))
+    except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
+        raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+    try:
+        schemas = source.directory("schemas")
+        schema = JsonSchemaValidator(schemas)
+    except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
+        raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
+    for name in ("scenario", "intake-request"):
+        if not (schemas / f"{name}.schema.json").is_file():
+            raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
+    return _Rules(loader, builtin, domains, schema)
+
+
+REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
+
+
+@main.command(name="intake")
+@click.argument("export", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--request", "request", required=True, type=click.Path(path_type=Path))
+@click.option("--repo", "repo", required=True, type=click.Path(path_type=Path))
+@click.option("--plan", "plan", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Path) -> None:
+    """Turn EXPORT, a platform export archive, and the request at --request into an entry of the
+    repository at --repo, written in place, and write at --plan the plan of the pull request
+    that proposes it. A refused request writes nothing."""
+    root = Path(os.path.normpath(repo.absolute()))
+    plan = Path(os.path.normpath(plan.absolute()))
+    entries = root / "scenarios"
+    if entries in (plan, *plan.parents) or _inside(plan, entries):
+        raise click.UsageError("--plan may not be inside the entries of the repository")
+    for given in (export, request):
+        place = Path(os.path.normpath(given.absolute()))
+        if entries in place.parents or _inside(place, entries):
+            raise click.UsageError(
+                f"{given.name} is inside the entries of the repository: an export or a "
+                "request must never enter git"
+            )
+
+    def produce() -> Report:
+        source = RepositoryEntries(root)
+        rules = _rules(source)
+        result = intake_entry(
+            read_export(export),
+            read_yaml_file(request, limit=REQUEST_LIMIT),
+            request_path=repository_path(str(request), root),
+            export_path=repository_path(str(export), root),
+            source=source,
+            data=rules.loader,
+            schema=rules.schema,
+            domains=rules.domains,
+        )
+        if result.refusals or result.request is None:
+            return Report("intake", result.refusals)
+        # Whatever could stop the run is found before the repository is touched.
+        check_output(plan)
+        base = head_commit(root)
+        files = intake_files(result, yaml_bytes)
+        if files:
+            source.write_entry(result.request.entry, files, new=result.metadata is not None)
+        findings = rules.validate(result.request.entry, RepositoryEntries(root))
+        document = plan_document(result, files, base, findings)
+        write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
+        return Report("intake", (*result.to_complete, *findings))
+
+    _emit(ctx, "intake", produce, root)
 
 
 def _identity(root: Path) -> tuple[int, int]:

@@ -3,13 +3,16 @@ symbolic link, parent directories included, and within the input limits."""
 
 import errno
 import os
+import shutil
 import stat
+import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TypeVar
 
-from scenario_tools.adapters.data_files import read_stored_scenario
+from scenario_tools.adapters.data_files import read_stored_scenario, write_output
 from scenario_tools.adapters.safe_readers import read_text_file, read_yaml_file
+from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 _T = TypeVar("_T")
@@ -37,7 +40,12 @@ def _directories(path: Path) -> list[str]:
         if not stat.S_ISDIR(os.lstat(path).st_mode):
             return []
         with os.scandir(path) as entries:
-            return sorted(entry.name for entry in entries if entry.is_dir(follow_symlinks=False))
+            return sorted(
+                entry.name
+                for entry in entries
+                # A hidden one is no entry: one a write that was cut short left behind.
+                if not entry.name.startswith(".") and entry.is_dir(follow_symlinks=False)
+            )
     except OSError as error:
         if error.errno in _ABSENT:
             return []
@@ -49,7 +57,7 @@ class RepositoryEntries:
 
     def __init__(self, root: Path) -> None:
         self._root = root
-        self._external_ids: Mapping[str, tuple[str, ...]] | None = None
+        self._entries: tuple[CatalogueEntry, ...] | None = None
 
     def _checked(self, relative: str) -> Path:
         """``relative``, a path in the repository, once no directory of it is a link."""
@@ -98,14 +106,81 @@ class RepositoryEntries:
     def read_text(self, path: str) -> str:
         return self._read(path, read_text_file)
 
-    def external_ids(self) -> Mapping[str, tuple[str, ...]]:
-        """Read once a run, however many entries are checked against them."""
-        if self._external_ids is None:
-            self._external_ids = self._read_external_ids()
-        return self._external_ids
+    def make_directory(self, relative: str) -> Path:
+        """The directory at ``relative``, made with those above it that are missing, never
+        through a link nor over a file."""
+        parts = relative.split("/")
+        current = self._root
+        for index, part in enumerate(parts):
+            current = current / part
+            try:
+                mode = os.lstat(current).st_mode
+            except FileNotFoundError:
+                try:
+                    current.mkdir(mode=0o755)
+                except OSError as error:
+                    raise EnvironmentProblemError(
+                        f"cannot make {'/'.join(parts[: index + 1])}: {error.strerror}"
+                    ) from error
+                continue
+            except OSError as error:
+                where = "/".join(parts[: index + 1])
+                raise EnvironmentProblemError(f"cannot read {where}: {error.strerror}") from error
+            if not stat.S_ISDIR(mode):  # a link is no directory to lstat
+                where = "/".join(parts[: index + 1])
+                raise UnsafeInputError(
+                    "IO-013", "not a directory: a link or a file, never followed", where
+                )
+        return current
 
-    def _read_external_ids(self) -> Mapping[str, tuple[str, ...]]:
+    def write_entry(self, entry: str, files: Mapping[str, bytes], *, new: bool) -> None:
+        """Write ``files``, by name, in the entry at ``entry``. A new entry appears whole or not
+        at all: its files are written in a hidden directory beside it, which is then renamed to
+        it, and never over anything that appeared there. An existing entry has the files given
+        replaced, each at once."""
+        if not new:
+            directory = self.directory(entry)
+            for name, data in files.items():
+                write_output(directory / name, data)
+            return
+        parent_path, slug = entry.rsplit("/", 1)
+        parent = self.make_directory(parent_path)
+        staging = Path(tempfile.mkdtemp(prefix=f".{slug}.", dir=parent))
+        try:
+            staging.chmod(0o755)
+            for name, data in files.items():
+                write_output(staging / name, data, create=True)
+            if _exists(parent / slug):
+                raise EnvironmentProblemError(f"cannot write {entry}: it already exists")
+            try:
+                staging.rename(parent / slug)
+            except OSError as error:
+                raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+
+    def exists(self, path: str) -> bool:
+        parts = path.split("/")
+        for index in range(1, len(parts)):
+            if not _exists(self._root.joinpath(*parts[:index])):
+                return False  # a directory above it is missing: nothing is there
+        return _exists(self._checked(path))
+
+    def entries(self) -> tuple[CatalogueEntry, ...]:
+        """Read once a run, however many entries are checked against them."""
+        if self._entries is None:
+            self._entries = self._read_entries()
+        return self._entries
+
+    def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         found: dict[str, list[str]] = {}
+        for entry in self.entries():
+            found.setdefault(entry.external_id, []).append(entry.path)
+        return {external_id: tuple(found[external_id]) for external_id in sorted(found)}
+
+    def _read_entries(self) -> tuple[CatalogueEntry, ...]:
+        found: list[CatalogueEntry] = []
         base = self._root / "scenarios"
         for domain in _directories(base):
             for slug in _directories(base / domain):
@@ -116,7 +191,11 @@ class RepositoryEntries:
                     document = read_yaml_file(metadata)
                 except UnsafeInputError:
                     continue  # the entry's own check says why it is refused
-                external_id = document.get("external_id") if isinstance(document, dict) else None
+                fields = document if isinstance(document, dict) else {}
+                external_id, name = fields.get("external_id"), fields.get("name")
                 if isinstance(external_id, str):
-                    found.setdefault(external_id, []).append(f"scenarios/{domain}/{slug}")
-        return {external_id: tuple(sorted(found[external_id])) for external_id in sorted(found)}
+                    path = f"scenarios/{domain}/{slug}"
+                    found.append(
+                        CatalogueEntry(path, external_id, name if isinstance(name, str) else "")
+                    )
+        return tuple(found)

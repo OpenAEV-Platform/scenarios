@@ -8,7 +8,6 @@ from collections.abc import Iterable, Mapping
 from scenario_tools.domain.catalogue.metadata import TRUNCATION_MARK, clean
 from scenario_tools.domain.shared.finding import Finding, Severity
 
-DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
 REQUIRED = ("scenario.yaml", "scenario.json")
 SLUG_LIMIT = 64
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -16,16 +15,33 @@ _CONSTRAINT = re.compile(r"(?:>=|>|==|~=)([0-9]+(?:\.[0-9]+)*)")
 _NAMED = 3  # entries a duplicate finding names, so that none is cut out of its message
 
 
-def layout_findings(path: str, present: Iterable[str]) -> tuple[Finding, ...]:
+def domains_from_document(document: object) -> tuple[str, ...]:
+    """The domains of the catalogue, from the domains data document: a non-empty list of
+    kebab-case names."""
+    domains = document.get("domains") if isinstance(document, Mapping) else None
+    if (
+        not isinstance(domains, list)
+        or not domains
+        or not all(isinstance(domain, str) and _SLUG.fullmatch(domain) for domain in domains)
+    ):
+        raise ValueError("domains: must list the catalogue's domains in kebab-case")
+    return tuple(domains)
+
+
+def layout_findings(
+    path: str, present: Iterable[str], domains: Iterable[str]
+) -> tuple[Finding, ...]:
     """An ``SCH-008`` finding when the entry at ``path``, relative to the repository, is not at
-    ``scenarios/<domain>/<slug>/``, and one for each required file it lacks among ``present``."""
+    ``scenarios/<domain>/<slug>/`` with one of ``domains``, and one for each required file it
+    lacks among ``present``."""
+    domains = tuple(domains)
     parts = path.split("/")
     whys = []
     if len(parts) != 3 or parts[0] != "scenarios":
         whys.append("an entry is a directory scenarios/<domain>/<slug>/ of the repository")
     else:
-        if parts[1] not in DOMAINS:
-            whys.append(f"the domain {parts[1]} is not one of {', '.join(DOMAINS)}")
+        if parts[1] not in domains:
+            whys.append(f"the domain {parts[1]} is not one of {', '.join(domains)}")
         if len(parts[2]) > SLUG_LIMIT or not _SLUG.fullmatch(parts[2]):
             whys.append(
                 f"the slug is not kebab-case of at most {SLUG_LIMIT} characters: lower-case "

@@ -3,6 +3,8 @@
 from collections.abc import Mapping
 from typing import Protocol
 
+from scenario_tools.domain.catalogue.intake import CatalogueEntry
+
 
 class EntrySource(Protocol):
     """Reads files by their path relative to the repository, never following a symbolic link,
@@ -23,6 +25,16 @@ class EntrySource(Protocol):
 
     def read_text(self, path: str) -> str:
         """The UTF-8 text at ``path``."""
+        ...
+
+    def exists(self, path: str) -> bool:
+        """Whether something is at ``path``, a link included, never followed."""
+        ...
+
+    def entries(self) -> tuple[CatalogueEntry, ...]:
+        """Every entry with its directory, external ID and scenario name, in path order; an
+        entry whose ``scenario.yaml`` cannot be read, or declares no external ID, is left out:
+        its own check says why."""
         ...
 
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:

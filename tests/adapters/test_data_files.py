@@ -14,6 +14,7 @@ import pytest
 from scenario_tools.adapters.data_files import (
     YamlDataLoader,
     check_export_archive,
+    check_output,
     read_attachments,
     read_export,
     read_export_archive,
@@ -425,3 +426,18 @@ def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: P
 
     assert (tmp_path / "scenario.yaml").read_bytes() == b"completed: by hand\n"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
+
+
+def test_an_output_is_checked_before_anything_is_written(tmp_path: Path) -> None:
+    check_output(tmp_path / "plan.json")  # absent: it may be written
+    (tmp_path / "plan.json").write_text("{}")
+    check_output(tmp_path / "plan.json")  # a regular file: it may be replaced
+
+    (tmp_path / "link.json").symlink_to(tmp_path / "plan.json")
+    with pytest.raises(UnsafeInputError):
+        check_output(tmp_path / "link.json")
+    with pytest.raises(EnvironmentProblemError):
+        check_output(tmp_path / "missing" / "plan.json")
+    (tmp_path / "linked").symlink_to(tmp_path)
+    with pytest.raises(UnsafeInputError):
+        check_output(tmp_path / "linked" / "plan.json")
