@@ -337,11 +337,12 @@ def starting_metadata(
     path: str,
 ) -> tuple[dict[str, object], tuple[Finding, ...]]:
     """The ``scenario.yaml`` of a first preparation, in the order of the data model, and an
-    ``SCH-007`` finding for each default to review and each field left for a person or an agent
-    to complete. It takes what the export and the recorded contracts
-    establish, so that it passes the cross-checks, and only values the schema accepts: a text
-    over its bound or a value outside its list is left empty and reported, never copied whole,
-    so that the file stays small enough to read back."""
+    ``SCH-007`` finding for each default to review and each field left for a contributor to
+    complete. It takes what the export and the recorded contracts establish, so that it passes
+    the cross-checks, and only values the schema accepts, so that the file stays small enough to
+    read back: a description over its bound once cleaned is cut where a reader can tell and
+    marked, or left empty when it cannot be; another text over its bound or a value outside its
+    list is left empty; each is reported, never copied whole."""
     todo: dict[str, str] = dict(_DEFAULTS)
     name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
     cleaned = clean(description)

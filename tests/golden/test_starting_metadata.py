@@ -24,6 +24,7 @@ from scenario_tools.domain.catalogue.metadata import (
     SEVERITIES,
     TRUNCATION_MARK,
     ScenarioMetadata,
+    clean,
     cross_check,
 )
 
@@ -45,7 +46,8 @@ def test_a_starting_metadata_is_valid_once_threat_and_sources_are_given(referenc
     metadata, findings = start_metadata(document, ENTRY_ID, DATA, path=PATH, source="export.zip")
 
     validator = JsonSchemaValidator(ROOT / "schemas")
-    long = len(document["scenario_information"]["scenario_description"]) > DESCRIPTION_LIMIT
+    description = clean(document["scenario_information"]["scenario_description"]).text
+    long = len(description) > DESCRIPTION_LIMIT  # the bound applies once the text is cleaned
     to_complete = {"/threat", "/sources"}
     # Every value written is one the schema accepts; an empty one is left to complete, and a
     # description over its bound is cut, marked, and left to review.
