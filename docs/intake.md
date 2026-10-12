@@ -12,7 +12,11 @@ scenario-tools --format json intake export.zip --request request.yaml --repo . -
 
 - `export.zip`: the scenario as the platform exports it: a `.zip`, or else its JSON.
 - `--request`: what the export cannot say (below).
-- `--repo`: the root of a checkout of this repository, at the commit the change starts from.
+- `--repo`: the root of a checkout of this repository, at the commit the change starts from,
+  with nothing left to commit under `scenarios/`, `policy/` or `schemas/`, untracked, ignored
+  or skipped files and submodules included, and no file there that git converts by
+  `.gitattributes`: the plan describes what that commit gives. The rest of the checkout does
+  not count.
 - `--plan`: where the plan is written. Nothing may be there yet, its directory must exist and
   not be a link, and it may not be inside `scenarios/`. Neither may the export nor the request,
   wherever the path they are given by leads.
@@ -77,7 +81,7 @@ Nothing is written when the request is refused:
 | `ITK-005` | an update whose `domain` and `slug` are not the entry's place |
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
-| `ITK-008` | an entry of the catalogue, or a domain, that is a link or a hidden name a cut run left (`.scenario-tools-<hex>`), or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
+| `ITK-008` | an entry of the catalogue, or a domain, that is a link or a hidden name a cut run left (`.scenario-tools-<hex>`), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
 
 The export is also refused as `normalize` refuses it.
 
@@ -114,7 +118,19 @@ Once the plan is written with nothing blocking, propose the entry from the plan'
 2. commit them, signed, and push the branch;
 3. open the pull request with the plan's `title` and `body`.
 
-The plan names no branch: whoever pushes chooses it.
+The plan names no branch: whoever pushes chooses it. Before the next intake, come back to the
+commit it starts from: the entry just proposed is a change of the checkout until then, and the
+run refuses it. For instance:
+
+```sh
+git switch -c add-easm <base>      # the plan's base
+git add scenarios/techniques/easm
+git commit -S -m "feat(scenarios): add easm (#12)" && git push -u origin add-easm
+git switch main                    # back to where the next intake starts
+```
+
+To drop an entry rather than propose it, remove its directory (`git clean -fd <entry>`) for a
+new one, or restore its file (`git restore <entry>/scenario.json`) for an update.
 
 ## Exit codes
 
@@ -127,7 +143,11 @@ The plan names no branch: whoever pushes chooses it.
   (`git checkout -- <entry>/scenario.json`, which also drops any change made to it by hand).
 - `2`: a usage error, and nothing is run: the options, a plan already there, or a plan, an export
   or a request inside `scenarios/`.
-- `3`: the environment stops the run. Nothing is kept, except in the last case below, which the run names. This covers:
+- `3`: the environment stops the run. Nothing is kept, except in the last case below, which the
+  run names. This covers:
+  - the checkout has changes that are not committed under `scenarios/`, `policy/` or
+    `schemas/`, untracked, ignored or skipped files and submodules included, files git converts
+    there, or a commit that changes while it is checked: commit or remove them first;
   - the export or the request cannot be read, or the paths given cannot be resolved;
   - the checkout, its rules, its commit, or the plan's place cannot be used;
   - another `intake` run holds the checkout;
@@ -157,7 +177,10 @@ before the run, so that a plan left by another run is never taken for this one's
   - The plan's place is reserved first.
   - The entry is written from the checkout held, never from its path again.
   - A new entry's files are created where nothing is.
-  - An update replaces `scenario.json` only if it still holds what the checks read.
+  - An update sets `scenario.json` aside at once, and replaces it only if what was set aside
+    still holds what the checks read; a file another puts in its place meanwhile is never
+    overwritten, and what the run puts back goes only where nothing is (on a file system
+    without hard links, by its name, which leaves a tiny window).
   - The plan is published only if the checkout, the entry and each file written are still what
     the run wrote, and its own place still the one reserved.
 - **All or nothing:** the entry is kept only once its plan is published. A run that fails
@@ -167,7 +190,8 @@ before the run, so that a plan left by another run is never taken for this one's
   overwritten: a file put or changed in a new entry stays, and the entry with it.
 - **Asked to stop:** a request to stop (Ctrl-C, SIGTERM as a CI job is cancelled, SIGHUP as a
   terminal closes, or SIGQUIT) while the run writes waits until the writing is done, then is
-  dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it writes, while it reads
+  dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it
+  writes, while it reads
   the commit included, the run stops with nothing written, with exit code `3`. A request the
   caller already ignores, as `nohup` does, stays ignored.
 - **What it does not prevent:** another process that moves or replaces files or directories of
@@ -178,8 +202,11 @@ before the run, so that a plan left by another run is never taken for this one's
 
 A run killed outright (SIGKILL), with no chance to take anything back, may leave an incomplete
 entry, an empty or partly written plan, or hidden names `.scenario-tools-<hex>` in or next to
-the entry, or next to the plan. Remove them before running again: until they are, a hidden name
-in the catalogue refuses every request (`ITK-008`). Such a name never belongs in a pull request:
+the entry, or next to the plan. Remove them before running again; an update cut short may have
+left `scenario.json` itself under such a name: restore it from the commit
+(`git restore <entry>/scenario.json`). Until they are removed, such a name is a change of the
+checkout (exit code `3`), and once committed by mistake, it refuses every request (`ITK-008`).
+Such a name never belongs in a pull request:
 `validate` refuses it as an entry (`SCH-008`).
 
 The command runs on Linux and macOS.

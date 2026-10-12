@@ -19,6 +19,7 @@ from click.testing import CliRunner
 
 from scenario_tools.adapters import plan as plan_module
 from scenario_tools.adapters.data_files import read_export
+from scenario_tools.adapters.git import uncommitted
 from scenario_tools.adapters.places import is_hidden_name
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.application import intake_entry
@@ -64,6 +65,13 @@ def _repository(tmp_path: Path, *, commit: bool = True) -> Path:
         _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
              "commit.gpgsign=false", "commit", "-q", "-m", "start")  # fmt: skip
     return root
+
+
+def _commit(root: Path) -> None:
+    """Commit what the checkout holds, as a maintainer does before running intake again."""
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", "next")  # fmt: skip
 
 
 def _request(tmp_path: Path, document: dict[str, Any], name: str = "request.yaml") -> Path:
@@ -134,6 +142,7 @@ def test_an_update_with_the_same_export_writes_nothing_and_plans_nothing(
 ) -> None:
     root = _repository(tmp_path)
     assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    _commit(root)
     before = (root / ENTRY / "scenario.json").read_bytes()
     update = {
         "mode": "update",
@@ -213,6 +222,7 @@ def test_an_entry_is_never_written_through_a_link(
     root = _repository(tmp_path)
     (tmp_path / "elsewhere").mkdir()
     (root / "scenarios").symlink_to(tmp_path / "elsewhere")
+    _commit(root)  # a link in the repository, committed
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
 
@@ -240,6 +250,7 @@ def test_an_update_rewrites_scenario_json_only_and_plans_it(
 ) -> None:
     root = _repository(tmp_path)
     assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    _commit(root)
     metadata = (root / ENTRY / "scenario.yaml").read_bytes()
     update = {
         "mode": "update",
@@ -399,6 +410,7 @@ def test_a_plan_that_cannot_be_published_puts_an_update_back(
 ) -> None:
     root = _repository(tmp_path)
     assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    _commit(root)
     stored = (root / ENTRY / "scenario.json").read_bytes()
     update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
     plan = tmp_path / "update.json"
@@ -413,6 +425,7 @@ def test_a_plan_that_cannot_be_published_puts_an_update_back(
     )
 
     assert result.exit_code == 3, result.output
+    assert "No space left on device" in result.output  # the failure meant, nothing else
     assert (root / ENTRY / "scenario.json").read_bytes() == stored
     assert sorted(path.name for path in (root / ENTRY).iterdir()) == [
         "scenario.json",
@@ -692,13 +705,15 @@ def test_validate_needs_no_intake_schema(monkeypatch: pytest.MonkeyPatch, tmp_pa
     root = _repository(tmp_path)
     assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "p.json").exit_code == 0
     (root / "schemas" / "intake-request.schema.json").unlink()
+    _commit(root)
 
     result = CliRunner().invoke(main, ["--format", "json", "validate", str(root / ENTRY)])
 
     assert "schemas cannot be used" not in result.output
     assert result.exit_code in (0, 1), result.output  # the entry's own findings, if any
-    plan = tmp_path / "again.json"
-    assert _intake(monkeypatch, root, _request(tmp_path, NEW), plan).exit_code == 3  # intake does
+    again = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "again.json")
+    assert again.exit_code == 3, again.output  # intake does
+    assert "intake-request.schema.json is missing" in again.output
 
 
 def test_a_run_asked_to_stop_as_its_writing_ends_says_all_stands(
@@ -753,6 +768,7 @@ def test_a_name_of_the_tool_s_own_in_the_catalogue_stops_an_intake(
     left = root / "scenarios" / "techniques" / ".scenario-tools-0123456789abcdef"
     left.mkdir(parents=True)
     (left / "scenario.yaml").write_text(f"external_id: {ID}\n")  # what a cut run may leave
+    _commit(root)  # merged by mistake: never ignored
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
 
@@ -766,6 +782,7 @@ def test_domains_that_cannot_be_used_are_the_environment_s_fault(
     root = _repository(tmp_path)
     (root / "policy" / "data" / "domains.yaml").write_text("domains: []\n")
     (root / "scenarios" / "techniques" / "easm").mkdir(parents=True)
+    _commit(root)
 
     intake = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
     validate = CliRunner().invoke(main, ["validate", str(root / ENTRY)])
@@ -780,6 +797,7 @@ def test_the_domains_are_the_repository_s_own(
 ) -> None:
     root = _repository(tmp_path)
     (root / "policy" / "data" / "domains.yaml").write_text("domains: [custom]\n")
+    _commit(root)
 
     refused = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "refused.json")
     accepted = _intake(
@@ -805,3 +823,91 @@ def test_environment_errors_never_show_where_the_run_is(
     assert result.exit_code == 3, result.output
     assert str(tmp_path) not in result.output
     assert "cannot write missing" in result.output  # the directory that is not there, by name
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["scenarios/techniques/other/scenario.yaml", "policy/data/extra.yaml", "schemas/x.json"],
+)
+def test_a_checkout_with_uncommitted_changes_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change: str
+) -> None:
+    root = _repository(tmp_path)
+    (root / change).parent.mkdir(parents=True, exist_ok=True)
+    (root / change).write_text("not committed")
+    plan = tmp_path / "plan.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert change in result.output
+    assert "commit" in result.output
+    assert not (root / ENTRY).exists()
+    assert not plan.exists()
+
+
+def test_changes_elsewhere_in_the_checkout_do_not_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "notes.txt").write_text("not committed, and not the catalogue's")
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+
+    assert result.exit_code == 0, result.output
+
+
+def test_a_leftover_not_committed_is_told_as_a_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    _commit(root)
+    left = root / ENTRY / ".scenario-tools-0123456789abcdef"
+    left.write_bytes(b"{}")  # what a run killed while updating may leave
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+
+    assert result.exit_code == 3, result.output
+    assert ".scenario-tools-0123456789abcdef" in result.output
+    _commit(root)  # merged by mistake: never ignored either
+    again = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "again.json")
+    assert again.exit_code == 1, again.output
+    assert "ITK-008" in again.output
+
+
+def test_a_commit_that_changes_while_the_checkout_is_checked_stops_the_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    told = uncommitted
+
+    def then_moved(*arguments: Any) -> Any:
+        found = told(*arguments)
+        (root / "notes.txt").write_text("another commit")
+        _commit(root)  # another checks out or commits meanwhile
+        return found
+
+    monkeypatch.setattr("scenario_tools.interface.cli.uncommitted", then_moved)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "changed while" in result.output
+    assert not plan.exists()
+
+
+def test_a_checkout_whose_files_git_converts_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / ".gitattributes").write_text("policy/** text eol=crlf\n")
+    _commit(root)
+    plan = tmp_path / "plan.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "converts" in result.output
+    assert not plan.exists()

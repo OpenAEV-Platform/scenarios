@@ -135,8 +135,9 @@ def test_a_place_that_cannot_be_given_back_is_said_with_the_block_s_failure(
     with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         _failing(tmp_path / "plan.json")
     assert isinstance(error.value.__cause__, RuntimeError)
-    [left] = list(tmp_path.iterdir())  # left, and said so
-    assert left.name in str(error.value)
+    [left] = [path for path in tmp_path.iterdir() if is_hidden_name(path.name)]
+    assert left.name in str(error.value)  # left, and said so
+    assert (tmp_path / "plan.json").exists()  # back where it is looked for
 
 
 def test_a_place_whose_state_cannot_be_read_is_never_said_published(
@@ -192,17 +193,13 @@ def test_a_file_put_at_the_place_meanwhile_is_never_lost(
 ) -> None:
     plan = tmp_path / "plan.json"
 
-    renamed = os.rename
-
-    def failing(source: str, target: str, **options: Any) -> None:
-        if target == "plan.json":  # the way back is taken by a third file
-            raise FileExistsError(errno.EEXIST, "File exists")
-        renamed(source, target, **options)
+    def failing(*arguments: Any, **options: Any) -> None:
+        raise FileExistsError(errno.EEXIST, "File exists")  # the way back is taken by a third
 
     def taken(reservation: Reservation) -> None:
         plan.unlink()
         plan.write_text("another run's")
-        monkeypatch.setattr(os, "rename", failing)
+        monkeypatch.setattr(os, "link", failing)
 
     with pytest.raises(EnvironmentProblemError, match="is kept as") as error:
         _failing(plan, taken)

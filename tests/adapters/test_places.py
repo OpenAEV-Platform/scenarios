@@ -13,6 +13,7 @@ from scenario_tools.adapters.places import (
     ABSENT,
     FOREIGN,
     REMOVED,
+    PlaceTakenError,
     create_in,
     described,
     hidden_name,
@@ -20,6 +21,7 @@ from scenario_tools.adapters.places import (
     is_hidden_name,
     made_directory,
     open_directory,
+    place_back,
     take_back,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -207,17 +209,14 @@ def test_what_can_neither_be_removed_nor_put_back_is_said_where_it_is(
     tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "made").write_text("x")
-    renamed = os.rename
 
-    def once(source: str, target: str, **options: object) -> None:
-        if target == "made":  # the way back
-            raise OSError(errno.EIO, "Input/output error")
-        renamed(source, target, **options)  # type: ignore[arg-type]
+    def no_way_back(*arguments: object, **options: object) -> None:
+        raise OSError(errno.EIO, "Input/output error")  # the way back
 
     def failing(aside: str) -> None:
         raise OSError(errno.EACCES, "Permission denied")
 
-    monkeypatch.setattr(os, "rename", once)
+    monkeypatch.setattr(os, "link", no_way_back)
 
     with pytest.raises(EnvironmentProblemError, match="it is left as shown-dir/") as error:
         take_back(
@@ -237,14 +236,11 @@ def test_what_another_put_that_cannot_be_put_back_is_said_where_it_is(
     tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "made").write_text("theirs")
-    renamed = os.rename
 
-    def once(source: str, target: str, **options: object) -> None:
-        if target == "made":
-            raise OSError(errno.EIO, "Input/output error")
-        renamed(source, target, **options)  # type: ignore[arg-type]
+    def no_way_back(*arguments: object, **options: object) -> None:
+        raise OSError(errno.EIO, "Input/output error")
 
-    monkeypatch.setattr(os, "rename", once)
+    monkeypatch.setattr(os, "link", no_way_back)
 
     with pytest.raises(EnvironmentProblemError, match="put at shown meanwhile") as error:
         take_back(held, "made", (0, 0), _remove(held), where="shown", failure=None)
@@ -344,3 +340,82 @@ def test_a_file_that_cannot_be_written_whole_never_takes_another_with_it(
     with pytest.raises(EnvironmentProblemError, match="No space left on device"):
         create_in(held, tmp_path / "scenario.json", b"{}")
     assert (tmp_path / "scenario.json").read_text() == "another's"
+
+
+def test_a_file_set_aside_is_put_back_only_where_nothing_is(tmp_path: Path, held: int) -> None:
+    (tmp_path / "aside").write_text("ours")
+
+    place_back(held, "aside", "name")
+
+    assert _names(tmp_path) == ["name"]
+    assert (tmp_path / "name").read_text() == "ours"
+    (tmp_path / "aside").write_text("ours again")
+    with pytest.raises(PlaceTakenError):
+        place_back(held, "aside", "name")  # another's is there: never replaced
+    assert (tmp_path / "name").read_text() == "ours"
+    assert (tmp_path / "aside").read_text() == "ours again"
+
+
+def test_a_directory_set_aside_is_put_back_by_its_name(tmp_path: Path, held: int) -> None:
+    (tmp_path / "aside").mkdir()
+
+    place_back(held, "aside", "name")
+
+    assert _names(tmp_path) == ["name"]
+
+
+def test_a_file_is_put_back_by_its_name_where_links_cannot_be_made(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "aside").write_text("ours")
+
+    def unlinkable(*arguments: object, **options: object) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", unlinkable)
+
+    place_back(held, "aside", "name")
+
+    assert (tmp_path / "name").read_text() == "ours"
+
+
+def test_a_place_taken_is_said_apart_from_other_failures(tmp_path: Path, held: int) -> None:
+    (tmp_path / "scenario.json").write_text("there")
+
+    with pytest.raises(PlaceTakenError, match="already exists"):
+        create_in(held, tmp_path / "scenario.json", b"{}")
+    assert issubclass(PlaceTakenError, EnvironmentProblemError)
+
+
+def test_a_file_put_back_whose_hidden_name_stays_is_said_so(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "aside").write_text("ours")
+
+    def failing(path: str, **options: object) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+    assert place_back(held, "aside", "name") is False  # put back, but the hidden name stays
+    assert (tmp_path / "name").read_text() == "ours"
+
+
+def test_what_another_put_back_with_a_second_name_left_is_said(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "made").write_text("theirs")
+    removed = os.unlink
+
+    def failing(path: str, **options: object) -> None:
+        if is_hidden_name(path):
+            raise OSError(errno.EIO, "Input/output error")
+        removed(path, **options)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="is put back, but a second name") as error:
+        take_back(held, "made", (0, 0), _remove(held), where="shown", failure=None)
+    assert (tmp_path / "made").read_text() == "theirs"
+    [second] = [name for name in _names(tmp_path) if is_hidden_name(name)]
+    assert second in str(error.value)

@@ -2,6 +2,7 @@
 where nothing is or over what was read, and taking back only what the run wrote when it cannot
 be kept."""
 
+import errno
 import os
 import signal
 from collections.abc import Callable, Iterator
@@ -11,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.adapters import places
+from scenario_tools.adapters import entry_writer, places
 from scenario_tools.adapters.entry_writer import RepositoryWriter
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -437,10 +438,15 @@ def test_an_update_that_cannot_be_put_back_says_so(
 ) -> None:
     directory = _entry(tmp_path)
 
-    def failing(directory: int, path: Path, data: bytes) -> tuple[int, int]:
-        raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+    created = places.create_in
+    calls: list[bytes] = []
 
-    # Putting the previous bytes back is creating them where the run's version was.
+    def failing(directory: int, path: Path, data: bytes) -> tuple[int, int]:
+        calls.append(data)
+        if len(calls) == 2:  # putting the previous bytes back, where the run's version was
+            raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+        return created(directory, path, data)
+
     monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", failing)
 
     error = _failing_block(tmp_path, {"scenario.json": b"{}\n"}, new=False, during=lambda: None)
@@ -848,6 +854,8 @@ def test_a_pipe_put_in_place_of_a_file_to_update_is_never_waited_on(tmp_path: Pa
     with pytest.raises(UnsafeInputError) as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"{}"})
     assert _refusal(error) == ("IO-013", f"{ENTRY}/scenario.json")
+    assert (directory / "scenario.json").is_fifo()  # put back as it was
+    assert not [name for name in _names(directory) if places.is_hidden_name(name)]
 
 
 @pytest.mark.usefixtures("bounded")
@@ -898,3 +906,187 @@ def test_a_directory_another_made_then_removed_meanwhile_is_the_environment_s_fa
 
     with pytest.raises(EnvironmentProblemError, match="cannot make scenarios"):
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+
+def test_a_file_another_puts_at_the_place_of_one_being_updated_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    checked = entry_writer._same_bytes
+
+    def then_changed(*arguments: Any) -> bool:
+        same = checked(*arguments)
+        (directory / "scenario.json").write_text("another's")  # right after the check
+        return same
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer._same_bytes", then_changed)
+
+    with pytest.raises(EnvironmentProblemError, match="meanwhile"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert (directory / "scenario.json").read_text() == "another's"  # never overwritten
+    assert not [name for name in _names(directory) if places.is_hidden_name(name)]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_file_to_update_that_cannot_be_set_aside_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+    directory.chmod(0o555)
+    try:
+        with pytest.raises(EnvironmentProblemError, match="Permission denied"):
+            _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    finally:
+        directory.chmod(0o755)
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+
+
+def test_a_file_to_update_that_cannot_be_put_back_says_where_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+
+    def no_way_back(*arguments: object, **options: object) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "link", no_way_back)
+
+    with pytest.raises(EnvironmentProblemError, match="kept as") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"[]"})
+    [kept] = [name for name in _names(directory) if places.is_hidden_name(name)]
+    assert kept in str(error.value)
+    assert (directory / kept).read_text() == '{"a": 1}'
+
+
+@pytest.mark.parametrize(
+    "stop", [EnvironmentProblemError("No space left on device"), KeyboardInterrupt()]
+)
+def test_a_file_whose_new_version_cannot_be_written_is_as_it_was(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: BaseException
+) -> None:
+    directory = _entry(tmp_path)
+
+    def failing(directory: int, path: Path, data: bytes) -> tuple[int, int]:
+        raise stop
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", failing)
+
+    with pytest.raises(type(stop)):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+    assert _names(directory) == ["README.md", "scenario.json", "scenario.yaml"]
+
+
+def test_a_previous_version_that_cannot_be_removed_is_said_and_the_update_taken_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    removed = os.unlink
+    kept: list[str] = []
+
+    def failing(path: str, **options: Any) -> None:
+        if places.is_hidden_name(path) and not kept:  # the previous version, once
+            kept.append(path)
+            raise OSError(errno.EIO, "Input/output error")
+        removed(path, **options)
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="previous version is left as") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert kept[0] in str(error.value)
+    assert "the update is taken back" in str(error.value)  # as it is
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+    assert (directory / kept[0]).exists()  # left, and said so
+
+
+def test_a_file_another_puts_while_a_changed_one_is_checked_is_never_overwritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    checked = entry_writer._same_bytes
+
+    def then_put(*arguments: Any) -> bool:
+        same = checked(*arguments)
+        (directory / "scenario.json").write_text("another's")
+        return same
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer._same_bytes", then_put)
+
+    with pytest.raises(EnvironmentProblemError, match="kept as") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"[]"})
+    assert (directory / "scenario.json").read_text() == "another's"  # never overwritten
+    [kept] = [name for name in _names(directory) if places.is_hidden_name(name)]
+    assert (directory / kept).read_text() == '{"a": 1}'
+    assert kept in str(error.value)
+
+
+def test_a_new_version_that_cannot_be_written_whole_keeps_the_previous_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+
+    def half_written(directory_fd: int, path: Path, data: bytes) -> tuple[int, int]:
+        (directory / "scenario.json").write_bytes(data[:1])  # its own clean-up failed too
+        raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", half_written)
+
+    with pytest.raises(EnvironmentProblemError, match="No space left on device") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert "another put" not in str(error.value)  # never blamed on another
+    [kept] = [name for name in _names(directory) if places.is_hidden_name(name)]
+    assert (directory / kept).read_text() == '{"a": 1}'  # never lost
+    assert kept in str(error.value)
+
+
+@pytest.mark.usefixtures("bounded")
+def test_a_pipe_to_update_that_cannot_be_put_back_says_where_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    (directory / "scenario.json").unlink()
+    os.mkfifo(directory / "scenario.json")
+
+    def no_way_back(*arguments: object, **options: object) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "link", no_way_back)
+
+    with pytest.raises(EnvironmentProblemError, match="kept as"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"{}"})
+
+
+def test_a_changed_file_put_back_with_a_second_name_left_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    removed = os.unlink
+
+    def failing(path: str, **options: Any) -> None:
+        if places.is_hidden_name(path):
+            raise OSError(errno.EIO, "Input/output error")
+        removed(path, **options)
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="second name") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"[]"})
+    assert "changed since it was read" in str(error.value)
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'  # put back
+
+
+def test_a_stop_while_a_new_version_is_written_says_what_it_leaves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+
+    def stopped(directory_fd: int, path: Path, data: bytes) -> tuple[int, int]:
+        (directory / "scenario.json").write_text("another's")  # the way back is taken
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", stopped)
+
+    with pytest.raises(EnvironmentProblemError, match="kept as") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=False)
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)

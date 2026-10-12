@@ -32,7 +32,7 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
-from scenario_tools.adapters.git import head_commit
+from scenario_tools.adapters.git import converted, head_commit, uncommitted
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
@@ -553,6 +553,12 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
         try:
             # From the catalogue's check to the plan, no other run may check or write in it.
             with _stops_as_interruptions(), source.locked():
+                base = head_commit(root)  # read before: a request to stop meanwhile stops it
+                _refuse_uncommitted(root)
+                if head_commit(root) != base:
+                    raise EnvironmentProblemError(
+                        "the checkout's commit changed while it was checked: run again"
+                    )
                 rules = _rules(source, intake=True)
                 result = intake_entry(
                     read_export(export),
@@ -566,7 +572,6 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                 )
                 if result.refusals or result.request is None:
                     return Report("intake", result.refusals)
-                base = head_commit(root)  # read before: a request to stop meanwhile stops it
                 with _stop_requests_held():
                     left = write_intake(
                         result,
@@ -593,6 +598,33 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
             raise EnvironmentProblemError(_unplaced(str(error), root, plan)) from error
 
     _emit(ctx, "intake", produce_shown, root)
+
+
+# What the plan depends on, besides the export and the request: the catalogue and its rules.
+_PLANNED = ("scenarios", "policy", "schemas")
+
+
+def _refuse_uncommitted(root: Path) -> None:
+    """Refuse a checkout whose catalogue or rules differ from its commit, or whose bytes git
+    converts from it: the plan must describe what its base gives."""
+    places = ", ".join(f"{path}/" for path in _PLANNED)
+    changed = uncommitted(root, _PLANNED)
+    if changed:
+        more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
+        raise EnvironmentProblemError(
+            f"the checkout has changes that are not committed under {places} "
+            f"({changed[0]}{more}): commit or remove them first, so that the plan describes "
+            "what its base gives; an entry an earlier intake wrote counts: commit it on its "
+            "own branch, then start the next intake from the commit it should start from"
+        )
+    turned = converted(root, _PLANNED)
+    if turned:
+        more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
+        raise EnvironmentProblemError(
+            f"git converts files under {places} between the commit and the checkout "
+            f"({turned[0]}{more}, by .gitattributes): the plan would not describe the commit's "
+            "bytes"
+        )
 
 
 def _unplaced(text: str, root: Path, plan: Path) -> str:

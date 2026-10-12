@@ -10,15 +10,17 @@ import stat
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 
-from scenario_tools.adapters.data_files import write_in
 from scenario_tools.adapters.places import (
     ABSENT,
     FOREIGN,
+    PlaceTakenError,
     create_in,
     described,
+    hidden_name,
     identity,
     made_directory,
     open_directory,
+    place_back,
     take_back,
 )
 from scenario_tools.adapters.repository import RepositoryEntries
@@ -33,8 +35,6 @@ def _same_bytes(directory: int, name: str, where: str, expected: bytes) -> bool:
     through a link and never beyond what is expected; ``where`` names it in what is reported."""
     try:
         descriptor = os.open(name, _READ, dir_fd=directory)
-    except FileNotFoundError:
-        return False
     except OSError as error:
         if error.errno in (errno.ELOOP, errno.ENXIO):
             raise UnsafeInputError(
@@ -71,6 +71,75 @@ def _as_written(directory: int, name: str, mine: tuple[int, int], data: bytes) -
         return False
     finally:
         os.close(descriptor)
+
+
+def _replace_checked(
+    directory: int, path: Path, where: str, before: bytes, data: bytes
+) -> tuple[tuple[int, int], str]:
+    """Replace ``path``'s name in ``directory`` with ``data``, only while it holds ``before``:
+    the file is set aside at once and checked there, then the new one is created where nothing
+    is, so that what another puts there meanwhile is never overwritten. The previous bytes are
+    the caller's, and the checkout's commit holds them too. The identity of the file written is
+    given, with what is left of the previous one if it cannot be removed, which the caller says
+    once it knows what it wrote; ``where`` names it in what is reported."""
+    aside = hidden_name()
+    left = posixpath.join(posixpath.dirname(where), aside)
+    changed = f"cannot write {where}: it changed since it was read; nothing is written"
+    try:
+        os.rename(path.name, aside, src_dir_fd=directory, dst_dir_fd=directory)
+    except FileNotFoundError:
+        raise EnvironmentProblemError(changed) from None
+    except OSError as error:
+        raise EnvironmentProblemError(f"cannot write {where}: {error.strerror}") from error
+
+    def put_back(why: str) -> tuple[EnvironmentProblemError, bool]:
+        """Put the previous version back, never over a file now there: the error that says
+        ``why`` and what is left, and whether anything is."""
+        try:
+            gone = place_back(directory, aside, path.name)
+        except PlaceTakenError:
+            said = f"the file now at {where} stays, and the previous version is kept as {left}"
+            return EnvironmentProblemError(f"{why}; {said}"), True
+        except OSError as error:
+            said = f"the previous version cannot be put back ({error.strerror}): kept as {left}"
+            return EnvironmentProblemError(f"{why}; {said}"), True
+        if not gone:
+            said = f"it is put back, but a second name of it remains as {left}: remove that name"
+            return EnvironmentProblemError(f"{why}; {said}"), True
+        return EnvironmentProblemError(why), False
+
+    try:
+        same = _same_bytes(directory, aside, where, before)
+    except (EnvironmentProblemError, UnsafeInputError) as error:
+        said, left_any = put_back(str(error))
+        if left_any:
+            raise said from error
+        raise
+    if not same:
+        raise put_back(changed)[0]
+    try:
+        made = create_in(directory, path, data)
+    except PlaceTakenError as error:  # another's file stays; the previous is committed
+        with contextlib.suppress(OSError):
+            os.unlink(aside, dir_fd=directory)
+        raise EnvironmentProblemError(
+            f"cannot write {where}: another put a file there meanwhile, which stays"
+        ) from error
+    except EnvironmentProblemError as error:
+        raise put_back(str(error))[0] from error
+    except BaseException as error:  # an interruption: as it was, or what is left is said
+        said, left_any = put_back("interrupted")
+        if left_any:
+            raise said from error
+        raise
+    try:
+        os.unlink(aside, dir_fd=directory)
+    except OSError as error:
+        return (
+            made,
+            f"{where} is written, but its previous version is left as {left}: {error.strerror}",
+        )
+    return made, ""
 
 
 class _WrittenEntry:
@@ -327,16 +396,18 @@ class RepositoryWriter:
         directory = self.opened(entry, make=False)
         try:
             folder = self._root / entry
-            for name in files:
-                where = f"{entry}/{name}"
-                if not _same_bytes(directory, name, where, previous[name]):
-                    raise EnvironmentProblemError(
-                        f"cannot write {where}: it changed since it was read; nothing is written"
-                    )
             written: dict[str, tuple[tuple[int, int], bytes]] = {}
             try:
                 for name, data in files.items():
-                    written[name] = (write_in(directory, folder / name, data), data)
+                    where = f"{entry}/{name}"
+                    made, left = _replace_checked(
+                        directory, folder / name, where, previous[name], data
+                    )
+                    written[name] = (made, data)
+                    if left:  # what was written is known: it is taken back with the rest
+                        raise EnvironmentProblemError(
+                            f"{left}; the update is taken back: remove it by hand"
+                        )
                 yield _WrittenEntry(self, entry, identity(directory, entry), written)
             except BaseException as failure:
                 said = []

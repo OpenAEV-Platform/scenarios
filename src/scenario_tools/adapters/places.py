@@ -23,6 +23,11 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 
 _HIDDEN = re.compile(r"\.scenario-tools-[0-9a-f]{16}")
 
+
+class PlaceTakenError(EnvironmentProblemError):
+    """Something is already where a file was to be created or put back."""
+
+
 REMOVED = "removed"
 ABSENT = "absent"
 FOREIGN = "foreign"
@@ -109,7 +114,7 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
     try:
         descriptor = os.open(path.name, flags, 0o600, dir_fd=directory)
     except FileExistsError as error:
-        raise EnvironmentProblemError(f"cannot write {path}: it already exists") from error
+        raise PlaceTakenError(f"cannot write {path}: it already exists") from error
     except OSError as error:
         raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
     made: tuple[int, int] | None = None
@@ -133,6 +138,32 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
             raise EnvironmentProblemError(f"cannot write {path}: {failure.strerror}") from failure
         raise
     return made
+
+
+# What a link cannot be made for: a directory, or a file system without hard links.
+_NO_LINK = (errno.EPERM, errno.EOPNOTSUPP, errno.ENOTSUP, errno.EMLINK, errno.EXDEV)
+
+
+def place_back(directory: int, aside: str, name: str) -> bool:
+    """Put what was set aside as ``aside`` back at ``name`` in ``directory``, only where nothing
+    is: a file by a new link to it, which fails if another is there; a directory, or a file
+    where links cannot be made, by its name, which leaves a tiny window. Says whether ``aside``
+    is gone: once a file is back, its hidden name may stay as a second name of it. Raises
+    ``PlaceTakenError`` when another is there; ``aside`` then stays as it is."""
+    try:
+        os.link(aside, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+    except FileExistsError as error:
+        raise PlaceTakenError(f"{name}: another is there") from error
+    except OSError as error:
+        if error.errno not in _NO_LINK:
+            raise
+        os.rename(aside, name, src_dir_fd=directory, dst_dir_fd=directory)
+        return True
+    try:
+        os.unlink(aside, dir_fd=directory)
+    except OSError:
+        return False  # back at its place all the same
+    return True
 
 
 def removing_file(directory: int) -> Callable[[str], None]:
@@ -181,19 +212,30 @@ def take_back(
     except (OSError, EnvironmentProblemError, UnsafeInputError) as error:
         reason = error.strerror if isinstance(error, OSError) else str(error)
         try:
-            os.rename(aside, name, src_dir_fd=directory, dst_dir_fd=directory)
-        except OSError:
+            gone = place_back(directory, aside, name)
+        except (OSError, PlaceTakenError):
             raise EnvironmentProblemError(
                 f"cannot take back {where}: {reason}; it is left as {left}: {remedy}{after}"
             ) from failure
+        second = "" if gone else f"; a second name of it remains as {left}: remove that name"
         raise EnvironmentProblemError(
-            f"cannot take back {where}: {reason}; {remedy}{after}"
+            f"cannot take back {where}: {reason}; {remedy}{second}{after}"
         ) from failure
     try:
-        os.rename(aside, name, src_dir_fd=directory, dst_dir_fd=directory)
+        gone = place_back(directory, aside, name)
+    except PlaceTakenError:
+        raise EnvironmentProblemError(
+            f"cannot put back what was put at {where} meanwhile, as yet another is there: it is "
+            f"kept as {left}{after}"
+        ) from failure
     except OSError as error:
         raise EnvironmentProblemError(
             f"cannot put back what was put at {where} meanwhile: {error.strerror}; it is kept "
             f"as {left}{after}"
+        ) from failure
+    if not gone:
+        raise EnvironmentProblemError(
+            f"what was put at {where} meanwhile is put back, but a second name of it remains as "
+            f"{left}: remove that name by hand{after}"
         ) from failure
     return FOREIGN

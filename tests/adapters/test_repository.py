@@ -340,3 +340,28 @@ def test_a_strict_reading_takes_the_tool_s_own_names_as_unreadable(tmp_path: Pat
         CatalogueEntry(left, "", "", False),
         CatalogueEntry(domain, "", "", False),
     }
+
+
+def test_an_entry_holding_a_name_of_the_tool_s_own_is_unreadable_read_strictly(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path, ENTRY, "one")
+    (directory / hidden_name()).write_bytes(b"{}")  # a version a cut update left aside
+
+    assert RepositoryEntries(tmp_path).entries() == (CatalogueEntry(ENTRY, "one", ""),)
+    assert RepositoryEntries(tmp_path, strict=True).entries() == (
+        CatalogueEntry(ENTRY, "", "", False),
+    )
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_an_entry_that_cannot_be_listed_read_strictly_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+    directory.chmod(0o000)
+    try:
+        with pytest.raises(EnvironmentProblemError, match="cannot read"):
+            RepositoryEntries(tmp_path, strict=True).entries()
+    finally:
+        directory.chmod(0o755)

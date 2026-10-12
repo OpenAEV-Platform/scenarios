@@ -58,6 +58,16 @@ def _listing(path: Path) -> list[tuple[str, bool]]:
         raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
 
 
+def _holds_hidden(path: Path) -> bool:
+    """Whether the directory ``path`` holds one of the tool's own hidden names: what a run cut
+    short left in it."""
+    try:
+        with os.scandir(path) as entries:
+            return any(is_hidden_name(entry.name) for entry in entries)
+    except OSError as error:
+        raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
+
+
 class RepositoryEntries:
     """The entries of the repository at ``root``. The tool's own hidden names, what a run cut
     short left, are no entry; read ``strict``, as a run that writes in it reads it, each is an
@@ -219,6 +229,9 @@ class RepositoryEntries:
                     continue
                 if linked or is_hidden_name(slug):
                     found.append(CatalogueEntry(path, "", "", False))
+                    continue
+                if self._strict and _holds_hidden(base / domain / slug):
+                    found.append(CatalogueEntry(path, "", "", False))  # cut short: unknown
                     continue
                 metadata = base / domain / slug / "scenario.yaml"
                 if not _exists(metadata):
