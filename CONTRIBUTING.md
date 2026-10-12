@@ -57,8 +57,9 @@ holds the rules and no input or output, the adapters talk to files, git and the 
 - **Signed commits.** See the
   [GitHub documentation on signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits).
 - **Checks.** Three checks must pass before a merge: the tools pipeline, the title, and the
-  checks of the entries the pull request adds or changes. A pull request cannot change what
-  judges it: those checks run as the target branch has them.
+  checks of the entries the pull request adds or changes. The title and entry checks run as the
+  target branch has them, so that a pull request cannot change them; the tools pipeline runs the
+  pull request's own version, which the review covers.
 - **Review.** Every change is reviewed by a maintainer before it is merged.
 
 ## Code of conduct
