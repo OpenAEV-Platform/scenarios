@@ -3,9 +3,10 @@
 A catalogue of shareable attack scenarios for
 [OpenAEV](https://github.com/OpenAEV-Platform/openaev), and the tools that prepare and check them.
 
-> **Status: early.** No scenario has been added yet. The first ones will be the three scenarios of
-> the platform's starter pack. Releases, and installing a scenario from the catalogue straight into
-> a platform, come later.
+> **Status: early.** The catalogue holds its first scenario,
+> [EASM Scenario](scenarios/techniques/easm/), the first of the three scenarios of the platform's
+> starter pack. Releases, and installing a scenario from the catalogue straight into a platform,
+> come later.
 
 ## What this repository is for
 
@@ -81,7 +82,8 @@ removed from an export.
 
 OpenAEV installs three scenarios on each new platform, unless this is turned off: *EASM Scenario*
 (external attack surface management), *Tabletop Exercise - Akira Ransomware Crisis* and *[SALT
-TYPHOON] CVE & TTPs validation*. They will be the catalogue's first entries, at version 1.0.0.
+TYPHOON] CVE & TTPs validation*. They are the catalogue's first entries, at version 1.0.0; EASM
+Scenario is in, the two others follow.
 Their identifiers are taken from the platform itself, and listed in
 [`docs/starter-pack-ids.md`](docs/starter-pack-ids.md).
 
@@ -103,6 +105,7 @@ To run them, install [uv](https://docs.astral.sh/uv/), then, from a clone of thi
 ```sh
 uv sync --frozen
 uv run scenario-tools --help
+uv run scenario-tools validate scenarios/techniques/easm
 ```
 
 `openaev export` and `openaev import` read the platform's address and an API token from the
@@ -144,7 +147,7 @@ A few rules apply to every pull request:
 
 | Folder | Content |
 |---|---|
-| `scenarios/` | The catalogue's entries, one folder each |
+| [`scenarios/`](scenarios/) | The catalogue's entries, one folder each |
 | [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
 | [`docs/`](docs/) | Guides: adding an entry, the starter-pack identifiers |
