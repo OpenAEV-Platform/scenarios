@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.safe_readers import parse_yaml
 
@@ -58,17 +60,30 @@ STARTER_PACK_PAYLOADS = {
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 
-def _rows(section: str) -> list[list[str]]:
-    """The cells of each row of the table under the heading ``section``, without backticks."""
-    text = (ROOT / "docs" / "starter-pack-ids.md").read_text(encoding="utf-8")
+def _table(text: str, section: str) -> list[list[str]]:
+    """The cells of each data row of the table under the heading ``section``, without
+    backticks; a row whose last cell is not an identifier fails, never left out."""
     found = re.search(rf"^## {re.escape(section)}[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     assert found, f"the section {section!r} is missing from docs/starter-pack-ids.md"
-    rows = [line.strip().strip("|").split("|") for line in found[1].splitlines()]
-    return [
-        [cell.strip().strip("`") for cell in row]
-        for row in rows
-        if row and re.fullmatch(_UUID, row[-1].strip().strip("`"))
-    ]
+    lines = [line.strip() for line in found[1].splitlines() if line.strip().startswith("|")]
+    rows = [[cell.strip().strip("`") for cell in line.strip("|").split("|")] for line in lines[2:]]
+    for row in rows:  # past the header and its separator
+        assert re.fullmatch(_UUID, row[-1]), f"no identifier in the row {row!r}"
+    return rows
+
+
+def _rows(section: str) -> list[list[str]]:
+    text = (ROOT / "docs" / "starter-pack-ids.md").read_text(encoding="utf-8")
+    return _table(text, section)
+
+
+@pytest.mark.parametrize("row", ["| Extra | `not-an-id` |", "| Extra | |", "| Extra |"])
+def test_a_row_without_an_identifier_fails_rather_than_being_left_out(row: str) -> None:
+    valid = f"| A | `{'0' * 8}-0000-0000-0000-{'0' * 12}` |"
+    text = f"## Payloads\n\n| Payload | ID |\n|---|---|\n{valid}\n{row}\n"
+
+    with pytest.raises(AssertionError, match="Extra"):
+        _table(text, "Payloads")
 
 
 def test_the_starter_pack_page_lists_each_scenario_with_its_identifier_once() -> None:
