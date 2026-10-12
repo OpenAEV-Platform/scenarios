@@ -183,7 +183,8 @@ def changed_entries(root: Path, base: str) -> tuple[str, ...]:
     ``scenarios/<domain>/<slug>`` holding a changed path, sorted, once each. What stands where
     the catalogue or a domain should be and is no directory, a link included, is listed itself,
     never crossed, and so is a file of ``scenarios`` that is no domain, for its own check to
-    refuse. A changed path whose name is not UTF-8 fails: it would not be listed rightly."""
+    refuse. A changed path whose name is not UTF-8 fails: it would not be listed rightly; so does
+    one with an empty, ``.`` or ``..`` component, which a commit made by hand can hold."""
     if not _COMMIT.fullmatch(base):  # never read by git as an option, nor as a range
         raise EnvironmentProblemError(
             f"cannot read the changes of the pull request: {base!r} is not a commit"
@@ -210,6 +211,11 @@ def changed_entries(root: Path, base: str) -> tuple[str, ...]:
     found = set()
     for path in filter(None, told.split("\0")):
         parts = path.split("/")
+        if any(part in ("", ".", "..") for part in parts):  # git stores what it never checks out
+            raise EnvironmentProblemError(
+                "cannot read the changes of the pull request: a changed path has an empty, . or "
+                ".. component, and the entries are never a place outside the catalogue"
+            )
         for depth in (1, 2):  # the catalogue, then the domain
             place = root.joinpath(*parts[:depth])
             if place.is_symlink() or (place.exists() and not place.is_dir()):
