@@ -43,6 +43,11 @@ class EntrySource(Protocol):
         ``scenarios`` directory that is a link is refused (``IO-013``)."""
         ...
 
+    def scenario_names(self) -> Mapping[str, tuple[str, ...]]:
+        """Every entry's scenario name, by its ``name_key``, mapped to the directories that
+        declare it, built once a run; an entry that declares none is left out."""
+        ...
+
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         """Every entry's external ID, mapped to the directories that declare it; an entry whose
         ``scenario.yaml`` cannot be read, or declares none, is left out: its own check says

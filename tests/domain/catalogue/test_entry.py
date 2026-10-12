@@ -9,9 +9,11 @@ from scenario_tools.domain.catalogue.entry import (
     domains_from_document,
     duplicate_findings,
     layout_findings,
+    name_findings,
     truncation_findings,
     version_findings,
 )
+from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 ENTRY = "scenarios/ransomware/akira-crisis"
@@ -238,3 +240,35 @@ def test_a_domain_as_long_as_a_slug_may_be_is_read() -> None:
 def test_a_domains_document_that_cannot_be_used_is_refused(document: object) -> None:
     with pytest.raises(ValueError, match="domains"):
         domains_from_document(document)
+
+
+def test_a_scenario_name_another_entry_has_as_a_reader_sees_it_is_refused() -> None:
+    others = {name_key("  AKIRA  Ransom" + chr(0xAD) + "ware "): ("scenarios/techniques/two",)}
+
+    finding = _one(name_findings("Akira Ransomware", METADATA, others))
+
+    assert (finding.code, finding.severity, finding.path, finding.field) == (
+        "SCH-012",
+        Severity.BLOCKING,
+        METADATA,
+        "/name",
+    )
+    assert finding.message == "another entry has this scenario name: scenarios/techniques/two"
+
+
+def test_a_name_no_other_entry_has_is_fine_and_a_nameless_entry_takes_none() -> None:
+    others = {name_key("Black Basta"): ("a/b/c",), name_key(""): ("a/b/d",)}
+
+    assert name_findings("Akira", METADATA, others) == ()
+    assert name_findings("", METADATA, others) == ()
+
+
+def test_many_entries_with_the_same_name_are_named_up_to_three_sorted_and_counted() -> None:
+    others = {name_key("akira"): tuple(f"scenarios/techniques/e{n}" for n in range(4, -1, -1))}
+
+    finding = _one(name_findings("Akira", METADATA, others))
+
+    assert finding.message == (
+        "other entries have this scenario name: scenarios/techniques/e0, "
+        "scenarios/techniques/e1, scenarios/techniques/e2 and 2 more"
+    )

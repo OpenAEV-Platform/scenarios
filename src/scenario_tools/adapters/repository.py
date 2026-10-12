@@ -18,7 +18,7 @@ from scenario_tools.adapters.places import (
     is_hidden_name,
 )
 from scenario_tools.adapters.safe_readers import read_text_file, read_yaml_file
-from scenario_tools.domain.catalogue.intake import CatalogueEntry
+from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 _T = TypeVar("_T")
@@ -79,6 +79,7 @@ class RepositoryEntries:
         self._strict = strict
         self._entries: tuple[CatalogueEntry, ...] | None = None
         self._external_ids: Mapping[str, tuple[str, ...]] | None = None
+        self._names: Mapping[str, tuple[str, ...]] | None = None
         self._held: int | None = None
         self._held_identity: tuple[int, int] | None = None
 
@@ -212,6 +213,17 @@ class RepositoryEntries:
                 {external_id: tuple(found[external_id]) for external_id in sorted(found)}
             )
         return self._external_ids
+
+    def scenario_names(self) -> Mapping[str, tuple[str, ...]]:
+        """Built once a run from the entries, each name keyed once, and shared: never changed
+        by a reader."""
+        if self._names is None:
+            found: dict[str, list[str]] = {}
+            for entry in self.entries():
+                if entry.name:
+                    found.setdefault(name_key(entry.name), []).append(entry.path)
+            self._names = MappingProxyType({key: tuple(found[key]) for key in sorted(found)})
+        return self._names
 
     def _read_entries(self) -> tuple[CatalogueEntry, ...]:
         found: list[CatalogueEntry] = []

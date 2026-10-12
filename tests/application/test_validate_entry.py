@@ -11,7 +11,7 @@ import pytest
 
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.facts import BuiltinContracts
-from scenario_tools.domain.catalogue.intake import CatalogueEntry
+from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.domain.catalogue.metadata import InjectFacts
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -60,10 +60,12 @@ class FakeSource:
         files: Mapping[str, object],
         others: Mapping[str, tuple[str, ...]] | None = None,
         raw: Mapping[str, str] | None = None,
+        catalogue: tuple[CatalogueEntry, ...] | None = None,
     ) -> None:
         self.files = dict(files)
         self.others = others or {ID: (ENTRY,)}
         self.raw = dict(raw or {})
+        self.catalogue = catalogue or (CatalogueEntry(ENTRY, ID, str(METADATA["name"])),)
 
     def names(self, entry: str) -> frozenset[str]:
         return frozenset(path.rsplit("/", 1)[1] for path in self.files if path.startswith(entry))
@@ -96,7 +98,14 @@ class FakeSource:
         raise AssertionError("validate never asks")
 
     def entries(self) -> tuple[CatalogueEntry, ...]:
-        raise AssertionError("validate never asks")
+        raise AssertionError("validate reads the names' index, never every entry")
+
+    def scenario_names(self) -> Mapping[str, tuple[str, ...]]:
+        index: dict[str, tuple[str, ...]] = {}
+        for entry in self.catalogue:
+            if entry.name:
+                index[name_key(entry.name)] = (*index.get(name_key(entry.name), ()), entry.path)
+        return index
 
 
 class FakeSchema:
@@ -119,8 +128,10 @@ def _validate(
     schema: FakeSchema | None = None,
     others: Mapping[str, tuple[str, ...]] | None = None,
     renormalised: Any = _same,
+    catalogue: tuple[CatalogueEntry, ...] | None = None,
 ) -> tuple[Finding, ...]:
-    source = FakeSource(files if files is not None else {YAML: METADATA, JSON: SCENARIO}, others)
+    files = files if files is not None else {YAML: METADATA, JSON: SCENARIO}
+    source = FakeSource(files, others, catalogue=catalogue)
     return validate_entry(
         ENTRY,
         source,
@@ -245,6 +256,26 @@ def test_an_external_id_another_entry_declares_is_refused() -> None:
             YAML,
             "/external_id",
             "another entry has this external_id: scenarios/techniques/other",
+        ),
+    )
+
+
+def test_a_scenario_name_another_entry_has_is_refused_and_its_own_is_not_compared() -> None:
+    name = str(METADATA["name"])
+    catalogue = (
+        CatalogueEntry(ENTRY, ID, name),  # its own: never another's
+        CatalogueEntry("scenarios/techniques/other", "another-id", f"  {name.upper()} "),
+    )
+
+    findings = _validate(catalogue=catalogue)
+
+    assert findings == (
+        Finding(
+            "SCH-012",
+            Severity.BLOCKING,
+            YAML,
+            "/name",
+            "another entry has this scenario name: scenarios/techniques/other",
         ),
     )
 
