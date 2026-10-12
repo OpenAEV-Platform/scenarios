@@ -4,4 +4,4 @@ Ready-to-run OpenAEV scenarios and the tools that prepare, check, release and ve
 
 - [Adding or updating an entry from a platform export](docs/intake.md)
 
-The tools run on Linux and macOS, with git 2.40 or later.
+The tools run on Linux (and are meant to run on macOS), with git 2.40 or later.

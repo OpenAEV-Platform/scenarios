@@ -113,7 +113,9 @@ its checks, and a blocking finding on the stored entry still gives exit code `1`
 ## Opening the pull request
 
 Once the plan is written, complete what its body lists, then propose the entry from the
-plan's `base`:
+plan's `base`. Review the entry as any contribution first: what the export holds, commands and
+addresses included, becomes public, and the issue the body closes is the one the request
+names.
 
 1. create a branch from `base`, and add the files the plan lists under `files`, with what
    completing the list changed: for an update, `scenario.yaml` with its raised `version` and
@@ -134,7 +136,8 @@ git switch main                    # back to where the next intake starts
 ```
 
 To drop an entry rather than propose it, remove its directory (`git clean -fd <entry>`) for a
-new one, or restore its file (`git restore <entry>/scenario.json`) for an update.
+new one, or restore its file (`git restore <entry>/scenario.json`) for an update, and remove its
+plan.
 
 ## Exit codes
 
@@ -209,7 +212,9 @@ before the run, so that a plan left by another run is never taken for this one's
   the checkout, or the plan's place, while a run is writing. Such a process could change the
   repository directly anyway. What the run wrote is checked before the plan is published: the
   checkout, the entry, each file written and the plan's place. A change there stops the run,
-  which takes back what it wrote. A file another adds to the entry is not looked for.
+  which takes back what it wrote. A file another adds to the entry is not looked for. git
+  reads the checkout by its path: one swapped for another checkout and back while git runs is
+  not seen.
 
 A run killed outright (SIGKILL), with no chance to take anything back, may leave an incomplete
 entry, whose directories may be open to their owner alone, an empty or partly written plan, or
@@ -218,8 +223,10 @@ before running again; an update cut short may have left `scenario.json` itself u
 name: restore it from the commit (`git restore <entry>/scenario.json`). Until they are removed,
 such a name is a change of the checkout (exit code `3`), and once committed by mistake, it
 refuses every request (`ITK-008`). Such a name never belongs in a pull request: `validate`
-refuses it as an entry (`SCH-008`).
+refuses it as an entry (`SCH-008`), but not as a file inside one, so look for it before adding
+the entry to a commit.
 
-The command runs on Linux and macOS, with git 2.40 or later: the attributes of the checkout's
+The command runs on Linux, and is meant to run on macOS too, which its tests do not cover yet,
+with git 2.40 or later: the attributes of the checkout's
 commit are read too, so that a change to them outside the three directories cannot hide a
-conversion.
+conversion. The git a macOS release ships may be older: install a recent one first.

@@ -22,7 +22,7 @@ from scenario_tools.ports.errors import EnvironmentProblemError
 
 
 class Reservation:
-    """An output's place, reserved by ``reserve_plan``: the output is written in the empty
+    """A plan's place, reserved by ``reserve_plan``: the plan is written in the empty
     file the reservation made, through its descriptor, so never in another file, and the place
     is given back through the directory it was reserved in, never looked up again by its path."""
 
@@ -133,7 +133,7 @@ class PlanFile:
 
 
 def _unusable(path: Path, error: OSError) -> EnvironmentProblemError:
-    """A place for an output that cannot be used: a link or not a directory, or what else."""
+    """A place for a plan that cannot be used: a link or not a directory, or what else."""
     if error.errno in (errno.ELOOP, errno.ENOTDIR):
         return EnvironmentProblemError(
             f"cannot write {path}: a symbolic link or not a directory, never followed"

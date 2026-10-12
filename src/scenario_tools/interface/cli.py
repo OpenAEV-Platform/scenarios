@@ -32,7 +32,7 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
-from scenario_tools.adapters.git import converted, head_commit, uncommitted
+from scenario_tools.adapters.git import converted, converting, head_commit, uncommitted
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
@@ -592,6 +592,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                     return Report("intake", result.refusals)
                 entry = result.request.entry
                 ours = frozenset(f"{entry}/{name}" for name in intake_files(result, yaml_bytes))
+                _refuse_converting(root, ours)  # files not written yet: attributes match them too
                 with _stop_requests_held():
                     left = write_intake(
                         result,
@@ -621,12 +622,19 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
     _emit(ctx, "intake", produce_shown, root)
 
 
-# What the plan depends on, besides the export and the request: the catalogue and its rules.
-
-
 def _refuse_uncommitted(root: Path) -> None:
-    """Refuse a checkout whose catalogue or rules differ from its commit, or whose bytes git
-    converts from it: the plan must describe what its base gives."""
+    """Refuse a checkout whose bytes git converts from its commit, or whose catalogue or rules
+    differ from it: the plan must describe what its base gives. Conversions come first: git
+    status would run a filter the attributes name."""
+    turned = converted(root, _PLANNED)
+    if turned:
+        more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
+        raise EnvironmentProblemError(
+            f"git converts files under {_PLANNED_NAMED} between the commit and the checkout "
+            f"({turned[0]}{more}, by its attributes or its line ends): the plan would not "
+            "describe the commit's "
+            "bytes"
+        )
     changed = uncommitted(root, _PLANNED)
     if changed:
         more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
@@ -636,13 +644,17 @@ def _refuse_uncommitted(root: Path) -> None:
             "what its base gives; an entry an earlier intake wrote counts: commit it on its "
             "own branch, then start the next intake from the commit it should start from"
         )
-    turned = converted(root, _PLANNED)
+
+
+def _refuse_converting(root: Path, files: frozenset[str]) -> None:
+    """Refuse ``files``, the run's, when git would convert them by their attributes: what the
+    plan says of their bytes would not be what a commit of them holds."""
+    turned = converting(root, tuple(sorted(files)))
     if turned:
         more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
         raise EnvironmentProblemError(
-            f"git converts files under {_PLANNED_NAMED} between the commit and the checkout "
-            f"({turned[0]}{more}, by .gitattributes): the plan would not describe the commit's "
-            "bytes"
+            f"git converts {turned[0]}{more} by its attributes: the plan would not describe the "
+            "bytes a commit of it holds; nothing is kept"
         )
 
 
@@ -652,6 +664,7 @@ def _still_base(source: RepositoryEntries, ours: frozenset[str]) -> str:
     must describe what its base gives."""
     source.check_held()  # git reads the checkout by its path: never another's
     root = source.root
+    _refuse_converting(root, ours)  # attributes changed while the run wrote
     others = [path for path in uncommitted(root, _PLANNED) if path not in ours]
     if others:
         more = f" and {len(others) - 1} more" if len(others) > 1 else ""

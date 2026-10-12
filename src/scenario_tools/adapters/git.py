@@ -117,12 +117,21 @@ _CONVERTING = ("text", "eol", "crlf", "filter", "ident", "working-tree-encoding"
 
 def converted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
     """The files under ``paths`` of the checkout at ``root`` whose bytes git converts between
-    the commit and the checkout, by their attributes in the checkout or in its commit (git 2.40
-    or later), sorted: what is read there is not what the commit holds."""
+    the commit and the checkout, by their attributes or their line ends, sorted: what is read
+    there is not what the commit holds."""
     listed = _git(root, "ls-files", "-z", "--", *paths)
     if listed is None:
         raise EnvironmentProblemError("cannot read the attributes of the checkout")
-    files = [name for name in listed.split("\0") if name]
+    files = tuple(name for name in listed.split("\0") if name)
+    if not files:
+        return ()
+    return tuple(sorted({*converting(root, files), *_other_line_ends(root, paths)}))
+
+
+def converting(root: Path, files: tuple[str, ...]) -> tuple[str, ...]:
+    """Those of ``files``, paths in the checkout at ``root`` that need not exist yet, whose
+    bytes git would convert by their attributes in the checkout, its index or its commit (git
+    2.40 or later), sorted."""
     if not files:
         return ()
     found: set[str] = set()
@@ -142,3 +151,26 @@ def converted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
             if fields[index + 2] not in ("unspecified", "unset")
         )
     return tuple(sorted(found))
+
+
+_TEXT_ENDS = ("lf", "crlf", "mixed")
+
+
+def _other_line_ends(root: Path, paths: tuple[str, ...]) -> set[str]:
+    """The files under ``paths`` whose line ends in the checkout are not the commit's, as a
+    setting such as ``core.autocrlf`` writes them, whatever the attributes say."""
+    told = _git(root, "ls-files", "--eol", "-z", "--", *paths)
+    if told is None:
+        raise EnvironmentProblemError("cannot read the attributes of the checkout")
+    found = set()
+    for record in told.split("\0"):
+        info, _, name = record.partition("\t")
+        ends = [part.split("/", 1)[1] for part in info.split()[:2]]  # i/<index> w/<checkout>
+        if (
+            len(ends) == 2
+            and ends[0] in _TEXT_ENDS
+            and ends[1] in _TEXT_ENDS
+            and ends[0] != ends[1]
+        ):
+            found.add(name)
+    return found

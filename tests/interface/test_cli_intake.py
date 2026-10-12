@@ -45,6 +45,18 @@ NEW: dict[str, Any] = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _no_git_config_of_the_machine(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """git reads no configuration of the machine nor of its user, which could ignore or convert
+    the files the tests write."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 def _git(root: Path, *arguments: str) -> str:
     return subprocess.run(  # noqa: S603 - a fixed program, arguments of the test's own
         ["git", "-C", str(root), *arguments],  # noqa: S607
@@ -526,6 +538,27 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
     assert "the plan cannot be made" in result.output  # what led to it, seen
 
 
+def test_attributes_set_while_the_entry_is_written_get_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+
+    def converting(*arguments: Any) -> Any:  # outside the three directories: not a change seen
+        (root / ".gitattributes").write_text(f"{ENTRY}/** text eol=crlf\n")
+        return planned(*arguments)
+
+    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", converting)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "converts" in result.output
+    assert not plan.exists()
+    assert not (root / ENTRY).exists()
+
+
 def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -946,6 +979,60 @@ def test_a_checkout_whose_files_git_converts_is_refused(
     assert result.exit_code == 3, result.output
     assert "converts" in result.output
     assert not plan.exists()
+
+
+@pytest.mark.parametrize("rule", ["scenarios/techniques/easm/** text eol=crlf", "*.yaml filter=x"])
+def test_attributes_that_would_convert_the_files_to_write_are_refused_before_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, rule: str
+) -> None:
+    root = _repository(tmp_path)
+    (root / ".gitattributes").write_text(f"{rule}\n")  # for files that do not exist yet
+    _commit(root)
+    plan = tmp_path / "plan.json"
+
+    def never(*arguments: Any, **options: Any) -> Any:
+        raise AssertionError("nothing may be written")
+
+    monkeypatch.setattr("scenario_tools.interface.cli.write_intake", never)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "converts" in result.output
+    assert not (root / "scenarios").exists()
+    assert not plan.exists()
+
+
+def test_a_filter_the_checkout_s_attributes_name_is_refused_before_it_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / ".gitattributes").write_text("policy/** filter=x\n")
+    _commit(root)
+    marker = tmp_path / "ran"
+    _git(root, "config", "filter.x.clean", f"touch {marker}; cat")
+    domains = root / "policy" / "data" / "domains.yaml"
+    os.utime(domains, (1, 1))  # a file git looks at again, through its filter
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+
+    assert result.exit_code == 3, result.output
+    assert "converts" in result.output
+    assert not marker.exists()  # refused before git status could run it
+
+
+def test_a_checkout_git_writes_with_other_line_ends_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    _git(root, "config", "core.autocrlf", "true")
+    domains = root / "policy" / "data" / "domains.yaml"
+    domains.write_bytes(domains.read_bytes().replace(b"\n", b"\r\n"))  # as git checks it out
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+
+    assert result.exit_code == 3, result.output
+    assert "converts" in result.output
 
 
 def test_an_input_that_cannot_be_read_is_said_without_where_it_is(

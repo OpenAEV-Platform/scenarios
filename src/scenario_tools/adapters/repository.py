@@ -1,6 +1,6 @@
 """Adapter: the repository's entries, read by their path in the repository, never through a
-symbolic link, parent directories included, and within the input limits; written from the
-descriptor of the repository held, one directory at a time, never through a link."""
+symbolic link, parent directories included, and within the input limits; and the repository
+held by a run, locked, whose descriptor the entry writer writes from."""
 
 import contextlib
 import errno
@@ -71,7 +71,8 @@ def _holds_hidden(path: Path) -> bool:
 class RepositoryEntries:
     """The entries of the repository at ``root``. The tool's own hidden names, what a run cut
     short left, are no entry; read ``strict``, as a run that writes in it reads it, each is an
-    entry that cannot be read, since what it holds is unknown."""
+    entry that cannot be read, since what it holds is unknown. While ``locked``, the repository
+    is held: its descriptor is given to write from, and its path checked to still name it."""
 
     def __init__(self, root: Path, *, strict: bool = False) -> None:
         self._root = root

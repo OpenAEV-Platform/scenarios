@@ -6,8 +6,20 @@ from pathlib import Path
 import pytest
 
 from scenario_tools.adapters import git as git_module
-from scenario_tools.adapters.git import converted, head_commit, uncommitted
+from scenario_tools.adapters.git import converted, converting, head_commit, uncommitted
 from scenario_tools.ports.errors import EnvironmentProblemError
+
+
+@pytest.fixture(autouse=True)
+def _no_git_config_of_the_machine(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """git reads no configuration of the machine nor of its user, which could ignore or convert
+    the files the tests write."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 def _git(root: Path, *arguments: str) -> str:
@@ -308,6 +320,41 @@ def test_conversions_the_checkout_sets_are_told_whatever_tree_the_config_names(
     (root / ".gitattributes").write_text("scenarios/** text eol=crlf\n")
 
     assert converted(root, ("scenarios",)) == ("scenarios/a/b/scenario.json",)
+
+
+def test_files_not_written_yet_that_attributes_would_convert_are_told(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    (root / ".gitattributes").write_text("scenarios/new/** text eol=crlf\n")
+
+    told = converting(root, ("scenarios/new/one/scenario.json", "scenarios/other/x.json"))
+
+    assert told == ("scenarios/new/one/scenario.json",)
+    assert converting(root, ()) == ()
+
+
+def test_line_ends_that_cannot_be_read_are_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _committed(tmp_path)
+    real = git_module._git
+
+    def failing_ends(directory: Path, *arguments: str, given: str | None = None) -> str | None:
+        return None if "--eol" in arguments else real(directory, *arguments, given=given)
+
+    monkeypatch.setattr(git_module, "_git", failing_ends)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the attributes"):
+        converted(root, ("scenarios",))
+
+
+def test_line_ends_a_setting_changes_are_told(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    _git(root, "config", "core.autocrlf", "true")
+    (root / "scenarios/a/b/scenario.json").write_bytes(b"x\r\n")
+    _git(root, "add", "scenarios")  # the index holds LF, the checkout CRLF
+    (root / "scenarios/a/b/scenario.json").write_bytes(b"x\r\n")
+
+    assert converted(root, ("scenarios", "policy")) == ("scenarios/a/b/scenario.json",)
 
 
 def test_commit_attributes_that_cannot_be_read_say_the_git_needed(
