@@ -6,8 +6,9 @@ scenarios, so that a platform can link an installed copy to its catalogue versio
 next one. None of them is in the catalogue yet: this page fixes their identifiers first.
 
 Their identifiers in the catalogue are taken from the platform's embedded exports: the scenario
-ID of each export, and the payload ID of each payload it holds. Each is the `external_id` of its
-entry, fixed once published: none of them ever changes, whatever later versions hold. The
+ID of each export, and the payload ID of each payload it holds. A scenario's ID is the
+`external_id` of its entry; a payload's ID is the one the entry's references to it use. All are
+fixed once published: none of them ever changes, whatever later versions hold. The
 platform's import does not keep these identifiers on the copies it installs today: linking an
 installed copy to the catalogue needs the platform to read them back from its embedded exports.
 
