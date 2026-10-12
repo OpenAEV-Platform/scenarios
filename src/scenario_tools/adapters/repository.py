@@ -56,6 +56,10 @@ def _directories(path: Path) -> list[str]:
         raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
 
 
+class LeftAsideError(EnvironmentProblemError):
+    """The write stands, but a previous file kept aside while it ran could not be removed."""
+
+
 def _child(directory: int, name: str, where: str) -> int:
     """A descriptor of the directory ``name`` in ``directory``, never through a link nor a
     file; a missing one raises ``FileNotFoundError``."""
@@ -97,14 +101,23 @@ def _replaced(directory: int, path: Path, files: Mapping[str, bytes]) -> Iterato
             except OSError:
                 lost.append(f"{path / name} (the previous one is kept as {aside})")
                 continue
-            with contextlib.suppress(OSError):  # left by a rename over the same file
+            try:  # still there only after a rename over the same file, which does nothing
                 os.unlink(aside, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                lost.append(f"{path / name} (a copy is left as {aside}: remove it by hand)")
         if lost:
             raise EnvironmentProblemError(f"cannot put back {'; '.join(lost)}") from failure
         raise
-    for aside in kept.values():
-        with contextlib.suppress(OSError):
+    left = []
+    for name, aside in kept.items():
+        try:
             os.unlink(aside, dir_fd=directory)
+        except OSError:
+            left.append(f"{path / name} is written, but its previous version is left as {aside}")
+    if left:
+        raise LeftAsideError(f"{'; '.join(left)}: remove it by hand")
 
 
 class RepositoryEntries:

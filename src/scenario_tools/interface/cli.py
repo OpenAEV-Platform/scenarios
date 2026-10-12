@@ -33,7 +33,7 @@ from scenario_tools.adapters.data_files import (
 from scenario_tools.adapters.git import head_commit
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
-from scenario_tools.adapters.repository import RepositoryEntries
+from scenario_tools.adapters.repository import LeftAsideError, RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
@@ -582,8 +582,16 @@ def _intake_held(
             findings = rules.validate(result.request.entry, RepositoryEntries(root))
             document = plan_document(result, files, base, findings)
             write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
-    except BaseException:
-        plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
+    except LeftAsideError:
+        raise  # the entry and its plan are written: both stay, and what is left is said
+    except BaseException as failure:
+        try:
+            plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
+        except OSError as error:
+            raise EnvironmentProblemError(
+                f"cannot remove {plan}, the place reserved for the plan: {error.strerror}; "
+                "remove it by hand"
+            ) from failure
         raise
     return Report("intake", (*result.to_complete, *findings))
 

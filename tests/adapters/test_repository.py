@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from scenario_tools.adapters import data_files, repository
-from scenario_tools.adapters.repository import RepositoryEntries
+from scenario_tools.adapters.repository import LeftAsideError, RepositoryEntries
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -588,3 +588,43 @@ def test_a_directory_made_whose_mode_cannot_be_set_is_the_environment_s_fault(
 
     with pytest.raises(EnvironmentProblemError, match="cannot make scenarios"):
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+
+def _unremovable_copies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A previous file kept aside can no longer be removed."""
+    removed = os.unlink
+
+    def failing(path: str, **options: Any) -> None:
+        if str(path).endswith(".previous"):
+            raise OSError(5, "Input/output error")
+        removed(path, **options)
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+
+def test_a_copy_that_cannot_be_removed_once_written_is_said_and_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    _unremovable_copies(monkeypatch)
+
+    with pytest.raises(LeftAsideError, match="remove it by hand") as error:
+        _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    assert (directory / "scenario.json").read_bytes() == b"{}\n"  # the update stands
+    kept = [path.name for path in directory.iterdir() if path.name.endswith(".previous")]
+    assert len(kept) == 1
+    assert kept[0] in str(error.value)
+
+
+def test_a_copy_left_while_putting_a_file_back_is_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    (tmp_path / "elsewhere.json").write_text("kept")
+    (directory / "scenario.json").unlink()
+    (directory / "scenario.json").symlink_to(tmp_path / "elsewhere.json")
+    _unremovable_copies(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="a copy is left as"):
+        _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    assert (directory / "scenario.json").is_symlink()

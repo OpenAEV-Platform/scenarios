@@ -439,3 +439,52 @@ def test_a_plan_whose_directory_is_a_link_is_the_environment_s_fault(
     assert result.exit_code == 3, result.output
     assert list((tmp_path / "real").iterdir()) == []
     assert not (root / "scenarios").exists()
+
+
+def test_an_update_whose_copy_cannot_be_removed_keeps_its_plan_and_says_so(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
+    plan = tmp_path / "update.json"
+    removed = os.unlink
+
+    def failing(path: str, **options: Any) -> None:
+        if str(path).endswith(".previous"):
+            raise OSError(5, "Input/output error")
+        removed(path, **options)
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+    result = _intake(
+        monkeypatch,
+        root,
+        _request(tmp_path, {**update, "issue": 13}, "update.yaml"),
+        plan,
+        _changed_export(tmp_path),
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "remove it by hand" in result.output
+    assert json.loads(plan.read_text(encoding="utf-8"))["title"].startswith("feat(scenarios)")
+
+
+def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path, commit=False)  # the run fails once its plan is reserved
+    plan = tmp_path / "plan.json"
+    removed = Path.unlink
+
+    def failing(self: Path, missing_ok: bool = False) -> None:
+        if self == plan:
+            raise OSError(13, "Permission denied")
+        removed(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", failing)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert f"cannot remove {plan}" in result.output

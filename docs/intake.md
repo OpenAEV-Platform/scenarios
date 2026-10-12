@@ -83,7 +83,9 @@ propose (`changed`), each file written with its SHA-256, the pull request's `tit
   export instead, remove the entry's directory first.
 - `2`: a usage error, nothing is run.
 - `3`: the checkout, its rules, or the plan's place cannot be used (a link included), or
-  another run holds the checkout: one run at a time writes in it; nothing is written.
+  another run holds the checkout: one run at a time writes in it; nothing is written. In one
+  case only, which the run names, the entry and its plan stand: the previous version of an
+  updated file, kept aside while the run went on, could not be removed; remove that file.
 
 The findings are printed on standard output, one per line, or as one JSON document with
 `--format json` (`{command, ok, findings}`). A script tells the two cases of exit code `1`
