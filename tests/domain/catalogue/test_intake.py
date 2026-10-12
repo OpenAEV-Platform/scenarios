@@ -64,14 +64,6 @@ def test_a_request_is_read_with_its_entry_place() -> None:
     }
 
 
-def test_an_update_needs_no_metadata() -> None:
-    document = {key: DOCUMENT[key] for key in ("external_id", "domain", "slug", "issue")}
-
-    request = IntakeRequest.from_document({**document, "mode": "update", "rewrite": True})
-
-    assert (request.mode, request.rewrite, request.metadata()) == ("update", True, {})
-
-
 def test_a_new_entry_in_an_empty_catalogue_is_accepted() -> None:
     assert _refusals(_request()) == ()
 
@@ -128,8 +120,12 @@ def test_an_update_elsewhere_than_the_entry_is_refused() -> None:
 
     findings = _refusals(_request(mode="update"), "Akira crisis", entry)
 
-    assert _codes(findings) == [("ITK-005", REQUEST, "/slug")]
+    assert _codes(findings) == [("ITK-005", REQUEST, "/domain")]  # the field that differs
     assert "scenarios/techniques/akira" in findings[0].message
+    elsewhere = CatalogueEntry("scenarios/ransomware/akira", ID, "Akira crisis")
+    assert _codes(_refusals(_request(mode="update"), "Akira crisis", elsewhere)) == [
+        ("ITK-005", REQUEST, "/slug")
+    ]
 
 
 @pytest.mark.parametrize("first", [True, False], ids=["listed-first", "listed-last"])
@@ -190,6 +186,8 @@ def test_the_title_follows_the_convention(mode: str) -> None:
 
     assert check_pull_request_title(title) is None
     assert title.startswith(f"feat(scenarios): {'add' if mode == 'new' else 'update'} ")
+    longest = {"mode": mode, "slug": "a" * 64, "issue": 2**53 - 1}  # the request's bounds
+    assert check_pull_request_title(_plan(request=longest)["title"]) is None
 
 
 def test_the_same_inputs_give_the_same_plan() -> None:
@@ -259,6 +257,12 @@ def test_an_update_differing_only_in_case_is_the_same_scenario() -> None:
     assert _refusals(_request(mode="update"), "akira crisis", entry) == ()
 
 
+def test_an_export_without_a_name_takes_no_entry_s_name() -> None:
+    nameless = CatalogueEntry("scenarios/techniques/other", OTHER, "")
+
+    assert _refusals(_request(), "", nameless) == ()  # normalisation says why it has none
+
+
 def test_a_rename_to_another_entry_s_name_is_refused() -> None:
     entry = CatalogueEntry("scenarios/ransomware/akira-crisis", ID, "Akira crisis")
     other = CatalogueEntry("scenarios/techniques/basta", OTHER, "Black Basta")
@@ -312,6 +316,33 @@ def test_the_checklist_holds_one_item_per_field_and_nothing_with_nothing_to_do()
 
     items = [line for line in body.splitlines() if line.startswith("- [ ]")]
     assert items == ["- [ ] `p` `/description`: `ends with the mark`"]
+
+
+def test_every_finding_on_a_field_is_listed_once_and_counted_once() -> None:
+    first = Finding("VER-012", Severity.INFO, "p/scenario.json", "", "inject a is gone")
+    second = Finding("VER-012", Severity.INFO, "p/scenario.json", "", "inject b is gone")
+    hidden = Finding("IO-017", Severity.BLOCKING, "p", "/name", "U+202E")
+    other = Finding("SCH-001", Severity.BLOCKING, "p", "/name", "too long")
+
+    plan = _plan(checklist=(first, second, first, hidden, other, hidden))
+
+    items = [line for line in plan["body"].splitlines() if line.startswith("- [ ]")]
+    assert items == [
+        "- [ ] `p/scenario.json` ``: `inject a is gone`",
+        "- [ ] `p/scenario.json` ``: `inject b is gone`",
+        "- [ ] `p` `/name`: `U+202E`",
+        "- [ ] `p` `/name`: `too long`",
+    ]
+    assert plan["blocking"] == 2
+
+
+def test_only_an_informative_finding_is_dropped_for_having_nothing_to_do() -> None:
+    blocking = Finding("SCH-009", Severity.BLOCKING, "p", "/description", "cut; nothing to do")
+
+    plan = _plan(checklist=(blocking,))
+
+    assert plan["blocking"] == 1
+    assert "nothing to do" in plan["body"]
 
 
 def test_the_plan_keys_come_in_a_stable_order() -> None:
@@ -380,3 +411,17 @@ def test_an_unchanged_update_still_lists_what_blocks_its_entry() -> None:
     assert plan["blocking"] == 1
     assert "- [ ] `p` `/description`: `ends with the mark`" in plan["body"]
     assert "nothing to propose" in plan["body"]
+
+
+def test_the_body_lists_a_bounded_number_of_items_and_counts_every_blocking_one() -> None:
+    many = tuple(
+        Finding("SCH-001", Severity.BLOCKING, "p", f"/field{index}", "wrong")
+        for index in range(150)
+    )
+
+    plan = _plan(checklist=many)
+
+    items = [line for line in plan["body"].splitlines() if line.startswith("- [ ]")]
+    assert len(items) == 100
+    assert "and 50 more: run validate on the entry to see them all" in plan["body"]
+    assert plan["blocking"] == 150  # exact, whatever the body shows

@@ -1,12 +1,14 @@
 """Intake an export into the catalogue: everything that would refuse the request is found before
 anything is written, so that a refused request leaves the repository as it was."""
 
+import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
+from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
 from scenario_tools.domain.catalogue.intake import (
     NEW,
     IntakeRequest,
@@ -19,7 +21,8 @@ from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.data import DataLoader
-from scenario_tools.ports.repository import EntrySource
+from scenario_tools.ports.plan import PlanSink
+from scenario_tools.ports.repository import EntrySource, EntryWriter
 from scenario_tools.ports.schema import SchemaValidator
 
 
@@ -27,7 +30,8 @@ from scenario_tools.ports.schema import SchemaValidator
 class IntakeResult:
     """What intake makes of a request: the findings that refuse it, or what to write (the stored
     ``scenario.json``, and for a new entry its ``scenario.yaml``), whether it changes anything,
-    and what is left to complete."""
+    what is left to complete, and the bytes of each file an update replaces, as read: none for
+    a new entry, which replaces nothing."""
 
     request: IntakeRequest | None
     refusals: tuple[Finding, ...] = ()
@@ -35,6 +39,7 @@ class IntakeResult:
     metadata: dict[str, Any] | None = None
     to_complete: tuple[Finding, ...] = ()
     changed: bool = False
+    previous: dict[str, bytes] | None = None
 
 
 def _scenario_name(export: Any) -> str:
@@ -62,7 +67,7 @@ def intake_entry(
     """What intake makes of ``export`` and the request read from ``request_path``, against the
     catalogue ``source`` reads."""
     violations = schema.validate("intake-request", request_document)
-    if violations or not isinstance(request_document, Mapping):
+    if violations:
         return IntakeResult(
             None,
             tuple(
@@ -70,15 +75,29 @@ def intake_entry(
                 for violation in violations
             ),
         )
+    if not isinstance(request_document, Mapping):  # whatever the schema lets through
+        why = "the request must be a mapping of its fields"
+        return IntakeResult(None, (_refused("SCH-001", request_path, "", why),))
+    if not isinstance(request_document.get("issue"), int):  # 12.0 is an integer to the schema
+        why = "the issue must be a whole number, as #12 is"
+        return IntakeResult(None, (_refused("SCH-001", request_path, "/issue", why),))
+    for key in ("domain", "slug"):  # a place in the catalogue, whatever its schema lets through
+        if not is_slug(request_document.get(key)):
+            why = f"must be kebab-case of at most {SLUG_LIMIT} characters, never a path"
+            return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
     request = IntakeRequest.from_document(request_document)
     # What the request writes is checked as the export is, before anything is written.
     refusals = hidden_character_findings(request_document, request_path)
+    name = _scenario_name(export)
+    if not refusals and not name.strip():
+        why = "the export's scenario has no name: name it on the platform, and export it again"
+        refusals = (_refused("SCH-001", export_path, "/scenario_information/scenario_name", why),)
     refusals = (
         refusals
         or domain_refusals(request, domains, request_path)
         or intake_refusals(
             request,
-            _scenario_name(export),
+            name,
             source.entries(),
             request_path=request_path,
             export_path=export_path,
@@ -89,7 +108,7 @@ def intake_entry(
         return IntakeResult(request, refusals)
     if request.mode == NEW:
         return _new(request, export, export_path, request_path, data, schema)
-    return _update(request, export, export_path, data, source)
+    return _update(request, export, name, export_path, data, source)
 
 
 def intake_files(
@@ -121,6 +140,35 @@ def plan_document(
         files=digests,
         checklist=(*result.to_complete, *findings),
     )
+
+
+def write_intake(
+    result: IntakeResult,
+    *,
+    entries: EntryWriter,
+    plan: PlanSink,
+    base: str,
+    validate: Callable[[str], tuple[Finding, ...]],
+    render: Callable[[dict[str, Any]], bytes],
+) -> tuple[Finding, ...]:
+    """Write the entry ``result`` says and its plan, from the commit ``base``, in one go: the
+    plan's place is reserved first, then the entry is written and checked as ``validate``
+    checks it, and the plan is published only once the entry is known to be still where it was
+    written. The entry is kept only with its plan: if anything stops the run before, what was
+    written is taken back and the place given back. What is left to complete and the entry's
+    findings are given. The caller holds the repository from the catalogue's check that made
+    ``result`` until this returns."""
+    if result.request is None or result.refusals:
+        raise ValueError("a refused request is never written")
+    entry = result.request.entry
+    with plan.reserving() as reservation:
+        files = intake_files(result, render)
+        with entries.writing(entry, files, previous=result.previous) as written:
+            findings = validate(entry)
+            document = plan_document(result, files, base, findings)
+            written.check()
+            reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
+    return (*result.to_complete, *findings)
 
 
 def _new(
@@ -161,11 +209,17 @@ def _new(
 def _update(
     request: IntakeRequest,
     export: Any,
+    name: str,
     export_path: str,
     data: DataLoader,
     source: EntrySource,
 ) -> IntakeResult:
     stored_path = f"{request.entry}/scenario.json"
+    if "scenario.json" not in source.names(request.entry):
+        return IntakeResult(
+            request,
+            (_refused("SCH-008", stored_path, "", "the entry has no scenario.json to update"),),
+        )
     stored, previous = source.read_json(stored_path)
     prepared = prepare_entry(
         export,
@@ -191,7 +245,7 @@ def _update(
             ),
         )
     entry = next(entry for entry in source.entries() if entry.path == request.entry)
-    if not same_name(entry.name, _scenario_name(export)):  # renamed, as rewrite declares
+    if not same_name(entry.name, name):  # renamed, as rewrite declares
         left += (
             Finding(
                 "SCH-007",
@@ -211,4 +265,6 @@ def _update(
         )
         for inject in prepared.removed_injects
     )
-    return IntakeResult(request, (), prepared.scenario_json, None, left, changed)
+    return IntakeResult(
+        request, (), prepared.scenario_json, None, left, changed, {"scenario.json": stored}
+    )

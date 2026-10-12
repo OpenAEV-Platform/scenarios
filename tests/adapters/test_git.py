@@ -98,3 +98,42 @@ def test_the_environment_cannot_point_git_elsewhere(
 
     with pytest.raises(EnvironmentProblemError):
         head_commit(plain)
+
+
+def test_a_git_found_inside_the_checkout_is_never_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    planted = tmp_path / "bin" / "git"
+    planted.parent.mkdir()
+    planted.write_text(f"#!/bin/sh\ntouch {tmp_path / 'ran'}\n")  # wherever it is run from
+    planted.chmod(0o755)
+    monkeypatch.setattr("shutil.which", lambda name: str(planted))
+
+    with pytest.raises(EnvironmentProblemError, match="inside the repository"):
+        head_commit(tmp_path)
+    assert not (tmp_path / "ran").exists()
+
+
+def test_what_git_prints_that_is_not_utf_8_is_read_all_the_same(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def printing(*arguments: object, **options: object) -> object:
+        assert options.get("errors") == "replace"
+        return subprocess.CompletedProcess("git", 0, stdout="caf\ufffd\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", printing)
+
+    with pytest.raises(EnvironmentProblemError, match="not the top of a checkout"):
+        head_commit(tmp_path)
+
+
+def test_a_top_that_cannot_be_looked_at_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def printing(*arguments: object, **options: object) -> object:
+        return subprocess.CompletedProcess("git", 0, stdout=f"{tmp_path}/gone\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", printing)
+
+    with pytest.raises(EnvironmentProblemError, match="not the top of a checkout"):
+        head_commit(tmp_path)

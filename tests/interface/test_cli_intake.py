@@ -1,24 +1,30 @@
 """The intake command: an export and a request become an entry in place, with a plan a pull
 request is opened from; a refused request leaves the repository as it was."""
 
+import contextlib
 import fcntl
 import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
-from scenario_tools.adapters import data_files
+from scenario_tools.adapters import plan as plan_module
 from scenario_tools.adapters.data_files import read_export
+from scenario_tools.adapters.places import is_hidden_name
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.application import intake_entry
+from scenario_tools.domain.shared.finding import Report
 from scenario_tools.domain.shared.title import check_pull_request_title
+from scenario_tools.interface import cli as cli_module
 from scenario_tools.interface.cli import main
 from scenario_tools.ports.errors import EnvironmentProblemError
 
@@ -113,9 +119,14 @@ def test_the_same_inputs_give_the_same_plan(
 
     assert _intake(monkeypatch, root, request, first).exit_code == 0
     shutil.rmtree(root / ENTRY)
-    assert _intake(monkeypatch, root, request, second).exit_code == 0
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    moved = shutil.copy(request, elsewhere / "other-name.yaml")
+    export = shutil.copy(EASM, elsewhere / "export.zip")
+    result = _intake(monkeypatch, root, Path(moved), second, Path(export))
+    assert result.exit_code == 0, result.output
 
-    assert first.read_bytes() == second.read_bytes()
+    assert first.read_bytes() == second.read_bytes()  # whatever the inputs' paths
 
 
 def test_an_update_with_the_same_export_writes_nothing_and_plans_nothing(
@@ -320,12 +331,12 @@ def test_a_plan_already_there_is_a_usage_error(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    plan.write_text("{}")
+    plan.mkdir()  # whatever is there
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 2
-    assert "remove" in result.stderr
+    assert "something is already there" in result.stderr
     assert not (root / "scenarios").exists()
 
 
@@ -363,10 +374,10 @@ def test_a_run_that_fails_after_reserving_its_plan_leaves_no_plan(
 def _unpublished(monkeypatch: pytest.MonkeyPatch) -> None:
     """The plan cannot be published, once the entry is written."""
 
-    def failing(reservation: data_files.Reservation, data: bytes) -> None:
+    def failing(reservation: plan_module.Reservation, data: bytes) -> None:
         raise EnvironmentProblemError("cannot write the plan: No space left on device")
 
-    monkeypatch.setattr(data_files.Reservation, "publish", failing)
+    monkeypatch.setattr(plan_module.Reservation, "publish", failing)
 
 
 def test_a_plan_that_cannot_be_published_leaves_no_new_entry(
@@ -443,53 +454,29 @@ def test_a_plan_whose_directory_is_a_link_is_the_environment_s_fault(
     assert not (root / "scenarios").exists()
 
 
-def test_an_update_whose_copy_cannot_be_removed_keeps_its_plan_and_says_so(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    root = _repository(tmp_path)
-    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
-    update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
-    plan = tmp_path / "update.json"
-    removed = os.unlink
-
-    def failing(path: str, **options: Any) -> None:
-        if str(path).endswith(".previous"):
-            raise OSError(5, "Input/output error")
-        removed(path, **options)
-
-    monkeypatch.setattr(os, "unlink", failing)
-
-    result = _intake(
-        monkeypatch,
-        root,
-        _request(tmp_path, {**update, "issue": 13}, "update.yaml"),
-        plan,
-        _changed_export(tmp_path),
-    )
-
-    assert result.exit_code == 3, result.output
-    assert "remove it by hand" in result.output
-    assert json.loads(plan.read_text(encoding="utf-8"))["title"].startswith("feat(scenarios)")
-
-
 def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    root = _repository(tmp_path, commit=False)  # the run fails once its plan is reserved
+    root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
     removed = os.unlink
 
     def failing(path: str, **options: Any) -> None:
-        if plan.name in path:  # the reservation, under its name or set aside
+        if path == plan.name or is_hidden_name(path):  # the reservation, or set aside
             raise OSError(13, "Permission denied")
         removed(path, **options)
 
-    monkeypatch.setattr(os, "unlink", failing)
+    def unplanned(*arguments: Any) -> Any:  # the run fails once its plan is reserved
+        monkeypatch.setattr(os, "unlink", failing)
+        raise EnvironmentProblemError("the plan cannot be made")
+
+    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", unplanned)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 3, result.output
-    assert f"the place reserved for {plan}" in result.output
+    assert "cannot take back plan.json" in result.output  # never where the run is
+    assert "the plan cannot be made" in result.output  # what led to it, seen
 
 
 def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
@@ -505,7 +492,7 @@ def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
         root.symlink_to(tmp_path / "other")
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.plan_document", swapped)
+    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", swapped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -529,10 +516,292 @@ def test_an_entry_swapped_before_its_plan_gets_no_plan(
         entry.mkdir()
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.plan_document", swapped)
+    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", swapped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 3, result.output
     assert "put at its place meanwhile" in result.output  # ours is said, never removed
     assert not plan.exists()
+
+
+def test_an_input_reaching_the_entries_through_a_link_and_back_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "scenarios" / "techniques").mkdir(parents=True)
+    request = root / "scenarios" / "request.yaml"
+    request.write_bytes(yaml_bytes(NEW))
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / "link").symlink_to(root / "scenarios" / "techniques")
+    roundabout = tmp_path / "work" / "link" / ".." / "request.yaml"  # ".." taken physically
+
+    result = _intake(monkeypatch, root, roundabout, tmp_path / "plan.json")
+
+    assert result.exit_code == 2, result.output
+    assert "inside the entries" in result.output
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_an_input_that_cannot_be_reached_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "scenarios").mkdir()
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    request = _request(locked, NEW)
+    locked.chmod(0o000)
+    try:
+        result = _intake(monkeypatch, root, request, tmp_path / "plan.json")
+    finally:
+        locked.chmod(0o755)
+
+    assert result.exit_code == 3, result.output  # never a trace of the tool's own
+    assert "Traceback" not in result.output
+
+
+_STOPS = [signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT]
+
+
+@pytest.mark.parametrize("stop", _STOPS, ids=lambda stop: signal.Signals(stop).name)
+def test_a_run_asked_to_stop_while_writing_finishes_first(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stop: signal.Signals
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+    handlers = {name: signal.getsignal(name) for name in _STOPS}
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+
+    def stopped(*arguments: Any) -> Any:
+        os.kill(os.getpid(), stop)  # as CI cancels a job, or a person presses Ctrl-C
+        return planned(*arguments)
+
+    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", stopped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 0, result.output  # never half way
+    assert (root / ENTRY / "scenario.json").exists()
+    assert json.loads(plan.read_text(encoding="utf-8"))["entry"] == ENTRY
+    assert {name: signal.getsignal(name) for name in handlers} == handlers  # as they were
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == mask
+
+
+@pytest.mark.parametrize("stop", _STOPS, ids=lambda stop: signal.Signals(stop).name)
+@pytest.mark.parametrize("when", ["read_export", "head_commit"])
+def test_a_run_asked_to_stop_before_writing_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stop: signal.Signals, when: str
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    handlers = {name: signal.getsignal(name) for name in _STOPS}
+    real = getattr(cli_module, when)
+
+    def stopped(path: Path) -> object:
+        os.kill(os.getpid(), stop)
+        return real(path)
+
+    monkeypatch.setattr(f"scenario_tools.interface.cli.{when}", stopped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert {name: signal.getsignal(name) for name in handlers} == handlers
+
+    assert result.exit_code == 3, result.output
+    assert "interrupted: nothing was written" in result.output
+    assert not (root / "scenarios").exists()
+    assert not plan.exists()
+
+
+def test_paths_that_cannot_be_resolved_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    request = _request(tmp_path, NEW)
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()  # the working directory is no more: a relative path cannot be resolved
+    arguments = ["--request", str(request), "--repo", str(root), "--plan", "plan.json"]
+
+    result = CliRunner().invoke(main, ["--format", "json", "intake", str(EASM), *arguments])
+
+    assert result.exit_code == 3, result.output
+    assert "Traceback" not in result.output
+
+
+def test_a_repository_whose_entries_cannot_be_looked_at_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "scenarios").mkdir()
+    (root / "scenarios").chmod(0o000)
+    plan = tmp_path / "plan.json"
+    try:
+        result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+    finally:
+        (root / "scenarios").chmod(0o755)
+
+    assert result.exit_code == 3, result.output
+    assert not plan.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_repository_that_cannot_be_reached_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    request = _request(tmp_path, NEW)
+    plan = tmp_path / "plan.json"
+    root.chmod(0o444)  # listed, but nothing in it can be looked at
+    try:
+        result = _intake(monkeypatch, root, request, plan)
+    finally:
+        root.chmod(0o755)
+
+    assert result.exit_code == 3, result.output
+    assert "Traceback" not in result.output
+    assert not plan.exists()
+
+
+def test_a_run_asked_to_stop_once_all_is_written_says_so(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    reported = Report
+
+    def stopped(command: str, findings: Any) -> Any:
+        if findings:  # the report of what was written, once it is all written
+            os.kill(os.getpid(), signal.SIGTERM)
+        return reported(command, findings)
+
+    monkeypatch.setattr("scenario_tools.interface.cli.Report", stopped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "its entry and its plan were written: both stand" in result.output
+    assert plan.exists()
+    assert (root / ENTRY / "scenario.json").exists()
+
+
+def test_validate_needs_no_intake_schema(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = _repository(tmp_path)
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "p.json").exit_code == 0
+    (root / "schemas" / "intake-request.schema.json").unlink()
+
+    result = CliRunner().invoke(main, ["--format", "json", "validate", str(root / ENTRY)])
+
+    assert "schemas cannot be used" not in result.output
+    assert result.exit_code in (0, 1), result.output  # the entry's own findings, if any
+    plan = tmp_path / "again.json"
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), plan).exit_code == 3  # intake does
+
+
+def test_a_run_asked_to_stop_as_its_writing_ends_says_all_stands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    held = cli_module._stop_requests_held
+
+    @contextlib.contextmanager
+    def then_stopped() -> Iterator[None]:
+        with held():
+            yield
+        os.kill(os.getpid(), signal.SIGTERM)  # the moment the hold ends
+
+    monkeypatch.setattr("scenario_tools.interface.cli._stop_requests_held", then_stopped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "both stand" in result.output  # never "nothing was written"
+    assert plan.exists()
+
+
+def test_a_stop_already_ignored_stays_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    before = signal.signal(signal.SIGHUP, signal.SIG_IGN)  # as nohup runs it
+    real = read_export
+
+    def hung_up(path: Path) -> object:
+        os.kill(os.getpid(), signal.SIGHUP)
+        return real(path)
+
+    monkeypatch.setattr("scenario_tools.interface.cli.read_export", hung_up)
+    try:
+        result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+        assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGHUP, before)
+
+    assert result.exit_code == 0, result.output
+    assert plan.exists()
+
+
+def test_a_name_of_the_tool_s_own_in_the_catalogue_stops_an_intake(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    left = root / "scenarios" / "techniques" / ".scenario-tools-0123456789abcdef"
+    left.mkdir(parents=True)
+    (left / "scenario.yaml").write_text(f"external_id: {ID}\n")  # what a cut run may leave
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+
+    assert result.exit_code == 1, result.output
+    assert "ITK-008" in result.output
+
+
+def test_domains_that_cannot_be_used_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "policy" / "data" / "domains.yaml").write_text("domains: []\n")
+    (root / "scenarios" / "techniques" / "easm").mkdir(parents=True)
+
+    intake = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "plan.json")
+    validate = CliRunner().invoke(main, ["validate", str(root / ENTRY)])
+
+    for result in (intake, validate):
+        assert result.exit_code == 3, result.output
+        assert "policy data cannot be used" in result.output
+
+
+def test_the_domains_are_the_repository_s_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    (root / "policy" / "data" / "domains.yaml").write_text("domains: [custom]\n")
+
+    refused = _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "refused.json")
+    accepted = _intake(
+        monkeypatch, root, _request(tmp_path, {**NEW, "domain": "custom"}), tmp_path / "plan.json"
+    )
+
+    assert refused.exit_code == 1, refused.output
+    assert "SCH-001" in refused.output
+    assert "custom" in refused.output
+    assert accepted.exit_code == 0, accepted.output
+    validate = CliRunner().invoke(main, ["validate", str(root / "scenarios" / "custom" / "easm")])
+    assert "SCH-008" not in validate.output  # the layout knows the repository's domains
+
+
+def test_environment_errors_never_show_where_the_run_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "missing" / "plan.json"  # its directory is not there
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert str(tmp_path) not in result.output
+    assert "cannot write missing" in result.output  # the directory that is not there, by name

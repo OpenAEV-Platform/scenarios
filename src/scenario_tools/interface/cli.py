@@ -11,7 +11,8 @@ import dataclasses
 import json
 import os
 import re
-from collections.abc import Callable
+import signal
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -28,12 +29,13 @@ from scenario_tools.adapters.data_files import (
     read_export_archive,
     read_mapping,
     read_stored_scenario,
-    reserve_output,
     write_output,
 )
+from scenario_tools.adapters.entry_writer import RepositoryWriter
 from scenario_tools.adapters.git import head_commit
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
+from scenario_tools.adapters.plan import PlanFile
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
@@ -41,7 +43,7 @@ from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
-from scenario_tools.application.intake_entry import intake_entry, intake_files, plan_document
+from scenario_tools.application.intake_entry import intake_entry, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
@@ -491,9 +493,10 @@ class _Rules:
         )
 
 
-def _rules(source: RepositoryEntries) -> _Rules:
+def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
     """The rules of the repository ``source`` reads, read like the entries, never through a
-    link; rules that cannot be used are the environment's fault, never an entry's."""
+    link, the intake request's schema among them for ``intake``; rules that cannot be used are
+    the environment's fault, never an entry's."""
     try:
         loader = YamlDataLoader(source.directory("policy/data"))
         builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
@@ -505,7 +508,7 @@ def _rules(source: RepositoryEntries) -> _Rules:
         schema = JsonSchemaValidator(schemas)
     except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
         raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
-    for name in ("scenario", "intake-request"):
+    for name in ("scenario", "intake-request") if intake else ("scenario",):
         if not (schemas / f"{name}.schema.json").is_file():
             raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
     return _Rules(loader, builtin, domains, schema)
@@ -521,73 +524,138 @@ REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
 @click.option("--plan", "plan", required=True, type=click.Path(path_type=Path))
 @click.pass_context
 def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Path) -> None:
-    """Turn EXPORT, a platform export archive, and the request at --request into an entry of the
-    repository at --repo, written in place, and write at --plan the plan of the pull request
-    that proposes it. A refused request writes nothing."""
-    root = Path(os.path.normpath(repo.absolute()))
-    plan = Path(os.path.normpath(plan.absolute()))
+    """Turn EXPORT, a platform export (an archive, or its JSON), and the request at --request
+    into an entry of the repository at --repo, written in place, and write at --plan the plan of
+    the pull request that proposes it. A refused request writes nothing."""
+    try:
+        root = Path(os.path.realpath(repo))  # resolved once: the run holds what it names
+        plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
+    except OSError as error:  # a relative path, once the working directory is gone
+        _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
     entries = root / "scenarios"
     if entries in (plan, *plan.parents) or _inside(plan, entries):
         raise click.UsageError("--plan may not be inside the entries of the repository")
     if os.path.lexists(plan):
         raise click.UsageError(
-            "--plan names a file that already exists: remove the earlier plan first, so that it "
-            "is never taken for this run's"
+            "--plan names a place where something is already there: remove the earlier plan "
+            "first, so that it is never taken for this run's"
         )
-    for given in (export, request):
-        place = Path(os.path.normpath(given.absolute()))
-        if entries in place.parents or _inside(place, entries):
+    for given, place in zip((export, request), inputs, strict=True):
+        if _inside(place, entries):
             raise click.UsageError(
                 f"{given.name} is inside the entries of the repository: an export or a "
                 "request must never enter git"
             )
 
     def produce() -> Report:
-        source = RepositoryEntries(root)
-        # From the catalogue's check to the plan, no other run may check or write in it.
-        with source.locked():
-            return _intake_held(source, export, request, root, plan)
-
-    _emit(ctx, "intake", produce, root)
-
-
-def _intake_held(
-    source: RepositoryEntries, export: Path, request: Path, root: Path, plan: Path
-) -> Report:
-    """The intake of a run that holds the repository."""
-    rules = _rules(source)
-    result = intake_entry(
-        read_export(export),
-        read_yaml_file(request, limit=REQUEST_LIMIT),
-        request_path=repository_path(str(request), root),
-        export_path=repository_path(str(export), root),
-        source=source,
-        data=rules.loader,
-        schema=rules.schema,
-        domains=rules.domains,
-    )
-    if result.refusals or result.request is None:
-        return Report("intake", result.refusals)
-    # The plan's place is taken first, so that no other run can take it, then whatever
-    # could stop the run is found before the repository is touched. The entry stays
-    # written only once its plan is: a run that does not end leaves both as they were.
-    # Once published, the plan stays with its entry, even when what follows is reported.
-    with contextlib.ExitStack() as stack:
+        source = RepositoryEntries(root, strict=True)  # what a cut run left is never ignored
+        written = False
         try:
-            reservation = stack.enter_context(reserve_output(plan))
-        except UnsafeInputError as error:  # the plan's place cannot be used: no refusal
-            raise EnvironmentProblemError(f"cannot write {plan}: {error.message}") from error
-        base = head_commit(root)
-        files = intake_files(result, yaml_bytes)
-        new = result.metadata is not None
-        with source.writing(result.request.entry, files, new=new) as still_written:
-            findings = rules.validate(result.request.entry, RepositoryEntries(root))
-            document = plan_document(result, files, base, findings)
-            # What was checked by path is the repository and the entry written.
-            source.check_held()
-            still_written()
-            reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
-    return Report("intake", (*result.to_complete, *findings))
+            # From the catalogue's check to the plan, no other run may check or write in it.
+            with _stops_as_interruptions(), source.locked():
+                rules = _rules(source, intake=True)
+                result = intake_entry(
+                    read_export(export),
+                    read_yaml_file(request, limit=REQUEST_LIMIT),
+                    request_path=repository_path(str(request), root),
+                    export_path=repository_path(str(export), root),
+                    source=source,
+                    data=rules.loader,
+                    schema=rules.schema,
+                    domains=rules.domains,
+                )
+                if result.refusals or result.request is None:
+                    return Report("intake", result.refusals)
+                base = head_commit(root)  # read before: a request to stop meanwhile stops it
+                with _stop_requests_held():
+                    left = write_intake(
+                        result,
+                        entries=RepositoryWriter(source),
+                        plan=PlanFile(plan),
+                        base=base,
+                        # Read afresh: the catalogue now holds the entry written.
+                        validate=lambda entry: rules.validate(entry, RepositoryEntries(root)),
+                        render=yaml_bytes,
+                    )
+                    written = True  # while requests to stop still wait: never missed
+                return Report("intake", left)
+        except KeyboardInterrupt as error:  # never read as a refusal
+            if written:
+                raise EnvironmentProblemError(
+                    "the run was asked to stop once its entry and its plan were written: both stand"
+                ) from error
+            raise EnvironmentProblemError("the run was interrupted: nothing was written") from error
+
+    def produce_shown() -> Report:
+        try:
+            return produce()
+        except EnvironmentProblemError as error:  # said without where the run is
+            raise EnvironmentProblemError(_unplaced(str(error), root, plan)) from error
+
+    _emit(ctx, "intake", produce_shown, root)
+
+
+def _unplaced(text: str, root: Path, plan: Path) -> str:
+    """``text`` with the paths of the repository and of the plan's directory given relative to
+    them, as findings are: a log never shows where the run is."""
+    for place in (plan.parent, root):
+        text = text.replace(f"{place}/", "")
+    return text.replace(str(root), ".").replace(str(plan.parent), plan.parent.name)
+
+
+def _failing(why: str) -> Callable[[], Report]:
+    """What reports the environment error ``why``, as a command's work would."""
+
+    def produce() -> Report:
+        raise EnvironmentProblemError(why)
+
+    return produce
+
+
+# What asks a run to stop: Ctrl-C, a CI job cancelled, a terminal closed, Ctrl-\\.
+_STOPS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+
+
+def _restorable(handler: object) -> Callable[[int, object], object] | int:
+    """A handler as ``signal.signal`` takes it back: one installed from outside Python, which it
+    cannot give, is the default."""
+    return handler if handler is not None else signal.SIG_DFL  # type: ignore[return-value]
+
+
+@contextlib.contextmanager
+def _stops_as_interruptions() -> Iterator[None]:
+    """Each request to stop interrupts the run as Ctrl-C does, so that the run says what it
+    leaves, rather than end without a word."""
+
+    def interrupted(signal_number: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    # One the caller already ignores, as nohup does, stays ignored.
+    stops = [stop for stop in _STOPS if signal.getsignal(stop) is not signal.SIG_IGN]
+    before = {stop: signal.signal(stop, interrupted) for stop in stops}
+    try:
+        yield
+    finally:
+        for stop, handler in before.items():
+            signal.signal(stop, _restorable(handler))
+
+
+@contextlib.contextmanager
+def _stop_requests_held() -> Iterator[None]:
+    """While a run writes, a request to stop waits, and is then let go: a run never stops half
+    way through what it writes, and once it is written, it ends as usual."""
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, ())  # as it is, before anything changes
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
+        yield
+    finally:
+        # Ignored for a moment, a pending request to stop is dropped, then all is as it was.
+        handlers = {stop: signal.signal(stop, signal.SIG_IGN) for stop in _STOPS}
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, before)
+        finally:
+            for stop, handler in handlers.items():
+                signal.signal(stop, _restorable(handler))
 
 
 def _identity(root: Path) -> tuple[int, int]:
@@ -622,15 +690,22 @@ def _declared_external_id(metadata: Path) -> object:
 
 def _inside(path: Path, directory: Path) -> bool:
     """Whether ``path`` is ``directory`` or lies within it, compared by file identity on the
-    path the write resolves to: a link to the directory or to a folder of it, or another case
-    on a case-insensitive disk, still names a place inside it."""
-    if not directory.is_dir():
+    path the write or the read resolves to: a link to the directory or to a folder of it, or
+    another case on a case-insensitive disk, still names a place inside it. A place that cannot
+    be looked at is not taken to be it: what then reads or writes there fails on its own."""
+    try:
+        if not directory.is_dir():
+            return False
+    except OSError:
         return False
     resolved = Path(os.path.realpath(path))
-    return any(
-        candidate.exists() and candidate.samefile(directory)
-        for candidate in (resolved, *resolved.parents)
-    )
+    for candidate in (resolved, *resolved.parents):
+        try:
+            if candidate.samefile(directory):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 @main.group(name="openaev")

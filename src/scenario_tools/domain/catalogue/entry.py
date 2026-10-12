@@ -11,6 +11,16 @@ from scenario_tools.domain.shared.finding import Finding, Severity
 REQUIRED = ("scenario.yaml", "scenario.json")
 SLUG_LIMIT = 64
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def is_slug(value: object) -> bool:
+    """Whether ``value`` is a name a directory of the catalogue may have: kebab-case, at most
+    ``SLUG_LIMIT`` characters, so never a path."""
+    return (
+        isinstance(value, str) and len(value) <= SLUG_LIMIT and _SLUG.fullmatch(value) is not None
+    )
+
+
 _CONSTRAINT = re.compile(r"(?:>=|>|==|~=)([0-9]+(?:\.[0-9]+)*)")
 _NAMED = 3  # entries a duplicate finding names, so that none is cut out of its message
 

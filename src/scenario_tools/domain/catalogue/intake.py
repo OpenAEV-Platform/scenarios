@@ -11,8 +11,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from scenario_tools.domain.catalogue.metadata import NOTHING_TO_DO
 from scenario_tools.domain.shared.characters import visible
-from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.finding import REPORT_LIMIT, Finding, Severity
 
 NEW, UPDATE = "new", "update"
 
@@ -62,9 +63,7 @@ class IntakeRequest:
         return f"scenarios/{self.domain}/{self.slug}"
 
     def metadata(self) -> dict[str, Any]:
-        """The fields of ``scenario.yaml`` the request gives, for a new entry."""
-        if self.mode != NEW:
-            return {}
+        """The fields of ``scenario.yaml`` a request for a new entry gives."""
         given: dict[str, Any] = {"threat": dict(self.threat), "sources": list(self.sources)}
         if self.generated_by is not None:
             given["generated_by"] = self.generated_by
@@ -73,8 +72,9 @@ class IntakeRequest:
 
 def same_name(first: str, second: str) -> bool:
     """Whether two scenario names are the same name for a reader: compared in their
-    compatibility form, without case, invisible format characters, outer blanks or runs of
-    blanks. Letters of other scripts that look alike stay apart."""
+    compatibility form, without case, outer blanks or runs of blanks, without the hidden
+    characters the checks find and without soft hyphens. Joiners where a script or emoji puts
+    one stay, and letters of other scripts that look alike stay apart."""
 
     def key(name: str) -> str:
         # What the hidden-character checks find, and a soft hyphen, which no reader sees; a
@@ -138,7 +138,9 @@ def intake_refusals(
     [entry] = same
     if entry.path != request.entry:
         message = f"the entry with this external_id is {entry.path}, not {request.entry}"
-        return refused("ITK-005", request_path, "/slug", message)
+        domain = entry.path.split("/")[1] if entry.path.count("/") == 2 else ""
+        pointer = "/domain" if domain != request.domain else "/slug"  # the field that differs
+        return refused("ITK-005", request_path, pointer, message)
     if same_name(entry.name, name):
         return ()
     if not request.rewrite:
@@ -156,7 +158,9 @@ def _name_taken(
     name: str, entries: Iterable[CatalogueEntry], export_path: str
 ) -> tuple[Finding, ...]:
     """An ``ITK-003`` finding when one of ``entries`` has the scenario name ``name``."""
-    named = sorted(entry.path for entry in entries if same_name(entry.name, name))
+    if not name:  # normalisation refuses an export without a name, and says why
+        return ()
+    named = sorted(entry.path for entry in entries if entry.name and same_name(entry.name, name))
     if not named:
         return ()
     message = f"another entry has this scenario name: {', '.join(named)}"
@@ -181,18 +185,19 @@ def _span(text: str) -> str:
 
 
 def _checklist(findings: Iterable[Finding]) -> list[Finding]:
-    """One item per file and field, a blocking one first, and none with nothing to do."""
-    items: dict[tuple[str, str], Finding] = {}
-    for finding in findings:
-        if finding.message.endswith("nothing to do"):
-            continue
-        key = (finding.path, finding.field)
-        kept = items.get(key)
-        if kept is None or (
-            finding.severity is Severity.BLOCKING and kept.severity is not Severity.BLOCKING
-        ):
-            items[key] = finding
-    return list(items.values())
+    """Each finding once, in order: an informative one is dropped when it asks for nothing, or
+    when a blocking one names the same file and field."""
+    kept = [
+        finding
+        for finding in dict.fromkeys(findings)
+        if not (finding.severity is Severity.INFO and finding.message.endswith(NOTHING_TO_DO))
+    ]
+    blocked = {(f.path, f.field) for f in kept if f.severity is Severity.BLOCKING}
+    return [
+        finding
+        for finding in kept
+        if finding.severity is Severity.BLOCKING or (finding.path, finding.field) not in blocked
+    ]
 
 
 def intake_plan(
@@ -215,10 +220,13 @@ def intake_plan(
         lines.append("The export gives the stored scenario.json again: nothing to propose.")
     left = [
         f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
-        for finding in findings
+        for finding in findings[:REPORT_LIMIT]
     ]
     if left:
         lines += ["", "Left to complete or review:", *left]
+    if len(findings) > REPORT_LIMIT:  # a body a pull request takes whole
+        more = len(findings) - REPORT_LIMIT
+        lines.append(f"- and {more} more: run validate on the entry to see them all")
     if files:
         lines += [
             "",
