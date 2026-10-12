@@ -40,9 +40,11 @@ flowchart LR
 2. The `intake` command turns the export into an **entry** of this repository. It replaces or
    removes what belongs to that one platform: internal identifiers, dates, users, the sender's
    address. It also writes a short description file next to it.
-3. The entry is proposed in a **pull request**. A human review checks that it is complete, safe to
-   publish, and does what it says. Automated checks of every entry in a pull request are planned;
-   until then, contributors run them themselves.
+3. The entry is proposed in a **pull request**. Automated checks run `validate` and a secret scan
+   on every entry it adds or changes. The tools, the rules and the workflow that run them are
+   those of the branch the pull request targets, so that a pull request cannot change what judges
+   it. Some rules of `validate` are not run yet. A human review then checks that the entry is
+   complete, safe to publish, and does what it says.
 4. Once merged, the scenario is part of the **catalogue**.
 5. *Planned:* the catalogue is published in releases. Each archive comes with its hash (a
    fingerprint of the file), so that a platform can verify what it installs. OpenAEV platforms
@@ -99,6 +101,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `archive` | Builds the archive of an entry that the platform's importer reads |
 | `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |
 | `check-title` | Checks a pull request title against the shared convention |
+| `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |
 
 To run them, install [uv](https://docs.astral.sh/uv/), then, from a clone of this repository:
 

@@ -1,5 +1,7 @@
 """The commit a checkout is at, which a plan names as its base."""
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -7,7 +9,13 @@ from typing import Any
 import pytest
 
 from scenario_tools.adapters import git as git_module
-from scenario_tools.adapters.git import converted, converting, head_commit, uncommitted
+from scenario_tools.adapters.git import (
+    changed_entries,
+    converted,
+    converting,
+    head_commit,
+    uncommitted,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError
 
 
@@ -414,3 +422,123 @@ def test_attributes_that_cannot_be_read_are_the_environment_s_fault(
     with pytest.raises(EnvironmentProblemError, match="cannot read the attributes") as error:
         converted(root, ("scenarios",))
     assert "2.40" not in str(error.value)  # what fails is not the version
+
+
+def _commit_all(root: Path, message: str) -> str:
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", message)  # fmt: skip
+    return _git(root, "rev-parse", "HEAD")
+
+
+def test_the_entries_a_pull_request_adds_or_changes_are_listed_once_each(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    (root / "scenarios/gone/entry").mkdir(parents=True)
+    (root / "scenarios/gone/entry/scenario.yaml").write_text("x")
+    (root / "scenarios/other/kept").mkdir(parents=True)
+    (root / "scenarios/other/kept/scenario.yaml").write_text("x")
+    base = _commit_all(root, "base")
+    (root / "scenarios/a/b/scenario.json").write_text("changed")
+    (root / "scenarios/a/b/scenario.yaml").write_text("added")
+    (root / "scenarios/c/d").mkdir(parents=True)
+    (root / "scenarios/c/d/scenario.yaml").write_text("new")
+    (root / "scenarios/c/new\nline").mkdir()
+    (root / "scenarios/c/new\nline/scenario.yaml").write_text("odd")
+    (root / "scenarios/gone/entry/scenario.yaml").unlink()
+    (root / "scenarios/gone/entry").rmdir()  # as a checkout of the pull request has it
+    (root / "scenarios/README.md").write_text("not an entry")
+    (root / "scenarios/x").mkdir()
+    (root / "scenarios/x/link").symlink_to(tmp_path)  # judged by validate, never followed
+    _commit_all(root, "pull request")
+
+    assert changed_entries(root, base) == (
+        "scenarios/README.md",  # what is no domain is judged too
+        "scenarios/a/b",
+        "scenarios/c/d",
+        "scenarios/c/new\nline",
+        "scenarios/gone/entry",  # removed: listed, for the workflow to remove it as well
+        "scenarios/x/link",
+    )
+
+
+def test_a_base_that_cannot_be_read_is_the_environment_s_fault(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the changes"):
+        changed_entries(root, "0" * 40)
+
+
+@pytest.mark.parametrize("base", ["--output=/tmp/x", "main", "HEAD~1", "0" * 39])
+def test_a_base_that_is_not_a_full_commit_id_is_never_given_to_git(
+    tmp_path: Path, base: str
+) -> None:
+    root = _committed(tmp_path)
+
+    with pytest.raises(EnvironmentProblemError, match="not a commit"):
+        changed_entries(root, base)
+
+
+def test_a_domain_the_pull_request_turns_into_a_link_is_listed_itself_never_crossed(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    base = _git(root, "rev-parse", "HEAD")
+    outside = tmp_path / "outside"
+    (outside / "slug").mkdir(parents=True)
+    (outside / "slug" / "scenario.yaml").write_text("x")
+    (root / "scenarios/linked").symlink_to(outside)  # the domain itself
+    (root / "scenarios/top-link").symlink_to(outside / "slug")
+    _commit_all(root, "pull request")
+
+    assert changed_entries(root, base) == ("scenarios/linked", "scenarios/top-link")
+
+
+@pytest.mark.parametrize("replaced", ["scenarios/techniques", "scenarios"])
+def test_a_domain_or_the_catalogue_replaced_by_a_file_is_listed_itself(
+    tmp_path: Path, replaced: str
+) -> None:
+    root = _committed(tmp_path)
+    (root / "scenarios/techniques/easm").mkdir(parents=True)
+    (root / "scenarios/techniques/easm/scenario.yaml").write_text("x")
+    base = _commit_all(root, "base")
+    shutil.rmtree(root / replaced)
+    (root / replaced).write_text("a file where a directory should be")
+    _commit_all(root, "pull request")
+
+    assert changed_entries(root, base) == (replaced,)
+
+
+def test_a_changed_path_that_is_not_utf_8_fails_rather_than_being_left_out(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    base = _git(root, "rev-parse", "HEAD")
+    odd = Path(os.fsdecode(os.fsencode(str(root / "scenarios/techniques")) + b"/bad\xff"))
+    odd.mkdir(parents=True)
+    (odd / "scenario.yaml").write_bytes(b"x")
+    _commit_all(root, "pull request")
+
+    with pytest.raises(EnvironmentProblemError, match="not UTF-8"):
+        changed_entries(root, base)
+
+
+def test_a_directory_that_is_not_the_top_of_a_checkout_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    base = _git(root, "rev-parse", "HEAD")
+
+    with pytest.raises(EnvironmentProblemError, match="top"):
+        changed_entries(root / "scenarios", base)
+
+
+def test_a_file_of_the_catalogue_that_is_no_domain_and_goes_leaves_nothing_to_judge(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    (root / "scenarios/README.md").write_text("x")
+    base = _commit_all(root, "base")
+    (root / "scenarios/README.md").unlink()
+    _commit_all(root, "pull request")
+
+    assert changed_entries(root, base) == ()

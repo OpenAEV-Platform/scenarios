@@ -1,0 +1,4 @@
+# The rules every secret scan uses: gitleaks' own, unchanged. The workflow that scans the entries of a
+# pull request gives this file explicitly, so that a configuration inside an entry is never read.
+[extend]
+useDefault = true

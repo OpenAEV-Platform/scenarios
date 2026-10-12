@@ -4,7 +4,7 @@ name: Pull request title
 # request cannot change the check that judges it. The pull request's code is never checked out:
 # only its title is read, through an environment variable. The token is read-only and no secret
 # is used.
-on:
+on:  # zizmor: ignore[dangerous-triggers] -- only the title is read, never the pull request's code
   pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 

@@ -1,0 +1,104 @@
+name: Pull request entries
+
+# The base branch judges a pull request: pull_request_target runs this file as it is on the base
+# branch, whose tools, policy data and schemas are checked out; the pull request's head is checked
+# out beside them as data only, and only the files of the entries it adds, changes or removes are
+# taken over, links copied as links, never followed. No code of the pull request runs. The token
+# is read-only and no secret is used, so a pull request from a fork is judged the same way. Its
+# other changes (tools, policy, schemas) are the tools CI's.
+on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-entries-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  entries:
+    name: Pull request entries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Check out the pull request, as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pull
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Install the base branch's tools
+        run: uv sync --frozen --no-dev
+
+      - name: Take the changed entries from the pull request
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          uv run --frozen --no-dev scenario-tools changed-entries pull --base "$BASE" > "$RUNNER_TEMP/changed"
+          : > "$RUNNER_TEMP/entries"
+          while IFS= read -r -d '' entry; do
+            rm -rf -- "$entry"  # removed or changed: the base's copy goes
+            if [ -e "pull/$entry" ] || [ -L "pull/$entry" ]; then
+              case "$entry" in */*) mkdir -p -- "${entry%/*}" ;; esac
+              cp -P -R -- "pull/$entry" "$entry"
+              printf '%s\0' "$entry" >> "$RUNNER_TEMP/entries"
+            fi
+          done < "$RUNNER_TEMP/changed"
+
+      - name: Validate the changed entries
+        run: |
+          set -euo pipefail
+          mapfile -d '' entries < "$RUNNER_TEMP/entries"
+          if [ "${#entries[@]}" -eq 0 ]; then
+            echo "No entry is added or changed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          status=0
+          uv run --frozen --no-dev scenario-tools validate -- "${entries[@]}" > "$RUNNER_TEMP/findings" 2>&1 || status=$?
+          {
+            echo "## Entries"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/findings"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/findings"
+          exit "$status"
+
+      - name: Install gitleaks (pinned, checksum verified)
+        if: ${{ !cancelled() }}
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/${archive}" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Look for secrets in the changed entries
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          status=0
+          while IFS= read -r -d '' entry; do  # every entry, whatever the one before found
+            "$RUNNER_TEMP/gitleaks" dir --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
+              --ignore-gitleaks-allow --no-banner --redact -- "$entry" || status=1
+          done < "$RUNNER_TEMP/entries"
+          exit "$status"
