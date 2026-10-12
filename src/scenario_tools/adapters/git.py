@@ -28,6 +28,7 @@ def _git(root: Path, *arguments: str, given: str | None = None) -> str | None:
             "cannot read the checkout: the git found is inside the repository, and is never run"
         )
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment["GIT_CONFIG_NOSYSTEM"] = "1"  # the same results on any machine
     try:
         # git itself, with fixed arguments and no shell.
         run = subprocess.run(  # noqa: S603  # nosec B603

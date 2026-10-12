@@ -2,6 +2,7 @@
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -93,6 +94,29 @@ def test_a_directory_inside_another_checkout_is_not_a_checkout(tmp_path: Path) -
 
     with pytest.raises(EnvironmentProblemError, match="not the top of a checkout"):
         head_commit(inner)
+
+
+def test_git_reads_no_configuration_of_the_system(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _committed(tmp_path)
+    seen: list[dict[str, str]] = []
+    run = subprocess.run
+
+    def spied(*arguments: Any, **options: Any) -> Any:
+        seen.append(options["env"])
+        return run(*arguments, **options)
+
+    monkeypatch.delenv("GIT_CONFIG_NOSYSTEM")
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setattr(subprocess, "run", spied)
+
+    head_commit(root)
+
+    assert seen
+    for environment in seen:  # the same results on any machine, whatever /etc/gitconfig says
+        assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+        assert "GIT_DIR" not in environment
 
 
 def test_the_environment_cannot_point_git_elsewhere(
