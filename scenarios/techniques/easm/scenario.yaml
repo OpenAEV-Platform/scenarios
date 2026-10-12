@@ -1,0 +1,51 @@
+schema_version: 1
+external_id: 3e2aa79f-9d73-48fd-839e-ccf1525b42e7
+version: 1.0.0
+status: VERIFIED
+name: EASM Scenario
+description: |-
+  EASM is a cybersecurity practice focused on discovering, mapping, and continuously monitoring all internet-facing assets of an organization (websites, IP addresses, cloud services, APIs, admin portals, etc.).
+
+  The goal is to take the attacker’s perspective in order to identify vulnerabilities, misconfigurations, or forgotten services before they can be exploited.
+
+  Key challenges:
+
+  - Eliminating blind spots (shadow IT, unmanaged services)
+  -  Detecting vulnerabilities (CVEs) and risky configurations early
+  - Maintaining a strong security posture in a constantly evolving IT environment
+
+  Simply define an asset using an IP address or FQDN. OpenAEV then performs enumeration just like an attacker would:
+  - Identifying open ports and running services
+  - Detecting exposed administration portals
+  - Checking for known vulnerabilities (CVEs)
+  - Highlighting misconfigurations (e.g., default credentials)
+  - Findings are correlated and reported, giving clear visibility into external exposure.
+severity: high
+category: attack-scenario
+main_focus: endpoint-protection
+type: time-based
+platforms:
+- Generic
+threat:
+  ttps:
+  - T1595
+  - T1595.002
+  - T1046
+sources:
+- url: https://attack.mitre.org/techniques/T1595/
+  tlp: TLP:CLEAR
+  title: 'MITRE ATT&CK T1595: Active Scanning'
+- url: https://attack.mitre.org/techniques/T1046/
+  tlp: TLP:CLEAR
+  title: 'MITRE ATT&CK T1046: Network Service Discovery'
+targets:
+- placeholder: internet-facing-assets
+  description: The asset group of the internet-facing hosts to scan, each by IP address or FQDN; none ships with the scenario.
+requires:
+  openaev: '>=3.261005.0'
+  edition: CE
+  injectors:
+  - openaev_nmap
+  - openaev_nuclei
+  executors: []
+payloads: []
