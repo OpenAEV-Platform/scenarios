@@ -3,7 +3,7 @@
 The OpenAEV platform embeds three scenarios, the starter pack, and installs them once on a new
 platform, unless the starter pack is turned off. The catalogue is to publish the same three
 scenarios, so that a platform can link an installed copy to its catalogue version and offer the
-next one. None of them is in the catalogue yet: this page fixes their identifiers first.
+next one. This page fixed their identifiers before any of them entered the catalogue.
 
 Their identifiers in the catalogue are taken from the platform's embedded exports: the scenario
 ID of each export, and the payload ID of each payload it holds. A scenario's ID is the
