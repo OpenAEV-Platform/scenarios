@@ -138,7 +138,7 @@ A few rules apply to every pull request:
 - **Questions and ideas:** open an issue in this repository.
 - **Security problems:** do not open a public issue. Report them privately, as the
   [OpenAEV security policy](https://github.com/OpenAEV-Platform/openaev/security/policy) explains.
-- **Licence:** to be confirmed before the first release.
+- **Licence:** the [Apache License 2.0](LICENSE), for the tools and the scenarios alike.
 
 ## Repository layout
 
