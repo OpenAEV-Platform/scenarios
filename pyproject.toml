@@ -3,6 +3,8 @@ name = "openaev-scenario-tools"
 dynamic = ["version"]
 description = "Tools to prepare, check, release and verify OpenAEV scenarios."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "click>=8.1,<9",
