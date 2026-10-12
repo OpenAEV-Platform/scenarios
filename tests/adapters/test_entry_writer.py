@@ -679,7 +679,7 @@ def test_directories_made_go_when_a_deeper_one_cannot_be_made(
     assert list(tmp_path.iterdir()) == []  # scenarios, made by the run, went too
 
 
-def test_a_new_entry_whose_identity_cannot_be_read_is_not_left(
+def test_a_new_entry_whose_identity_cannot_be_read_is_left_and_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     told = places.identity
@@ -691,9 +691,32 @@ def test_a_new_entry_whose_identity_cannot_be_read_is_not_left(
 
     monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", failing)
 
-    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
-    assert list(tmp_path.iterdir()) == []
+    assert "Input/output error" in str(error.value)
+    assert (tmp_path / ENTRY).is_dir()  # nothing tells it from another's: never removed
+
+
+@pytest.mark.parametrize("where", ["akira", "ransomware"], ids=["entry", "above"])
+def test_an_empty_directory_another_put_in_place_of_one_made_is_never_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    (tmp_path / "scenarios").mkdir()
+    if where == "akira":  # the entry the only directory the run makes
+        (tmp_path / "scenarios" / "ransomware").mkdir()
+    place = tmp_path / ENTRY if where == "akira" else tmp_path / "scenarios" / "ransomware"
+    made = os.mkdir
+
+    def failing(descriptor: int, mode: int) -> None:  # the run's directory, swapped first
+        place.rename(tmp_path / "ours")
+        made(str(place))  # another's, empty
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert place.is_dir()  # another's, never removed
 
 
 def test_files_another_put_in_a_new_entry_meanwhile_stay(tmp_path: Path) -> None:
@@ -1090,3 +1113,102 @@ def test_a_stop_while_a_new_version_is_written_says_what_it_leaves(
     with pytest.raises(EnvironmentProblemError, match="kept as") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=False)
     assert isinstance(error.value.__cause__, KeyboardInterrupt)
+
+
+def test_an_unchanged_update_is_known_to_be_still_as_it_was_read(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+    read = (directory / "scenario.json").read_bytes()
+    writer = RepositoryWriter(RepositoryEntries(tmp_path))
+
+    with writer.writing(ENTRY, {}, previous={"scenario.json": read}) as written:
+        written.check()  # nothing changed: nothing said
+        (directory / "scenario.json").write_text("changed meanwhile")
+        with pytest.raises(EnvironmentProblemError, match="changed since this run wrote it"):
+            written.check()
+
+
+def test_an_unchanged_update_of_a_file_changed_before_is_said(tmp_path: Path) -> None:
+    _entry(tmp_path)
+    writer = RepositoryWriter(RepositoryEntries(tmp_path))
+
+    with (
+        pytest.raises(EnvironmentProblemError, match="changed since it was read"),
+        writer.writing(ENTRY, {}, previous={"scenario.json": b"other"}),
+    ):
+        pass  # pragma: no cover - never reached
+
+
+def test_an_unchanged_update_of_a_file_gone_is_said(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+    read = (directory / "scenario.json").read_bytes()
+    (directory / "scenario.json").unlink()
+    writer = RepositoryWriter(RepositoryEntries(tmp_path))
+
+    with (
+        pytest.raises(EnvironmentProblemError, match="changed since it was read"),
+        writer.writing(ENTRY, {}, previous={"scenario.json": read}),
+    ):
+        pass  # pragma: no cover - never reached
+
+
+def test_an_unchanged_update_of_a_file_that_cannot_be_read_is_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    read = (directory / "scenario.json").read_bytes()
+    writer = RepositoryWriter(RepositoryEntries(tmp_path))
+
+    class Failing:
+        def __enter__(self) -> "Failing":
+            return self
+
+        def __exit__(self, *arguments: object) -> None:
+            return None
+
+        def read(self, size: int) -> bytes:
+            raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(os, "fdopen", lambda *arguments, **options: Failing())
+
+    with (
+        pytest.raises(EnvironmentProblemError, match="Input/output error"),
+        writer.writing(ENTRY, {}, previous={"scenario.json": read}),
+    ):
+        pass  # pragma: no cover - never reached
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_an_unchanged_update_of_a_file_that_cannot_be_opened_is_the_environment_s_fault(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+    read = (directory / "scenario.json").read_bytes()
+    (directory / "scenario.json").chmod(0o000)
+    writer = RepositoryWriter(RepositoryEntries(tmp_path))
+    try:
+        with (
+            pytest.raises(EnvironmentProblemError, match="cannot read") as error,
+            writer.writing(ENTRY, {}, previous={"scenario.json": read}),
+        ):
+            pass  # pragma: no cover - never reached
+    finally:
+        (directory / "scenario.json").chmod(0o644)
+    assert "changed since it was read" not in str(error.value)
+
+
+def test_a_directory_above_whose_identity_cannot_be_read_leaves_nothing_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    told = places.identity
+
+    def failing(descriptor: int, where: str) -> tuple[int, int]:
+        if where == "scenarios":
+            raise EnvironmentProblemError(f"cannot read {where}: Input/output error")
+        return told(descriptor, where)
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", failing)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert sorted(opened) == sorted(closed)

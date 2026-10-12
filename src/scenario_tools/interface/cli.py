@@ -43,7 +43,7 @@ from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
-from scenario_tools.application.intake_entry import intake_entry, write_intake
+from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
@@ -572,12 +572,15 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                 )
                 if result.refusals or result.request is None:
                     return Report("intake", result.refusals)
+                entry = result.request.entry
+                ours = frozenset(f"{entry}/{name}" for name in intake_files(result, yaml_bytes))
                 with _stop_requests_held():
                     left = write_intake(
                         result,
                         entries=RepositoryWriter(source),
                         plan=PlanFile(plan),
                         base=base,
+                        current=lambda: _still_base(root, ours),
                         # Read afresh: the catalogue now holds the entry written.
                         validate=lambda entry: rules.validate(entry, RepositoryEntries(root)),
                         render=yaml_bytes,
@@ -595,7 +598,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
         try:
             return produce()
         except EnvironmentProblemError as error:  # said without where the run is
-            raise EnvironmentProblemError(_unplaced(str(error), root, plan)) from error
+            raise EnvironmentProblemError(_unplaced(str(error), root, plan, inputs)) from error
 
     _emit(ctx, "intake", produce_shown, root)
 
@@ -627,9 +630,23 @@ def _refuse_uncommitted(root: Path) -> None:
         )
 
 
-def _unplaced(text: str, root: Path, plan: Path) -> str:
-    """``text`` with the paths of the repository and of the plan's directory given relative to
-    them, as findings are: a log never shows where the run is."""
+def _still_base(root: Path, ours: frozenset[str]) -> str:
+    """The checkout's commit, once nothing differs from it under the catalogue and its rules
+    but ``ours``, the files the run wrote: the plan must describe what its base gives."""
+    others = [path for path in uncommitted(root, _PLANNED) if path not in ours]
+    if others:
+        more = f" and {len(others) - 1} more" if len(others) > 1 else ""
+        raise EnvironmentProblemError(
+            f"the checkout changed while the run wrote ({others[0]}{more}): nothing is kept"
+        )
+    return head_commit(root)
+
+
+def _unplaced(text: str, root: Path, plan: Path, inputs: tuple[Path, ...]) -> str:
+    """``text`` with the paths of the repository, of the plan's directory and of the inputs
+    given relative to them, as findings are: a log never shows where the run is."""
+    for given in inputs:
+        text = text.replace(str(given), given.name)
     for place in (plan.parent, root):
         text = text.replace(f"{place}/", "")
     return text.replace(str(root), ".").replace(str(plan.parent), plan.parent.name)

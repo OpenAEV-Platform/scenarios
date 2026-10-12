@@ -279,17 +279,21 @@ def test_an_output_in_a_directory_that_cannot_be_written_is_the_environment_s_fa
     assert list((tmp_path / "locked").iterdir()) == []
 
 
-def test_a_reservation_whose_identity_cannot_be_read_is_not_left(
+def test_a_reservation_whose_identity_cannot_be_read_is_left_and_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    plan = tmp_path / "plan.json"
+
     def failing(descriptor: int) -> os.stat_result:
+        plan.rename(tmp_path / "ours")  # another takes the place
+        plan.write_text("another run's")
         raise OSError(errno.EIO, "Input/output error")
 
     monkeypatch.setattr(os, "fstat", failing)
 
-    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
-        _reserve(tmp_path / "plan.json")
-    assert list(tmp_path.iterdir()) == []
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand"):
+        _reserve(plan)
+    assert plan.read_text() == "another run's"  # never removed
 
 
 def test_a_plan_whose_directory_another_put_in_its_place_is_never_published(

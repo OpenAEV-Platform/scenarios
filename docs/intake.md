@@ -181,13 +181,17 @@ before the run, so that a plan left by another run is never taken for this one's
     still holds what the checks read; a file another puts in its place meanwhile is never
     overwritten, and what the run puts back goes only where nothing is (on a file system
     without hard links, by its name, which leaves a tiny window).
-  - The plan is published only if the checkout, the entry and each file written are still what
-    the run wrote, and its own place still the one reserved.
+  - The plan is published only if the checkout, the entry and each file written, or read for
+    an update that writes nothing, are still what the run wrote or read, nothing else under
+    `scenarios/`, `policy/` or `schemas/` differs from the plan's `base`, which is still the
+    checkout's commit, and the plan's own place is still the one reserved.
 - **All or nothing:** the entry is kept only once its plan is published. A run that fails
   before then takes back what it wrote: a new entry's files, the entry and the directories made
   for it are removed, an updated `scenario.json` gets its previous bytes back, and the plan's
   place is freed. Anything another process put or changed there meanwhile is never removed nor
-  overwritten: a file put or changed in a new entry stays, and the entry with it.
+  overwritten: a file put or changed in a new entry stays, and the entry with it. A file or
+  directory the run made, but whose identity it cannot read, cannot be told from another's: it
+  is left, and the run says so.
 - **Asked to stop:** a request to stop (Ctrl-C, SIGTERM as a CI job is cancelled, SIGHUP as a
   terminal closes, or SIGQUIT) while the run writes waits until the writing is done, then is
   dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it

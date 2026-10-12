@@ -314,17 +314,20 @@ def test_a_file_interrupted_while_written_is_not_left(
     assert _names(tmp_path) == []
 
 
-def test_a_file_whose_identity_cannot_be_read_is_not_left(
+def test_a_file_whose_identity_cannot_be_read_is_left_and_said(
     tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def failing(descriptor: int) -> os.stat_result:
+        (tmp_path / "scenario.json").rename(tmp_path / "ours")  # another takes the name
+        (tmp_path / "scenario.json").write_text("another's")
         raise OSError(errno.EIO, "Input/output error")
 
     monkeypatch.setattr(os, "fstat", failing)
 
-    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         create_in(held, tmp_path / "scenario.json", b"{}")
-    assert _names(tmp_path) == []
+    assert "Input/output error" in str(error.value)
+    assert (tmp_path / "scenario.json").read_text() == "another's"  # never removed
 
 
 def test_a_file_that_cannot_be_written_whole_never_takes_another_with_it(
@@ -419,3 +422,17 @@ def test_what_another_put_back_with_a_second_name_left_is_said(
     assert (tmp_path / "made").read_text() == "theirs"
     [second] = [name for name in _names(tmp_path) if is_hidden_name(name)]
     assert second in str(error.value)
+
+
+def test_a_file_interrupted_before_it_is_known_is_never_removed(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(descriptor: int) -> os.stat_result:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "fstat", interrupted)
+
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
+        create_in(held, tmp_path / "scenario.json", b"{}")
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert _names(tmp_path) == ["scenario.json"]  # cannot be told from another's: left, said

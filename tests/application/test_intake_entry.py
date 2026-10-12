@@ -407,11 +407,16 @@ def _write(
         log.step("render", "render")
         return _render(metadata)
 
+    def current() -> str:
+        log.step("current", "current")
+        return "f" * 40 if log.failing != "moved" else "e" * 40
+
     return write_intake(
         result,
         entries=_Writer(log),
         plan=_Plan(log),
         base="f" * 40,
+        current=current,
         validate=validate,
         render=render,
     )
@@ -432,6 +437,7 @@ def test_an_entry_and_its_plan_are_written_in_one_go() -> None:
         ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),  # a new one
         ("validate", ENTRY),
         "check",
+        "current",
         "publish",
         "kept",
     ]
@@ -466,6 +472,7 @@ def test_an_unchanged_update_still_has_its_plan_and_its_checks() -> None:
         "write nothing",
         ("validate", ENTRY),
         "check",
+        "current",
         "publish",
     ]
 
@@ -476,6 +483,7 @@ _STEPS = {
     "write": ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),
     "validate": ("validate", ENTRY),
     "check": "check",
+    "current": "current",
     "publish": "publish",
 }
 
@@ -557,3 +565,13 @@ def test_a_request_that_is_no_mapping_is_refused_whatever_the_schema() -> None:
     )
 
     assert _codes(result.refusals) == [("SCH-001", REQUEST, "")]
+
+
+def test_a_commit_that_changes_before_the_plan_takes_the_entry_back() -> None:
+    log = _Log("moved")
+
+    with pytest.raises(EnvironmentProblemError, match="commit changed"):
+        _write(_intake(NEW), log)
+
+    assert log.events[-3:] == ["current", "take back", "give back"]
+    assert log.published is None

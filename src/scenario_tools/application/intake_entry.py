@@ -21,6 +21,7 @@ from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.data import DataLoader
+from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.plan import PlanSink
 from scenario_tools.ports.repository import EntrySource, EntryWriter
 from scenario_tools.ports.schema import SchemaValidator
@@ -148,16 +149,18 @@ def write_intake(
     entries: EntryWriter,
     plan: PlanSink,
     base: str,
+    current: Callable[[], str],
     validate: Callable[[str], tuple[Finding, ...]],
     render: Callable[[dict[str, Any]], bytes],
 ) -> tuple[Finding, ...]:
     """Write the entry ``result`` says and its plan, from the commit ``base``, in one go: the
     plan's place is reserved first, then the entry is written and checked as ``validate``
     checks it, and the plan is published only once the entry is known to be still where it was
-    written. The entry is kept only with its plan: if anything stops the run before, what was
-    written is taken back and the place given back. What is left to complete and the entry's
-    findings are given. The caller holds the repository from the catalogue's check that made
-    ``result`` until this returns."""
+    written, and the checkout's commit, as ``current`` reads it, still ``base``. The entry is
+    kept only with its plan: if anything stops the run before, what was written is taken back
+    and the place given back. What is left to complete and the entry's findings are given. The
+    caller holds the repository from the catalogue's check that made ``result`` until this
+    returns."""
     if result.request is None or result.refusals:
         raise ValueError("a refused request is never written")
     entry = result.request.entry
@@ -167,6 +170,10 @@ def write_intake(
             findings = validate(entry)
             document = plan_document(result, files, base, findings)
             written.check()
+            if current() != base:  # the plan must describe what its base gives
+                raise EnvironmentProblemError(
+                    "the checkout's commit changed while the run wrote: nothing is kept"
+                )
             reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return (*result.to_complete, *findings)
 

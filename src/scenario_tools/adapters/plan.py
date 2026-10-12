@@ -132,13 +132,15 @@ def _unusable(path: Path, error: OSError) -> EnvironmentProblemError:
 
 def _reserved(path: Path, directory: int, descriptor: int) -> tuple[int, int]:
     """The identity of the empty file just made at ``path``, set to 0644 whatever the umask;
-    one that cannot be is not left, as it is the run's own."""
+    one that cannot be is taken back. One whose identity cannot be read cannot be told from
+    another's file, and is never removed: it is said."""
     try:
         made = identity(descriptor, str(path))
-    except EnvironmentProblemError:
-        with contextlib.suppress(OSError):
-            os.unlink(path.name, dir_fd=directory)  # nothing else could be there yet to tell
-        raise
+    except EnvironmentProblemError as error:
+        raise EnvironmentProblemError(
+            f"{error}; what was made at {path} cannot be told from another's file: remove it by "
+            "hand if it is this run's"
+        ) from error
     try:
         os.fchmod(descriptor, 0o644)
     except OSError as error:

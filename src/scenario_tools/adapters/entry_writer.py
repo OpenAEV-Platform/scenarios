@@ -30,26 +30,38 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 _READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 
 
+def _read_regular(directory: int, name: str, limit: int) -> tuple[os.stat_result, bytes]:
+    """The status of ``name`` in ``directory`` and at most ``limit`` bytes of it, opened never
+    through a link and without waiting, nothing read when it is not a regular file; ``OSError``
+    as the system raises it."""
+    descriptor = os.open(name, _READ, dir_fd=directory)
+    try:
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode):
+            return status, b""
+        with os.fdopen(descriptor, "rb", closefd=False) as file:
+            return status, file.read(limit)
+    finally:
+        os.close(descriptor)
+
+
+# What an open says when what is there is gone, a link, or not a regular file.
+_NOT_THE_FILE = (errno.ENOENT, errno.ELOOP, errno.ENXIO)
+
+
 def _same_bytes(directory: int, name: str, where: str, expected: bytes) -> bool:
     """Whether ``name`` in ``directory`` still holds ``expected``, a regular file read never
     through a link and never beyond what is expected; ``where`` names it in what is reported."""
     try:
-        descriptor = os.open(name, _READ, dir_fd=directory)
+        status, found = _read_regular(directory, name, len(expected) + 1)
     except OSError as error:
         if error.errno in (errno.ELOOP, errno.ENXIO):
             raise UnsafeInputError(
                 "IO-013", "a symbolic link or not a regular file", where
             ) from error
         raise EnvironmentProblemError(f"cannot read {where}: {error.strerror}") from error
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise UnsafeInputError("IO-013", "not a regular file", where)
-        with os.fdopen(descriptor, "rb", closefd=False) as file:
-            found = file.read(len(expected) + 1)
-    except OSError as error:
-        raise EnvironmentProblemError(f"cannot read {where}: {error.strerror}") from error
-    finally:
-        os.close(descriptor)
+    if not stat.S_ISREG(status.st_mode):
+        raise UnsafeInputError("IO-013", "not a regular file", where)
     return found == expected
 
 
@@ -58,19 +70,35 @@ def _as_written(directory: int, name: str, mine: tuple[int, int], data: bytes) -
     holding ``data``: one gone, changed, a link, not a regular file, or that cannot be read is
     not."""
     try:
-        descriptor = os.open(name, _READ, dir_fd=directory)
+        status, found = _read_regular(directory, name, len(data) + 1)
     except OSError:
         return False
+    same = (status.st_dev, status.st_ino) == mine
+    return same and stat.S_ISREG(status.st_mode) and found == data
+
+
+def _holding(directory: int, name: str, where: str, expected: bytes) -> tuple[int, int]:
+    """The identity of ``name`` in ``directory``, once it is known to hold ``expected``, a
+    regular file read never through a link and without waiting."""
+    changed = f"cannot write {where}: it changed since it was read; nothing is written"
     try:
-        status = os.fstat(descriptor)
-        if (status.st_dev, status.st_ino) != mine or not stat.S_ISREG(status.st_mode):
-            return False
-        with os.fdopen(descriptor, "rb", closefd=False) as file:
-            return file.read(len(data) + 1) == data
-    except OSError:
-        return False
-    finally:
-        os.close(descriptor)
+        status, found = _read_regular(directory, name, len(expected) + 1)
+    except OSError as error:
+        if error.errno in _NOT_THE_FILE:
+            raise EnvironmentProblemError(changed) from error
+        raise EnvironmentProblemError(f"cannot read {where}: {error.strerror}") from error
+    if not stat.S_ISREG(status.st_mode) or found != expected:
+        raise EnvironmentProblemError(changed)
+    return status.st_dev, status.st_ino
+
+
+def _rmdir_made(parent: int, name: str, made: tuple[int, int]) -> None:
+    """Remove the empty directory ``name`` in ``parent`` if it is the one the run made, by its
+    identity: never another's put in its place."""
+    with contextlib.suppress(OSError):
+        status = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if (status.st_dev, status.st_ino) == made:
+            os.rmdir(name, dir_fd=parent)
 
 
 def _replace_checked(
@@ -189,7 +217,9 @@ class RepositoryWriter:
         self.source = source
         self._root = source.root
 
-    def opened(self, relative: str, *, make: bool, made: list[str] | None = None) -> int:
+    def opened(
+        self, relative: str, *, make: bool, made: list[tuple[str, tuple[int, int]]] | None = None
+    ) -> int:
         """A descriptor of the directory at ``relative``, reached from the repository one
         directory at a time, each opened from the one above and never through a link nor a
         file. When ``make``, the missing ones are made, empty once opened and set to 0755, and
@@ -218,9 +248,11 @@ class RepositoryWriter:
         return descriptor
 
     @staticmethod
-    def _made(directory: int, name: str, where: str, made: list[str]) -> int:
+    def _made(
+        directory: int, name: str, where: str, made: list[tuple[str, tuple[int, int]]]
+    ) -> int:
         """The directory ``name`` made in ``directory``, unless another run made it a moment
-        ago; ``made`` is told when it is this run's."""
+        ago; ``made`` is told when it is this run's, with its identity."""
         try:
             os.mkdir(name, 0o755, dir_fd=directory)
         except FileExistsError:
@@ -232,25 +264,29 @@ class RepositoryWriter:
                 ) from error
         except OSError as error:
             raise EnvironmentProblemError(f"cannot make {where}: {error.strerror}") from error
-        made.append(where)
         child = made_directory(directory, name, where)
         try:
+            made.append((where, identity(child, where)))
             # A directory of the repository, read by all, whatever the umask.
             os.fchmod(child, 0o755)  # nosec B103
         except OSError as error:
             os.close(child)
             raise EnvironmentProblemError(f"cannot make {where}: {error.strerror}") from error
+        except BaseException:
+            os.close(child)
+            raise
         return child
 
-    def _remove_made(self, made: list[str]) -> None:
-        """Remove the directories this run made, the lowest first, when they are empty: one
-        that is not holds what is not this run's, or what could not be taken back, and stays."""
-        for where in reversed(made):
+    def _remove_made(self, made: list[tuple[str, tuple[int, int]]]) -> None:
+        """Remove the directories this run made, the lowest first, when they are empty and
+        still the ones made: one that is not holds what is not this run's, or what could not be
+        taken back, or is another's, and stays."""
+        for where, mine in reversed(made):
             parent, name = posixpath.split(where)
-            with contextlib.suppress(EnvironmentProblemError, UnsafeInputError, OSError):
+            with contextlib.suppress(EnvironmentProblemError, UnsafeInputError):
                 directory = self.opened(parent, make=False)
                 try:
-                    os.rmdir(name, dir_fd=directory)
+                    _rmdir_made(directory, name, mine)
                 finally:
                     os.close(directory)
         made.clear()
@@ -273,7 +309,8 @@ class RepositoryWriter:
         to write writes nothing. The block is given a check that what reads the entry by its
         path afterwards reads what was written."""
         if not files:
-            yield _WrittenEntry(self, entry)
+            with self._unchanged(entry, previous or {}) as unchanged:
+                yield unchanged
         elif previous is None:
             with self._new_entry(entry, files) as written:
                 yield written
@@ -282,9 +319,25 @@ class RepositoryWriter:
                 yield written
 
     @contextlib.contextmanager
+    def _unchanged(self, entry: str, previous: Mapping[str, bytes]) -> Iterator[_WrittenEntry]:
+        """Nothing written: the entry's files read are known to be still as read, and are
+        checked again before the plan is published."""
+        if not previous:
+            yield _WrittenEntry(self, entry)
+            return
+        directory = self.opened(entry, make=False)
+        try:
+            kept: dict[str, tuple[tuple[int, int], bytes]] = {}
+            for name, before in previous.items():
+                kept[name] = (_holding(directory, name, f"{entry}/{name}", before), before)
+            yield _WrittenEntry(self, entry, identity(directory, entry), kept)
+        finally:
+            os.close(directory)
+
+    @contextlib.contextmanager
     def _new_entry(self, entry: str, files: Mapping[str, bytes]) -> Iterator[_WrittenEntry]:
         parent_path, slug = entry.rsplit("/", 1)
-        made_above: list[str] = []
+        made_above: list[tuple[str, tuple[int, int]]] = []
         parent = self.opened(parent_path, make=True, made=made_above)
         try:
             directory, made = self._make_entry(parent, slug, entry)
@@ -311,31 +364,30 @@ class RepositoryWriter:
     @staticmethod
     def _make_entry(parent: int, slug: str, entry: str) -> tuple[int, tuple[int, int]]:
         """The new entry's directory, made where nothing is, opened, with its identity, set to
-        0755; one that cannot be made whole is not left, when it is empty."""
+        0755; one that cannot be made whole is not left, when it is empty and known to be the
+        one made. One whose identity cannot be read is left, and said."""
         try:
             os.mkdir(slug, 0o755, dir_fd=parent)  # fails if anything is there
         except FileExistsError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: it already exists") from error
         except OSError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
-        try:
-            directory = made_directory(parent, slug, entry)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                os.rmdir(slug, dir_fd=parent)  # only ever an empty one
-            raise
+        directory = made_directory(parent, slug, entry)  # what is there then is not known ours
         try:
             made = identity(directory, entry)
-            try:
-                # A directory of the repository, read by all, whatever the umask.
-                os.fchmod(directory, 0o755)  # nosec B103
-            except OSError as error:
-                raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}") from error
-        except BaseException:
+        except EnvironmentProblemError as error:
             os.close(directory)
-            with contextlib.suppress(OSError):
-                os.rmdir(slug, dir_fd=parent)
-            raise
+            raise EnvironmentProblemError(
+                f"{error}; what was made at {entry} cannot be told from another's: remove it by "
+                "hand if it is this run's"
+            ) from error
+        try:
+            # A directory of the repository, read by all, whatever the umask.
+            os.fchmod(directory, 0o755)  # nosec B103
+        except OSError as error:
+            os.close(directory)
+            _rmdir_made(parent, slug, made)
+            raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}") from error
         return directory, made
 
     @staticmethod

@@ -10,7 +10,6 @@ The words: a run *takes back* what it wrote (``take_back``), and so *gives back*
 it reserved and *puts back* the previous bytes of a file it replaced; what *another* put or
 changed meanwhile is never taken back."""
 
-import contextlib
 import errno
 import os
 import posixpath
@@ -108,7 +107,8 @@ def write_all(descriptor: int, data: bytes) -> None:
 def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
     """Create ``path``'s name in ``directory`` with ``data``, only where nothing is, a link
     included, with mode 0644 whatever the umask; a file that cannot be written whole is taken
-    back, never another put at its name. The identity of the file written is given; ``path``
+    back, never another put at its name, and one whose identity cannot be read is left, and
+    said. The identity of the file written is given; ``path``
     names it in what is reported."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
@@ -127,13 +127,15 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-    except BaseException as failure:  # an interruption too: the file goes
-        if made is None:  # just made, with nothing known of it yet
-            with contextlib.suppress(OSError):
-                os.unlink(path.name, dir_fd=directory)
-        else:
-            remove = removing_file(directory)
-            take_back(directory, path.name, made, remove, where=str(path), failure=failure)
+    except BaseException as failure:  # an interruption too: the file goes, if it is known
+        if made is None:  # nothing tells this run's file from another's: never removed
+            why = failure.strerror if isinstance(failure, OSError) else "interrupted"
+            raise EnvironmentProblemError(
+                f"cannot write {path}: {why}; what was made there cannot be told from another's "
+                "file: remove it by hand if it is this run's"
+            ) from failure
+        remove = removing_file(directory)
+        take_back(directory, path.name, made, remove, where=str(path), failure=failure)
         if isinstance(failure, OSError):
             raise EnvironmentProblemError(f"cannot write {path}: {failure.strerror}") from failure
         raise

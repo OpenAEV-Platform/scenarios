@@ -645,6 +645,7 @@ def test_paths_that_cannot_be_resolved_are_the_environment_s_fault(
     assert "Traceback" not in result.output
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
 def test_a_repository_whose_entries_cannot_be_looked_at_is_the_environment_s_fault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -911,3 +912,103 @@ def test_a_checkout_whose_files_git_converts_is_refused(
     assert result.exit_code == 3, result.output
     assert "converts" in result.output
     assert not plan.exists()
+
+
+def test_an_input_that_cannot_be_read_is_said_without_where_it_is(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    missing = tmp_path / "elsewhere" / "missing.zip"
+    (tmp_path / "plans").mkdir()  # the plan's place elsewhere: the export's is its own
+    plan = tmp_path / "plans" / "p.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan, missing)
+
+    assert result.exit_code == 3, result.output
+    assert str(tmp_path) not in result.output
+    assert "missing.zip" in result.output
+
+
+def test_a_commit_made_while_the_entry_is_written_gets_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+
+    def committed_meanwhile(*arguments: Any) -> Any:
+        (root / "notes.txt").write_text("another commit")
+        _git(root, "add", "notes.txt")
+        _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+             "commit.gpgsign=false", "commit", "-q", "-m", "meanwhile")  # fmt: skip
+        return planned(*arguments)
+
+    monkeypatch.setattr(
+        "scenario_tools.application.intake_entry.plan_document", committed_meanwhile
+    )
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "commit changed" in result.output
+    assert not plan.exists()
+    assert not (root / ENTRY).exists()  # taken back
+
+
+@pytest.mark.parametrize(
+    "changed", ["policy/data/domains.yaml", "scenarios/techniques/other/scenario.yaml"]
+)
+def test_a_catalogue_or_rules_changed_while_the_entry_is_written_gets_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, changed: str
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+
+    def changed_meanwhile(*arguments: Any) -> Any:
+        (root / changed).parent.mkdir(parents=True, exist_ok=True)
+        (root / changed).write_text("changed meanwhile")
+        return planned(*arguments)
+
+    planning = "scenario_tools.application.intake_entry.plan_document"
+    monkeypatch.setattr(planning, changed_meanwhile)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert changed in result.output
+    assert not plan.exists()
+    assert not (root / ENTRY).exists()  # taken back
+
+
+def test_metadata_changed_while_an_update_is_written_gets_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    assert _intake(monkeypatch, root, _request(tmp_path, NEW), tmp_path / "new.json").exit_code == 0
+    _commit(root)
+    stored = (root / ENTRY / "scenario.json").read_bytes()
+    plan = tmp_path / "update.json"
+    planned = intake_entry.plan_document
+
+    def changed_meanwhile(*arguments: Any) -> Any:
+        with (root / ENTRY / "scenario.yaml").open("a") as file:
+            file.write("# changed meanwhile\n")  # the file the update does not write
+        return planned(*arguments)
+
+    planning = "scenario_tools.application.intake_entry.plan_document"
+    monkeypatch.setattr(planning, changed_meanwhile)
+    update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
+
+    result = _intake(
+        monkeypatch,
+        root,
+        _request(tmp_path, {**update, "issue": 13}, "update.yaml"),
+        plan,
+        _changed_export(tmp_path),
+    )
+
+    assert result.exit_code == 3, result.output
+    assert f"{ENTRY}/scenario.yaml" in result.output
+    assert not plan.exists()
+    assert (root / ENTRY / "scenario.json").read_bytes() == stored  # put back
