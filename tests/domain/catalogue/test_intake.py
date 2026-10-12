@@ -413,6 +413,22 @@ def test_an_unchanged_update_still_lists_what_blocks_its_entry() -> None:
     assert "nothing to propose" in plan["body"]
 
 
+def test_the_body_stays_within_what_a_pull_request_takes_whatever_its_items() -> None:
+    long = "x" * 300  # the longest a path, a field or a message is
+    many = tuple(
+        Finding("SCH-001", Severity.BLOCKING, f"{index:03}{long}"[:300], "/" + long[1:], long)
+        for index in range(100)
+    )
+
+    plan = _plan(checklist=many)
+
+    assert len(plan["body"]) <= 65536  # what GitHub takes for a pull request's body
+    items = [line for line in plan["body"].splitlines() if line.startswith("- [ ]")]
+    assert 0 < len(items) < 100
+    assert f"and {100 - len(items)} more: run validate on the entry" in plan["body"]
+    assert plan["blocking"] == 100
+
+
 def test_the_body_lists_a_bounded_number_of_items_and_counts_every_blocking_one() -> None:
     many = tuple(
         Finding("SCH-001", Severity.BLOCKING, "p", f"/field{index}", "wrong")

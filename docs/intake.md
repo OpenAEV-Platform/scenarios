@@ -112,11 +112,15 @@ its checks, and a blocking finding on the stored entry still gives exit code `1`
 
 ## Opening the pull request
 
-Once the plan is written with nothing blocking, propose the entry from the plan's `base`:
+Once the plan is written, complete what its body lists, then propose the entry from the
+plan's `base`:
 
-1. create a branch from `base`, and add the files the plan lists under `files`;
-2. commit them, signed, and push the branch;
-3. open the pull request with the plan's `title` and `body`.
+1. create a branch from `base`, and add the files the plan lists under `files`, with what
+   completing the list changed: for an update, `scenario.yaml` with its raised `version` and
+   `CHANGELOG.md` with its new section, which the run never writes;
+2. run `scenario-tools validate` on the entry: nothing may block;
+3. commit them, signed, and push the branch;
+4. open the pull request with the plan's `title` and `body`.
 
 The plan names no branch: whoever pushes chooses it. Before the next intake, come back to the
 commit it starts from: the entry just proposed is a change of the checkout until then, and the
@@ -124,7 +128,7 @@ run refuses it. For instance:
 
 ```sh
 git switch -c add-easm <base>      # the plan's base
-git add scenarios/techniques/easm
+git add scenarios/techniques/easm  # the whole entry: what the run wrote, and what was completed
 git commit -S -m "feat(scenarios): add easm (#12)" && git push -u origin add-easm
 git switch main                    # back to where the next intake starts
 ```
@@ -208,13 +212,13 @@ before the run, so that a plan left by another run is never taken for this one's
   which takes back what it wrote. A file another adds to the entry is not looked for.
 
 A run killed outright (SIGKILL), with no chance to take anything back, may leave an incomplete
-entry, whose directories may be open to their owner alone, an empty or partly written plan, or hidden names `.scenario-tools-<hex>` in or next to
-the entry, or next to the plan. Remove them before running again; an update cut short may have
-left `scenario.json` itself under such a name: restore it from the commit
-(`git restore <entry>/scenario.json`). Until they are removed, such a name is a change of the
-checkout (exit code `3`), and once committed by mistake, it refuses every request (`ITK-008`).
-Such a name never belongs in a pull request:
-`validate` refuses it as an entry (`SCH-008`).
+entry, whose directories may be open to their owner alone, an empty or partly written plan, or
+hidden names `.scenario-tools-<hex>` in or next to the entry, or next to the plan. Remove them
+before running again; an update cut short may have left `scenario.json` itself under such a
+name: restore it from the commit (`git restore <entry>/scenario.json`). Until they are removed,
+such a name is a change of the checkout (exit code `3`), and once committed by mistake, it
+refuses every request (`ITK-008`). Such a name never belongs in a pull request: `validate`
+refuses it as an entry (`SCH-008`).
 
 The command runs on Linux and macOS, with git 2.40 or later: the attributes of the checkout's
 commit are read too, so that a change to them outside the three directories cannot hide a

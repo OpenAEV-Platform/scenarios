@@ -200,6 +200,11 @@ def _checklist(findings: Iterable[Finding]) -> list[Finding]:
     ]
 
 
+# Characters the items of a body may take: GitHub takes 65,536 for a body, and the rest of it,
+# the issue, the entry and its files, takes far less than what is left.
+BODY_ITEMS_LIMIT = 60_000
+
+
 def intake_plan(
     request: IntakeRequest,
     *,
@@ -218,14 +223,18 @@ def intake_plan(
         lines.append(f"Entry {_span(request.entry)}, from a platform export.")
     else:
         lines.append("The export gives the stored scenario.json again: nothing to propose.")
-    left = [
-        f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
-        for finding in findings[:REPORT_LIMIT]
-    ]
+    left: list[str] = []
+    budget = BODY_ITEMS_LIMIT
+    for finding in findings[:REPORT_LIMIT]:  # a body a pull request takes whole
+        item = f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
+        budget -= len(item) + 1
+        if budget < 0:
+            break
+        left.append(item)
     if left:
         lines += ["", "Left to complete or review:", *left]
-    if len(findings) > REPORT_LIMIT:  # a body a pull request takes whole
-        more = len(findings) - REPORT_LIMIT
+    if len(findings) > len(left):
+        more = len(findings) - len(left)
         lines.append(f"- and {more} more: run validate on the entry to see them all")
     if files:
         lines += [
