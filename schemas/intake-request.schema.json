@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/intake-request.schema.json",
+  "title": "OpenAEV scenario intake request",
+  "description": "What intake needs beside a platform export to add or update an entry. Threat and sources are checked fully as part of scenario.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "external_id",
+    "domain",
+    "slug",
+    "issue"
+  ],
+  "properties": {
+    "mode": {
+      "enum": [
+        "new",
+        "update"
+      ]
+    },
+    "external_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "threat": {
+      "type": "object",
+      "maxProperties": 3
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object"
+      }
+    },
+    "generated_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "issue": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "rewrite": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "new"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "threat",
+          "sources"
+        ],
+        "not": {
+          "required": [
+            "rewrite"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "update"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "threat"
+              ]
+            },
+            {
+              "required": [
+                "sources"
+              ]
+            },
+            {
+              "required": [
+                "generated_by"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

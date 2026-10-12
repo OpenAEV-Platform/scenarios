@@ -341,6 +341,7 @@ def test_a_fifo_with_a_reader_is_refused_too(tmp_path: Path) -> None:
         os.close(reader)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
 def test_an_output_whose_status_cannot_be_read_is_an_environment_problem(tmp_path: Path) -> None:
     entry = tmp_path / "entry"
     entry.mkdir()
@@ -355,7 +356,7 @@ def test_an_output_whose_status_cannot_be_read_is_an_environment_problem(tmp_pat
 def test_a_planted_temporary_file_is_never_reused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    planted = tmp_path / ".scenario.json.0123456789abcdef"
+    planted = tmp_path / ".scenario-tools-0123456789abcdef"
     planted.write_bytes(b"planted\n")
     monkeypatch.setattr(secrets, "token_hex", lambda size: "0123456789abcdef")
 

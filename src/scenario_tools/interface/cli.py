@@ -6,11 +6,13 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used, and 
 itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
+import contextlib
 import dataclasses
 import json
 import os
 import re
-from collections.abc import Callable
+import signal
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -29,8 +31,11 @@ from scenario_tools.adapters.data_files import (
     read_stored_scenario,
     write_output,
 )
+from scenario_tools.adapters.entry_writer import RepositoryWriter
+from scenario_tools.adapters.git import converted, converting, head_commit, uncommitted
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
+from scenario_tools.adapters.plan import PlanFile
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
@@ -38,12 +43,22 @@ from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
+from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
+from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
-from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
+from scenario_tools.domain.shared.finding import (
+    COUNT_CODE,
+    ERROR_LIMIT,
+    MESSAGE_LIMIT,
+    Finding,
+    Report,
+    Severity,
+    shorten,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -123,13 +138,17 @@ def _cut_in_any_form(text: str, hidden: str) -> bool:
     return any(_cut_in(form, hidden) for form in forms)
 
 
-def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
+def _concealed(
+    message: str, render: Callable[[str], str], hidden: str, limit: int = MESSAGE_LIMIT
+) -> str:
     """``message`` as ``render`` writes it, or withheld when that would show ``hidden``, or the
-    start of it where the message is cut short. The token's characters are never escaped, so
-    the token shows as it is or not at all."""
+    start of it where the message is cut short to ``limit``. The token's characters are never
+    escaped, so the token shows as it is or not at all."""
     output = render(message)
     if hidden and (
-        hidden in output or _cut_in(output, hidden) or _cut_in_any_form(shorten(message), hidden)
+        hidden in output
+        or _cut_in(output, hidden)
+        or _cut_in_any_form(shorten(message, limit), hidden)
     ):
         return render(_WITHHELD)
     return output
@@ -185,11 +204,11 @@ def _run(
 
         def render(text: str) -> str:
             if output_format == "json":
-                document = {"command": command, "ok": False, "findings": [], "error": shorten(text)}
-                return json.dumps(document)
-            return shorten(_printable(f"{command}: environment error: {text}"))
+                error = shorten(text, ERROR_LIMIT)
+                return json.dumps({"command": command, "ok": False, "findings": [], "error": error})
+            return shorten(_printable(f"{command}: environment error: {text}"), ERROR_LIMIT)
 
-        return _concealed(str(error), render, hidden), EXIT_ENVIRONMENT
+        return _concealed(str(error), render, hidden, ERROR_LIMIT), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     return _withhold(report, output_format, hidden), code
 
@@ -457,29 +476,267 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
 
     def produce() -> Report:
         source = RepositoryEntries(root)
-        # The rules the checks read are the maintainers', read like the entries, never through
-        # a link; rules that cannot be used are the environment's fault, never an entry's.
-        try:
-            loader = YamlDataLoader(source.directory("policy/data"))
-            builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
-        except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
-            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
-        try:
-            schemas = source.directory("schemas")
-            schema = JsonSchemaValidator(schemas)
-        except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
-            raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
-        if not (schemas / "scenario.schema.json").is_file():
-            raise EnvironmentProblemError("schemas cannot be used: scenario.schema.json is missing")
-        renormalised = renormaliser(loader)
+        rules = _rules(source)
         findings: list[Finding] = []
         for entry in dict.fromkeys(relatives):  # an entry given twice is checked once
-            findings += validate_entry(
-                entry, source, schema=schema, builtin=builtin, renormalised=renormalised
-            )
+            findings += rules.validate(entry, source)
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Rules:
+    """The maintainers' rules the checks of an entry read."""
+
+    loader: YamlDataLoader
+    builtin: BuiltinContracts
+    domains: tuple[str, ...]
+    schema: JsonSchemaValidator
+
+    def validate(self, entry: str, source: RepositoryEntries) -> tuple[Finding, ...]:
+        return validate_entry(
+            entry,
+            source,
+            schema=self.schema,
+            builtin=self.builtin,
+            renormalised=renormaliser(self.loader),
+            domains=self.domains,
+        )
+
+
+def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
+    """The rules of the repository ``source`` reads, read like the entries, never through a
+    link, the intake request's schema among them for ``intake``; rules that cannot be used are
+    the environment's fault, never an entry's."""
+    try:
+        loader = YamlDataLoader(source.directory("policy/data"))
+        builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+        domains = domains_from_document(loader.load("domains"))
+    except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
+        raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+    try:
+        schemas = source.directory("schemas")
+        schema = JsonSchemaValidator(schemas)
+    except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
+        raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
+    for name in ("scenario", "intake-request") if intake else ("scenario",):
+        if not (schemas / f"{name}.schema.json").is_file():
+            raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
+    return _Rules(loader, builtin, domains, schema)
+
+
+REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
+
+# What intake keeps as committed, but for the entry it writes: no plan nor input goes there.
+_PLANNED = ("scenarios", "policy", "schemas")
+_PLANNED_NAMED = ", ".join(f"{path}/" for path in _PLANNED[:-1]) + f" or {_PLANNED[-1]}/"
+
+
+@main.command(name="intake")
+@click.argument("export", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--request", "request", required=True, type=click.Path(path_type=Path))
+@click.option("--repo", "repo", required=True, type=click.Path(path_type=Path))
+@click.option("--plan", "plan", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Path) -> None:
+    """Turn EXPORT, a platform export (an archive, or its JSON), and the request at --request
+    into an entry of the repository at --repo, written in place, and write at --plan the plan of
+    the pull request that proposes it. A refused request writes nothing."""
+    try:
+        root = Path(os.path.realpath(repo))  # resolved once: the run holds what it names
+        plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
+    except OSError as error:  # a relative path, once the working directory is gone
+        _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
+    planned = [root / place for place in _PLANNED]  # as committed, or the run stops
+    if any(place in (plan, *plan.parents) or _inside(plan, place) for place in planned):
+        raise click.UsageError(
+            f"--plan may not be inside {_PLANNED_NAMED} of the repository: they stay as committed"
+        )
+    if os.path.lexists(plan):
+        raise click.UsageError(
+            "--plan names a place where something is already there: remove the earlier plan "
+            "first, so that it is never taken for this run's"
+        )
+    for given, place in zip((export, request), inputs, strict=True):
+        if any(_inside(place, directory) for directory in planned):
+            raise click.UsageError(
+                f"{given.name} is inside {_PLANNED_NAMED} of the repository: an export or a "
+                "request must never enter git"
+            )
+
+    def produce() -> Report:
+        source = RepositoryEntries(root, strict=True)  # what a cut run left is never ignored
+        written = False
+        try:
+            # From the catalogue's check to the plan, no other run may check or write in it.
+            with _stops_as_interruptions(), source.locked():
+                base = head_commit(root)  # read before: a request to stop meanwhile stops it
+                _refuse_uncommitted(root)
+                if head_commit(root) != base:
+                    raise EnvironmentProblemError(
+                        "the checkout's commit changed while it was checked: run again"
+                    )
+                rules = _rules(source, intake=True)
+                result = intake_entry(
+                    read_export(export),
+                    read_yaml_file(request, limit=REQUEST_LIMIT),
+                    request_path=repository_path(str(request), root),
+                    export_path=repository_path(str(export), root),
+                    source=source,
+                    data=rules.loader,
+                    schema=rules.schema,
+                    domains=rules.domains,
+                )
+                if result.refusals or result.request is None:
+                    return Report("intake", result.refusals)
+                entry = result.request.entry
+                ours = frozenset(f"{entry}/{name}" for name in intake_files(result, yaml_bytes))
+                _refuse_converting(root, ours)  # files not written yet: attributes match them too
+                with _stop_requests_held():
+                    left = write_intake(
+                        result,
+                        entries=RepositoryWriter(source),
+                        plan=PlanFile(plan),
+                        base=base,
+                        current=lambda: _still_base(source, ours),
+                        # Read afresh: the catalogue now holds the entry written.
+                        validate=lambda entry: rules.validate(entry, RepositoryEntries(root)),
+                        render=yaml_bytes,
+                    )
+                    written = True  # while requests to stop still wait: never missed
+                return Report("intake", left)
+        except KeyboardInterrupt as error:  # never read as a refusal
+            if written:
+                raise EnvironmentProblemError(
+                    "the run was asked to stop once its entry and its plan were written: both stand"
+                ) from error
+            raise EnvironmentProblemError("the run was interrupted: nothing was written") from error
+
+    def produce_shown() -> Report:
+        try:
+            return produce()
+        except EnvironmentProblemError as error:  # said without where the run is
+            raise EnvironmentProblemError(_unplaced(str(error), root, plan, inputs)) from error
+
+    _emit(ctx, "intake", produce_shown, root)
+
+
+def _refuse_uncommitted(root: Path) -> None:
+    """Refuse a checkout whose bytes git converts from its commit, or whose catalogue or rules
+    differ from it: the plan must describe what its base gives. Conversions come first: git
+    status would run a filter the attributes name."""
+    turned = converted(root, _PLANNED)
+    if turned:
+        more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
+        raise EnvironmentProblemError(
+            f"git converts files under {_PLANNED_NAMED} between the commit and the checkout "
+            f"({turned[0]}{more}, by its attributes or its line ends): the plan would not "
+            "describe the commit's "
+            "bytes"
+        )
+    changed = uncommitted(root, _PLANNED)
+    if changed:
+        more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
+        raise EnvironmentProblemError(
+            f"the checkout has changes that are not committed under {_PLANNED_NAMED} "
+            f"({changed[0]}{more}): commit or remove them first, so that the plan describes "
+            "what its base gives; an entry an earlier intake wrote counts: commit it on its "
+            "own branch, then start the next intake from the commit it should start from"
+        )
+
+
+def _refuse_converting(root: Path, files: frozenset[str]) -> None:
+    """Refuse ``files``, the run's, when git would convert them by their attributes: what the
+    plan says of their bytes would not be what a commit of them holds."""
+    turned = converting(root, tuple(sorted(files)))
+    if turned:
+        more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
+        raise EnvironmentProblemError(
+            f"git converts {turned[0]}{more} by its attributes: the plan would not describe the "
+            "bytes a commit of it holds; nothing is kept"
+        )
+
+
+def _still_base(source: RepositoryEntries, ours: frozenset[str]) -> str:
+    """The checkout's commit, once its path still names the checkout held and nothing differs
+    from it under the catalogue and its rules but ``ours``, the files the run wrote: the plan
+    must describe what its base gives."""
+    source.check_held()  # git reads the checkout by its path: never another's
+    root = source.root
+    _refuse_converting(root, ours)  # attributes changed while the run wrote
+    others = [path for path in uncommitted(root, _PLANNED) if path not in ours]
+    if others:
+        more = f" and {len(others) - 1} more" if len(others) > 1 else ""
+        raise EnvironmentProblemError(
+            f"the checkout changed while the run wrote ({others[0]}{more}): nothing is kept"
+        )
+    return head_commit(root)
+
+
+def _unplaced(text: str, root: Path, plan: Path, inputs: tuple[Path, ...]) -> str:
+    """``text`` with the paths of the repository, of the plan's directory and of the inputs
+    given relative to them, as findings are: a log never shows where the run is."""
+    for given in inputs:
+        text = text.replace(str(given), given.name)
+    for place in (plan.parent, root):
+        text = text.replace(f"{place}/", "")
+    return text.replace(str(root), ".").replace(str(plan.parent), plan.parent.name)
+
+
+def _failing(why: str) -> Callable[[], Report]:
+    """What reports the environment error ``why``, as a command's work would."""
+
+    def produce() -> Report:
+        raise EnvironmentProblemError(why)
+
+    return produce
+
+
+# What asks a run to stop: Ctrl-C, a CI job cancelled, a terminal closed, Ctrl-\\.
+_STOPS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
+
+
+def _restorable(handler: object) -> Callable[[int, object], object] | int:
+    """A handler as ``signal.signal`` takes it back: one installed from outside Python, which it
+    cannot give, is the default."""
+    return handler if handler is not None else signal.SIG_DFL  # type: ignore[return-value]
+
+
+@contextlib.contextmanager
+def _stops_as_interruptions() -> Iterator[None]:
+    """Each request to stop interrupts the run as Ctrl-C does, so that the run says what it
+    leaves, rather than end without a word."""
+
+    def interrupted(signal_number: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    # One the caller already ignores, as nohup does, stays ignored.
+    stops = [stop for stop in _STOPS if signal.getsignal(stop) is not signal.SIG_IGN]
+    before = {stop: signal.signal(stop, interrupted) for stop in stops}
+    try:
+        yield
+    finally:
+        for stop, handler in before.items():
+            signal.signal(stop, _restorable(handler))
+
+
+@contextlib.contextmanager
+def _stop_requests_held() -> Iterator[None]:
+    """While a run writes, a request to stop waits, and is then let go: a run never stops half
+    way through what it writes, and once it is written, it ends as usual."""
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, ())  # as it is, before anything changes
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
+        yield
+    finally:
+        # Ignored for a moment, a pending request to stop is dropped, then all is as it was.
+        handlers = {stop: signal.signal(stop, signal.SIG_IGN) for stop in _STOPS}
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, before)
+        finally:
+            for stop, handler in handlers.items():
+                signal.signal(stop, _restorable(handler))
 
 
 def _identity(root: Path) -> tuple[int, int]:
@@ -514,15 +771,22 @@ def _declared_external_id(metadata: Path) -> object:
 
 def _inside(path: Path, directory: Path) -> bool:
     """Whether ``path`` is ``directory`` or lies within it, compared by file identity on the
-    path the write resolves to: a link to the directory or to a folder of it, or another case
-    on a case-insensitive disk, still names a place inside it."""
-    if not directory.is_dir():
+    path the write or the read resolves to: a link to the directory or to a folder of it, or
+    another case on a case-insensitive disk, still names a place inside it. A place that cannot
+    be looked at is not taken to be it: what then reads or writes there fails on its own."""
+    try:
+        if not directory.is_dir():
+            return False
+    except OSError:
         return False
     resolved = Path(os.path.realpath(path))
-    return any(
-        candidate.exists() and candidate.samefile(directory)
-        for candidate in (resolved, *resolved.parents)
-    )
+    for candidate in (resolved, *resolved.parents):
+        try:
+            if candidate.samefile(directory):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 @main.group(name="openaev")

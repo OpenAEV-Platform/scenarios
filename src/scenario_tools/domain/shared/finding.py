@@ -21,14 +21,15 @@ _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")  # RFC 6901: "~" only as "~0" o
 
 
 MESSAGE_LIMIT = 300
+ERROR_LIMIT = 2000  # an environment error's message, long enough for all a take-back leaves
 REPORT_LIMIT = 100
 COUNT_CODE = "IO-016"  # the last finding of a report that holds more than it shows
 
 
-def shorten(message: str) -> str:
-    """A message is shortened to ``MESSAGE_LIMIT`` characters, so that a long value read from the
-    content is never echoed in full."""
-    return message if len(message) <= MESSAGE_LIMIT else message[: MESSAGE_LIMIT - 1] + "…"
+def shorten(message: str, limit: int = MESSAGE_LIMIT) -> str:
+    """A message is shortened to ``limit`` characters, ``MESSAGE_LIMIT`` unless said, so that a
+    long value read from the content is never echoed in full."""
+    return message if len(message) <= limit else message[: limit - 1] + "…"
 
 
 def _shorten_pointer(pointer: str) -> str:

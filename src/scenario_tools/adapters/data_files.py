@@ -8,11 +8,14 @@ import contextlib
 import errno
 import os
 import re
-import secrets
 import stat
 from pathlib import Path
 from typing import Any
 
+from scenario_tools.adapters.places import (
+    hidden_name,
+    write_all,
+)
 from scenario_tools.adapters.safe_readers import (
     JSON_LIMIT,
     parse_json,
@@ -157,7 +160,17 @@ def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _not_followed(path.parent, error) from error
-    temporary = f".{path.name}.{secrets.token_hex(8)}"
+    try:
+        write_in(directory, path, data, create=create)
+    finally:
+        os.close(directory)
+
+
+def write_in(directory: int, path: Path, data: bytes, *, create: bool = False) -> tuple[int, int]:
+    """Write ``data`` as ``write_output`` does, in the directory open as ``directory``, which is
+    never looked up again by its path: ``path`` names the file in what is reported, and its name
+    is the file written. The identity of the file written is given."""
+    temporary = hidden_name()
     try:
         try:
             existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
@@ -172,11 +185,10 @@ def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
             raise _not_followed(path, error) from error
         try:
             try:
-                view = memoryview(data)
-                while view:
-                    view = view[os.write(descriptor, view) :]
+                write_all(descriptor, data)
                 os.fchmod(descriptor, 0o644)
                 os.fsync(descriptor)
+                status = os.fstat(descriptor)
             finally:
                 os.close(descriptor)
             if create:
@@ -195,5 +207,4 @@ def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
             raise
     except OSError as error:  # the target's status could not be read
         raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
-    finally:
-        os.close(directory)
+    return status.st_dev, status.st_ino

@@ -9,7 +9,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from scenario_tools.domain.shared.characters import HIDDEN, JOINERS, hidden_in, hidden_occurrences
+from scenario_tools.domain.shared.characters import (
+    HIDDEN,
+    JOINERS,
+    hidden_in,
+    hidden_occurrences,
+    visible,
+)
 
 # The contract's list, restated independently of the implementation.
 CONTRACT_RANGES = [
@@ -223,3 +229,12 @@ def test_many_keycap_candidates_are_checked_in_linear_time() -> None:
     hidden_in(f"1{VS16}" * 200_000)
 
     assert time.monotonic() - started < 1
+
+
+def test_the_visible_text_is_the_text_without_what_is_found_hidden() -> None:
+    hostile = "a" + chr(0x3164) + "b" + chr(0x2800) + "c" + chr(0xFE00) + "d" + chr(0x202E)
+    family = chr(0x1F468) + chr(0x200D) + chr(0x1F469)  # a joiner where emoji put one
+
+    assert visible(hostile) == "abcd"
+    assert visible(family) == family
+    assert visible("akira") == "akira"

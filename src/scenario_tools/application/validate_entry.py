@@ -92,6 +92,7 @@ def validate_entry(
     schema: SchemaValidator,
     builtin: BuiltinContracts,
     renormalised: Callable[[object, str, str], bytes],
+    domains: tuple[str, ...],
 ) -> tuple[Finding, ...]:
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
@@ -100,7 +101,7 @@ def validate_entry(
         names = source.names(entry)
     except UnsafeInputError as error:
         return (_refused(error, entry),)
-    findings = layout_findings(entry, names)
+    findings = layout_findings(entry, names, domains)
     metadata: ScenarioMetadata | None = None
     facts: ExportFacts | None = None
     if "scenario.yaml" in names:

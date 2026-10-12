@@ -289,6 +289,10 @@ def _times(count: int, one: str, several: str) -> str:
     return f"{count} {one if count == 1 else several}"
 
 
+# How an informative finding ends when it asks for nothing: such a one is no checklist item.
+NOTHING_TO_DO = "nothing to do"
+
+
 def _cleaned_reason(cleaned: Cleaned) -> str:
     """What cleaning the export's description changed, by counts, never its text."""
     changes = []
@@ -303,7 +307,7 @@ def _cleaned_reason(cleaned: Cleaned) -> str:
         lost = _times(cleaned.hard_breaks, "Markdown hard break", "Markdown hard breaks")
         verb = "is" if cleaned.hard_breaks == 1 else "are"
         return f"{reason}; {lost} (two spaces ending a line) {verb} lost: check its layout"
-    return f"{reason}; nothing to do"
+    return f"{reason}; {NOTHING_TO_DO}"
 
 
 def _bounded(value: str, limit: int, field: str) -> tuple[str, tuple[str, str] | None]:

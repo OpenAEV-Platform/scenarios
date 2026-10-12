@@ -737,7 +737,7 @@ def test_the_array_walk_reaches_lists_of_subschemas() -> None:
     assert [pointer for pointer, _ in _arrays(schema)] == ["/oneOf/0", "/oneOf/1/prefixItems/0"]
 
 
-@pytest.mark.parametrize("schema", ["scenario", "manifest"])
+@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request"])
 def test_every_list_has_a_bound(schema: str) -> None:
     document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text(encoding="utf-8"))
 
@@ -797,7 +797,7 @@ def test_the_validator_stops_once_it_has_enough(
     assert len(errors) <= VIOLATION_LIMIT
 
 
-@pytest.mark.parametrize("schema", ["scenario", "manifest"])
+@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request"])
 def test_every_bound_is_checked_before_the_items(schema: str) -> None:
     # jsonschema checks keywords in their order: the size first, so an oversized list fails
     # before its items are walked.
@@ -844,3 +844,52 @@ def test_a_reference_the_schemas_cannot_resolve_is_the_environment_s_fault(
 
     with pytest.raises(EnvironmentProblemError, match="cannot be resolved"):
         JsonSchemaValidator(tmp_path).validate("broken", {})
+
+
+INTAKE = {
+    "mode": "new",
+    "external_id": "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42",
+    "domain": "ransomware",
+    "slug": "akira-crisis",
+    "threat": {"ttps": ["T1486"]},
+    "sources": [{"url": "https://example.org", "tlp": "TLP:CLEAR"}],
+    "generated_by": "run 42",
+    "issue": 12,
+}
+
+
+def test_an_intake_request_is_valid(validator: JsonSchemaValidator) -> None:
+    assert validator.validate("intake-request", INTAKE) == ()
+    update = {key: INTAKE[key] for key in ("external_id", "domain", "slug", "issue")}
+    assert validator.validate("intake-request", {**update, "mode": "update", "rewrite": True}) == ()
+
+
+@pytest.mark.parametrize(
+    ("change", "pointer"),
+    [
+        ({"mode": "replace"}, "/mode"),
+        ({"external_id": "5B9A2C84-3A0E-4C55-9A8C-2A6F0D7E1B42"}, "/external_id"),
+        ({"slug": "Akira_Crisis"}, "/slug"),
+        ({"issue": 0}, "/issue"),
+        ({"extra": 1}, "/extra"),
+    ],
+    ids=["mode", "external id", "slug", "issue", "extra field"],
+)
+def test_an_intake_request_outside_its_schema_is_refused(
+    validator: JsonSchemaValidator, change: dict[str, object], pointer: str
+) -> None:
+    assert pointer in {
+        v.pointer for v in validator.validate("intake-request", {**INTAKE, **change})
+    }
+
+
+def test_a_new_entry_needs_threat_and_sources_and_an_update_takes_none(
+    validator: JsonSchemaValidator,
+) -> None:
+    bare = {key: value for key, value in INTAKE.items() if key not in ("threat", "sources")}
+    assert validator.validate("intake-request", bare)
+    assert validator.validate("intake-request", {**INTAKE, "mode": "update"})
+
+
+def test_a_new_entry_request_cannot_ask_for_a_rewrite(validator: JsonSchemaValidator) -> None:
+    assert validator.validate("intake-request", {**INTAKE, "rewrite": True})
