@@ -7,12 +7,14 @@ import os
 import secrets
 import stat
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from scenario_tools.adapters.data_files import (
+    Reservation,
     YamlDataLoader,
     check_export_archive,
     read_attachments,
@@ -429,22 +431,140 @@ def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: P
     assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
 
 
-def test_an_output_is_reserved_before_anything_is_written(tmp_path: Path) -> None:
-    reserve_output(tmp_path / "plan.json")
+def _reserve(path: Path) -> None:
+    with reserve_output(path):
+        pass
 
-    assert (tmp_path / "plan.json").read_bytes() == b""  # empty, until it is written
-    assert oct((tmp_path / "plan.json").stat().st_mode & 0o777) == oct(0o644)
+
+def _failing(path: Path, during: Callable[[Reservation], None] = lambda reservation: None) -> None:
+    """Reserve ``path``, do ``during``, then fail before the block ends."""
+    with reserve_output(path) as reservation:
+        during(reservation)
+        raise RuntimeError("the run cannot end")
+
+
+def test_an_output_is_published_in_the_place_reserved_for_it(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    with reserve_output(plan) as reservation:
+        assert plan.read_bytes() == b""  # empty, until it is published
+        assert oct(plan.stat().st_mode & 0o777) == oct(0o644)
+        reservation.publish(b"{}\n")
+
+    assert plan.read_bytes() == b"{}\n"
+    assert oct(plan.stat().st_mode & 0o777) == oct(0o644)
+    assert [path.name for path in tmp_path.iterdir()] == ["plan.json"]
+
+
+def test_a_place_is_never_reserved_over_anything_nor_through_a_link(tmp_path: Path) -> None:
+    (tmp_path / "plan.json").write_text("there")
     with pytest.raises(EnvironmentProblemError, match="already exists"):
-        reserve_output(tmp_path / "plan.json")  # never over anything there
+        _reserve(tmp_path / "plan.json")
+    assert (tmp_path / "plan.json").read_text() == "there"
     (tmp_path / "link.json").symlink_to(tmp_path / "elsewhere.json")
     with pytest.raises(EnvironmentProblemError, match="already exists"):
-        reserve_output(tmp_path / "link.json")  # a link is something there, never followed
+        _reserve(tmp_path / "link.json")  # a link is something there, never followed
     assert not (tmp_path / "elsewhere.json").exists()
     with pytest.raises(EnvironmentProblemError):
-        reserve_output(tmp_path / "missing" / "plan.json")
+        _reserve(tmp_path / "missing" / "plan.json")
     (tmp_path / "linked").symlink_to(tmp_path)
     with pytest.raises(UnsafeInputError):
-        reserve_output(tmp_path / "linked" / "other.json")
+        _reserve(tmp_path / "linked" / "other.json")
+
+
+def test_a_place_the_block_ends_without_publishing_is_given_back(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError):
+        _failing(tmp_path / "plan.json")
+    _reserve(tmp_path / "plan.json")  # ended without a failure, and without an output
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_published_output_stays_whatever_follows(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError):
+        _failing(tmp_path / "plan.json", lambda reservation: reservation.publish(b"x"))
+
+    assert (tmp_path / "plan.json").read_bytes() == b"x"
+
+
+def test_an_output_is_published_in_the_directory_reserved_even_once_moved(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+
+    with reserve_output(out / "plan.json") as reservation:
+        out.rename(tmp_path / "moved")
+        out.mkdir()
+        (out / "plan.json").write_text("another run's")
+        reservation.publish(b"x")
+
+    assert (tmp_path / "moved" / "plan.json").read_bytes() == b"x"
+    assert (out / "plan.json").read_text() == "another run's"
+
+
+def test_a_place_taken_meanwhile_is_never_written_over_nor_removed(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    def taken(reservation: Reservation) -> None:
+        plan.unlink()
+        plan.write_text("another run's")
+        reservation.publish(b"x")
+
+    with pytest.raises(EnvironmentProblemError, match="taken meanwhile"):
+        _failing(plan, taken)
+    assert plan.read_text() == "another run's"
+
+
+def test_a_place_removed_meanwhile_is_never_written(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    def removed(reservation: Reservation) -> None:
+        plan.unlink()
+        reservation.publish(b"x")
+
+    with pytest.raises(EnvironmentProblemError, match="taken meanwhile"):
+        _failing(plan, removed)
+    assert list(tmp_path.iterdir()) == []
+
+
+def _unremovable(monkeypatch: pytest.MonkeyPatch) -> None:
+    removed = os.unlink
+
+    def failing(path: str, **options: Any) -> None:
+        if path == "plan.json":
+            raise OSError(errno.EACCES, "Permission denied")
+        removed(path, **options)
+
+    monkeypatch.setattr(os, "unlink", failing)
+
+
+def test_a_place_that_cannot_be_given_back_is_said_with_the_block_s_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _unremovable(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
+        _failing(tmp_path / "plan.json")
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert (tmp_path / "plan.json").exists()  # left, and said so
+
+
+def test_a_place_whose_state_cannot_be_read_is_never_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(*arguments: Any, **options: Any) -> os.stat_result:
+        raise OSError(errno.EACCES, "Permission denied")
+
+    def unreadable(reservation: Reservation) -> None:
+        monkeypatch.setattr(os, "stat", failing)
+        reservation.publish(b"x")
+
+    with pytest.raises(EnvironmentProblemError, match="cannot remove") as error:
+        _failing(tmp_path / "plan.json", unreadable)
+    assert "cannot write" in str(error.value.__cause__)
+    monkeypatch.undo()
+    assert (tmp_path / "plan.json").read_bytes() == b""  # never written
 
 
 def _descriptors(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:
@@ -471,6 +591,10 @@ def test_an_output_leaves_nothing_open(tmp_path: Path, monkeypatch: pytest.Monke
     opened, closed = _descriptors(monkeypatch)
 
     write_output(tmp_path / "scenario.json", b"x")
+    with reserve_output(tmp_path / "plan.json") as reservation:
+        reservation.publish(b"x")
+    with pytest.raises(RuntimeError):
+        _failing(tmp_path / "other.json")
 
     assert opened
     assert sorted(opened) == sorted(closed)
@@ -486,9 +610,23 @@ def test_a_reservation_that_cannot_end_leaves_nothing_open_nor_behind(
     monkeypatch.setattr(os, "fchmod", failing)
 
     with pytest.raises(EnvironmentProblemError, match="cannot write"):
-        reserve_output(tmp_path / "plan.json")
+        _reserve(tmp_path / "plan.json")
     assert sorted(opened) == sorted(closed)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_reservation_that_can_neither_end_nor_be_removed_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing(descriptor: int, mode: int) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+    _unremovable(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
+        _reserve(tmp_path / "plan.json")
+    assert "cannot write" in str(error.value.__cause__)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
@@ -499,7 +637,7 @@ def test_an_output_in_a_directory_that_cannot_be_written_is_the_environment_s_fa
     (tmp_path / "locked").chmod(0o555)
     try:
         with pytest.raises(EnvironmentProblemError, match="cannot write"):
-            reserve_output(tmp_path / "locked" / "plan.json")
+            _reserve(tmp_path / "locked" / "plan.json")
     finally:
         (tmp_path / "locked").chmod(0o755)
     assert list((tmp_path / "locked").iterdir()) == []

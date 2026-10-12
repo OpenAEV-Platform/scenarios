@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from scenario_tools.adapters import data_files
 from scenario_tools.adapters.data_files import read_export
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.domain.shared.title import check_pull_request_title
@@ -360,11 +361,14 @@ def test_a_run_that_fails_after_reserving_its_plan_leaves_no_plan(
 
 def _unpublished(monkeypatch: pytest.MonkeyPatch) -> None:
     """The plan cannot be published, once the entry is written."""
+    written = data_files.write_in
 
-    def failing(path: Path, data: bytes, *, create: bool = False) -> None:
-        raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+    def failing(directory: int, path: Path, data: bytes, *, create: bool = False) -> None:
+        if path.name == "plan.json" or path.name == "update.json":
+            raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
+        written(directory, path, data, create=create)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.write_output", failing)
+    monkeypatch.setattr("scenario_tools.adapters.data_files.write_in", failing)
 
 
 def test_a_plan_that_cannot_be_published_leaves_no_new_entry(
@@ -475,14 +479,14 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
 ) -> None:
     root = _repository(tmp_path, commit=False)  # the run fails once its plan is reserved
     plan = tmp_path / "plan.json"
-    removed = Path.unlink
+    removed = os.unlink
 
-    def failing(self: Path, missing_ok: bool = False) -> None:
-        if self == plan:
+    def failing(path: str, **options: Any) -> None:
+        if path == plan.name:
             raise OSError(13, "Permission denied")
-        removed(self, missing_ok=missing_ok)
+        removed(path, **options)
 
-    monkeypatch.setattr(Path, "unlink", failing)
+    monkeypatch.setattr(os, "unlink", failing)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 

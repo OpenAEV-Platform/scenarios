@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import stat
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -145,12 +146,61 @@ def _not_followed(path: Path, error: OSError) -> Exception:
     return EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
 
 
-def reserve_output(path: Path) -> None:
-    """Reserve ``path`` for an output written later: make it as an empty file, never over
+class Reservation:
+    """An output's place, reserved by ``reserve_output``: published through the directory it
+    was reserved in, never looked up again by its path, and only over the empty file the
+    reservation made there, which a published output has replaced."""
+
+    def __init__(self, path: Path, directory: int, identity: tuple[int, int]) -> None:
+        self._path = path
+        self._directory = directory
+        self._identity = identity
+
+    def _ours(self) -> bool:
+        """Whether the file at the reserved place is still the one the reservation made."""
+        try:
+            status = os.stat(self._path.name, dir_fd=self._directory, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        return (status.st_dev, status.st_ino) == self._identity
+
+    def publish(self, data: bytes) -> None:
+        """Write ``data`` over the reservation, at once, as ``write_output`` does."""
+        try:
+            ours = self._ours()
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot write {self._path}: {error.strerror}") from error
+        if not ours:
+            raise EnvironmentProblemError(
+                f"cannot write {self._path}: the place reserved for it was taken meanwhile"
+            )
+        write_in(self._directory, self._path, data)
+
+    def give_back(self, failure: BaseException | None) -> None:
+        """Remove the reservation if it is still there, never another file, a published output
+        included; one that cannot be removed is said, with ``failure``, why it is given back,
+        as its cause."""
+        try:
+            if self._ours():
+                os.unlink(self._path.name, dir_fd=self._directory)
+        except OSError as error:
+            raise _left(self._path, error) from failure
+
+
+def _left(path: Path, error: OSError) -> EnvironmentProblemError:
+    return EnvironmentProblemError(
+        f"cannot remove {path}, the place reserved for it: {error.strerror}; remove it by hand"
+    )
+
+
+@contextlib.contextmanager
+def reserve_output(path: Path) -> Iterator[Reservation]:
+    """Reserve ``path`` for an output the block publishes: make it as an empty file, never over
     anything there nor through a link at its place, the file or its directory, so that no other
-    run can take it meanwhile and a directory that cannot be written in is known before anything
-    else is written. The directories above are the path the caller was given, links included,
-    as ``write_output`` takes them."""
+    run can take it meanwhile and a directory that cannot be written in is known before
+    anything else is written. The directories above are the path the caller was given, links
+    included, as ``write_output`` takes them. Once published, the output stays, however the
+    block ends; a block that ends before gives the place back."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
@@ -163,11 +213,25 @@ def reserve_output(path: Path) -> None:
             raise EnvironmentProblemError(f"cannot write {path}: it already exists") from error
         except OSError as error:
             raise _not_followed(path, error) from error
+        # Held open until the block ends, so that the file's identity is never reused.
         try:
-            os.fchmod(descriptor, 0o644)
-        except OSError as error:  # the file is this run's own: nothing is left behind
-            os.unlink(path.name, dir_fd=directory)
-            raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
+            try:
+                os.fchmod(descriptor, 0o644)
+                status = os.fstat(descriptor)
+            except OSError as error:  # the file is this run's own: nothing is left behind
+                failure = EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
+                try:
+                    os.unlink(path.name, dir_fd=directory)
+                except OSError as left:
+                    raise _left(path, left) from failure
+                raise failure from error
+            reservation = Reservation(path, directory, (status.st_dev, status.st_ino))
+            try:
+                yield reservation
+            except BaseException as failure:
+                reservation.give_back(failure)
+                raise
+            reservation.give_back(None)
         finally:
             os.close(descriptor)
     finally:

@@ -6,6 +6,7 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used, and 
 itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
+import contextlib
 import dataclasses
 import json
 import os
@@ -33,7 +34,7 @@ from scenario_tools.adapters.data_files import (
 from scenario_tools.adapters.git import head_commit
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
-from scenario_tools.adapters.repository import LeftAsideError, RepositoryEntries
+from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
@@ -570,29 +571,19 @@ def _intake_held(
     # The plan's place is taken first, so that no other run can take it, then whatever
     # could stop the run is found before the repository is touched. The entry stays
     # written only once its plan is: a run that does not end leaves both as they were.
-    try:
-        reserve_output(plan)
-    except UnsafeInputError as error:  # the plan's place cannot be used: no refusal
-        raise EnvironmentProblemError(f"cannot write {plan}: {error.message}") from error
-    try:
+    # Once published, the plan stays with its entry, even when what follows is reported.
+    with contextlib.ExitStack() as stack:
+        try:
+            reservation = stack.enter_context(reserve_output(plan))
+        except UnsafeInputError as error:  # the plan's place cannot be used: no refusal
+            raise EnvironmentProblemError(f"cannot write {plan}: {error.message}") from error
         base = head_commit(root)
         files = intake_files(result, yaml_bytes)
         new = result.metadata is not None
         with source.writing(result.request.entry, files, new=new):
             findings = rules.validate(result.request.entry, RepositoryEntries(root))
             document = plan_document(result, files, base, findings)
-            write_output(plan, json.dumps(document, indent=2).encode() + b"\n")
-    except LeftAsideError:
-        raise  # the entry and its plan are written: both stay, and what is left is said
-    except BaseException as failure:
-        try:
-            plan.unlink(missing_ok=True)  # the empty reservation, which no run will fill
-        except OSError as error:
-            raise EnvironmentProblemError(
-                f"cannot remove {plan}, the place reserved for the plan: {error.strerror}; "
-                "remove it by hand"
-            ) from failure
-        raise
+            reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return Report("intake", (*result.to_complete, *findings))
 
 
