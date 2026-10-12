@@ -210,6 +210,10 @@ def test_the_domains_are_read_from_their_data_document() -> None:
     )
 
 
+def test_a_domain_as_long_as_a_slug_may_be_is_read() -> None:
+    assert domains_from_document({"domains": ["a" * 64]}) == ("a" * 64,)
+
+
 @pytest.mark.parametrize(
     "document",
     [
@@ -219,8 +223,17 @@ def test_the_domains_are_read_from_their_data_document() -> None:
         {"domains": []},
         {"domains": ["Ransomware"]},
         {"domains": [1]},
+        {"domains": ["a" * 65]},  # one a request could never name
     ],
-    ids=["not a mapping", "missing", "not a list", "empty", "not kebab-case", "not text"],
+    ids=[
+        "not a mapping",
+        "missing",
+        "not a list",
+        "empty",
+        "not kebab-case",
+        "not text",
+        "too long",
+    ],
 )
 def test_a_domains_document_that_cannot_be_used_is_refused(document: object) -> None:
     with pytest.raises(ValueError, match="domains"):

@@ -315,6 +315,40 @@ def test_a_file_interrupted_while_written_is_not_left(
     assert _names(tmp_path) == []
 
 
+@pytest.mark.parametrize("foreign", [False, True], ids=["moved", "replaced"])
+def test_a_file_moved_while_written_is_said(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch, foreign: bool
+) -> None:
+    def failing(descriptor: int, data: memoryview) -> int:
+        (tmp_path / "scenario.json").rename(tmp_path / "elsewhere")  # by another
+        if foreign:
+            (tmp_path / "scenario.json").write_bytes(b"another's")
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(os, "write", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="No space left on device") as error:
+        create_in(held, tmp_path / "scenario.json", b"{}")
+    said = "another was put at its place meanwhile" if foreign else "another moved or removed it"
+    assert said in str(error.value)
+    assert (tmp_path / "elsewhere").exists()  # never looked for, nor removed
+
+
+def test_a_file_moved_while_its_writing_is_interrupted_is_said(
+    tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupted(descriptor: int, data: memoryview) -> int:
+        (tmp_path / "scenario.json").rename(tmp_path / "elsewhere")  # by another
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "write", interrupted)
+
+    with pytest.raises(EnvironmentProblemError, match="moved or removed it") as error:
+        create_in(held, tmp_path / "scenario.json", b"{}")
+    assert str(error.value).endswith("(after an interruption)")
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+
+
 def test_a_file_whose_identity_cannot_be_read_is_left_and_said(
     tmp_path: Path, held: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:

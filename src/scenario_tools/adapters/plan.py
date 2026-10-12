@@ -10,7 +10,9 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 
 from scenario_tools.adapters.places import (
+    described,
     identity,
+    not_taken_back,
     removing_file,
     take_back,
     untold,
@@ -69,7 +71,7 @@ class Reservation:
         if self._published:
             return
 
-        take_back(
+        outcome = take_back(
             self._directory,
             self._path.name,
             self._identity,
@@ -77,6 +79,9 @@ class Reservation:
             where=str(self._path),
             failure=failure,
         )
+        said = not_taken_back(outcome, str(self._path))
+        if said is not None:
+            raise EnvironmentProblemError(f"{said}{described(failure)}") from failure
 
 
 @contextlib.contextmanager
@@ -149,8 +154,11 @@ def _reserved(path: Path, directory: int, descriptor: int) -> tuple[int, int]:
     except OSError as error:
         failure = EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
 
-        take_back(
+        outcome = take_back(
             directory, path.name, made, removing_file(directory), where=str(path), failure=failure
         )
+        said = not_taken_back(outcome, str(path))
+        if said is not None:
+            raise EnvironmentProblemError(f"{failure}; {said}") from error
         raise failure from error
     return made

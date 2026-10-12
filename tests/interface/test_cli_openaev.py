@@ -11,7 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from scenario_tools.adapters.openaev_http import TOKEN_LENGTH
-from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
+from scenario_tools.domain.shared.finding import ERROR_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError
 from tests.platform_server import Platform, platform_server
@@ -223,14 +223,24 @@ def test_an_unusable_platform_url_exits_with_an_environment_problem(tmp_path: Pa
 
 def test_a_long_environment_error_is_shortened() -> None:
     def produce() -> Report:
-        raise EnvironmentProblemError("the platform cannot be reached: " + "x" * 1000)
+        raise EnvironmentProblemError("the platform cannot be reached: " + "x" * 3000)
 
     for output_format in ("text", "json"):
         output, code = execute("openaev export", produce, output_format)
         assert code == 3
         message = json.loads(output)["error"] if output_format == "json" else output
-        assert len(message) <= MESSAGE_LIMIT
-        assert message.endswith("…") or message.endswith("\\u2026")
+        assert len(message) == ERROR_LIMIT
+        assert message.endswith("…")
+
+
+def test_an_environment_error_says_all_it_has_to_up_to_its_limit() -> None:
+    text = "cannot take back scenarios/a: it stays; " * 40  # what a take-back leaves, all of it
+
+    def produce() -> Report:
+        raise EnvironmentProblemError(text)
+
+    output, _ = execute("intake", produce, "json")
+    assert json.loads(output)["error"] == text
 
 
 def test_a_platform_error_exits_with_an_environment_problem(
@@ -408,6 +418,21 @@ def test_an_environment_error_never_shows_the_token(
         assert result.stdout.strip() == (
             "openaev import: environment error: withheld: it would show a secret"
         )
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+def test_an_environment_error_cut_in_the_token_never_shows_its_start(output_format: str) -> None:
+    prefix = "openaev import: environment error: " if output_format == "text" else ""
+    start = ERROR_LIMIT - 5 - len(prefix)  # the token starts just before the error's limit
+
+    def produce() -> Report:
+        raise EnvironmentProblemError("x" * start + TOKEN + "y" * 50)
+
+    output, code = execute("openaev import", produce, output_format, hidden=TOKEN)
+
+    assert code == 3
+    assert TOKEN[:4] not in output
+    assert "withheld: it would show a secret" in output
 
 
 @pytest.mark.parametrize("output_format", ["text", "json"])

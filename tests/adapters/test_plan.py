@@ -127,6 +127,35 @@ def _unremovable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "unlink", failing)
 
 
+def test_a_place_moved_meanwhile_is_said_with_the_block_s_failure(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    def moved(reservation: Reservation) -> None:
+        plan.rename(tmp_path / "elsewhere")  # by another
+
+    with pytest.raises(EnvironmentProblemError, match="moved or removed it") as error:
+        _failing(plan, moved)
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert "the run cannot end" in str(error.value)
+    assert (tmp_path / "elsewhere").exists()
+
+
+def test_a_reservation_that_cannot_end_and_was_moved_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = tmp_path / "plan.json"
+
+    def failing(descriptor: int, mode: int) -> None:
+        plan.rename(tmp_path / "elsewhere")  # by another
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="moved or removed it") as error:
+        _reserve(plan)
+    assert "Operation not permitted" in str(error.value)
+
+
 def test_a_place_that_cannot_be_given_back_is_said_with_the_block_s_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -182,8 +211,9 @@ def test_a_link_put_at_the_place_meanwhile_is_put_back_as_a_link(tmp_path: Path)
         plan.unlink()
         plan.symlink_to(tmp_path / "theirs.json")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(EnvironmentProblemError, match="put at its place meanwhile") as error:
         _failing(plan, linked)
+    assert isinstance(error.value.__cause__, RuntimeError)
     assert plan.is_symlink()
     assert sorted(path.name for path in tmp_path.iterdir()) == ["plan.json", "theirs.json"]
 

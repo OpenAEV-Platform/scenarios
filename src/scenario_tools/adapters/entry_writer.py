@@ -20,6 +20,7 @@ from scenario_tools.adapters.places import (
     identity,
     made_directory,
     make_directory,
+    not_taken_back,
     open_directory,
     place_back,
     take_back,
@@ -94,16 +95,51 @@ def _holding(directory: int, name: str, where: str, expected: bytes) -> tuple[in
     return status.st_dev, status.st_ino
 
 
-def _rmdir_made(parent: int, name: str, made: tuple[int, int], where: str) -> None:
+_HOLDS = "it holds what was not taken back"
+
+
+def _rmdir_made(
+    parent: int, name: str, made: tuple[int, int], where: str
+) -> tuple[str | None, bool]:
     """Remove the directory ``name`` in ``parent`` if it is the one the run made, by its
     identity, and empty: it is set aside at once, so never another's put in its place, and put
-    back when it is not. What cannot be done leaves it, as the run already fails."""
+    back when it is not. What cannot be done is given, to be said, with whether it stays as it
+    holds anything, which the directories above it then hold too."""
+    holds = False
 
     def remove(aside: str) -> None:
-        os.rmdir(aside, dir_fd=parent)
+        nonlocal holds
+        try:
+            os.rmdir(aside, dir_fd=parent)
+        except OSError as error:
+            if error.errno in (errno.ENOTEMPTY, errno.EEXIST):
+                holds = True
+                raise EnvironmentProblemError(_HOLDS) from error
+            raise
 
-    with contextlib.suppress(EnvironmentProblemError):
-        take_back(parent, name, made, remove, where=where, failure=None)
+    try:
+        outcome = take_back(
+            parent, name, made, remove, where=where, failure=None, remedy="it stays"
+        )
+    except EnvironmentProblemError as error:
+        return str(error), holds
+    return not_taken_back(outcome, where), False
+
+
+def _said_with(failure: BaseException, left: list[str]) -> None:
+    """Raise what says ``failure``, which led to the take-back, then ``left``, what could not
+    be taken back; nothing when all was. The failure stays the cause, or its own cause when the
+    run said it already."""
+    if not left:
+        return
+    if isinstance(failure, (EnvironmentProblemError, UnsafeInputError)):
+        first = str(failure)
+    elif isinstance(failure, KeyboardInterrupt):
+        first = "interrupted"
+    else:  # a defect: named, as it is no longer what ends the run
+        first = f"{type(failure).__name__}: {failure}"
+    cause = failure.__cause__ if isinstance(failure, EnvironmentProblemError) else None
+    raise EnvironmentProblemError(f"{first}; {'; '.join(left)}") from (cause or failure)
 
 
 def _replace_checked(
@@ -153,11 +189,12 @@ def _replace_checked(
     try:
         made = create_in(directory, path, data)
     except PlaceTakenError as error:  # another's file stays; the previous is committed
-        with contextlib.suppress(OSError):
+        taken = f"cannot write {where}: another put a file there meanwhile, which stays"
+        try:
             os.unlink(aside, dir_fd=directory)
-        raise EnvironmentProblemError(
-            f"cannot write {where}: another put a file there meanwhile, which stays"
-        ) from error
+        except OSError as failure:
+            taken += f"; its previous version is left as {left}: {failure.strerror}"
+        raise EnvironmentProblemError(taken) from error
     except EnvironmentProblemError as error:
         raise put_back(str(error))[0] from error
     except BaseException as error:  # an interruption: as it was, or what is left is said
@@ -246,9 +283,9 @@ class RepositoryWriter:
                     child = self._made(descriptor, part, where, made)
                 os.close(descriptor)
                 descriptor = child
-        except BaseException:
+        except BaseException as failure:
             os.close(descriptor)
-            self._remove_made(made)
+            _said_with(failure, self._remove_made(made))
             raise
         return descriptor
 
@@ -296,19 +333,29 @@ class RepositoryWriter:
             raise
         return child
 
-    def _remove_made(self, made: list[tuple[str, tuple[int, int]]]) -> None:
+    def _remove_made(self, made: list[tuple[str, tuple[int, int]]]) -> list[str]:
         """Remove the directories this run made, the lowest first, when they are empty and
         still the ones made: one that is not holds what is not this run's, or what could not be
-        taken back, or is another's, and stays."""
+        taken back, or is another's, and stays. What stays is given, to be said."""
+        left: list[str] = []
         for where, mine in reversed(made):
             parent, name = posixpath.split(where)
-            with contextlib.suppress(EnvironmentProblemError, UnsafeInputError):
+            try:
                 directory = self.opened(parent, make=False)
-                try:
-                    _rmdir_made(directory, name, mine, where)
-                finally:
-                    os.close(directory)
+            except (EnvironmentProblemError, UnsafeInputError) as error:
+                left.append(f"cannot take back {where}: {error}")
+                continue
+            try:
+                said, holds = _rmdir_made(directory, name, mine, where)
+            finally:
+                os.close(directory)
+            if holds and said is not None and (where, mine) != made[0]:
+                left.append(f"{said}, as do the directories made above it")
+                break  # each holds the one below it
+            if said is not None:
+                left.append(said)
         made.clear()
+        return left
 
     @contextlib.contextmanager
     def writing(
@@ -374,9 +421,9 @@ class RepositoryWriter:
                     raise
             finally:
                 os.close(directory)
-        except BaseException:
+        except BaseException as failure:
             os.close(parent)
-            self._remove_made(made_above)
+            _said_with(failure, self._remove_made(made_above))
             raise
         os.close(parent)
 
@@ -413,8 +460,9 @@ class RepositoryWriter:
             os.fchmod(directory, 0o755)  # nosec B103
         except OSError as error:
             os.close(directory)
-            _rmdir_made(parent, slug, made, entry)
-            raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}") from error
+            left, _ = _rmdir_made(parent, slug, made, entry)
+            more = "" if left is None else f"; {left}"
+            raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}{more}") from error
         return directory, made
 
     @staticmethod
@@ -455,16 +503,9 @@ class RepositoryWriter:
             failure=failure,
             remedy="remove by hand what this run wrote",
         )
-        if outcome == FOREIGN:
-            raise EnvironmentProblemError(
-                f"cannot take back {entry}: another was put at its place meanwhile, and stays; "
-                f"this run's was moved, and is left where it went{described(failure)}"
-            ) from failure
-        if outcome == ABSENT:
-            raise EnvironmentProblemError(
-                f"cannot take back {entry}: it was moved meanwhile, and is left where it went"
-                f"{described(failure)}"
-            ) from failure
+        said = not_taken_back(outcome, entry)
+        if said is not None:
+            raise EnvironmentProblemError(f"{said}{described(failure)}") from failure
 
     @contextlib.contextmanager
     def _replaced(

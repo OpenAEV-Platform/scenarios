@@ -366,8 +366,11 @@ def test_a_new_entry_whose_mode_cannot_be_set_stays_when_another_put_a_file_in_i
 
     monkeypatch.setattr(os, "fchmod", failing)
 
-    with pytest.raises(EnvironmentProblemError, match=f"cannot make {ENTRY}: Operation not"):
+    with pytest.raises(EnvironmentProblemError, match=f"cannot make {ENTRY}: Operation not") as e:
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert str(e.value).endswith(
+        f"cannot take back {ENTRY}: it holds what was not taken back; it stays"
+    )
     assert _names(tmp_path / ENTRY) == ["notes.txt"]  # another's file, and the entry with it
     assert _names(tmp_path / ENTRY.rsplit("/", 1)[0]) == ["akira"]  # nothing left aside
 
@@ -430,7 +433,7 @@ def test_a_new_entry_moved_away_meanwhile_is_said(tmp_path: Path) -> None:
         during=lambda: entry.rename(entry.parent / "moved"),
     )
 
-    assert "moved meanwhile" in str(error.value)
+    assert "another moved or removed it meanwhile" in str(error.value)
     assert (entry.parent / "moved" / "scenario.json").read_bytes() == b"{}"
 
 
@@ -492,6 +495,33 @@ def test_an_update_that_cannot_be_put_back_says_so(
     assert "restore it by hand" in str(error.value)
     assert (directory / "scenario.json").read_bytes() == b"{}\n"  # where it is looked for
     assert _names(directory) == ["README.md", "scenario.json", "scenario.yaml"]
+
+
+def test_an_update_whose_place_another_took_says_where_the_previous_version_is_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    created, unlink = places.create_in, os.unlink
+
+    def taken(at: int, path: Path, data: bytes) -> tuple[int, int]:
+        (directory / path.name).write_bytes(b"another's")  # put there meanwhile
+        return created(at, path, data)
+
+    def refused(path: str, *, dir_fd: int | None = None) -> None:
+        if places.is_hidden_name(path):
+            raise PermissionError(errno.EACCES, "Permission denied")
+        unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", taken)
+    monkeypatch.setattr(os, "unlink", refused)
+
+    with pytest.raises(EnvironmentProblemError, match="which stays") as error:
+        _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
+    left = [name for name in _names(directory) if places.is_hidden_name(name)]
+    assert len(left) == 1  # the previous version, set aside
+    assert f"{ENTRY}/{left[0]}" in str(error.value)
+    assert "Permission denied" in str(error.value)
+    assert (directory / "scenario.json").read_bytes() == b"another's"
 
 
 def test_an_updated_file_another_changed_meanwhile_is_left_as_it_is_and_said(
@@ -751,9 +781,47 @@ def test_an_empty_directory_another_put_in_place_of_one_made_is_never_removed(
 
     monkeypatch.setattr(os, "fchmod", failing)
 
-    with pytest.raises(EnvironmentProblemError):
+    with pytest.raises(EnvironmentProblemError) as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
     assert place.is_dir()  # another's, never removed
+    assert "another was put at its place meanwhile, and stays" in str(error.value)
+    assert (tmp_path / "ours").is_dir()  # the run's, left where it went, and said
+
+
+@pytest.mark.parametrize("where", ["akira", "ransomware"], ids=["entry", "above"])
+def test_a_directory_made_and_moved_away_meanwhile_is_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    (tmp_path / "scenarios").mkdir()
+    if where == "akira":
+        (tmp_path / "scenarios" / "ransomware").mkdir()
+    place = tmp_path / ENTRY if where == "akira" else tmp_path / "scenarios" / "ransomware"
+
+    def failing(descriptor: int, mode: int) -> None:
+        place.rename(tmp_path / "ours")  # moved, nothing put in its place
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert "another moved or removed it meanwhile" in str(error.value)
+    assert (tmp_path / "ours").is_dir()
+
+
+def test_directories_made_above_a_link_put_meanwhile_are_said(tmp_path: Path) -> None:
+    root = tmp_path
+
+    def swapped() -> None:  # scenarios/, made by the run, replaced by a link to its copy
+        (root / "scenarios").rename(root / "moved")
+        (root / "scenarios").symlink_to(root / "moved")
+
+    error = _failing_block(root, {"scenario.json": b"{}"}, new=True, during=swapped)
+
+    assert "cannot take back scenarios/ransomware: " in str(error.value)
+    assert "never followed" in str(error.value)
+    assert "cannot take back scenarios: another was put at its place" in str(error.value)
+    assert (root / "scenarios").is_symlink()  # another's, never removed
 
 
 def test_files_another_put_in_a_new_entry_meanwhile_stay(tmp_path: Path) -> None:
@@ -769,6 +837,119 @@ def test_files_another_put_in_a_new_entry_meanwhile_stay(tmp_path: Path) -> None
     assert "meanwhile stays" in str(error.value)
     assert _names(entry) == ["notes.txt"]  # this run's file went, theirs stayed
     assert (entry / "notes.txt").read_text() == "another's"
+    said = (  # made by the run, they stay too, said once
+        "cannot take back scenarios/ransomware: it holds what was not taken back; it stays, as "
+        "do the directories made above it"
+    )
+    assert said in str(error.value)
+    assert "cannot take back scenarios:" not in str(error.value)
+    assert "remove it by hand" not in str(error.value)  # what it holds is another's
+    assert not list(tmp_path.rglob(".scenario-tools-*"))
+
+
+def test_a_directory_made_that_holds_another_s_file_stays_and_is_said(tmp_path: Path) -> None:
+    domain = tmp_path / "scenarios" / "ransomware"
+
+    error = _failing_block(
+        tmp_path,
+        {"scenario.json": b"{}"},
+        new=True,
+        during=lambda: (domain / "notes.txt").write_text("another's"),
+    )
+
+    assert str(error.value).startswith("RuntimeError: the plan cannot be written; ")  # first
+    assert str(error.value).endswith(
+        "cannot take back scenarios/ransomware: it holds what was not taken back; it stays, as "
+        "do the directories made above it"
+    )
+    assert _names(domain) == ["notes.txt"]  # the entry went, theirs stayed
+    assert not list(tmp_path.rglob(".scenario-tools-*"))
+
+
+def _refused_above_the_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The entry goes, the directories made above it cannot."""
+    rmdir, calls = os.rmdir, []
+
+    def refused(path: str, *, dir_fd: int | None = None) -> None:
+        calls.append(path)
+        if len(calls) > 1:
+            raise PermissionError(errno.EACCES, "Permission denied")
+        rmdir(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "rmdir", refused)
+
+
+def test_a_failure_said_by_the_run_stays_the_cause_when_a_directory_made_stays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = EnvironmentProblemError("the checkout changed")  # one with no cause of its own
+
+    def run() -> None:
+        with _writing(tmp_path, {"scenario.json": b"{}"}, new=True):
+            _refused_above_the_entry(monkeypatch)
+            raise failure
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        run()
+    assert str(error.value).startswith("the checkout changed; ")
+    assert error.value.__cause__ is failure
+
+
+def test_a_failure_of_another_kind_is_named_when_a_directory_made_stays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def run() -> None:
+        with _writing(tmp_path, {"scenario.json": b"{}"}, new=True):
+            _refused_above_the_entry(monkeypatch)
+            raise TypeError("a defect")
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        run()
+    assert str(error.value).startswith("TypeError: a defect; ")
+    assert isinstance(error.value.__cause__, TypeError)
+
+
+@pytest.mark.parametrize(
+    "stop", [KeyboardInterrupt, lambda: UnsafeInputError("IO-013", "a link", "x")]
+)
+def test_a_stop_or_a_refusal_is_said_when_a_directory_made_stays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: Callable[[], BaseException]
+) -> None:
+    def run() -> None:
+        with _writing(tmp_path, {"scenario.json": b"{}"}, new=True):
+            _refused_above_the_entry(monkeypatch)
+            raise stop()
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        run()
+    first = "interrupted; " if stop is KeyboardInterrupt else "IO-013 "
+    assert str(error.value).startswith(first), str(error.value)
+
+
+def test_a_directory_made_that_cannot_be_removed_is_said_with_what_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = os.mkdir
+
+    def failing(path: str, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        if Path(path).name == "ransomware":
+            raise OSError(28, "No space left on device")
+        made(path, mode, dir_fd=dir_fd)
+
+    def refused(path: str, *, dir_fd: int | None = None) -> None:
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(os, "mkdir", failing)
+    monkeypatch.setattr(os, "rmdir", refused)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert str(error.value) == (
+        "cannot make scenarios/ransomware: No space left on device; cannot take back scenarios: "
+        "Permission denied; it stays"
+    )
+    assert isinstance(error.value.__cause__, OSError)  # what failed first
+    assert _names(tmp_path) == ["scenarios"]  # put back at its name, and said
 
 
 @pytest.mark.parametrize("new", [True, False], ids=["new", "update"])

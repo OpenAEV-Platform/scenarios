@@ -27,14 +27,14 @@ _NAMED = 3  # entries a duplicate finding names, so that none is cut out of its 
 
 def domains_from_document(document: object) -> tuple[str, ...]:
     """The domains of the catalogue, from the domains data document: a non-empty list of
-    kebab-case names."""
+    names a directory of the catalogue may have, as an entry's slug, so that a request may name
+    each."""
     domains = document.get("domains") if isinstance(document, Mapping) else None
-    if (
-        not isinstance(domains, list)
-        or not domains
-        or not all(isinstance(domain, str) and _SLUG.fullmatch(domain) for domain in domains)
-    ):
-        raise ValueError("domains: must list the catalogue's domains in kebab-case")
+    if not isinstance(domains, list) or not domains or not all(map(is_slug, domains)):
+        raise ValueError(
+            f"domains: must list the catalogue's domains in kebab-case, of at most {SLUG_LIMIT} "
+            "characters each"
+        )
     return tuple(domains)
 
 
@@ -52,7 +52,7 @@ def layout_findings(
     else:
         if parts[1] not in domains:
             whys.append(f"the domain {parts[1]} is not one of {', '.join(domains)}")
-        if len(parts[2]) > SLUG_LIMIT or not _SLUG.fullmatch(parts[2]):
+        if not is_slug(parts[2]):
             whys.append(
                 f"the slug is not kebab-case of at most {SLUG_LIMIT} characters: lower-case "
                 "letters and digits, single hyphens between them"

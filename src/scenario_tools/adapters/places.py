@@ -153,9 +153,15 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
             why = failure.strerror if isinstance(failure, OSError) else "interrupted"
             raise untold(f"cannot write {path}: {why}", str(path)) from failure
         remove = removing_file(directory)
-        take_back(directory, path.name, made, remove, where=str(path), failure=failure)
+        outcome = take_back(directory, path.name, made, remove, where=str(path), failure=failure)
+        said = not_taken_back(outcome, str(path))
         if isinstance(failure, OSError):
-            raise EnvironmentProblemError(f"cannot write {path}: {failure.strerror}") from failure
+            more = "" if said is None else f"; {said}"
+            raise EnvironmentProblemError(
+                f"cannot write {path}: {failure.strerror}{more}"
+            ) from failure
+        if said is not None:
+            raise EnvironmentProblemError(f"{said}{described(failure)}") from failure
         raise
     return made
 
@@ -193,6 +199,20 @@ def removing_file(directory: int) -> Callable[[str], None]:
         os.unlink(aside, dir_fd=directory)
 
     return remove
+
+
+def not_taken_back(outcome: str, where: str) -> str | None:
+    """What says that what the run made at ``where`` is not taken back, as ``take_back`` found
+    it: another moved or removed it, or put another at its place, which nothing here tells
+    apart; nothing when it was removed."""
+    if outcome == FOREIGN:
+        return (
+            f"cannot take back {where}: another was put at its place meanwhile, and stays; this "
+            "run's was moved or removed by another"
+        )
+    if outcome == ABSENT:
+        return f"cannot take back {where}: another moved or removed it meanwhile"
+    return None
 
 
 def take_back(

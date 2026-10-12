@@ -193,7 +193,8 @@ before the run, so that a plan left by another run is never taken for this one's
   overwritten: a file put or changed in a new entry stays, and the entry with it. A file or
   directory the run made, but that it cannot open or whose identity it cannot read, cannot be
   told from another's: it is left, and the run says so; such a directory may be open to its
-  owner alone.
+  owner alone. A directory made for the entry that another has since filled, moved or
+  replaced is left too, and said.
 - **Asked to stop:** a request to stop (Ctrl-C, SIGTERM as a CI job is cancelled, SIGHUP as a
   terminal closes, or SIGQUIT) while the run writes waits until the writing is done, then is
   dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it

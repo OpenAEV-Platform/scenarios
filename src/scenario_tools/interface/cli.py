@@ -50,7 +50,15 @@ from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
-from scenario_tools.domain.shared.finding import COUNT_CODE, Finding, Report, Severity, shorten
+from scenario_tools.domain.shared.finding import (
+    COUNT_CODE,
+    ERROR_LIMIT,
+    MESSAGE_LIMIT,
+    Finding,
+    Report,
+    Severity,
+    shorten,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -130,13 +138,17 @@ def _cut_in_any_form(text: str, hidden: str) -> bool:
     return any(_cut_in(form, hidden) for form in forms)
 
 
-def _concealed(message: str, render: Callable[[str], str], hidden: str) -> str:
+def _concealed(
+    message: str, render: Callable[[str], str], hidden: str, limit: int = MESSAGE_LIMIT
+) -> str:
     """``message`` as ``render`` writes it, or withheld when that would show ``hidden``, or the
-    start of it where the message is cut short. The token's characters are never escaped, so
-    the token shows as it is or not at all."""
+    start of it where the message is cut short to ``limit``. The token's characters are never
+    escaped, so the token shows as it is or not at all."""
     output = render(message)
     if hidden and (
-        hidden in output or _cut_in(output, hidden) or _cut_in_any_form(shorten(message), hidden)
+        hidden in output
+        or _cut_in(output, hidden)
+        or _cut_in_any_form(shorten(message, limit), hidden)
     ):
         return render(_WITHHELD)
     return output
@@ -192,11 +204,11 @@ def _run(
 
         def render(text: str) -> str:
             if output_format == "json":
-                document = {"command": command, "ok": False, "findings": [], "error": shorten(text)}
-                return json.dumps(document)
-            return shorten(_printable(f"{command}: environment error: {text}"))
+                error = shorten(text, ERROR_LIMIT)
+                return json.dumps({"command": command, "ok": False, "findings": [], "error": error})
+            return shorten(_printable(f"{command}: environment error: {text}"), ERROR_LIMIT)
 
-        return _concealed(str(error), render, hidden), EXIT_ENVIRONMENT
+        return _concealed(str(error), render, hidden, ERROR_LIMIT), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
     return _withhold(report, output_format, hidden), code
 
