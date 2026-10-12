@@ -58,4 +58,9 @@ jobs:
           rm -f "$archive" actionlint
 
       - name: Local pipeline
+        env:
+          # The internal terms the hygiene test refuses, never committed; required on main and on
+          # pull requests from this repository, as a fork never receives a secret.
+          SCENARIOS_HYGIENE_TERMS: ${{ secrets.HYGIENE_TERMS }}
+          SCENARIOS_HYGIENE_REQUIRED: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: make check

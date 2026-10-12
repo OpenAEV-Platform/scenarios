@@ -463,7 +463,7 @@ def test_hostile_texts_in_the_export_never_make_an_entry_the_tools_refuse(
 def test_an_existing_scenario_yaml_is_never_written_again(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # What a person or an agent completed stays, whatever the export now says.
+    # What a contributor completed stays, whatever the export now says.
     entry = _entry(tmp_path)
     completed = f"external_id: {ENTRY_ID}\nname: completed by hand\n".encode()
     (entry / "scenario.yaml").write_bytes(completed)
@@ -478,7 +478,7 @@ def test_an_existing_scenario_yaml_is_never_written_again(
 def test_an_entry_prepared_from_an_export_archives_as_it_is(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # What the factory produces, an export archive, becomes an entry the tools accept.
+    # An export archive, as the platform produces it, becomes an entry the tools accept.
     entry = _entry(tmp_path)
     _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
 

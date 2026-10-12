@@ -2,7 +2,12 @@
 
 Contributors only see this repository: a reference to a document they cannot read, to a task
 number or to the tools used to plan the work tells them nothing. Every sentence must stand on its
-own. This file is the only one allowed to name the forbidden references.
+own. This file names only generic patterns; the names of internal documents and tools are read
+from a private list, never committed: ``SCENARIOS_HYGIENE_TERMS`` holds it (one regular
+expression per line), or ``SCENARIOS_HYGIENE_TERMS_FILE`` names a file that does. Without it, the
+private check is skipped and says so, unless ``SCENARIOS_HYGIENE_REQUIRED`` is ``true``, as in
+the continuous integration of this repository. A finding gives the file and the line, never the
+term, so that no log shows it.
 """
 
 import os
@@ -17,20 +22,12 @@ from scenario_tools.domain.shared.characters import hidden_in
 ROOT = Path(__file__).parents[1]
 THIS_FILE = Path(__file__).relative_to(ROOT)
 
-# Matched in any case, except the two names that are also common words.
-_FORBIDDEN = re.compile(
+# What a reference to the internal planning looks like, whatever it names.
+_GENERIC = re.compile(
     "|".join(
         (
-            r"\bresearch R[0-9]",  # an item of the design research notes
-            r"\bcli\.md\b",  # the internal command-line contract
-            r"\bdata-model\b|\(data model\b",  # the internal data model document, cited
-            r"\bRFC[ -]?0004\b",  # an RFC that is not public
             r"\b(T[0-9]{3}|A0[0-9]{2})[a-z]?\b",  # a task; ATT&CK techniques have four digits
             r"\b(FR|SC|AR)-[0-9]{3}\b",  # a requirement or success criterion
-            r"\bspeckit\b",
-            r"\bconstitution(\.md\b| [IVX]+\b)",  # the project rules, by file or principle
-            r"(?-i:\bNotion\b)",
-            r"(?-i:\bClaude\b)",
             r"co-authored-by",
         )
     ),
@@ -38,40 +35,46 @@ _FORBIDDEN = re.compile(
 )
 
 
-def _internal_references(text: str) -> list[str]:
-    return [match.group() for match in _FORBIDDEN.finditer(text)]
+def _private() -> re.Pattern[str] | None:
+    """The private terms, from the environment, or ``None`` when none is given."""
+    text = os.environ.get("SCENARIOS_HYGIENE_TERMS", "")
+    if not text.strip() and (path := os.environ.get("SCENARIOS_HYGIENE_TERMS_FILE")):
+        text = Path(path).read_text(encoding="utf-8")
+    lines = [line.strip() for line in text.splitlines()]
+    terms = [line for line in lines if line and not line.startswith("#")]
+    return re.compile("|".join(f"(?:{term})" for term in terms), re.IGNORECASE) if terms else None
+
+
+def _required_private() -> re.Pattern[str]:
+    """The private terms, or a skip that says why, or a failure where they must be given."""
+    private = _private()
+    if private is not None:
+        return private
+    if os.environ.get("SCENARIOS_HYGIENE_REQUIRED") == "true":
+        pytest.fail("the private list of internal terms is required here, and none is given")
+    pytest.skip("no private list of internal terms given: only the generic patterns were checked")
+
+
+def _lines_with(pattern: re.Pattern[str], text: str) -> list[int]:
+    """The numbers of the lines of ``text`` that ``pattern`` finds something in."""
+    return [number for number, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        "Deterministic identifiers (research R2).",
-        "Findings, in one stable shape (contract cli.md).",
-        "Cross-checks (data model, cross-checks).",
-        "See the Data-Model.",
-        "Described in data-model.md.",
-        "One release on one channel (RFC 0004 §4.2).",
-        "As RFC-0004 says.",
         "Done in T012b.",
         "Before T013 starts.",
         "Moved to T123.",
         "See A001.",
         "Serves FR-020 and SC-005.",
         "Closes AR-001.",
-        "Read the speckit first.",
-        "As constitution IX requires.",
-        "Read constitution.md first.",
-        "Copied from a Notion page.",
-        "Written with Claude.",
         "Co-authored-by: someone <a@b.c>",
-        "Research R2 explains it.",
-        "See CLI.md.",
-        "As rfc 0004 says.",
         "Done in t012b.",
     ],
 )
-def test_the_check_refuses_internal_references(text: str) -> None:
-    assert _internal_references(text)
+def test_the_generic_patterns_refuse_a_reference_to_the_planning(text: str) -> None:
+    assert _lines_with(_GENERIC, text) == [1]
 
 
 @pytest.mark.parametrize(
@@ -81,14 +84,44 @@ def test_the_check_refuses_internal_references(text: str) -> None:
         "Technique T1595, and the ICS technique T0866.",
         "Findings SCH-001, IO-005, VER-010, TTL-001 and a future PAR-001.",
         "TT012 is not a task number.",
-        "The notion of order, the data, the model.",
-        "The manifest data model is versioned.",
-        "A crisis that suspends the constitution.",
-        "Research notes, an R2 value, cli.py.",
     ],
 )
-def test_the_check_accepts_ordinary_text(text: str) -> None:
-    assert _internal_references(text) == []
+def test_the_generic_patterns_accept_ordinary_text(text: str) -> None:
+    assert _lines_with(_GENERIC, text) == []
+
+
+def test_the_private_list_is_read_from_the_environment_or_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SCENARIOS_HYGIENE_TERMS", raising=False)
+    monkeypatch.delenv("SCENARIOS_HYGIENE_TERMS_FILE", raising=False)
+    assert _private() is None
+
+    monkeypatch.setenv("SCENARIOS_HYGIENE_TERMS", "# a comment\n\\bzorblax\\b\n(?-i:Quux)\n")
+    private = _private()
+    assert private is not None
+    assert _lines_with(private, "one\nthe ZORBLAX plan\nquux\nQuux") == [2, 4]
+
+    monkeypatch.setenv("SCENARIOS_HYGIENE_TERMS", "")
+    (tmp_path / "terms").write_text("\\bfrobnitz\\b\n", encoding="utf-8")
+    monkeypatch.setenv("SCENARIOS_HYGIENE_TERMS_FILE", str(tmp_path / "terms"))
+    private = _private()
+    assert private is not None
+    assert _lines_with(private, "a frobnitz") == [1]
+
+
+def test_without_the_private_list_the_check_is_skipped_unless_it_is_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SCENARIOS_HYGIENE_TERMS", raising=False)
+    monkeypatch.delenv("SCENARIOS_HYGIENE_TERMS_FILE", raising=False)
+    monkeypatch.delenv("SCENARIOS_HYGIENE_REQUIRED", raising=False)
+    with pytest.raises(pytest.skip.Exception, match="only the generic patterns"):
+        _required_private()
+
+    monkeypatch.setenv("SCENARIOS_HYGIENE_REQUIRED", "true")
+    with pytest.raises(pytest.fail.Exception, match="required here"):
+        _required_private()
 
 
 def _committable_files(root: Path) -> list[Path]:
@@ -102,14 +135,18 @@ def _committable_files(root: Path) -> list[Path]:
     return sorted(Path(os.fsdecode(name)) for name in listing.split(b"\0") if name)
 
 
-def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
+def _files_with(
+    pattern: re.Pattern[str], root: Path, *, exempt: Path | None = THIS_FILE
+) -> dict[str, list[int]]:
+    """Every committable file, but ``exempt``, with the lines ``pattern`` finds something in: a
+    link by what the repository stores for it, its target; binary files left aside."""
     found = {}
     for relative in _committable_files(root):
         path = root / relative
-        if relative == THIS_FILE:
-            continue  # this file names the references
+        if relative == exempt:
+            continue  # this file names the generic patterns
         if path.is_symlink():
-            text = str(path.readlink())  # what the repository stores for a link: its target
+            text = str(path.readlink())
         elif not path.is_file():
             continue  # deleted from the working tree
         else:
@@ -117,14 +154,29 @@ def _files_with_internal_references(root: Path) -> dict[str, list[str]]:
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue  # binary files, such as the reference exports
-        references = _internal_references(text)
-        if references:
-            found[relative.as_posix()] = references
+        lines = _lines_with(pattern, text)
+        if lines:
+            found[relative.as_posix()] = lines
     return found
 
 
-def test_no_repository_file_refers_to_internal_documents() -> None:
-    assert _files_with_internal_references(ROOT) == {}
+def test_no_repository_file_refers_to_the_planning() -> None:
+    assert _files_with(_GENERIC, ROOT) == {}
+
+
+def test_no_repository_file_names_an_internal_document_or_tool() -> None:
+    # Only where and on which line, never the term: the logs of this repository are public.
+    assert _files_with(_required_private(), ROOT, exempt=None) == {}  # this file included
+
+
+def test_this_file_is_exempt_from_the_generic_patterns_only(tmp_path: Path) -> None:
+    (tmp_path / THIS_FILE).parent.mkdir(parents=True)
+    (tmp_path / THIS_FILE).write_text("done in T012\nthe zorblax plan\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
+    private = re.compile(r"\bzorblax\b")
+
+    assert _files_with(_GENERIC, tmp_path) == {}
+    assert _files_with(private, tmp_path, exempt=None) == {THIS_FILE.as_posix(): [2]}
 
 
 def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exempt(
@@ -132,25 +184,25 @@ def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exemp
 ) -> None:
     files: dict[Path, bytes] = {
         Path(".gitignore"): b"htmlcov/\n.venv/\n",
-        THIS_FILE: b"the speckit",
-        Path("other") / THIS_FILE.name: b"the speckit",
-        Path("uv.lock"): b"the speckit",
-        Path("htmlcov") / "index.html": b"the speckit",
-        Path(".venv") / "lib.py": b"the speckit",
-        Path("export.zip"): b"\xff\xfe the speckit",
+        THIS_FILE: b"done in T012",
+        Path("other") / THIS_FILE.name: b"line one\ndone in T012",
+        Path("uv.lock"): b"done in T012",
+        Path("htmlcov") / "index.html": b"done in T012",
+        Path(".venv") / "lib.py": b"done in T012",
+        Path("export.zip"): b"\xff\xfe done in T012",
     }
     for relative, content in files.items():
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
-    (tmp_path / "broken-link").symlink_to("contract/cli.md")
+    (tmp_path / "broken-link").symlink_to("plan/T012.md")
     (tmp_path / "link").symlink_to("uv.lock")
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
 
-    assert _files_with_internal_references(tmp_path) == {
-        "broken-link": ["cli.md"],
-        f"other/{THIS_FILE.name}": ["speckit"],
-        "uv.lock": ["speckit"],
+    assert _files_with(_GENERIC, tmp_path) == {
+        "broken-link": [1],
+        f"other/{THIS_FILE.name}": [2],
+        "uv.lock": [1],
     }
 
 
