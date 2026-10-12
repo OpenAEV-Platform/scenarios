@@ -580,10 +580,12 @@ def _intake_held(
         base = head_commit(root)
         files = intake_files(result, yaml_bytes)
         new = result.metadata is not None
-        with source.writing(result.request.entry, files, new=new):
+        with source.writing(result.request.entry, files, new=new) as still_written:
             findings = rules.validate(result.request.entry, RepositoryEntries(root))
             document = plan_document(result, files, base, findings)
-            source.check_held()  # what was checked is the repository written in
+            # What was checked by path is the repository and the entry written.
+            source.check_held()
+            still_written()
             reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return Report("intake", (*result.to_complete, *findings))
 

@@ -301,32 +301,50 @@ class RepositoryEntries:
         return descriptor
 
     @contextlib.contextmanager
-    def writing(self, entry: str, files: Mapping[str, bytes], *, new: bool) -> Iterator[None]:
+    def writing(
+        self, entry: str, files: Mapping[str, bytes], *, new: bool
+    ) -> Iterator[Callable[[], None]]:
         """Write ``files``, by name, in the entry at ``entry``, for as long as the block runs:
         if it does not end, what was written is undone. A new entry's place is reserved at
         once, never over anything there, and the entry is removed; an existing entry has the
         files given replaced, each at once, and put back as they were. Nothing to write writes
-        nothing."""
+        nothing. The block is given a check that ``entry`` still names the directory written,
+        as what reads it by its path afterwards needs."""
         if not files:
-            yield
+            yield lambda: None
             return
         parent_path, slug = entry.rsplit("/", 1)
         # A new entry is made in its parent; an existing one is written in as it is.
         opened = self._opened(parent_path if new else entry, make=new)
         try:
             if new:
-                with self._new_entry(opened, slug, entry, files):
-                    yield
+                with self._new_entry(opened, slug, entry, files) as identity:
+                    yield lambda: self._still(entry, identity)
             else:
+                status = os.fstat(opened)
                 with _replaced(opened, self._root / entry, files):
-                    yield
+                    yield lambda: self._still(entry, (status.st_dev, status.st_ino))
         finally:
             os.close(opened)
+
+    def _still(self, entry: str, identity: tuple[int, int]) -> None:
+        """Make sure ``entry``, reached from the root, is still the directory written."""
+        said = f"{entry} no longer names the entry this run wrote: nothing more is written"
+        try:
+            descriptor = self._opened(entry, make=False)
+        except (EnvironmentProblemError, UnsafeInputError) as error:
+            raise EnvironmentProblemError(said) from error
+        try:
+            status = os.fstat(descriptor)
+        finally:
+            os.close(descriptor)
+        if (status.st_dev, status.st_ino) != identity:
+            raise EnvironmentProblemError(said)
 
     @contextlib.contextmanager
     def _new_entry(
         self, parent: int, slug: str, entry: str, files: Mapping[str, bytes]
-    ) -> Iterator[None]:
+    ) -> Iterator[tuple[int, int]]:
         try:
             os.mkdir(slug, 0o755, dir_fd=parent)  # fails if anything is there, even just made
         except FileExistsError as error:
@@ -341,7 +359,7 @@ class RepositoryEntries:
                 os.fchmod(directory, 0o755)  # nosec B103
                 for name, data in files.items():
                     write_in(directory, self._root / entry / name, data, create=True)
-                yield
+                yield (status.st_dev, status.st_ino)
             except BaseException as failure:
                 _remove_made(parent, slug, entry, (status.st_dev, status.st_ino), failure)
                 raise

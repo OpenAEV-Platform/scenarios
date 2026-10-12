@@ -514,3 +514,25 @@ def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
     assert not plan.exists()
     assert not (tmp_path / "held" / ENTRY).exists()  # taken back from the repository held
     assert list((tmp_path / "other").iterdir()) == []
+
+
+def test_an_entry_swapped_before_its_plan_gets_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+    entry = root / ENTRY
+
+    def swapped(*arguments: Any) -> Any:
+        entry.rename(entry.parent / "moved")
+        entry.mkdir()
+        return planned(*arguments)
+
+    monkeypatch.setattr("scenario_tools.interface.cli.plan_document", swapped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "put at its place meanwhile" in result.output  # ours is said, never removed
+    assert not plan.exists()

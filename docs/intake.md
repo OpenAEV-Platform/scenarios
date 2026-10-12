@@ -98,5 +98,6 @@ The plan's place is taken as the run starts, by an empty file, so that no other 
 it. The entry is kept only once its plan is written: a run that fails before then leaves the
 repository as it was, a new entry removed and an updated file put back, and removes the empty
 plan. A run that cannot undo what it wrote says so, with where the previous file is kept.
-A run killed while writing may leave an incomplete entry, an empty plan, or the previous
-`scenario.json` of an update kept aside under a hidden name: remove them before running again.
+A run killed while writing may leave an incomplete entry, an empty or partly written plan, or
+the previous `scenario.json` of an update kept aside under a hidden name: remove them before
+running again.

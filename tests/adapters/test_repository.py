@@ -332,7 +332,8 @@ def test_a_write_leaves_no_directory_open(
         _entry(tmp_path)
     opened, closed = _descriptors(monkeypatch)
 
-    _write(tmp_path, {"scenario.json": b"{}"}, new=new)
+    with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=new) as check:
+        check()
 
     assert opened
     assert sorted(opened) == sorted(closed)
@@ -720,3 +721,41 @@ def test_a_repository_once_released_is_written_by_its_path_again(tmp_path: Path)
     _write(tmp_path, {"scenario.json": b"{}"}, new=True, source=source)
 
     assert (tmp_path / ENTRY / "scenario.json").read_bytes() == b"{}"
+
+
+@pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
+def test_an_entry_is_known_to_be_still_where_it_was_written(tmp_path: Path, new: bool) -> None:
+    if not new:
+        _entry(tmp_path)
+
+    with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=new) as check:
+        check()  # nothing moved: nothing said
+
+
+@pytest.mark.parametrize("new", [True, False], ids=["new", "update"])
+def test_an_entry_swapped_once_written_is_said(tmp_path: Path, new: bool) -> None:
+    if not new:
+        _entry(tmp_path)
+    entry = tmp_path / ENTRY
+    said: list[str] = []
+
+    with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=new) as check:
+        entry.rename(entry.parent / "moved")
+        with pytest.raises(EnvironmentProblemError, match="no longer names") as error:
+            check()  # gone
+        said.append(str(error.value))
+        entry.mkdir()
+        with pytest.raises(EnvironmentProblemError, match="no longer names") as error:
+            check()  # another in its place
+        said.append(str(error.value))
+        entry.rmdir()
+        (entry.parent / "moved").rename(entry)  # put back, so that the block ends cleanly
+
+    assert len(said) == 2
+
+
+def test_nothing_written_has_nothing_to_check(tmp_path: Path) -> None:
+    with RepositoryEntries(tmp_path).writing(ENTRY, {}, new=False) as check:
+        check()
+
+    assert list(tmp_path.iterdir()) == []
