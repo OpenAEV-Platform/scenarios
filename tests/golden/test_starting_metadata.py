@@ -1,5 +1,5 @@
-"""The starting scenario.yaml of the reference scenarios: valid but for what only a person or an
-agent can give, and consistent with its export."""
+"""The starting scenario.yaml of the reference scenarios: valid but for what only a contributor
+can give, and consistent with its export."""
 
 import json
 from pathlib import Path
