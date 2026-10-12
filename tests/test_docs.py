@@ -100,3 +100,15 @@ def test_the_starter_pack_page_lists_each_payload_with_its_identifier_once() -> 
     assert dict(rows) == STARTER_PACK_PAYLOADS
     identifiers = [*STARTER_PACK_SCENARIOS.values(), *STARTER_PACK_PAYLOADS.values()]
     assert len(set(identifiers)) == len(identifiers)  # none names two things
+
+
+def test_every_relative_link_of_the_readme_leads_to_a_file_of_the_repository() -> None:
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    links = re.findall(r"\]\(([^)#\s]+)(?:#[^)]*)?\)", text)
+    relative = [link for link in links if not re.match(r"[a-z]+:", link)]
+
+    assert len(relative) >= 5  # the guides, the schemas, the policy data, the source, the tests
+    for link in relative:
+        target = (ROOT / link).resolve()
+        assert target.is_relative_to(ROOT.resolve()), link  # never a place outside the repository
+        assert target.exists(), link
