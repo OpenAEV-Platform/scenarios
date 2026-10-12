@@ -37,6 +37,8 @@ def _git(root: Path, *arguments: str, given: str | None = None) -> str | None:
                 "--no-optional-locks",
                 "-c",
                 "core.fsmonitor=false",
+                "-c",
+                "attr.tree=",  # attributes from the checkout, never from a tree a config names
                 "-C",
                 str(root),
                 *arguments,
@@ -115,21 +117,28 @@ _CONVERTING = ("text", "eol", "crlf", "filter", "ident", "working-tree-encoding"
 
 def converted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
     """The files under ``paths`` of the checkout at ``root`` whose bytes git converts between
-    the commit and the checkout, by their attributes, sorted: what is read there is not what the
-    commit holds."""
+    the commit and the checkout, by their attributes in the checkout or in its commit (git 2.40
+    or later), sorted: what is read there is not what the commit holds."""
     listed = _git(root, "ls-files", "-z", "--", *paths)
     if listed is None:
         raise EnvironmentProblemError("cannot read the attributes of the checkout")
     files = [name for name in listed.split("\0") if name]
     if not files:
         return ()
-    told = _git(root, "check-attr", "-z", "--stdin", *_CONVERTING, given="\0".join(files))
-    if told is None:
-        raise EnvironmentProblemError("cannot read the attributes of the checkout")
-    fields = told.split("\0")
-    found = {
-        fields[index]
-        for index in range(0, len(fields) - 2, 3)
-        if fields[index + 2] not in ("unspecified", "unset")
-    }
+    found: set[str] = set()
+    # The checkout's attributes, the index's and the commit's, which a change outside the paths
+    # could undo.
+    for source in ((), ("--cached",), ("--source", "HEAD")):
+        told = _git(
+            root, "check-attr", *source, "-z", "--stdin", *_CONVERTING, given="\0".join(files)
+        )
+        if told is None:
+            needed = " (git 2.40 or later is needed)" if "--source" in source else ""
+            raise EnvironmentProblemError(f"cannot read the attributes of the checkout{needed}")
+        fields = told.split("\0")
+        found.update(
+            fields[index]
+            for index in range(0, len(fields) - 2, 3)
+            if fields[index + 2] not in ("unspecified", "unset")
+        )
     return tuple(sorted(found))

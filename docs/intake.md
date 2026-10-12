@@ -216,4 +216,6 @@ checkout (exit code `3`), and once committed by mistake, it refuses every reques
 Such a name never belongs in a pull request:
 `validate` refuses it as an entry (`SCH-008`).
 
-The command runs on Linux and macOS.
+The command runs on Linux and macOS, with git 2.40 or later: the attributes of the checkout's
+commit are read too, so that a change to them outside the three directories cannot hide a
+conversion.

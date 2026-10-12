@@ -436,8 +436,8 @@ def test_an_entry_and_its_plan_are_written_in_one_go() -> None:
         "render",
         ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),  # a new one
         ("validate", ENTRY),
-        "check",
         "current",
+        "check",
         "publish",
         "kept",
     ]
@@ -471,8 +471,8 @@ def test_an_unchanged_update_still_has_its_plan_and_its_checks() -> None:
         "reserve",
         "write nothing",
         ("validate", ENTRY),
-        "check",
         "current",
+        "check",
         "publish",
     ]
 
@@ -482,8 +482,8 @@ _STEPS = {
     "render": "render",
     "write": ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),
     "validate": ("validate", ENTRY),
+    "current": "current",  # the checkout first, then what was written: a change meanwhile shows
     "check": "check",
-    "current": "current",
     "publish": "publish",
 }
 

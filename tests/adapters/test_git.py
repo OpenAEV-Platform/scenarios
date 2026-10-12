@@ -269,6 +269,19 @@ def test_files_git_converts_are_told(tmp_path: Path) -> None:
     assert converted(_committed(tmp_path / "plain"), ("scenarios", "policy")) == ()
 
 
+def test_conversions_the_commit_sets_are_told_when_the_checkout_unsets_them(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    (root / ".gitattributes").write_text("scenarios/** text eol=crlf\n")
+    _git(root, "add", ".gitattributes")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", "two")  # fmt: skip
+    (root / ".gitattributes").write_text("scenarios/** -text\n")  # not committed, nor checked
+
+    assert converted(root, ("scenarios",)) == ("scenarios/a/b/scenario.json",)
+
+
 def test_conversions_that_cannot_be_read_are_the_environment_s_fault(tmp_path: Path) -> None:
     with pytest.raises(EnvironmentProblemError, match="cannot read the attributes"):
         converted(tmp_path, ("scenarios",))  # no checkout here
@@ -276,6 +289,42 @@ def test_conversions_that_cannot_be_read_are_the_environment_s_fault(tmp_path: P
 
 def test_no_file_under_the_paths_is_no_conversion(tmp_path: Path) -> None:
     assert converted(_committed(tmp_path), ("schemas",)) == ()
+
+
+def test_conversions_staged_only_are_told(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    (root / ".gitattributes").write_text("scenarios/** text eol=crlf\n")
+    _git(root, "add", ".gitattributes")  # staged, not committed
+    (root / ".gitattributes").write_text("scenarios/** -text\n")
+
+    assert converted(root, ("scenarios",)) == ("scenarios/a/b/scenario.json",)
+
+
+def test_conversions_the_checkout_sets_are_told_whatever_tree_the_config_names(
+    tmp_path: Path,
+) -> None:
+    root = _committed(tmp_path)
+    _git(root, "config", "attr.tree", "HEAD")  # attributes read from a tree, not the checkout
+    (root / ".gitattributes").write_text("scenarios/** text eol=crlf\n")
+
+    assert converted(root, ("scenarios",)) == ("scenarios/a/b/scenario.json",)
+
+
+def test_commit_attributes_that_cannot_be_read_say_the_git_needed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _committed(tmp_path)
+    real = git_module._git
+
+    def old_git(directory: Path, *arguments: str, given: str | None = None) -> str | None:
+        if "--source" in arguments:  # what git before 2.40 cannot do
+            return None
+        return real(directory, *arguments, given=given)
+
+    monkeypatch.setattr(git_module, "_git", old_git)
+
+    with pytest.raises(EnvironmentProblemError, match=r"git 2\.40 or later"):
+        converted(root, ("scenarios",))
 
 
 def test_attributes_that_cannot_be_read_are_the_environment_s_fault(
@@ -291,5 +340,6 @@ def test_attributes_that_cannot_be_read_are_the_environment_s_fault(
 
     monkeypatch.setattr(git_module, "_git", failing_attributes)
 
-    with pytest.raises(EnvironmentProblemError, match="cannot read the attributes"):
+    with pytest.raises(EnvironmentProblemError, match="cannot read the attributes") as error:
         converted(root, ("scenarios",))
+    assert "2.40" not in str(error.value)  # what fails is not the version

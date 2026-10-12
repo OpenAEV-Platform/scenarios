@@ -598,7 +598,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                         entries=RepositoryWriter(source),
                         plan=PlanFile(plan),
                         base=base,
-                        current=lambda: _still_base(root, ours),
+                        current=lambda: _still_base(source, ours),
                         # Read afresh: the catalogue now holds the entry written.
                         validate=lambda entry: rules.validate(entry, RepositoryEntries(root)),
                         render=yaml_bytes,
@@ -646,9 +646,12 @@ def _refuse_uncommitted(root: Path) -> None:
         )
 
 
-def _still_base(root: Path, ours: frozenset[str]) -> str:
-    """The checkout's commit, once nothing differs from it under the catalogue and its rules
-    but ``ours``, the files the run wrote: the plan must describe what its base gives."""
+def _still_base(source: RepositoryEntries, ours: frozenset[str]) -> str:
+    """The checkout's commit, once its path still names the checkout held and nothing differs
+    from it under the catalogue and its rules but ``ours``, the files the run wrote: the plan
+    must describe what its base gives."""
+    source.check_held()  # git reads the checkout by its path: never another's
+    root = source.root
     others = [path for path in uncommitted(root, _PLANNED) if path not in ours]
     if others:
         more = f" and {len(others) - 1} more" if len(others) > 1 else ""

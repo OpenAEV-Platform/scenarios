@@ -155,8 +155,9 @@ def write_intake(
 ) -> tuple[Finding, ...]:
     """Write the entry ``result`` says and its plan, from the commit ``base``, in one go: the
     plan's place is reserved first, then the entry is written and checked as ``validate``
-    checks it, and the plan is published only once the entry is known to be still where it was
-    written, and the checkout's commit, as ``current`` reads it, still ``base``. The entry is
+    checks it, and the plan is published only once the checkout's commit, as ``current`` reads
+    it once sure its path still names the checkout held, is still ``base``, then, last, the
+    entry is known to be still where and as it was written. The entry is
     kept only with its plan: if anything stops the run before, what was written is taken back
     and the place given back. What is left to complete and the entry's findings are given. The
     caller holds the repository from the catalogue's check that made ``result`` until this
@@ -169,11 +170,11 @@ def write_intake(
         with entries.writing(entry, files, previous=result.previous) as written:
             findings = validate(entry)
             document = plan_document(result, files, base, findings)
-            written.check()
             if current() != base:  # the plan must describe what its base gives
                 raise EnvironmentProblemError(
                     "the checkout's commit changed while the run wrote: nothing is kept"
                 )
+            written.check()  # last: what the checkout's check leaves out, the files written
             reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return (*result.to_complete, *findings)
 
