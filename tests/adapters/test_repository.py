@@ -219,8 +219,10 @@ def test_whether_a_path_exists_is_told_without_following_links(tmp_path: Path) -
     assert source.exists("scenarios/techniques/linked")  # a dangling link is something there
 
 
-def _write(root: Path, files: dict[str, bytes], *, new: bool) -> None:
-    with RepositoryEntries(root).writing(ENTRY, files, new=new):
+def _write(
+    root: Path, files: dict[str, bytes], *, new: bool, source: RepositoryEntries | None = None
+) -> None:
+    with (source or RepositoryEntries(root)).writing(ENTRY, files, new=new):
         pass
 
 
@@ -677,3 +679,44 @@ def test_a_new_entry_moved_away_meanwhile_is_said_left(tmp_path: Path) -> None:
         run()
     assert isinstance(error.value.__cause__, RuntimeError)
     assert (moved / "scenario.json").read_bytes() == b"{}"
+
+
+def test_a_held_repository_is_written_in_even_once_its_path_names_another(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    source = RepositoryEntries(root)
+
+    with source.locked():
+        root.rename(tmp_path / "held")
+        (tmp_path / "other").mkdir()
+        root.symlink_to(tmp_path / "other")  # the path now names another checkout
+        _write(root, {"scenario.json": b"{}"}, new=True, source=source)
+        with pytest.raises(EnvironmentProblemError, match="no longer names"):
+            source.check_held()
+
+    assert (tmp_path / "held" / ENTRY / "scenario.json").read_bytes() == b"{}"
+    assert list((tmp_path / "other").iterdir()) == []
+
+
+def test_a_held_repository_whose_path_is_gone_is_said(tmp_path: Path) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    source = RepositoryEntries(root)
+
+    with source.locked():
+        source.check_held()  # still the one held
+        root.rename(tmp_path / "held")
+        with pytest.raises(EnvironmentProblemError, match="no longer names"):
+            source.check_held()
+
+
+def test_a_repository_once_released_is_written_by_its_path_again(tmp_path: Path) -> None:
+    source = RepositoryEntries(tmp_path)
+    with source.locked():
+        pass
+
+    _write(tmp_path, {"scenario.json": b"{}"}, new=True, source=source)
+
+    assert (tmp_path / ENTRY / "scenario.json").read_bytes() == b"{}"

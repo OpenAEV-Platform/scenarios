@@ -17,6 +17,7 @@ from click.testing import CliRunner
 from scenario_tools.adapters import data_files
 from scenario_tools.adapters.data_files import read_export
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
+from scenario_tools.application import intake_entry
 from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface.cli import main
 from scenario_tools.ports.errors import EnvironmentProblemError
@@ -489,3 +490,27 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
 
     assert result.exit_code == 3, result.output
     assert f"the place reserved for {plan}" in result.output
+
+
+def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    planned = intake_entry.plan_document
+
+    def swapped(*arguments: Any) -> Any:
+        root.rename(tmp_path / "held")
+        (tmp_path / "other").mkdir()
+        root.symlink_to(tmp_path / "other")
+        return planned(*arguments)
+
+    monkeypatch.setattr("scenario_tools.interface.cli.plan_document", swapped)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "no longer names" in result.output
+    assert not plan.exists()
+    assert not (tmp_path / "held" / ENTRY).exists()  # taken back from the repository held
+    assert list((tmp_path / "other").iterdir()) == []

@@ -337,6 +337,13 @@ def test_a_blocking_item_is_kept_whatever_follows_it_for_the_same_field() -> Non
     assert items == ["- [ ] `p` `/description`: `ends with the mark`"]
 
 
+def test_a_joiner_where_emoji_put_one_makes_another_name() -> None:
+    man, woman = chr(0x1F468), chr(0x1F469)
+
+    assert not same_name(man + chr(0x200D) + woman, man + woman)  # a family, or two people
+    assert same_name(man + chr(0x200D) + woman, man + chr(0x200D) + woman)
+
+
 def test_an_invisible_character_does_not_make_another_name() -> None:
     assert same_name("akira", "aki" + chr(0x200B) + "ra")
     assert same_name("akira", "aki" + chr(0xAD) + "ra")

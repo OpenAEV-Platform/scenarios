@@ -77,7 +77,10 @@ def same_name(first: str, second: str) -> bool:
     blanks. Letters of other scripts that look alike stay apart."""
 
     def key(name: str) -> str:
-        return " ".join(_visible(unicodedata.normalize("NFKC", name)).casefold().split())
+        # What the hidden-character checks find, and a soft hyphen, which no reader sees; a
+        # joiner where a script or emoji puts one stays, since it changes what is shown.
+        shown = visible(unicodedata.normalize("NFKC", name)).replace(chr(0xAD), "")
+        return " ".join(shown.casefold().split())
 
     return key(first) == key(second)
 

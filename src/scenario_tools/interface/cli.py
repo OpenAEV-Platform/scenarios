@@ -583,6 +583,7 @@ def _intake_held(
         with source.writing(result.request.entry, files, new=new):
             findings = rules.validate(result.request.entry, RepositoryEntries(root))
             document = plan_document(result, files, base, findings)
+            source.check_held()  # what was checked is the repository written in
             reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return Report("intake", (*result.to_complete, *findings))
 

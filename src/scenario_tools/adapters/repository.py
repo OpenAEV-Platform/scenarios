@@ -154,6 +154,8 @@ class RepositoryEntries:
         self._root = root
         self._entries: tuple[CatalogueEntry, ...] | None = None
         self._external_ids: Mapping[str, tuple[str, ...]] | None = None
+        self._held: int | None = None
+        self._held_identity: tuple[int, int] | None = None
 
     def _checked(self, relative: str) -> Path:
         """``relative``, a path in the repository, once no directory of it is a link."""
@@ -222,19 +224,43 @@ class RepositoryEntries:
                 raise EnvironmentProblemError(
                     f"cannot hold {self._root}: {error.strerror}"
                 ) from error
-            yield
+            status = os.fstat(descriptor)
+            self._held, self._held_identity = descriptor, (status.st_dev, status.st_ino)
+            try:
+                yield
+            finally:
+                self._held = self._held_identity = None
         finally:
             os.close(descriptor)  # which releases the lock
+
+    def check_held(self) -> None:
+        """Make sure the root's path still names the repository this run holds, as what is
+        read by that path is checked against it."""
+        try:
+            status = self._root.stat()
+            identity: tuple[int, int] | None = (status.st_dev, status.st_ino)
+        except OSError:
+            identity = None
+        if identity is None or identity != self._held_identity:
+            raise EnvironmentProblemError(
+                f"{self._root} no longer names the repository this run holds: nothing more "
+                "is written"
+            )
 
     def _opened(self, relative: str, *, make: bool) -> int:
         """A descriptor of the directory at ``relative``, reached from the root one directory
         at a time, each opened from the one above and never through a link nor a file, so that
         nothing swapped meanwhile can lead the run elsewhere. The missing ones are made when
         ``make``. The caller closes it."""
-        try:
-            descriptor = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY)
-        except OSError as error:
-            raise EnvironmentProblemError(f"cannot read {self._root}: {error.strerror}") from error
+        if self._held is not None:  # the repository held, never another its path names now
+            descriptor = os.dup(self._held)
+        else:
+            try:
+                descriptor = os.open(self._root, os.O_RDONLY | os.O_DIRECTORY)
+            except OSError as error:
+                raise EnvironmentProblemError(
+                    f"cannot read {self._root}: {error.strerror}"
+                ) from error
         parts = relative.split("/")
         try:
             for index, part in enumerate(parts):
