@@ -120,6 +120,9 @@ strict limits on size and depth, and never follow a symbolic link inside the rep
 refuse invisible or direction-changing characters in the files they read, so that what a reviewer
 reads is what the platform runs.
 
+Every finding the tools report is explained, with what to do, in
+[`docs/findings.md`](docs/findings.md).
+
 These checks protect the review, not your systems. A scenario plays real attack techniques:
 always read it before you run it, and only run it against systems you are allowed to test.
 
@@ -154,6 +157,6 @@ A few rules apply to every pull request:
 | [`scenarios/`](scenarios/) | The catalogue's entries, one folder each |
 | [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
-| [`docs/`](docs/) | Guides: adding an entry, the starter-pack identifiers |
+| [`docs/`](docs/) | Guides: adding an entry, the starter-pack identifiers, the findings |
 | [`src/`](src/) | The source of `scenario-tools` |
 | [`tests/`](tests/) | Its tests, with real platform exports as reference data |
