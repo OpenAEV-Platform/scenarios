@@ -14,30 +14,36 @@
   ],
   "properties": {
     "mode": {
+      "description": "new to add an entry, update to replace the scenario.json of an existing one.",
       "enum": [
         "new",
         "update"
       ]
     },
     "external_id": {
+      "description": "The entry's identifier: a new UUID in lower case for a new entry, the entry's own for an update.",
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "domain": {
+      "description": "The catalogue domain of the entry, one of policy/data/domains.yaml.",
       "type": "string",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "maxLength": 64
     },
     "slug": {
+      "description": "The entry's short name in its domain, in kebab-case.",
       "type": "string",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "maxLength": 64
     },
     "threat": {
+      "description": "For a new entry: the threat the scenario reproduces, as in scenario.yaml.",
       "type": "object",
       "maxProperties": 3
     },
     "sources": {
+      "description": "For a new entry: public sources about the threat, as in scenario.yaml.",
       "type": "array",
       "maxItems": 50,
       "items": {
@@ -45,16 +51,19 @@
       }
     },
     "generated_by": {
+      "description": "For a new entry: a short label of the tool or pipeline that generated the scenario, if any.",
       "type": "string",
       "minLength": 1,
       "maxLength": 200
     },
     "issue": {
+      "description": "The number of the issue the pull request closes.",
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991
     },
     "rewrite": {
+      "description": "For an update: true when the scenario was renamed on the platform.",
       "type": "boolean"
     }
   },

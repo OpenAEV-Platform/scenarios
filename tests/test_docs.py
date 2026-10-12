@@ -1,5 +1,6 @@
 """The documentation's examples stay what the tools accept."""
 
+import json
 import re
 from pathlib import Path
 
@@ -117,3 +118,34 @@ def test_every_relative_link_of_a_front_page_leads_to_a_file_of_the_repository(
         target = (ROOT / link).resolve()
         assert target.is_relative_to(ROOT.resolve()), link  # never a place outside the repository
         assert target.exists(), link
+
+
+def test_every_finding_the_tools_report_is_explained_once_and_none_other() -> None:
+    reported = set()
+    for path in (ROOT / "src").rglob("*.py"):
+        reported |= set(re.findall(r"\"([A-Z]{2,3}-[0-9]{3})\"", path.read_text(encoding="utf-8")))
+    page = (ROOT / "docs" / "findings.md").read_text(encoding="utf-8")
+    explained = re.findall(r"^\| `([A-Z]{2,3}-[0-9]{3})` \|", page, flags=re.MULTILINE)
+
+    assert len(explained) == len(set(explained))  # each once
+    assert set(explained) == reported
+
+
+def _undescribed(node: object, path: str) -> list[str]:
+    """The fields under ``node`` that have no description, by their path in the schema."""
+    if not isinstance(node, dict):
+        return []
+    missing = []
+    for name, field in node.get("properties", {}).items():
+        if not (isinstance(field, dict) and field.get("description")):
+            missing.append(f"{path}/{name}")
+        missing += _undescribed(field, f"{path}/{name}")
+    missing += _undescribed(node.get("items"), f"{path}[]")
+    for name, definition in node.get("$defs", {}).items():
+        missing += _undescribed(definition, f"{path}#{name}")
+    return missing
+
+
+@pytest.mark.parametrize("schema", sorted((ROOT / "schemas").glob("*.schema.json")), ids=str)
+def test_every_field_of_a_schema_says_what_it_is(schema: Path) -> None:
+    assert _undescribed(json.loads(schema.read_text(encoding="utf-8")), "") == []

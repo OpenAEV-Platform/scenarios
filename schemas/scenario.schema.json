@@ -24,16 +24,20 @@
   ],
   "properties": {
     "schema_version": {
+      "description": "The version of this schema the file follows.",
       "const": 1
     },
     "external_id": {
+      "description": "The scenario's identifier: a UUID in lower case, chosen once, that never changes from one version to the next.",
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "version": {
+      "description": "The scenario's version, in semantic versioning: MAJOR.MINOR.PATCH.",
       "$ref": "#/$defs/semver"
     },
     "status": {
+      "description": "VERIFIED for a scenario in use; DEPRECATED for one replaced or no longer maintained; REVOKED for one that must no longer run.",
       "enum": [
         "VERIFIED",
         "DEPRECATED",
@@ -41,16 +45,19 @@
       ]
     },
     "name": {
+      "description": "The scenario's name, as the platform shows it.",
       "type": "string",
       "minLength": 1,
       "maxLength": 120
     },
     "description": {
+      "description": "What the scenario does and why, for a reader who decides whether to run it.",
       "type": "string",
       "minLength": 1,
       "maxLength": 2000
     },
     "severity": {
+      "description": "How severe the threat the scenario reproduces is.",
       "enum": [
         "low",
         "medium",
@@ -59,16 +66,19 @@
       ]
     },
     "category": {
+      "description": "The scenario's category, as the platform classifies it.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
     "main_focus": {
+      "description": "What the scenario mainly tests, as the platform classifies it.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
     "type": {
+      "description": "time-based: injects run at set times; chained: each inject runs when the previous one succeeds or fails.",
       "enum": [
         "time-based",
         "chained"
@@ -96,11 +106,13 @@
       }
     },
     "threat": {
+      "description": "The threat the scenario reproduces: at least one of its CVEs, intrusion sets or techniques.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
         "cves": {
+          "description": "CVE identifiers the scenario checks, such as CVE-2024-3400.",
           "type": "array",
           "maxItems": 100,
           "minItems": 1,
@@ -111,6 +123,7 @@
           }
         },
         "intrusion_sets": {
+          "description": "Names of the intrusion sets (threat actors) whose behaviour the scenario reproduces.",
           "type": "array",
           "maxItems": 100,
           "minItems": 1,
@@ -122,6 +135,7 @@
           }
         },
         "ttps": {
+          "description": "MITRE ATT&CK techniques the injects play, such as T1595 or T1595.002.",
           "type": "array",
           "maxItems": 100,
           "minItems": 1,
@@ -134,6 +148,7 @@
       }
     },
     "sources": {
+      "description": "Public sources about the threat, so that a reader can check what the scenario plays.",
       "type": "array",
       "maxItems": 20,
       "minItems": 1,
@@ -146,14 +161,17 @@
         ],
         "properties": {
           "url": {
+            "description": "The address of the source, over HTTPS.",
             "type": "string",
             "format": "uri",
             "pattern": "^https://"
           },
           "tlp": {
+            "description": "The Traffic Light Protocol level of the source: only TLP:CLEAR, since the repository is public.",
             "const": "TLP:CLEAR"
           },
           "title": {
+            "description": "A short title of the source.",
             "type": "string",
             "maxLength": 200
           }
@@ -161,6 +179,7 @@
       }
     },
     "requires": {
+      "description": "What a platform needs to run the scenario.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -171,16 +190,19 @@
       ],
       "properties": {
         "openaev": {
+          "description": "The platform versions the scenario runs on, as a constraint such as >=3.261005.0.",
           "type": "string",
           "pattern": "^(>=|>|==|~=)[0-9]+(\\.[0-9]+)*$"
         },
         "edition": {
+          "description": "The OpenAEV edition the scenario needs: CE (Community) or EE (Enterprise).",
           "enum": [
             "CE",
             "EE"
           ]
         },
         "injectors": {
+          "description": "Types of the injectors the injects use, which the platform must have.",
           "type": "array",
           "maxItems": 50,
           "uniqueItems": true,
@@ -191,6 +213,7 @@
           }
         },
         "executors": {
+          "description": "Types of the executors the injects need on the targeted endpoints, if any.",
           "type": "array",
           "maxItems": 50,
           "uniqueItems": true,
@@ -203,6 +226,7 @@
       }
     },
     "payloads": {
+      "description": "References to the payloads the scenario uses, each by its identifier, version and hash.",
       "type": "array",
       "maxItems": 1000,
       "items": {
@@ -210,6 +234,7 @@
       }
     },
     "targets": {
+      "description": "The targets a user must provide on their own platform; the scenario ships with none.",
       "type": "array",
       "maxItems": 100,
       "items": {
@@ -221,10 +246,12 @@
         ],
         "properties": {
           "placeholder": {
+            "description": "A short name for the target, in kebab-case.",
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
           },
           "description": {
+            "description": "What the user must provide as this target.",
             "type": "string",
             "minLength": 1,
             "maxLength": 300
@@ -233,20 +260,24 @@
       }
     },
     "generated_by": {
+      "description": "A short label of the tool or pipeline that generated the scenario, when one did.",
       "type": "string",
       "minLength": 1,
       "maxLength": 200
     },
     "relevance": {
+      "description": "Optional scores between 0 and 1: how urgent the scenario is (priority) and how closely it reproduces the threat (threat_fidelity).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "priority": {
+          "description": "How urgent running the scenario is, from 0 to 1.",
           "type": "number",
           "minimum": 0,
           "maximum": 1
         },
         "threat_fidelity": {
+          "description": "How closely the scenario reproduces the threat, from 0 to 1.",
           "type": "number",
           "minimum": 0,
           "maximum": 1
@@ -269,15 +300,18 @@
       ],
       "properties": {
         "id": {
+          "description": "The payload's identifier.",
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$"
         },
         "version": {
+          "description": "The payload version the scenario uses.",
           "$ref": "#/$defs/semver"
         },
         "sha256": {
+          "description": "The SHA-256 of the payload's content, so that a platform can check it.",
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         }
