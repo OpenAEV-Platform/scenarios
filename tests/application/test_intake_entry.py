@@ -80,6 +80,9 @@ class FakeSource:
     def read_text(self, path: str) -> str:
         raise AssertionError("intake never asks")
 
+    def scenario_names(self) -> Mapping[str, tuple[str, ...]]:
+        raise AssertionError("intake compares the entries themselves")
+
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         raise AssertionError("intake never asks")
 

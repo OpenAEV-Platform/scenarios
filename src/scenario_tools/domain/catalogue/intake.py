@@ -70,19 +70,20 @@ class IntakeRequest:
         return given
 
 
-def same_name(first: str, second: str) -> bool:
-    """Whether two scenario names are the same name for a reader: compared in their
+def name_key(name: str) -> str:
+    """What two scenario names that are the same name for a reader share: ``name`` in its
     compatibility form, without case, outer blanks or runs of blanks, without the hidden
     characters the checks find and without soft hyphens. Joiners where a script or emoji puts
     one stay, and letters of other scripts that look alike stay apart."""
+    # What the hidden-character checks find, and a soft hyphen, which no reader sees; a joiner
+    # where a script or emoji puts one stays, since it changes what is shown.
+    shown = visible(unicodedata.normalize("NFKC", name)).replace(chr(0xAD), "")
+    return " ".join(shown.casefold().split())
 
-    def key(name: str) -> str:
-        # What the hidden-character checks find, and a soft hyphen, which no reader sees; a
-        # joiner where a script or emoji puts one stays, since it changes what is shown.
-        shown = visible(unicodedata.normalize("NFKC", name)).replace(chr(0xAD), "")
-        return " ".join(shown.casefold().split())
 
-    return key(first) == key(second)
+def same_name(first: str, second: str) -> bool:
+    """Whether two scenario names are the same name for a reader (``name_key``)."""
+    return name_key(first) == name_key(second)
 
 
 def domain_refusals(

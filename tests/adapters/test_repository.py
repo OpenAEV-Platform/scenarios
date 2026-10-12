@@ -10,7 +10,7 @@ import pytest
 from scenario_tools.adapters import repository
 from scenario_tools.adapters.places import hidden_name
 from scenario_tools.adapters.repository import RepositoryEntries
-from scenario_tools.domain.catalogue.intake import CatalogueEntry
+from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 ENTRY = "scenarios/ransomware/akira"
@@ -140,6 +140,23 @@ def test_the_external_ids_are_read_once_a_run(tmp_path: Path) -> None:
     assert source.external_ids() is first  # built once, however many entries are checked
     with pytest.raises(TypeError):
         first["two"] = ()  # type: ignore[index]  # shared, so never changed by a reader
+
+
+def test_every_entry_s_scenario_name_is_indexed_once_a_run_as_names_are_compared(
+    tmp_path: Path,
+) -> None:
+    for relative, name in (("a", "Akira"), ("b", "  AKIRA "), ("c", "Black Basta"), ("d", "")):
+        directory = _entry(tmp_path, f"scenarios/techniques/{relative}", relative)
+        (directory / "scenario.yaml").write_text(f"external_id: {relative}\nname: '{name}'\n")
+    source = RepositoryEntries(tmp_path)
+
+    names = source.scenario_names()
+
+    assert names == {
+        name_key("akira"): ("scenarios/techniques/a", "scenarios/techniques/b"),
+        name_key("black basta"): ("scenarios/techniques/c",),
+    }  # an entry without a name takes none
+    assert source.scenario_names() is names  # built once, however many entries are checked
 
 
 def test_an_entry_that_cannot_be_read_is_the_environment_s_fault(

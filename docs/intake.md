@@ -89,7 +89,9 @@ Scenario names are compared in their Unicode compatibility form, without case, o
 runs of blanks, without the hidden characters the checks find and without soft hyphens: names
 that look the same to a reader are the same name. A joiner where emoji or a script puts one
 changes what is shown, so it stays, and letters of other scripts that merely look alike stay
-different. An export without a name takes no other's.
+different. An export without a name takes no other's. `validate` compares the names of all the
+entries of the repository the same way (`SCH-012`), so that two branches cannot each bring in the
+same name: rename one of the scenarios, or update the existing entry instead.
 
 ## The plan
 

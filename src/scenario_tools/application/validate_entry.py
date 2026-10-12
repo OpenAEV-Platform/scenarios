@@ -9,10 +9,12 @@ from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import (
     duplicate_findings,
     layout_findings,
+    name_findings,
     truncation_findings,
     version_findings,
 )
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
+from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import ExportFacts, ScenarioMetadata, cross_check
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.characters import hidden_occurrences
@@ -38,6 +40,7 @@ def _metadata_findings(
     builtin: BuiltinContracts,
     others: Mapping[str, tuple[str, ...]],
     written: frozenset[str],
+    names: Mapping[str, tuple[str, ...]],
 ) -> tuple[tuple[Finding, ...], ScenarioMetadata | None]:
     """The findings of ``scenario.yaml``, and its metadata when it meets its schema: the checks
     that read a field run only then."""
@@ -58,6 +61,9 @@ def _metadata_findings(
     findings += truncation_findings(document["description"], path)
     findings += version_findings(document["requires"]["openaev"], builtin.platform_version, path)
     findings += duplicate_findings(metadata.external_id, path, elsewhere)
+    key = name_key(metadata.name)  # its own directory left out, one lookup whatever the size
+    named = {key: tuple(other for other in names.get(key, ()) if other != entry)}
+    findings += name_findings(metadata.name, path, named)
     return findings, metadata
 
 
@@ -113,7 +119,14 @@ def validate_entry(
             findings += text_findings(written, path, breaks=True)
             labels = frozenset(hidden.label for hidden in hidden_occurrences(written))
             found, metadata = _metadata_findings(
-                source.read_yaml(path), path, entry, schema, builtin, source.external_ids(), labels
+                source.read_yaml(path),
+                path,
+                entry,
+                schema,
+                builtin,
+                source.external_ids(),
+                labels,
+                source.scenario_names(),
             )
             findings += found
         except UnsafeInputError as error:

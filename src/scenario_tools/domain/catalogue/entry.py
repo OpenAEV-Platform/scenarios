@@ -1,10 +1,11 @@
 """The checks of an entry that its schema cannot express: where it sits in the repository, a
-description still cut to fit, an external ID another entry has, and a minimum platform version
-older than the one its built-in contracts were recorded on."""
+description still cut to fit, an external ID or a scenario name another entry has, and a
+minimum platform version older than the one its built-in contracts were recorded on."""
 
 import re
 from collections.abc import Iterable, Mapping
 
+from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import TRUNCATION_MARK, clean
 from scenario_tools.domain.shared.finding import Finding, Severity
 
@@ -103,16 +104,33 @@ def version_findings(constraint: str, recorded: str, path: str) -> tuple[Finding
     return (Finding("SCH-011", Severity.INFO, path, "/requires/openaev", message),)
 
 
+def _listed(paths: Iterable[str]) -> str:
+    """At most ``_NAMED`` of ``paths``, sorted, and how many more there are."""
+    named = sorted(paths)
+    more = f" and {len(named) - _NAMED} more" if len(named) > _NAMED else ""
+    return ", ".join(named[:_NAMED]) + more
+
+
+def name_findings(name: str, path: str, others: Mapping[str, Iterable[str]]) -> tuple[Finding, ...]:
+    """An ``SCH-012`` finding when other entries, ``others`` mapping each ``name_key`` to their
+    directories, have ``name`` as a reader sees it, as intake compares names; a nameless
+    entry takes none."""
+    named = tuple(others.get(name_key(name), ())) if name else ()
+    if not named:
+        return ()
+    who = "another entry has" if len(named) == 1 else "other entries have"
+    message = f"{who} this scenario name: {_listed(named)}"
+    return (Finding("SCH-012", Severity.BLOCKING, path, "/name", message),)
+
+
 def duplicate_findings(
     external_id: str, path: str, others: Mapping[str, Iterable[str]]
 ) -> tuple[Finding, ...]:
     """An ``SCH-010`` finding when other entries, ``others`` mapping each external ID to their
     directories, have ``external_id`` too; the message names them."""
-    named = sorted(others.get(external_id, ()))
+    named = tuple(others.get(external_id, ()))
     if not named:
         return ()
     who = "another entry has" if len(named) == 1 else "other entries have"
-    shown = ", ".join(named[:_NAMED])
-    more = f" and {len(named) - _NAMED} more" if len(named) > _NAMED else ""
-    message = f"{who} this external_id: {shown}{more}"
+    message = f"{who} this external_id: {_listed(named)}"
     return (Finding("SCH-010", Severity.BLOCKING, path, "/external_id", message),)

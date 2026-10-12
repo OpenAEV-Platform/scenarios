@@ -81,9 +81,11 @@ def test_what_blocks_an_entry_is_reported_and_exits_one(
     assert _findings(result) == [
         ("SCH-008", "scenarios/techniques/easm-copy/scenario.json", ""),
         ("SCH-010", "scenarios/techniques/easm-copy/scenario.yaml", "/external_id"),
+        ("SCH-012", "scenarios/techniques/easm-copy/scenario.yaml", "/name"),
         ("IO-017", "scenarios/techniques/easm/README.md", ""),
         ("SCH-009", "scenarios/techniques/easm/scenario.yaml", "/description"),
         ("SCH-010", "scenarios/techniques/easm/scenario.yaml", "/external_id"),
+        ("SCH-012", "scenarios/techniques/easm/scenario.yaml", "/name"),
     ]
 
 
