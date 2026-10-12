@@ -514,6 +514,7 @@ def test_a_place_taken_meanwhile_is_never_written_over_nor_removed(tmp_path: Pat
     with pytest.raises(EnvironmentProblemError, match="taken meanwhile"):
         _failing(plan, taken)
     assert plan.read_text() == "another run's"
+    assert [path.name for path in tmp_path.iterdir()] == ["plan.json"]  # nothing else left
 
 
 def test_a_place_removed_meanwhile_is_never_written(tmp_path: Path) -> None:
@@ -532,7 +533,7 @@ def _unremovable(monkeypatch: pytest.MonkeyPatch) -> None:
     removed = os.unlink
 
     def failing(path: str, **options: Any) -> None:
-        if path == "plan.json":
+        if "plan.json" in path:  # the reservation, under its name or set aside
             raise OSError(errno.EACCES, "Permission denied")
         removed(path, **options)
 
@@ -547,10 +548,11 @@ def test_a_place_that_cannot_be_given_back_is_said_with_the_block_s_failure(
     with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         _failing(tmp_path / "plan.json")
     assert isinstance(error.value.__cause__, RuntimeError)
-    assert (tmp_path / "plan.json").exists()  # left, and said so
+    [left] = list(tmp_path.iterdir())  # left, and said so
+    assert left.name in str(error.value)
 
 
-def test_a_place_whose_state_cannot_be_read_is_never_written(
+def test_a_place_whose_state_cannot_be_read_is_never_said_published(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def failing(*arguments: Any, **options: Any) -> os.stat_result:
@@ -560,11 +562,77 @@ def test_a_place_whose_state_cannot_be_read_is_never_written(
         monkeypatch.setattr(os, "stat", failing)
         reservation.publish(b"x")
 
-    with pytest.raises(EnvironmentProblemError, match="cannot remove") as error:
+    with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         _failing(tmp_path / "plan.json", unreadable)
     assert "cannot write" in str(error.value.__cause__)
-    monkeypatch.undo()
-    assert (tmp_path / "plan.json").read_bytes() == b""  # never written
+    [left] = list(tmp_path.iterdir())
+    assert left.name in str(error.value)
+
+
+def test_an_output_published_is_on_disk_before_it_is_said_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def spied(descriptor: int) -> None:
+        synced.append(descriptor)
+        real_fsync(descriptor)
+
+    with reserve_output(tmp_path / "plan.json") as reservation:
+        monkeypatch.setattr(os, "fsync", spied)
+        reservation.publish(b"x")
+
+    assert synced
+
+
+def test_a_link_put_at_the_place_meanwhile_is_put_back_as_a_link(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+    (tmp_path / "theirs.json").write_text("another run's")
+
+    def linked(reservation: Reservation) -> None:
+        plan.unlink()
+        plan.symlink_to(tmp_path / "theirs.json")
+
+    with pytest.raises(RuntimeError):
+        _failing(plan, linked)
+    assert plan.is_symlink()
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["plan.json", "theirs.json"]
+
+
+def test_a_file_put_at_the_place_meanwhile_is_never_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = tmp_path / "plan.json"
+
+    def failing(*arguments: Any, **options: Any) -> None:
+        raise FileExistsError(errno.EEXIST, "File exists")  # a third file came meanwhile
+
+    def taken(reservation: Reservation) -> None:
+        plan.unlink()
+        plan.write_text("another run's")
+        monkeypatch.setattr(os, "link", failing)
+
+    with pytest.raises(EnvironmentProblemError, match="is kept as") as error:
+        _failing(plan, taken)
+    assert isinstance(error.value.__cause__, RuntimeError)
+    [kept] = [path for path in tmp_path.iterdir() if path.name != "plan.json"]
+    assert kept.read_text() == "another run's"
+    assert kept.name in str(error.value)
+
+
+def test_an_output_is_written_in_the_file_reserved_never_in_another(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    def swapped(reservation: Reservation) -> None:
+        plan.rename(tmp_path / "ours.json")  # the reserved file, under another name
+        plan.write_text("another run's")
+        reservation.publish(b"x")
+
+    with pytest.raises(EnvironmentProblemError, match="taken meanwhile"):
+        _failing(plan, swapped)
+    assert plan.read_text() == "another run's"
+    assert (tmp_path / "ours.json").read_bytes() == b"x"  # written where it was reserved
 
 
 def _descriptors(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:

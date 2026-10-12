@@ -361,14 +361,11 @@ def test_a_run_that_fails_after_reserving_its_plan_leaves_no_plan(
 
 def _unpublished(monkeypatch: pytest.MonkeyPatch) -> None:
     """The plan cannot be published, once the entry is written."""
-    written = data_files.write_in
 
-    def failing(directory: int, path: Path, data: bytes, *, create: bool = False) -> None:
-        if path.name == "plan.json" or path.name == "update.json":
-            raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
-        written(directory, path, data, create=create)
+    def failing(reservation: data_files.Reservation, data: bytes) -> None:
+        raise EnvironmentProblemError("cannot write the plan: No space left on device")
 
-    monkeypatch.setattr("scenario_tools.adapters.data_files.write_in", failing)
+    monkeypatch.setattr(data_files.Reservation, "publish", failing)
 
 
 def test_a_plan_that_cannot_be_published_leaves_no_new_entry(
@@ -482,7 +479,7 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
     removed = os.unlink
 
     def failing(path: str, **options: Any) -> None:
-        if path == plan.name:
+        if plan.name in path:  # the reservation, under its name or set aside
             raise OSError(13, "Permission denied")
         removed(path, **options)
 
@@ -491,4 +488,4 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
     assert result.exit_code == 3, result.output
-    assert f"cannot remove {plan}" in result.output
+    assert f"the place reserved for {plan}" in result.output

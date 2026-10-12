@@ -147,50 +147,77 @@ def _not_followed(path: Path, error: OSError) -> Exception:
 
 
 class Reservation:
-    """An output's place, reserved by ``reserve_output``: published through the directory it
-    was reserved in, never looked up again by its path, and only over the empty file the
-    reservation made there, which a published output has replaced."""
+    """An output's place, reserved by ``reserve_output``: the output is written in the empty
+    file the reservation made, through its descriptor, so never in another file, and the place
+    is given back through the directory it was reserved in, never looked up again by its path."""
 
-    def __init__(self, path: Path, directory: int, identity: tuple[int, int]) -> None:
+    def __init__(self, path: Path, directory: int, file: int, identity: tuple[int, int]) -> None:
         self._path = path
         self._directory = directory
+        self._file = file
         self._identity = identity
+        self._published = False
 
-    def _ours(self) -> bool:
-        """Whether the file at the reserved place is still the one the reservation made."""
-        try:
-            status = os.stat(self._path.name, dir_fd=self._directory, follow_symlinks=False)
-        except FileNotFoundError:
-            return False
+    def _ours(self, name: str) -> bool:
+        """Whether ``name`` in the directory is the file the reservation made, which cannot be
+        another while it is held open."""
+        status = os.stat(name, dir_fd=self._directory, follow_symlinks=False)
         return (status.st_dev, status.st_ino) == self._identity
 
     def publish(self, data: bytes) -> None:
-        """Write ``data`` over the reservation, at once, as ``write_output`` does."""
+        """Write ``data`` in the reserved file; published only if the place still holds it."""
         try:
-            ours = self._ours()
+            view = memoryview(data)
+            while view:
+                view = view[os.write(self._file, view) :]
+            os.fsync(self._file)
+            ours = self._ours(self._path.name)
+        except FileNotFoundError:
+            ours = False
         except OSError as error:
             raise EnvironmentProblemError(f"cannot write {self._path}: {error.strerror}") from error
         if not ours:
             raise EnvironmentProblemError(
                 f"cannot write {self._path}: the place reserved for it was taken meanwhile"
             )
-        write_in(self._directory, self._path, data)
+        self._published = True
 
     def give_back(self, failure: BaseException | None) -> None:
-        """Remove the reservation if it is still there, never another file, a published output
-        included; one that cannot be removed is said, with ``failure``, why it is given back,
-        as its cause."""
+        """Remove the reservation unless it was published, never another file: what is at the
+        place is set aside at once, then removed if it is the reserved file, or put back,
+        over nothing, if it is not. What cannot be is said, with ``failure`` as its cause."""
+        if self._published:
+            return
+        aside = f".{self._path.name}.{secrets.token_hex(8)}"
         try:
-            if self._ours():
-                os.unlink(self._path.name, dir_fd=self._directory)
+            try:
+                os.rename(
+                    self._path.name, aside, src_dir_fd=self._directory, dst_dir_fd=self._directory
+                )
+            except FileNotFoundError:
+                return  # nothing is there to give back
+            if self._ours(aside):
+                os.unlink(aside, dir_fd=self._directory)
+                return
+            try:
+                os.link(
+                    aside,
+                    self._path.name,
+                    src_dir_fd=self._directory,
+                    dst_dir_fd=self._directory,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                raise EnvironmentProblemError(
+                    f"cannot put back the file put at {self._path} meanwhile, as yet another "
+                    f"is there: it is kept as {self._path.parent / aside}"
+                ) from failure
+            os.unlink(aside, dir_fd=self._directory)
         except OSError as error:
-            raise _left(self._path, error) from failure
-
-
-def _left(path: Path, error: OSError) -> EnvironmentProblemError:
-    return EnvironmentProblemError(
-        f"cannot remove {path}, the place reserved for it: {error.strerror}; remove it by hand"
-    )
+            raise EnvironmentProblemError(
+                f"cannot remove {self._path.parent / aside}, the place reserved for "
+                f"{self._path}: {error.strerror}; remove it by hand"
+            ) from failure
 
 
 @contextlib.contextmanager
@@ -223,9 +250,12 @@ def reserve_output(path: Path) -> Iterator[Reservation]:
                 try:
                     os.unlink(path.name, dir_fd=directory)
                 except OSError as left:
-                    raise _left(path, left) from failure
+                    raise EnvironmentProblemError(
+                        f"cannot remove {path}, the place reserved for it: {left.strerror}; "
+                        "remove it by hand"
+                    ) from failure
                 raise failure from error
-            reservation = Reservation(path, directory, (status.st_dev, status.st_ino))
+            reservation = Reservation(path, directory, descriptor, (status.st_dev, status.st_ino))
             try:
                 yield reservation
             except BaseException as failure:
