@@ -19,9 +19,11 @@ from scenario_tools.adapters.places import (
     hidden_name,
     identity,
     made_directory,
+    make_directory,
     open_directory,
     place_back,
     take_back,
+    untold,
 )
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -92,13 +94,16 @@ def _holding(directory: int, name: str, where: str, expected: bytes) -> tuple[in
     return status.st_dev, status.st_ino
 
 
-def _rmdir_made(parent: int, name: str, made: tuple[int, int]) -> None:
-    """Remove the empty directory ``name`` in ``parent`` if it is the one the run made, by its
-    identity: never another's put in its place."""
-    with contextlib.suppress(OSError):
-        status = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        if (status.st_dev, status.st_ino) == made:
-            os.rmdir(name, dir_fd=parent)
+def _rmdir_made(parent: int, name: str, made: tuple[int, int], where: str) -> None:
+    """Remove the directory ``name`` in ``parent`` if it is the one the run made, by its
+    identity, and empty: it is set aside at once, so never another's put in its place, and put
+    back when it is not. What cannot be done leaves it, as the run already fails."""
+
+    def remove(aside: str) -> None:
+        os.rmdir(aside, dir_fd=parent)
+
+    with contextlib.suppress(EnvironmentProblemError):
+        take_back(parent, name, made, remove, where=where, failure=None)
 
 
 def _replace_checked(
@@ -254,7 +259,7 @@ class RepositoryWriter:
         """The directory ``name`` made in ``directory``, unless another run made it a moment
         ago; ``made`` is told when it is this run's, with its identity."""
         try:
-            os.mkdir(name, 0o755, dir_fd=directory)
+            make_directory(directory, name)
         except FileExistsError:
             try:
                 return open_directory(directory, name, where)  # another's: opened as any other
@@ -264,9 +269,23 @@ class RepositoryWriter:
                 ) from error
         except OSError as error:
             raise EnvironmentProblemError(f"cannot make {where}: {error.strerror}") from error
-        child = made_directory(directory, name, where)
         try:
-            made.append((where, identity(child, where)))
+            child = made_directory(directory, name, where)
+        except FileNotFoundError as error:
+            raise EnvironmentProblemError(
+                f"cannot make {where}: the run made it, and another removed it meanwhile"
+            ) from error
+        except UnsafeInputError as error:  # a link or a file put at its place
+            raise EnvironmentProblemError(
+                f"cannot make {where}: the run made it, and another replaced it meanwhile"
+            ) from error
+        except EnvironmentProblemError as error:
+            raise untold(str(error), where) from error
+        try:
+            try:
+                made.append((where, identity(child, where)))
+            except EnvironmentProblemError as error:
+                raise untold(str(error), where) from error
             # A directory of the repository, read by all, whatever the umask.
             os.fchmod(child, 0o755)  # nosec B103
         except OSError as error:
@@ -286,7 +305,7 @@ class RepositoryWriter:
             with contextlib.suppress(EnvironmentProblemError, UnsafeInputError):
                 directory = self.opened(parent, make=False)
                 try:
-                    _rmdir_made(directory, name, mine)
+                    _rmdir_made(directory, name, mine, where)
                 finally:
                     os.close(directory)
         made.clear()
@@ -367,26 +386,34 @@ class RepositoryWriter:
         0755; one that cannot be made whole is not left, when it is empty and known to be the
         one made. One whose identity cannot be read is left, and said."""
         try:
-            os.mkdir(slug, 0o755, dir_fd=parent)  # fails if anything is there
+            make_directory(parent, slug)  # fails if anything is there
         except FileExistsError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: it already exists") from error
         except OSError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
-        directory = made_directory(parent, slug, entry)  # what is there then is not known ours
+        try:
+            directory = made_directory(parent, slug, entry)  # what is there is not known ours
+        except FileNotFoundError as error:
+            raise EnvironmentProblemError(
+                f"cannot write {entry}: the run made it, and another removed it meanwhile"
+            ) from error
+        except UnsafeInputError as error:  # a link or a file put at its place
+            raise EnvironmentProblemError(
+                f"cannot write {entry}: the run made it, and another replaced it meanwhile"
+            ) from error
+        except EnvironmentProblemError as error:
+            raise untold(str(error), entry) from error
         try:
             made = identity(directory, entry)
         except EnvironmentProblemError as error:
             os.close(directory)
-            raise EnvironmentProblemError(
-                f"{error}; what was made at {entry} cannot be told from another's: remove it by "
-                "hand if it is this run's"
-            ) from error
+            raise untold(str(error), entry) from error
         try:
             # A directory of the repository, read by all, whatever the umask.
             os.fchmod(directory, 0o755)  # nosec B103
         except OSError as error:
             os.close(directory)
-            _rmdir_made(parent, slug, made)
+            _rmdir_made(parent, slug, made, entry)
             raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}") from error
         return directory, made
 

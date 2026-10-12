@@ -18,8 +18,8 @@ scenario-tools --format json intake export.zip --request request.yaml --repo . -
   `.gitattributes`: the plan describes what that commit gives. The rest of the checkout does
   not count.
 - `--plan`: where the plan is written. Nothing may be there yet, its directory must exist and
-  not be a link, and it may not be inside `scenarios/`. Neither may the export nor the request,
-  wherever the path they are given by leads.
+  not be a link, and it may not be inside `scenarios/`, `policy/` or `schemas/`, which stay as
+  committed. Neither may the export nor the request, wherever the path they are given by leads.
 - `--format json` goes before `intake`, as for every command.
 
 ## The request
@@ -142,7 +142,7 @@ new one, or restore its file (`git restore <entry>/scenario.json`) for an update
   directory for a new entry, or the change to `scenario.json` for an update
   (`git checkout -- <entry>/scenario.json`, which also drops any change made to it by hand).
 - `2`: a usage error, and nothing is run: the options, a plan already there, or a plan, an export
-  or a request inside `scenarios/`.
+  or a request inside `scenarios/`, `policy/` or `schemas/`.
 - `3`: the environment stops the run. Nothing is kept, except in the last case below, which the
   run names. This covers:
   - the checkout has changes that are not committed under `scenarios/`, `policy/` or
@@ -176,7 +176,8 @@ before the run, so that a plan left by another run is never taken for this one's
 - **What is written:**
   - The plan's place is reserved first.
   - The entry is written from the checkout held, never from its path again.
-  - A new entry's files are created where nothing is.
+  - A new entry's files are created where nothing is. The directories it needs, when
+    missing, are made and set so that all can read them, whatever the umask.
   - An update sets `scenario.json` aside at once, and replaces it only if what was set aside
     still holds what the checks read; a file another puts in its place meanwhile is never
     overwritten, and what the run puts back goes only where nothing is (on a file system
@@ -190,8 +191,9 @@ before the run, so that a plan left by another run is never taken for this one's
   for it are removed, an updated `scenario.json` gets its previous bytes back, and the plan's
   place is freed. Anything another process put or changed there meanwhile is never removed nor
   overwritten: a file put or changed in a new entry stays, and the entry with it. A file or
-  directory the run made, but whose identity it cannot read, cannot be told from another's: it
-  is left, and the run says so.
+  directory the run made, but that it cannot open or whose identity it cannot read, cannot be
+  told from another's: it is left, and the run says so; such a directory may be open to its
+  owner alone.
 - **Asked to stop:** a request to stop (Ctrl-C, SIGTERM as a CI job is cancelled, SIGHUP as a
   terminal closes, or SIGQUIT) while the run writes waits until the writing is done, then is
   dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it
@@ -205,7 +207,7 @@ before the run, so that a plan left by another run is never taken for this one's
   which takes back what it wrote. A file another adds to the entry is not looked for.
 
 A run killed outright (SIGKILL), with no chance to take anything back, may leave an incomplete
-entry, an empty or partly written plan, or hidden names `.scenario-tools-<hex>` in or next to
+entry, whose directories may be open to their owner alone, an empty or partly written plan, or hidden names `.scenario-tools-<hex>` in or next to
 the entry, or next to the plan. Remove them before running again; an update cut short may have
 left `scenario.json` itself under such a name: restore it from the commit
 (`git restore <entry>/scenario.json`). Until they are removed, such a name is a change of the

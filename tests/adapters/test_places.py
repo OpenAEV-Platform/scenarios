@@ -20,6 +20,7 @@ from scenario_tools.adapters.places import (
     identity,
     is_hidden_name,
     made_directory,
+    make_directory,
     open_directory,
     place_back,
     take_back,
@@ -436,3 +437,22 @@ def test_a_file_interrupted_before_it_is_known_is_never_removed(
         create_in(held, tmp_path / "scenario.json", b"{}")
     assert isinstance(error.value.__cause__, KeyboardInterrupt)
     assert _names(tmp_path) == ["scenario.json"]  # cannot be told from another's: left, said
+
+
+@pytest.mark.parametrize("mask", [0o022, 0o777])
+def test_a_directory_is_made_open_to_its_owner_alone_and_the_umask_kept(
+    tmp_path: Path, mask: int
+) -> None:
+    directory = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    umask = os.umask(mask)
+    try:
+        make_directory(directory, "made")
+        with pytest.raises(FileExistsError):
+            make_directory(directory, "made")  # only where nothing is
+        kept = os.umask(umask)
+    finally:
+        os.umask(umask)
+        os.close(directory)
+
+    assert kept == mask
+    assert oct((tmp_path / "made").stat().st_mode & 0o777) == oct(0o700)

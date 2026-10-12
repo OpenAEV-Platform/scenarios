@@ -227,8 +227,9 @@ def test_an_empty_directory_put_as_it_is_made_is_as_good_as_the_one_made(
     assert (tmp_path / ENTRY / "scenario.json").read_bytes() == b"{}"
 
 
-def test_a_new_entry_appears_whole(tmp_path: Path) -> None:
-    umask = os.umask(0o077)  # the modes hold whatever the umask
+@pytest.mark.parametrize("mask", [0o077, 0o777])
+def test_a_new_entry_appears_whole(tmp_path: Path, mask: int) -> None:
+    umask = os.umask(mask)  # the modes hold whatever the umask, one closing all included
     try:
         _write(tmp_path, {"scenario.yaml": b"a: 1\n", "scenario.json": b"{}"}, new=True)
     finally:
@@ -289,6 +290,25 @@ def test_a_new_entry_and_the_directories_made_for_it_go_when_the_run_does_not_en
     assert list(tmp_path.iterdir()) == []
 
 
+def test_directories_made_go_set_aside_first_never_by_their_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removed: list[str] = []
+    rmdir = os.rmdir
+
+    def spied(path: str, *, dir_fd: int | None = None) -> None:
+        removed.append(path)  # one removed by its name could be another's, put there meanwhile
+        rmdir(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "rmdir", spied)
+
+    _interrupted(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+    assert list(tmp_path.iterdir()) == []
+    assert len(removed) == 3  # the entry, its domain and scenarios/
+    assert all(places.is_hidden_name(name) for name in removed), removed
+
+
 def test_directories_already_there_stay_when_a_new_entry_goes(tmp_path: Path) -> None:
     _entry(tmp_path, "scenarios/ransomware/other")
 
@@ -333,6 +353,23 @@ def test_a_directory_made_whose_mode_cannot_be_set_is_the_environment_s_fault(
 
     with pytest.raises(EnvironmentProblemError, match="cannot make scenarios"):
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+
+
+def test_a_new_entry_whose_mode_cannot_be_set_stays_when_another_put_a_file_in_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+
+    def failing(descriptor: int, mode: int) -> None:
+        os.close(os.open("notes.txt", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=descriptor))
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", failing)
+
+    with pytest.raises(EnvironmentProblemError, match=f"cannot make {ENTRY}: Operation not"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert _names(tmp_path / ENTRY) == ["notes.txt"]  # another's file, and the entry with it
+    assert _names(tmp_path / ENTRY.rsplit("/", 1)[0]) == ["akira"]  # nothing left aside
 
 
 def test_a_new_entry_whose_mode_cannot_be_set_goes(
@@ -1209,6 +1246,75 @@ def test_a_directory_above_whose_identity_cannot_be_read_leaves_nothing_open(
     monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", failing)
     opened, closed = descriptors(monkeypatch)
 
-    with pytest.raises(EnvironmentProblemError, match="Input/output error"):
+    with pytest.raises(EnvironmentProblemError, match="Input/output error") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
     assert sorted(opened) == sorted(closed)
+    assert "remove it by hand if it is this run's" in str(error.value)
+    assert (tmp_path / "scenarios").is_dir()  # nothing tells it from another's: never removed
+
+
+@pytest.mark.parametrize("where", [ENTRY, "scenarios/ransomware"], ids=["entry", "above"])
+def test_a_directory_made_and_removed_by_another_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    (tmp_path / "scenarios").mkdir()
+    made = places.made_directory
+
+    def removed(directory: int, name: str, at: str) -> int:
+        if at == where:
+            os.rmdir(name, dir_fd=directory)  # another removes it before the run opens it
+        return made(directory, name, at)
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", removed)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="removed it meanwhile"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert sorted(opened) == sorted(closed)
+    assert not (tmp_path / "scenarios" / "ransomware").exists()  # what the run made goes
+
+
+@pytest.mark.parametrize("where", [ENTRY, "scenarios/ransomware"], ids=["entry", "above"])
+def test_a_directory_made_and_replaced_by_a_link_is_the_environment_s_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    (tmp_path / "scenarios").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    made = places.made_directory
+
+    def replaced(directory: int, name: str, at: str) -> int:
+        if at == where:  # another moves it away and puts a link at its place
+            os.rename(name, tmp_path / "moved", src_dir_fd=directory)
+            os.symlink(tmp_path / "elsewhere", name, dir_fd=directory)
+        return made(directory, name, at)
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", replaced)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="replaced it meanwhile"):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert sorted(opened) == sorted(closed)
+    assert (tmp_path / where).is_symlink()  # another's, never removed
+    assert list((tmp_path / "elsewhere").iterdir()) == []  # never written through
+
+
+@pytest.mark.parametrize("where", [ENTRY, "scenarios/ransomware"], ids=["entry", "above"])
+def test_a_directory_made_that_cannot_be_opened_is_left_and_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    (tmp_path / "scenarios").mkdir()
+    made = places.made_directory
+
+    def failing(directory: int, name: str, at: str) -> int:
+        if at == where:
+            raise EnvironmentProblemError(f"cannot read {at}: Permission denied")
+        return made(directory, name, at)
+
+    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", failing)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError, match="Permission denied") as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert sorted(opened) == sorted(closed)
+    assert f"what was made at {where} cannot be told" in str(error.value)
+    assert (tmp_path / where).is_dir()  # nothing tells it from another's: never removed

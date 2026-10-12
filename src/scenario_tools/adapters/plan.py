@@ -9,7 +9,13 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager
 from pathlib import Path
 
-from scenario_tools.adapters.places import identity, removing_file, take_back, write_all
+from scenario_tools.adapters.places import (
+    identity,
+    removing_file,
+    take_back,
+    untold,
+    write_all,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError
 
 
@@ -133,14 +139,11 @@ def _unusable(path: Path, error: OSError) -> EnvironmentProblemError:
 def _reserved(path: Path, directory: int, descriptor: int) -> tuple[int, int]:
     """The identity of the empty file just made at ``path``, set to 0644 whatever the umask;
     one that cannot be is taken back. One whose identity cannot be read cannot be told from
-    another's file, and is never removed: it is said."""
+    another's, and is never removed: it is said."""
     try:
         made = identity(descriptor, str(path))
     except EnvironmentProblemError as error:
-        raise EnvironmentProblemError(
-            f"{error}; what was made at {path} cannot be told from another's file: remove it by "
-            "hand if it is this run's"
-        ) from error
+        raise untold(str(error), str(path)) from error
     try:
         os.fchmod(descriptor, 0o644)
     except OSError as error:

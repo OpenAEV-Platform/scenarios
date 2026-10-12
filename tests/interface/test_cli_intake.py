@@ -181,15 +181,48 @@ def test_a_refused_request_writes_nothing(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert not plan.exists()
 
 
-def test_a_plan_inside_the_entries_is_a_usage_error(
+@pytest.mark.parametrize("place", ["scenarios", "policy", "schemas", "policy/data"])
+def test_a_plan_where_the_checkout_must_stay_committed_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, place: str
+) -> None:
+    root = _repository(tmp_path)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), root / place / "plan.json")
+
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert "scenarios/, policy/ or schemas/" in result.stderr
+    assert not (root / "scenarios").exists()
+    assert not (root / place / "plan.json").exists()
+
+
+def test_a_plan_elsewhere_in_the_checkout_is_written(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     root = _repository(tmp_path)
 
-    result = _intake(monkeypatch, root, _request(tmp_path, NEW), root / "scenarios" / "plan.json")
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), root / "plan.json")
 
-    assert result.exit_code == 2
-    assert result.stdout == ""
+    assert result.exit_code == 0, result.output
+    assert (root / "plan.json").exists()
+
+
+def test_a_restrictive_umask_still_writes_the_entry_and_its_plan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    request, plan = _request(tmp_path, NEW), tmp_path / "plan.json"
+
+    umask = os.umask(0o777)  # nothing the run makes may be left closed to the run itself
+    try:
+        result = _intake(monkeypatch, root, request, plan)
+    finally:
+        os.umask(umask)
+
+    assert result.exit_code == 0, result.output
+    for directory in (root / ENTRY, (root / ENTRY).parent, root / "scenarios"):
+        assert oct(directory.stat().st_mode & 0o777) == oct(0o755), directory
+    assert oct(plan.stat().st_mode & 0o777) == oct(0o644)
 
 
 def test_a_checkout_without_a_commit_is_the_environment_s_fault(
@@ -290,18 +323,19 @@ def test_a_plan_reaching_the_entries_through_a_link_is_a_usage_error(
     assert list((root / "scenarios").iterdir()) == []
 
 
+@pytest.mark.parametrize("place", ["scenarios", "policy", "schemas"])
 @pytest.mark.parametrize("which", ["export", "request"])
-def test_inputs_inside_the_entries_are_a_usage_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, which: str
+def test_inputs_where_the_checkout_must_stay_committed_are_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, which: str, place: str
 ) -> None:
     root = _repository(tmp_path)
-    (root / "scenarios").mkdir()
+    (root / place).mkdir(exist_ok=True)
     export, request = EASM, _request(tmp_path, NEW)
     if which == "export":
-        export = root / "scenarios" / "export.zip"
+        export = root / place / "export.zip"
         shutil.copy(EASM, export)
     else:
-        request = _request(root / "scenarios", NEW)
+        request = _request(root / place, NEW)
 
     result = _intake(monkeypatch, root, request, tmp_path / "plan.json", export)
 
@@ -552,7 +586,7 @@ def test_an_input_reaching_the_entries_through_a_link_and_back_is_a_usage_error(
     result = _intake(monkeypatch, root, roundabout, tmp_path / "plan.json")
 
     assert result.exit_code == 2, result.output
-    assert "inside the entries" in result.output
+    assert "scenarios/, policy/ or schemas/" in result.output
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")

@@ -516,6 +516,10 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
 
 REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
 
+# What intake keeps as committed, but for the entry it writes: no plan nor input goes there.
+_PLANNED = ("scenarios", "policy", "schemas")
+_PLANNED_NAMED = ", ".join(f"{path}/" for path in _PLANNED[:-1]) + f" or {_PLANNED[-1]}/"
+
 
 @main.command(name="intake")
 @click.argument("export", type=click.Path(path_type=Path, dir_okay=False))
@@ -532,18 +536,20 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
         plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
     except OSError as error:  # a relative path, once the working directory is gone
         _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
-    entries = root / "scenarios"
-    if entries in (plan, *plan.parents) or _inside(plan, entries):
-        raise click.UsageError("--plan may not be inside the entries of the repository")
+    planned = [root / place for place in _PLANNED]  # as committed, or the run stops
+    if any(place in (plan, *plan.parents) or _inside(plan, place) for place in planned):
+        raise click.UsageError(
+            f"--plan may not be inside {_PLANNED_NAMED} of the repository: they stay as committed"
+        )
     if os.path.lexists(plan):
         raise click.UsageError(
             "--plan names a place where something is already there: remove the earlier plan "
             "first, so that it is never taken for this run's"
         )
     for given, place in zip((export, request), inputs, strict=True):
-        if _inside(place, entries):
+        if any(_inside(place, directory) for directory in planned):
             raise click.UsageError(
-                f"{given.name} is inside the entries of the repository: an export or a "
+                f"{given.name} is inside {_PLANNED_NAMED} of the repository: an export or a "
                 "request must never enter git"
             )
 
@@ -604,18 +610,16 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
 
 
 # What the plan depends on, besides the export and the request: the catalogue and its rules.
-_PLANNED = ("scenarios", "policy", "schemas")
 
 
 def _refuse_uncommitted(root: Path) -> None:
     """Refuse a checkout whose catalogue or rules differ from its commit, or whose bytes git
     converts from it: the plan must describe what its base gives."""
-    places = ", ".join(f"{path}/" for path in _PLANNED)
     changed = uncommitted(root, _PLANNED)
     if changed:
         more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
         raise EnvironmentProblemError(
-            f"the checkout has changes that are not committed under {places} "
+            f"the checkout has changes that are not committed under {_PLANNED_NAMED} "
             f"({changed[0]}{more}): commit or remove them first, so that the plan describes "
             "what its base gives; an entry an earlier intake wrote counts: commit it on its "
             "own branch, then start the next intake from the commit it should start from"
@@ -624,7 +628,7 @@ def _refuse_uncommitted(root: Path) -> None:
     if turned:
         more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
         raise EnvironmentProblemError(
-            f"git converts files under {places} between the commit and the checkout "
+            f"git converts files under {_PLANNED_NAMED} between the commit and the checkout "
             f"({turned[0]}{more}, by .gitattributes): the plan would not describe the commit's "
             "bytes"
         )

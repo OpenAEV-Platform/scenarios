@@ -97,6 +97,27 @@ def made_directory(directory: int, name: str, where: str) -> int:
     return child
 
 
+def make_directory(directory: int, name: str) -> None:
+    """Make the directory ``name`` in ``directory``, only where nothing is, open to its owner
+    alone whatever the umask, so that the run can open it at once: its mode is set once it is
+    known to be the run's. The umask is the process's: the run is single-threaded, and writes
+    while its requests to stop are held, so that none falls between setting and restoring it."""
+    umask = os.umask(0o077)
+    try:
+        os.mkdir(name, 0o700, dir_fd=directory)
+    finally:
+        os.umask(umask)
+
+
+def untold(reason: str, where: str) -> EnvironmentProblemError:
+    """What says ``reason``, and that what the run made at ``where`` is left: nothing tells it
+    from another's any more, so it is never removed."""
+    return EnvironmentProblemError(
+        f"{reason}; what was made at {where} cannot be told from another's: remove it by hand if "
+        "it is this run's"
+    )
+
+
 def write_all(descriptor: int, data: bytes) -> None:
     """Write all of ``data`` to ``descriptor``, however many writes it takes."""
     view = memoryview(data)
@@ -130,10 +151,7 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
     except BaseException as failure:  # an interruption too: the file goes, if it is known
         if made is None:  # nothing tells this run's file from another's: never removed
             why = failure.strerror if isinstance(failure, OSError) else "interrupted"
-            raise EnvironmentProblemError(
-                f"cannot write {path}: {why}; what was made there cannot be told from another's "
-                "file: remove it by hand if it is this run's"
-            ) from failure
+            raise untold(f"cannot write {path}: {why}", str(path)) from failure
         remove = removing_file(directory)
         take_back(directory, path.name, made, remove, where=str(path), failure=failure)
         if isinstance(failure, OSError):
