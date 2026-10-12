@@ -135,13 +135,15 @@ def _committable_files(root: Path) -> list[Path]:
     return sorted(Path(os.fsdecode(name)) for name in listing.split(b"\0") if name)
 
 
-def _files_with(pattern: re.Pattern[str], root: Path) -> dict[str, list[int]]:
-    """Every committable file, but this one, with the lines ``pattern`` finds something in: a
+def _files_with(
+    pattern: re.Pattern[str], root: Path, *, exempt: Path | None = THIS_FILE
+) -> dict[str, list[int]]:
+    """Every committable file, but ``exempt``, with the lines ``pattern`` finds something in: a
     link by what the repository stores for it, its target; binary files left aside."""
     found = {}
     for relative in _committable_files(root):
         path = root / relative
-        if relative == THIS_FILE:
+        if relative == exempt:
             continue  # this file names the generic patterns
         if path.is_symlink():
             text = str(path.readlink())
@@ -164,7 +166,17 @@ def test_no_repository_file_refers_to_the_planning() -> None:
 
 def test_no_repository_file_names_an_internal_document_or_tool() -> None:
     # Only where and on which line, never the term: the logs of this repository are public.
-    assert _files_with(_required_private(), ROOT) == {}
+    assert _files_with(_required_private(), ROOT, exempt=None) == {}  # this file included
+
+
+def test_this_file_is_exempt_from_the_generic_patterns_only(tmp_path: Path) -> None:
+    (tmp_path / THIS_FILE).parent.mkdir(parents=True)
+    (tmp_path / THIS_FILE).write_text("done in T012\nthe zorblax plan\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)  # noqa: S607
+    private = re.compile(r"\bzorblax\b")
+
+    assert _files_with(_GENERIC, tmp_path) == {}
+    assert _files_with(private, tmp_path, exempt=None) == {THIS_FILE.as_posix(): [2]}
 
 
 def test_only_files_that_can_be_committed_are_scanned_and_only_this_one_is_exempt(
