@@ -2,11 +2,12 @@
 # Every target fails the build on the first error.
 
 GITLEAKS_VERSION := 8.30.1
+ACTIONLINT_VERSION := 1.7.12
 MUTATION_PATHS := src/scenario_tools/domain/policy src/scenario_tools/domain/verification
 
 .PHONY: check lint format types imports tests coverage-domain security audit secrets mutation
 
-check: lint format types imports tests coverage-domain security audit secrets mutation
+check: lint format types imports tests coverage-domain security audit secrets workflows mutation
 	@echo "Local pipeline: all checks passed."
 
 lint:
@@ -39,6 +40,12 @@ audit:
 secrets:
 	@gitleaks version | grep -qx '$(GITLEAKS_VERSION)' || { echo "gitleaks $(GITLEAKS_VERSION) required"; exit 1; }
 	gitleaks dir . --no-banner --redact
+
+# The workflows: actionlint for their syntax and expressions, zizmor for their security.
+workflows:
+	@actionlint -version | head -1 | grep -qx '$(ACTIONLINT_VERSION)' || { echo "actionlint $(ACTIONLINT_VERSION) required"; exit 1; }
+	actionlint
+	uv run zizmor --offline --min-severity informational .github/workflows/
 
 # Mutation testing on the security-critical bounded contexts, once they hold code.
 # `mutmut results` lists every mutant that was not killed; any line fails the build.

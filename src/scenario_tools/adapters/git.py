@@ -175,3 +175,47 @@ def _other_line_ends(root: Path, paths: tuple[str, ...]) -> set[str]:
         ):
             found.add(name)
     return found
+
+
+def changed_entries(root: Path, base: str) -> tuple[str, ...]:
+    """The entries the checkout at ``root``, the top of a checkout, adds, changes or removes
+    since its merge base with ``base``, a full commit ID: each directory
+    ``scenarios/<domain>/<slug>`` holding a changed path, sorted, once each. What stands where
+    the catalogue or a domain should be and is no directory, a link included, is listed itself,
+    never crossed, and so is a file of ``scenarios`` that is no domain, for its own check to
+    refuse. A changed path whose name is not UTF-8 fails: it would not be listed rightly."""
+    if not _COMMIT.fullmatch(base):  # never read by git as an option, nor as a range
+        raise EnvironmentProblemError(
+            f"cannot read the changes of the pull request: {base!r} is not a commit"
+        )
+    head_commit(root)  # the top of a checkout, with a commit
+    told = _git(
+        root,
+        "diff",
+        "--name-only",
+        "-z",
+        "--no-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        f"{base}...HEAD",
+        "--",
+        "scenarios",
+    )
+    if told is None:
+        raise EnvironmentProblemError("cannot read the changes of the pull request")
+    if "\ufffd" in told:  # a name git could not give as UTF-8
+        raise EnvironmentProblemError(
+            "cannot read the changes of the pull request: a changed path is not UTF-8"
+        )
+    found = set()
+    for path in filter(None, told.split("\0")):
+        parts = path.split("/")
+        for depth in (1, 2):  # the catalogue, then the domain
+            place = root.joinpath(*parts[:depth])
+            if place.is_symlink() or (place.exists() and not place.is_dir()):
+                found.add("/".join(parts[:depth]))  # never crossed
+                break
+        else:
+            if len(parts) >= 3:
+                found.add("/".join(parts[:3]))  # scenarios/<domain>/<slug>, there or removed
+    return tuple(sorted(found))

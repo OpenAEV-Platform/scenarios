@@ -32,7 +32,13 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
-from scenario_tools.adapters.git import converted, converting, head_commit, uncommitted
+from scenario_tools.adapters.git import (
+    changed_entries,
+    converted,
+    converting,
+    head_commit,
+    uncommitted,
+)
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
@@ -247,6 +253,24 @@ def main(ctx: click.Context, output_format: str) -> None:
 def check_title(ctx: click.Context, title: str) -> None:
     """Check a pull request TITLE against the shared convention."""
     _emit(ctx, "check-title", lambda: check_title_use_case(title))
+
+
+@main.command(name="changed-entries")
+@click.argument("checkout", type=click.Path(path_type=Path, file_okay=False))
+@click.option(
+    "--base", required=True, help="The full ID of the commit the checkout is compared with."
+)
+@click.pass_context
+def changed_entries_command(ctx: click.Context, checkout: Path, base: str) -> None:
+    """List the entries the pull request checked out at CHECKOUT adds or changes since its merge
+    base with BASE, each followed by a NUL byte, for a workflow to read whatever their names."""
+    try:
+        entries = changed_entries(checkout, base)
+    except EnvironmentProblemError as error:
+        text = shorten(_printable(f"changed-entries: environment error: {error}"), ERROR_LIMIT)
+        click.echo(text, err=True)
+        ctx.exit(EXIT_ENVIRONMENT)
+    click.echo("".join(f"{entry}\0" for entry in entries), nl=False)
 
 
 _CANONICAL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
