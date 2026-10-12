@@ -289,6 +289,13 @@ def test_a_request_refused_after_its_schema_has_no_plan() -> None:
         plan_document(result, {}, "f" * 40, ())
 
 
+@pytest.mark.parametrize("key", ["slug", "domain", "external_id"])
+def test_a_hidden_character_in_a_field_its_schema_bounds_is_said_as_hidden(key: str) -> None:
+    result = _intake({**NEW, key: f"{NEW[key]}{chr(0x200B)}"})
+
+    assert _codes(result.refusals) == [("IO-017", REQUEST, f"/{key}")]
+
+
 def test_a_request_holding_a_hidden_character_is_refused_before_anything() -> None:
     result = _intake({**NEW, "generated_by": f"run {chr(0x202E)}42"})
 

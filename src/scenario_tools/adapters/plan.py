@@ -48,10 +48,17 @@ class Reservation:
         return (status.st_dev, status.st_ino) == identity(self._directory, str(self._path.parent))
 
     def publish(self, data: bytes) -> None:
-        """Write ``data`` in the reserved file; published only if the place still holds it."""
+        """Write ``data`` in the reserved file, whole, whatever another wrote in it; published
+        only if the file still holds ``data`` once on disk and the place still holds the file."""
         try:
+            os.ftruncate(self._file, 0)
+            os.lseek(self._file, 0, os.SEEK_SET)
             write_all(self._file, data)
             os.fsync(self._file)
+            if os.pread(self._file, len(data) + 1, 0) != data:
+                raise EnvironmentProblemError(
+                    f"cannot write {self._path}: it was changed meanwhile"
+                )
             # The plan is at its path only if both its directory and its name are still the
             # ones reserved: another put in their place meanwhile would not show it.
             ours = self._ours(self._path.name) and self._still_its_directory()
@@ -97,7 +104,7 @@ def reserve_plan(path: Path) -> Iterator[Reservation]:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _unusable(path.parent, error) from error
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW  # read back once written
     try:
         try:
             descriptor = os.open(path.name, flags, 0o600, dir_fd=directory)

@@ -67,6 +67,11 @@ def intake_entry(
 ) -> IntakeResult:
     """What intake makes of ``export`` and the request read from ``request_path``, against the
     catalogue ``source`` reads."""
+    # What the request writes is checked as the export is, before anything else: a hidden
+    # character is said as such, whatever the schema would say of the field that holds it.
+    hidden = hidden_character_findings(request_document, request_path)
+    if hidden:
+        return IntakeResult(None, hidden)
     violations = schema.validate("intake-request", request_document)
     if violations:
         return IntakeResult(
@@ -87,10 +92,9 @@ def intake_entry(
             why = f"must be kebab-case of at most {SLUG_LIMIT} characters, never a path"
             return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
     request = IntakeRequest.from_document(request_document)
-    # What the request writes is checked as the export is, before anything is written.
-    refusals = hidden_character_findings(request_document, request_path)
+    refusals: tuple[Finding, ...] = ()
     name = _scenario_name(export)
-    if not refusals and not name.strip():
+    if not name.strip():
         why = "the export's scenario has no name: name it on the platform, and export it again"
         refusals = (_refused("SCH-001", export_path, "/scenario_information/scenario_name", why),)
     refusals = (

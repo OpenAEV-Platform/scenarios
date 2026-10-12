@@ -42,6 +42,36 @@ def test_an_output_is_published_in_the_place_reserved_for_it(tmp_path: Path) -> 
     assert [path.name for path in tmp_path.iterdir()] == ["plan.json"]
 
 
+def test_what_another_wrote_in_the_place_never_stays_in_the_plan(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+
+    with reserve_plan(plan) as reservation:
+        plan.write_bytes(b"x" * 100)  # in place, the same file: longer than the plan
+        reservation.publish(b"{}\n")
+
+    assert plan.read_bytes() == b"{}\n"
+
+
+def test_a_plan_changed_in_place_as_it_is_written_is_never_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = tmp_path / "plan.json"
+    synced = os.fsync
+
+    def written_over(descriptor: int) -> None:
+        synced(descriptor)
+        with plan.open("r+b") as other:  # another, in place, once the plan is on disk
+            other.write(b"[]")
+
+    def run() -> None:
+        with reserve_plan(plan) as reservation:
+            monkeypatch.setattr(os, "fsync", written_over)
+            reservation.publish(b"{}\n")
+
+    with pytest.raises(EnvironmentProblemError, match="changed meanwhile"):
+        run()
+
+
 def test_a_place_is_never_reserved_over_anything_nor_through_a_link(tmp_path: Path) -> None:
     (tmp_path / "plan.json").write_text("there")
     with pytest.raises(EnvironmentProblemError, match="already exists"):
