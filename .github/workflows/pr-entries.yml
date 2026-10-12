@@ -54,6 +54,14 @@ jobs:
           uv run --frozen --no-dev scenario-tools changed-entries pull --base "$BASE" > "$RUNNER_TEMP/changed"
           : > "$RUNNER_TEMP/entries"
           while IFS= read -r -d '' entry; do
+            # Never a place outside the catalogue, whatever lists it.
+            case "/$entry/" in
+              */../*|*/./*|*//*) echo "refused, outside the catalogue: $entry" >&2; exit 1 ;;
+            esac
+            case "$entry" in
+              scenarios|scenarios/*) ;;
+              *) echo "refused, outside the catalogue: $entry" >&2; exit 1 ;;
+            esac
             rm -rf -- "$entry"  # removed or changed: the base's copy goes
             if [ -e "pull/$entry" ] || [ -L "pull/$entry" ]; then
               case "$entry" in */*) mkdir -p -- "${entry%/*}" ;; esac

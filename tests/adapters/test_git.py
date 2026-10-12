@@ -542,3 +542,38 @@ def test_a_file_of_the_catalogue_that_is_no_domain_and_goes_leaves_nothing_to_ju
     _commit_all(root, "pull request")
 
     assert changed_entries(root, base) == ()
+
+
+def _plant(root: Path, components: list[str]) -> None:
+    """A commit whose tree holds ``scenarios/<components...>/tool.py``, built by hand as an
+    attacker would: git refuses to check such a path out, not to store it."""
+
+    def run(*arguments: str, given: str = "") -> str:
+        return subprocess.run(  # noqa: S603 - a fixed program, arguments of the test's own
+            ["git", "-C", str(root), *arguments],  # noqa: S607
+            input=given,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    blob = run("hash-object", "-w", "--stdin", given="print('the pull request runs')\n")
+    tree = run("mktree", given=f"100644 blob {blob}\ttool.py\n")
+    for name in reversed(components):
+        tree = run("mktree", "--missing", given=f"040000 tree {tree}\t{name}\n")
+    tree = run("mktree", "--missing", given=f"040000 tree {tree}\tscenarios\n")
+    commit = run("-c", "user.name=t", "-c", "user.email=t@example.org", "commit-tree", tree,
+                 "-p", "HEAD", "-m", "pull request")  # fmt: skip
+    run("update-ref", "HEAD", commit)
+
+
+@pytest.mark.parametrize("components", [["..", "src"], [".", "x"], ["x", "..", "y"]])
+def test_a_changed_path_leaving_the_catalogue_fails_rather_than_being_listed(
+    tmp_path: Path, components: list[str]
+) -> None:
+    root = _committed(tmp_path)
+    base = _git(root, "rev-parse", "HEAD")
+    _plant(root, components)
+
+    with pytest.raises(EnvironmentProblemError, match="never a place outside the catalogue"):
+        changed_entries(root, base)
