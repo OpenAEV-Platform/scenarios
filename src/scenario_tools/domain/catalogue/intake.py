@@ -20,11 +20,12 @@ NEW, UPDATE = "new", "update"
 @dataclass(frozen=True)
 class CatalogueEntry:
     """An entry of the catalogue as intake compares it: its directory, its external ID and the
-    scenario name its ``scenario.yaml`` declares."""
+    scenario name its ``scenario.yaml`` declares; neither is known when it cannot be read."""
 
     path: str
     external_id: str
     name: str
+    readable: bool = True
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,14 @@ def intake_refusals(
 
     def refused(code: str, path: str, pointer: str, message: str) -> tuple[Finding, ...]:
         return (Finding(code, Severity.BLOCKING, path, pointer, message),)
+
+    unreadable = sorted(entry.path for entry in entries if not entry.readable)
+    if unreadable:  # what it declares is not known, so neither is what is taken
+        message = (
+            f"the catalogue cannot be checked: {', '.join(unreadable)} cannot be read; "
+            "fix it first, as validate says"
+        )
+        return refused("ITK-008", request_path, "", message)
 
     if request.mode == NEW:
         if same:

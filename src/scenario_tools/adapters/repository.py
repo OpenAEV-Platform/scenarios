@@ -120,6 +120,33 @@ def _replaced(directory: int, path: Path, files: Mapping[str, bytes]) -> Iterato
         raise LeftAsideError(f"{'; '.join(left)}: remove it by hand")
 
 
+def _remove_made(
+    parent: int, slug: str, entry: str, identity: tuple[int, int], failure: BaseException
+) -> None:
+    """Remove the entry this run made at ``slug``, never another: what is there is set aside at
+    once, then removed only if it is the directory this run made. What cannot be is said, with
+    ``failure`` as its cause."""
+    aside = f".{slug}.{secrets.token_hex(8)}"
+    left = f"cannot remove {entry}, which this run left incomplete"
+    try:
+        try:
+            os.rename(slug, aside, src_dir_fd=parent, dst_dir_fd=parent)
+        except FileNotFoundError:
+            raise EnvironmentProblemError(
+                f"{left}: it was moved meanwhile; remove it by hand"
+            ) from failure
+        status = os.stat(aside, dir_fd=parent, follow_symlinks=False)
+        if (status.st_dev, status.st_ino) != identity:
+            where = f"{entry.rsplit('/', 1)[0]}/{aside}"
+            raise EnvironmentProblemError(
+                f"{left}: another was put at its place meanwhile, now kept as {where}; "
+                "remove ours by hand"
+            ) from failure
+        shutil.rmtree(aside, dir_fd=parent)
+    except OSError as error:
+        raise EnvironmentProblemError(f"{left}: {error.strerror}; remove it by hand") from failure
+
+
 class RepositoryEntries:
     """The entries of the repository at ``root``."""
 
@@ -280,25 +307,20 @@ class RepositoryEntries:
             raise EnvironmentProblemError(f"cannot write {entry}: it already exists") from error
         except OSError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: {error.strerror}") from error
-        try:
-            directory = _child(parent, slug, entry)
+        directory = _child(parent, slug, entry)
+        try:  # held open until the end, so that its identity is never another's
+            status = os.fstat(directory)
             try:
                 # A directory of the repository, read by all, whatever the umask.
                 os.fchmod(directory, 0o755)  # nosec B103
                 for name, data in files.items():
                     write_in(directory, self._root / entry / name, data, create=True)
                 yield
-            finally:
-                os.close(directory)
-        except BaseException as failure:
-            try:
-                shutil.rmtree(slug, dir_fd=parent)
-            except OSError as error:
-                raise EnvironmentProblemError(
-                    f"cannot remove {entry}, which this run left incomplete: {error.strerror}; "
-                    "remove it by hand"
-                ) from failure
-            raise
+            except BaseException as failure:
+                _remove_made(parent, slug, entry, (status.st_dev, status.st_ino), failure)
+                raise
+        finally:
+            os.close(directory)
 
     def exists(self, path: str) -> bool:
         parts = path.split("/")
@@ -335,8 +357,9 @@ class RepositoryEntries:
                     continue  # not an entry, or one its own check reports as incomplete
                 try:
                     document = read_yaml_file(metadata)
-                except UnsafeInputError:
-                    continue  # the entry's own check says why it is refused
+                except UnsafeInputError:  # its own check says why; what it declares is unknown
+                    found.append(CatalogueEntry(f"scenarios/{domain}/{slug}", "", "", False))
+                    continue
                 fields = document if isinstance(document, dict) else {}
                 external_id, name = fields.get("external_id"), fields.get("name")
                 if isinstance(external_id, str) or isinstance(name, str):

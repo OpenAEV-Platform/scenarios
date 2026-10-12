@@ -108,6 +108,17 @@ def test_a_new_entry_whose_name_is_taken_is_refused() -> None:
     assert "scenarios/techniques/other" in findings[0].message
 
 
+@pytest.mark.parametrize("mode", ["new", "update"])
+def test_a_catalogue_holding_an_entry_that_cannot_be_read_refuses_the_request(mode: str) -> None:
+    unreadable = CatalogueEntry("scenarios/techniques/broken", "", "", readable=False)
+    entry = CatalogueEntry("scenarios/ransomware/akira-crisis", ID, "Akira crisis")
+
+    findings = _refusals(_request(mode=mode), "Akira crisis", entry, unreadable)
+
+    assert _codes(findings) == [("ITK-008", REQUEST, "")]
+    assert "scenarios/techniques/broken" in findings[0].message
+
+
 def test_an_update_of_an_unknown_entry_is_refused() -> None:
     assert _codes(_refusals(_request(mode="update"))) == [("ITK-004", REQUEST, "/external_id")]
 

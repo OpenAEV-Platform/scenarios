@@ -196,6 +196,18 @@ def test_every_entry_is_listed_with_its_external_id_and_name(tmp_path: Path) -> 
     )
 
 
+def test_an_entry_whose_metadata_cannot_be_read_is_listed_as_such(tmp_path: Path) -> None:
+    _entry(tmp_path, ENTRY, "one")
+    unreadable = _entry(tmp_path, "scenarios/techniques/broken", "two")
+    (unreadable / "scenario.yaml").write_text("external_id: [two\n")  # never parsed
+
+    assert RepositoryEntries(tmp_path).entries() == (
+        CatalogueEntry(ENTRY, "one", ""),
+        CatalogueEntry("scenarios/techniques/broken", "", "", readable=False),
+    )
+    assert RepositoryEntries(tmp_path).external_ids() == {"one": (ENTRY,)}
+
+
 def test_whether_a_path_exists_is_told_without_following_links(tmp_path: Path) -> None:
     _entry(tmp_path)
     source = RepositoryEntries(tmp_path)
@@ -628,3 +640,40 @@ def test_a_copy_left_while_putting_a_file_back_is_said(
     with pytest.raises(EnvironmentProblemError, match="a copy is left as"):
         _write(tmp_path, {"scenario.json": b"{}\n"}, new=False)
     assert (directory / "scenario.json").is_symlink()
+
+
+def test_a_new_entry_whose_place_another_took_meanwhile_is_never_removed(
+    tmp_path: Path,
+) -> None:
+    entry = tmp_path / ENTRY
+    moved = entry.parent / "moved"
+
+    def run() -> None:
+        with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=True):
+            entry.rename(moved)
+            entry.mkdir()
+            (entry / "theirs").write_text("another run's")
+            raise RuntimeError("the plan cannot be written")
+
+    with pytest.raises(EnvironmentProblemError, match="another was put at its place") as error:
+        run()
+    assert isinstance(error.value.__cause__, RuntimeError)
+    [kept] = [path for path in entry.parent.iterdir() if path.name.startswith(".akira.")]
+    assert (kept / "theirs").read_text() == "another run's"
+    assert kept.name in str(error.value)
+    assert (moved / "scenario.json").read_bytes() == b"{}"  # ours, never confused with theirs
+
+
+def test_a_new_entry_moved_away_meanwhile_is_said_left(tmp_path: Path) -> None:
+    entry = tmp_path / ENTRY
+    moved = entry.parent / "moved"
+
+    def run() -> None:
+        with RepositoryEntries(tmp_path).writing(ENTRY, {"scenario.json": b"{}"}, new=True):
+            entry.rename(moved)
+            raise RuntimeError("the plan cannot be written")
+
+    with pytest.raises(EnvironmentProblemError, match="moved meanwhile") as error:
+        run()
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert (moved / "scenario.json").read_bytes() == b"{}"

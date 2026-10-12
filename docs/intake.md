@@ -62,6 +62,7 @@ Nothing is written when the request is refused:
 | `ITK-005` | an update whose `domain` and `slug` are not the entry's place |
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
+| `ITK-008` | an entry whose `scenario.yaml` cannot be read: what it holds is unknown, so is what is taken |
 
 Scenario names are compared in their Unicode compatibility form, without case, invisible
 format characters, outer blanks or runs of blanks: names that look different in the data may
