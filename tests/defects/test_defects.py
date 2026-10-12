@@ -30,12 +30,13 @@ def _repository(tmp_path: Path) -> Path:
     return root
 
 
-def _validate(root: Path, *entries: str) -> tuple[int, set[tuple[str, str]]]:
+def _validate(root: Path, *entries: str) -> tuple[int, list[tuple[str, str, str]]]:
+    """The exit code, and every finding as code, severity and path, duplicates kept."""
     result = CliRunner().invoke(
         main, ["--format", "json", "validate", *(str(root / entry) for entry in entries)]
     )
     findings = json.loads(result.stdout)["findings"]
-    return result.exit_code, {(finding["code"], finding["severity"]) for finding in findings}
+    return result.exit_code, sorted((f["code"], f["severity"], f["path"]) for f in findings)
 
 
 def _metadata(root: Path, change: Callable[[dict[str, Any]], object], entry: str = ENTRY) -> None:
@@ -118,6 +119,9 @@ DEFECTS: dict[str, Callable[[Path], object]] = {
     "IO-003": lambda root: _yaml_text(
         root, lambda text: text.replace("severity: high", "severity: &s high\nalias: *s", 1)
     ),
+    "IO-004": lambda root: _yaml_text(
+        root, lambda text: text + "deep: " + "[" * 70 + "]" * 70 + "\n"
+    ),
     "IO-005": lambda root: _yaml_text(root, lambda text: text + "name: twice\n"),
     "IO-006": lambda root: _yaml_text(root, lambda text: text + "relevance:\n  priority: .nan\n"),
     "IO-013": _linked,
@@ -134,7 +138,7 @@ TWO_ENTRIES: dict[str, tuple[Callable[[Path], object], tuple[str, ...]]] = {
 
 
 def test_the_entry_as_it_is_passes_with_no_finding(tmp_path: Path) -> None:
-    assert _validate(_repository(tmp_path), ENTRY) == (0, set())
+    assert _validate(_repository(tmp_path), ENTRY) == (0, [])
 
 
 @pytest.mark.parametrize("code", sorted(DEFECTS))
@@ -142,7 +146,10 @@ def test_each_defect_makes_exactly_its_check_fail(tmp_path: Path, code: str) -> 
     root = _repository(tmp_path)
     DEFECTS[code](root)
 
-    assert _validate(root, ENTRY) == (1, {(code, "blocking")})
+    exit_code, findings = _validate(root, ENTRY)
+    assert exit_code == 1
+    assert [(found, severity) for found, severity, _ in findings] == [(code, "blocking")]  # once
+    assert findings[0][2].startswith(f"{ENTRY}/")
 
 
 @pytest.mark.parametrize("code", sorted(TWO_ENTRIES))
@@ -153,11 +160,13 @@ def test_each_defect_between_two_entries_makes_exactly_its_check_fail(
     make, entries = TWO_ENTRIES[code]
     make(root)
 
-    assert _validate(root, *entries) == (1, {(code, "blocking")})
+    exit_code, findings = _validate(root, *entries)
+    assert exit_code == 1
+    assert findings == sorted((code, "blocking", f"{entry}/scenario.yaml") for entry in entries)
 
 
 def test_an_old_minimum_version_is_said_and_never_blocks(tmp_path: Path) -> None:
     root = _repository(tmp_path)
     _metadata(root, lambda d: d["requires"].__setitem__("openaev", ">=3.0"))
 
-    assert _validate(root, ENTRY) == (0, {("SCH-011", "info")})
+    assert _validate(root, ENTRY) == (0, [("SCH-011", "info", f"{ENTRY}/scenario.yaml")])
