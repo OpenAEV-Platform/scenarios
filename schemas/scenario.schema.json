@@ -246,7 +246,7 @@
         ],
         "properties": {
           "placeholder": {
-            "description": "A short name for the target, in kebab-case.",
+            "description": "A short name for the target: lower-case letters, digits and hyphens, starting with a letter or a digit.",
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
           },

@@ -3,14 +3,17 @@
 The tools report what they find as **findings**. Each finding has:
 
 - a **code**, such as `SCH-001`: its family, then a number;
-- a **severity**: `BLOCKING` (it must be fixed before the entry is accepted) or `INFO` (worth a
-  look, never blocking);
+- a **severity**: blocking (it must be fixed before the entry is accepted) or info (worth a look,
+  never blocking), written `BLOCKING` or `INFO` in the text output and `"blocking"` or `"info"` in
+  the JSON output;
 - the **path** of the file it is about, relative to the repository, and the **field** inside it,
   as a JSON pointer such as `/requires/openaev` (empty for the whole file);
 - a **message** that says what is wrong and, most of the time, what to do.
 
-With `--format json`, a command prints one JSON document: `{command, ok, findings}`. A report
-holds at most 100 findings; the last one then counts the rest (`IO-016`).
+With `--format json`, a command prints one JSON document: `{command, ok, findings}`, with an
+`error` member as well when the environment stops it. A usage error is printed as text on the
+error output whatever the format. A report shows at most 100 findings; when there are more, one
+last finding (`IO-016`) counts the rest.
 
 A command exits with `0` when nothing blocks, `1` when a finding blocks, `2` on a usage error,
 `3` when the environment stops it (a file it cannot read, a platform it cannot reach), and `4` on
@@ -35,7 +38,7 @@ file the tools read: exports, archives, requests, scenario files.
 | `IO-010` | An entry of the archive has an unsafe name: empty, absolute, with `..`, a backslash, a drive letter or a NUL character, or a name an extra field would change. | Export again from the platform. |
 | `IO-011` | The archive holds a link. | Export again. |
 | `IO-012` | Two entries of the archive have the same name, ignoring case. | Export again. |
-| `IO-013` | A path is not a regular file: a symbolic link, a directory, a device. Links are never followed, in an archive or in the repository. | Replace the link with the file itself. |
+| `IO-013` | A path is not what it should be: a symbolic link, a device, a directory where a file is expected, or a file where a directory is expected. Links are never followed, in an archive or in the repository. | Replace it with a regular file or directory, as the message says. |
 | `IO-014` | The export is not shaped like an OpenAEV scenario export: a missing or wrong field, an identifier that is not a UUID, a part the tools do not handle yet. | Export again; if it persists, open an issue with the platform version. |
 | `IO-015` | Policy data was found at more than one level above the output: an entry may not carry its own rules. | Remove the extra `policy/` directory. |
 | `IO-016` | The report holds more findings than it shows; this one counts the rest. | Fix the findings shown, then run the command again. |
@@ -53,7 +56,7 @@ These check an entry of the catalogue: its place, its `scenario.yaml` and its `s
 | `SCH-004` | `platforms` misses a platform that an inject needing an executor targets. | Add the platforms the message names. |
 | `SCH-005` | An inject uses a contract the tools do not know: neither a built-in contract they recorded, nor one created from a payload. | Use a built-in contract, or open an issue so that it can be recorded. |
 | `SCH-006` | The copy of a built-in contract stored in the scenario differs from the one the tools recorded. | Export the scenario again from a platform at a supported version. |
-| `SCH-007` | (Info) A field of a new `scenario.yaml` that the export cannot give, or a default to review, such as the version or the minimum platform version. | Complete or confirm it before the pull request. |
+| `SCH-007` | (Info) Something to complete or review in `scenario.yaml`: for a new entry, a field the export cannot give or a default such as the version; for an update, the version to raise and the changelog section to add, and after a rename the name and facets to align. | Complete or confirm it before the pull request. |
 | `SCH-008` | The entry is not where an entry belongs (`scenarios/<domain>/<slug>/`, with a known domain and a kebab-case slug), or a required file is missing. | Move the entry, or add the missing file. |
 | `SCH-009` | The description still ends with `…`: it was cut to fit and was not reviewed. | Rewrite the end of the description and remove the mark. |
 | `SCH-010` | Another entry has the same `external_id`. | Give this entry its own identifier, or update the existing entry instead. |
