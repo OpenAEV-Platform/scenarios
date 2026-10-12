@@ -101,3 +101,9 @@ plan. A run that cannot undo what it wrote says so, with where the previous file
 A run killed while writing may leave an incomplete entry, an empty or partly written plan, or
 the previous `scenario.json` of an update kept aside under a hidden name: remove them before
 running again.
+
+A run never follows a link inside the checkout or at the plan's place, and holds the checkout
+so that no other run writes in it meanwhile. It does not defend against another process that
+moves or replaces directories of the checkout while it runs: such a process can change the
+repository directly. Before the plan is published, the run makes sure the checkout and the
+entry are still where it wrote them, and stops otherwise.
