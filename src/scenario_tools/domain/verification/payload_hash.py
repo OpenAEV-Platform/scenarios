@@ -405,7 +405,7 @@ def embedded_payloads(stored: object) -> Iterator[EmbeddedPayload]:
     the payload is refused rather than hashed without them."""
     for pointer, _, contract in contracts_with_payloads(stored):
         held = contract.get(_HELD)
-        if _empty(held):
+        if held is None:
             techniques: tuple[object, ...] = ()
         elif isinstance(held, list):
             techniques = tuple(

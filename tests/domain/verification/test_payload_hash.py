@@ -553,7 +553,8 @@ def test_embedded_payloads_come_with_the_techniques_of_their_contract() -> None:
 
 
 @pytest.mark.parametrize(
-    ("held", "techniques"), [(None, ()), ([], ()), ("x", (None,)), ({"a": 1}, (None,))]
+    ("held", "techniques"),
+    [(None, ()), ([], ()), ("x", (None,)), ({"a": 1}, (None,)), ("", (None,)), ({}, (None,))],
 )
 def test_techniques_the_contract_does_not_list_are_refused_later(
     held: object, techniques: tuple[object, ...]
