@@ -22,7 +22,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from scenario_tools.domain.catalogue.structure import INJECTS
-from scenario_tools.domain.policy.payloads import commands, payloads
+from scenario_tools.domain.policy.payloads import COMMAND_LIMIT, commands, effective, payloads
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
@@ -279,7 +279,9 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
         yield f"/{part}", stored.get(part)
     for payload in payloads(stored):
         for field, command, _ in commands(payload):
-            yield field, command
+            resolved = effective(payload, command, COMMAND_LIMIT)  # what the payload runs
+            if resolved is not None:  # else too long, which the forbidden actions report
+                yield field, resolved
 
 
 def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:

@@ -20,6 +20,7 @@ ARGUMENT = "argument"
 TYPE = "payload_type"
 EXECUTOR = "payload_cleanup_executor"
 _CONTENT = "inject_content"
+COMMAND_LIMIT = 65_536  # characters of one command, its arguments given: past that, none is read
 _VARIABLE = re.compile(r"#\{([^}]{1,200})\}")  # an argument the payload's command names
 
 

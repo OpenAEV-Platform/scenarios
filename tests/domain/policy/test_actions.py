@@ -62,6 +62,8 @@ def test_the_rules_are_pol_004_and_pol_005_and_block() -> None:
         ('a "b;c&d|e" f', "a b c d e f"),  # separators inside quotes are blanks
         ("a 'b;c", "a b c"),  # an unclosed quote runs to the end
         ("a 2>&1 b", "a b"),  # a redirection is no separator
+        ("a &>f", "a >f"),  # nor a redirection of both outputs to a file
+        ("a &>>f", "a >>f"),
     ],
 )
 def test_a_command_is_read_as_a_shell_reads_it(text: str, read: str) -> None:
@@ -387,6 +389,7 @@ def test_harmless_commands_pass(command: str) -> None:
         {"command_content": "copy a b", "payload_cleanup_command": ""},
         {"command_content": "copy a b", "payload_cleanup_command": "  "},
         {"command_content": "co^py a b"},
+        {"command_content": "whoami &>out.log"},
         {"command_content": "copy a b", "payload_cleanup_command": "del b"},  # no executor
         {"command_content": "x", "payload_arguments": [{"key": "a", "default_value": "copy a b"}]},
         {"command_content": "x", "payload_prerequisites": [{"check_command": "New-Item x"}]},
@@ -760,3 +763,12 @@ def test_the_steps_of_a_restore_are_found_after_its_first_one() -> None:
     )
 
     assert _found(policy_findings(data, payload), "POL-004") == [PAYLOAD + "/command_content"]
+
+
+def test_a_host_an_argument_brings_into_the_command_is_refused() -> None:
+    payload = with_payload(
+        command_content="curl http://#{target}/x",
+        payload_arguments=[{"key": "target", "default_value": "user@evil.com"}],
+    )
+
+    assert _found(policy_findings(DATA, payload), "POL-003") == [PAYLOAD + "/command_content"]

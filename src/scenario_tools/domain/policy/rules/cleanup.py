@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from scenario_tools.domain.policy.actions import as_command, runs
 from scenario_tools.domain.policy.payloads import (
     CLEANUP,
+    COMMAND_LIMIT,
     EXECUTOR,
     TYPE,
     commands,
@@ -16,7 +17,6 @@ from scenario_tools.domain.policy.payloads import (
     text,
 )
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
-from scenario_tools.domain.policy.rules.actions import COMMAND_LIMIT
 from scenario_tools.domain.shared.finding import Severity
 
 # Running a file or dropping one always changes the endpoint, whatever its command says.

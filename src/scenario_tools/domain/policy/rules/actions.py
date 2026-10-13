@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from scenario_tools.domain.policy.actions import as_command, starts, takes
 from scenario_tools.domain.policy.payloads import (
     CLEANUP,
+    COMMAND_LIMIT,
     EXECUTOR,
     Payload,
     commands,
@@ -18,7 +19,6 @@ from scenario_tools.domain.policy.payloads import (
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
 
-COMMAND_LIMIT = 65_536  # characters of one command: past that, no pattern is run on it
 _TOO_LONG = (
     f"this command is longer than {COMMAND_LIMIT} characters, its arguments given, too long to "
     "check: shorten it"

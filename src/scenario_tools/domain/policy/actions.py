@@ -27,7 +27,8 @@ _BLANKS = re.compile(r"[^\S\r\n]+")
 _SEPARATOR = re.compile(r"\s?(?:;|&&|\|\||&)\s?")
 _PIPE = re.compile(r"\s?\|\s?")
 _CONTINUED = re.compile(r"[\^`\\]\r?\n")  # cmd, PowerShell and shell line continuations
-_REDIRECTED = re.compile(r"\d*[<>]&\d*-?|&>>?|\|&")  # 2>&1, &>, |&: no separator
+_DUPLICATED = re.compile(r"\d*[<>]&\d*-?|\|&")  # 2>&1, |&: no separator and no file
+_BOTH_TO_FILE = re.compile(r"&(>>?)")  # &>f writes both outputs to f: a redirection to a file
 _QUOTED = re.compile(r"\"[^\"]*(?:\"|\Z)|'[^']*(?:'|\Z)")  # an unclosed quote runs to the end
 _BREAKS = re.compile(r"[;&|\r\n]")
 
@@ -53,7 +54,8 @@ def as_command(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = "".join(c for c in text if unicodedata.category(c) != "Cf")
     text = _unquoted_breaks(_CONTINUED.sub("", text))
-    text = _REDIRECTED.sub(" ", _JOINED.sub("", text)).translate(_REMOVED)
+    text = _DUPLICATED.sub(" ", _JOINED.sub("", text))
+    text = _BOTH_TO_FILE.sub(r"\1", text).translate(_REMOVED)
     text = _LINES.sub(" ; ", _BLANKS.sub(" ", text))
     return _BLANKS.sub(" ", text).strip().lower()
 

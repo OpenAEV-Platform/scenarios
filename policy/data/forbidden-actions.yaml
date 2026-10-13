@@ -79,27 +79,27 @@ actions:
     restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bwdnissvc\b']
   - steps: ['\btaskkill(\.exe)?\b', '\bmsmpeng(\.exe)?\b']
     why: stops a security service
-  - steps: ['\b(systemctl|service)\s+(stop|disable|mask)\b', '\bfirewalld\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bfirewalld\b']
     why: stops a security control
-    restore: ['(systemctl|service)\s+(start|enable|unmask)\b', '\bfirewalld\b']
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bfirewalld\b']
   - steps: ['\bservice\s+firewalld\s+stop\b']
     why: stops a security control
     restore: ['service\s+firewalld\s+start\b']
-  - steps: ['\b(systemctl|service)\s+(stop|disable|mask)\b', '\bauditd\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bauditd\b']
     why: stops a security control
-    restore: ['(systemctl|service)\s+(start|enable|unmask)\b', '\bauditd\b']
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bauditd\b']
   - steps: ['\bservice\s+auditd\s+stop\b']
     why: stops a security control
     restore: ['service\s+auditd\s+start\b']
-  - steps: ['\b(systemctl|service)\s+(stop|disable|mask)\b', '\bapparmor\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bapparmor\b']
     why: stops a security control
-    restore: ['(systemctl|service)\s+(start|enable|unmask)\b', '\bapparmor\b']
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bapparmor\b']
   - steps: ['\bservice\s+apparmor\s+stop\b']
     why: stops a security control
     restore: ['service\s+apparmor\s+start\b']
-  - steps: ['\b(systemctl|service)\s+(stop|disable|mask)\b', '\bufw\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bufw\b']
     why: stops a security control
-    restore: ['(systemctl|service)\s+(start|enable|unmask)\b', '\bufw\b']
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bufw\b']
   - steps: ['\bservice\s+ufw\s+stop\b']
     why: stops a security control
     restore: ['service\s+ufw\s+start\b']

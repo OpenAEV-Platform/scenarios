@@ -101,6 +101,8 @@ def _changes(command: str) -> bool:
         "Remove-Item C:\\Windows -Recurse",
         "echo x > /dev/sda",
         "Get-Service windefend | Stop-Service",
+        "systemctl --quiet stop firewalld",
+        "systemctl --no-block disable auditd",
     ],
 )
 def test_each_forbidden_action_is_matched(command: str) -> None:
@@ -184,6 +186,9 @@ def test_harmless_commands_are_not_forbidden(command: str) -> None:
         "curl -oartifact.bin https://x",
         "curl -sSLo artifact.bin https://x",
         "whoami 2>errors.log",
+        "systemctl --user start example.service",
+        "whoami &>errors.log",
+        "whoami &>>errors.log",
     ],
 )
 def test_each_command_that_changes_the_endpoint_is_matched(command: str) -> None:
