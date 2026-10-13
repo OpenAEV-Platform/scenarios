@@ -169,6 +169,7 @@ def test_a_scenario_whose_kind_is_unknown_is_not_timed(declared: object) -> None
         ),
         ({"y": "a@b.c.d.e.f.g.h.example.com.evil.com"}, "/y"),  # deep domain, a real tail
         ({"z": "clone git@github.com:x/y"}, "/z"),  # a real domain, even in a git URL
+        ({"w": "contact a@scanme.nmap.org"}, "/w"),  # a scan target is no e-mail domain
     ],
 )
 def test_an_e_mail_address_outside_the_example_domains_is_refused(

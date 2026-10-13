@@ -36,7 +36,7 @@ def _addresses(stored: object, allowed: Any, path: str) -> Iterator[Violation]:
             "NFKC", "".join(c for c in raw if unicodedata.category(c) != "Cf")
         )
         for match in _EMAIL.finditer(text):
-            if not allowed.allows(match[1]):
+            if not allowed.example_domain(match[1]):
                 yield Violation(path, field, _EMAIL_MESSAGE)
                 break
 

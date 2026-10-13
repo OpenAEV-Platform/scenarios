@@ -30,8 +30,9 @@ RULES: tuple[Rule, ...] = (
 
 
 def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, ...]:
-    """The findings of ``violations``, with the code and severity of ``rule``, so that a finding
-    never says another rule's code or severity."""
+    """The findings of ``violations``, with the code of ``rule`` and its severity, unless a
+    violation gives its own, which only lowers it (an informative breach of a blocking rule),
+    so that a finding never says another rule's code."""
     return tuple(
         Finding(
             rule.code,

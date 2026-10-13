@@ -31,6 +31,15 @@ def _pol_003(findings: tuple[Finding, ...]) -> list[str]:
     return [f.field for f in findings if f.code == "POL-003"]
 
 
+def test_example_domain_accepts_example_names_only_not_external_targets() -> None:
+    allowed = _allowed()
+    assert allowed.example_domain("host.example.com")
+    assert allowed.example_domain("localhost")
+    assert not allowed.example_domain("scanme.nmap.org")  # an allowed scan target
+    assert not allowed.example_domain("127.0.0.1")  # a network, not a domain
+    assert allowed.example_domain("Host.Example.COM.")  # a trailing dot and any case
+
+
 def test_the_rule_is_pol_003_and_blocks() -> None:
     assert (RULE.code, RULE.severity) == ("POL-003", Severity.BLOCKING)
 
