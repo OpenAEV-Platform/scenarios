@@ -49,23 +49,9 @@ def test_each_embedded_payload_waits_for_its_reference() -> None:
     assert "payload" in findings[0].message
 
 
-@pytest.mark.parametrize(
-    "field", ["scenario_recurrence", "scenario_recurrence_start", "scenario_recurrence_end"]
-)
-def test_a_recurrence_field_with_a_value_is_refused(field: str) -> None:
+def test_a_recurrence_is_left_to_the_policy() -> None:
     document = copy.deepcopy(DOCUMENT)
-    document["scenario_information"][field] = "0 0 8 * * MON"
-
-    findings = archive_findings(document, PATH)
-
-    assert [(f.code, f.severity, f.path, f.field) for f in findings] == [
-        ("POL-002", Severity.BLOCKING, PATH, f"/scenario_information/{field}")
-    ]
-
-
-def test_an_empty_recurrence_field_is_no_recurrence() -> None:
-    document = copy.deepcopy(DOCUMENT)
-    document["scenario_information"]["scenario_recurrence"] = None
+    document["scenario_information"]["scenario_recurrence"] = "0 0 8 * * MON"
 
     assert archive_findings(document, PATH) == ()
 

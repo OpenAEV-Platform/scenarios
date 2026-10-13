@@ -93,6 +93,7 @@ written when one of them blocks. See [`intake.md`](intake.md).
 |---|---|---|
 | `GEN-002` | The stored `scenario.json` is not what normalisation gives for it. | Run `normalize` or `intake` again instead of editing the file by hand. |
 | `PAY-004` | The scenario embeds payloads, which the archive cannot carry yet. | Wait for payload support, or use built-in contracts. |
+| `POL-001` | A source or a file breaks "linked, never copied": a source link holds a user name or password, carries a credential in its query or fragment (a token, a key, a password, the signature of a pre-signed link), or its host is an IP address, a name with no dot, a local, internal or reserved name (such as `localhost`, `.local`, `.internal`, `.test`, `.example`, `.arpa`, `.lan`, `.corp`) or not a public DNS name; or the entry holds a file other than `scenario.yaml`, `scenario.json`, `README.md` and `CHANGELOG.md`. | Link a public page that any reader can open, without a credential; remove the copied file and link its source instead. |
 | `POL-002` | A recurrence field has a value: a shared scenario must never schedule itself. | Remove the recurrence. |
 | `OAV-001` | The platform skipped an inject at import, because it lacks the injector, contract or payload. | Install what the message names on the platform, then import again. |
 | `TTL-001` | The pull request title breaks the convention. | Write it as `type(scope): description (#issue)`, as `CONTRIBUTING.md` says. |

@@ -475,9 +475,10 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     """Check each of ENTRIES, an entry directory, against the schemas and the rules of an entry
     of the repository that holds them; exit with 1 if anything blocks one of them.
 
-    The policy rules, versioning against the previous release, the generated README.md, the
-    payload references, the CHANGELOG.md sections and the private deny-list are not run yet:
-    an entry that passes may still fail them.
+    Of the policy rules, POL-001 (sources linked to public pages, nothing copied into an entry)
+    and POL-002 (no recurrence) run. The other policy rules, versioning against the previous
+    release, the generated README.md, the payload references, the CHANGELOG.md sections and the
+    private deny-list are not run yet: an entry that passes may still fail them.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""

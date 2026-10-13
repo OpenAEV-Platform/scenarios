@@ -3,9 +3,8 @@
 The archive holds the reviewed ``scenario.json`` as it is, so it never changes content to make
 it importable, and it fails closed: a part a normalised scenario never has is refused, since the
 importer reads other parts too (an exercise set, a workflow whose steps rebuild payloads). A
-recurrence field with a value, which the importer would read, is refused, and so is a payload
-anywhere in the document, until a payload reference names the payload whose ID the archive
-must set.
+payload anywhere in the document is refused, until a payload reference names the payload whose
+ID the archive must set. A recurrence is the policy's matter, which the archive also asks.
 """
 
 from collections.abc import Iterator
@@ -42,7 +41,6 @@ STORED_PARTS = frozenset(
 )
 # Parts normalisation refuses unless empty, and then leaves in place.
 _LEFT_EMPTY = frozenset(part for part, _ in NOT_SUPPORTED)
-RECURRENCE_FIELDS = ("scenario_recurrence", "scenario_recurrence_start", "scenario_recurrence_end")
 
 
 def _objects(value: Any, pointer: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
@@ -64,7 +62,7 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
         if part in _LEFT_EMPTY and export[part] in (None, [], {}):
             continue  # normalisation leaves these parts in place, empty; a scalar stays as it is
         raise not_an_export(f"{part} is not a part of a stored scenario")
-    information = require_object(export.get(INFORMATION), INFORMATION)
+    require_object(export.get(INFORMATION), INFORMATION)
     injects = export.get(INJECTS)
     if not isinstance(injects, list):
         raise not_an_export(f"{INJECTS} must be a list")
@@ -72,19 +70,7 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
         contract = require_object(inject, INJECTS).get(CONTRACT)
         if contract is not None:
             require_object(contract, CONTRACT)
-    findings = [
-        Finding(
-            "POL-002",
-            Severity.BLOCKING,
-            path,
-            f"/{INFORMATION}/{field}",
-            f"{field} is set: the importer would schedule the scenario, which the catalogue "
-            "never does",
-        )
-        for field in RECURRENCE_FIELDS
-        if information.get(field) is not None
-    ]
-    findings.extend(
+    return tuple(
         Finding(
             "PAY-004",
             Severity.BLOCKING,
@@ -96,7 +82,6 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
         for pointer, item in _objects(export)
         if item.get(PAYLOAD) not in (None, {})
     )
-    return tuple(findings)
 
 
 def belongs_to(document: object, external_id: str) -> bool:

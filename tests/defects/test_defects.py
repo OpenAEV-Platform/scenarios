@@ -129,6 +129,13 @@ DEFECTS: dict[str, Callable[[Path], object]] = {
     "IO-017": lambda root: _metadata(
         root, lambda d: d.__setitem__("description", d["description"] + " x" + chr(0x202E))
     ),
+    "POL-001": lambda root: _metadata(
+        root, lambda d: d["sources"][0].__setitem__("url", "https://10.0.0.1/report.html")
+    ),
+    "POL-002": lambda root: _scenario(
+        root,
+        lambda d: d["scenario_information"].__setitem__("scenario_recurrence", "0 0 8 * * MON"),
+    ),
 }
 
 TWO_ENTRIES: dict[str, tuple[Callable[[Path], object], tuple[str, ...]]] = {
@@ -163,6 +170,13 @@ def test_each_defect_between_two_entries_makes_exactly_its_check_fail(
     exit_code, findings = _validate(root, *entries)
     assert exit_code == 1
     assert findings == sorted((code, "blocking", f"{entry}/scenario.yaml") for entry in entries)
+
+
+def test_a_file_copied_into_the_entry_makes_exactly_its_check_fail(tmp_path: Path) -> None:
+    root = _repository(tmp_path)
+    (root / ENTRY / "report.pdf").write_bytes(b"%PDF-1.7\n")
+
+    assert _validate(root, ENTRY) == (1, [("POL-001", "blocking", f"{ENTRY}/report.pdf")])
 
 
 def test_an_old_minimum_version_is_said_and_never_blocks(tmp_path: Path) -> None:

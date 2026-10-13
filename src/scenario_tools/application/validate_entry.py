@@ -3,6 +3,7 @@ refuse is a finding of the entry, not an end of the run, so that one broken file
 findings of the others, nor of the other entries."""
 
 from collections.abc import Callable, Mapping
+from typing import Any, cast
 
 from scenario_tools.application.findings import not_normalised
 from scenario_tools.domain.catalogue.characters import hidden_character_findings, text_findings
@@ -17,6 +18,8 @@ from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_finding
 from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import ExportFacts, ScenarioMetadata, cross_check
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.policy.registry import policy_findings
+from scenario_tools.domain.policy.rule import EntryContent
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.errors import UnsafeInputError
@@ -110,6 +113,8 @@ def validate_entry(
     findings = layout_findings(entry, names, domains)
     metadata: ScenarioMetadata | None = None
     facts: ExportFacts | None = None
+    declared_checked: Mapping[str, Any] | None = None  # once it meets its schema, for the policy
+    stored_document: object = None  # the stored scenario.json once read, for the policy
     if "scenario.yaml" in names:
         path = f"{entry}/scenario.yaml"
         try:
@@ -118,8 +123,9 @@ def validate_entry(
             written = source.read_text(path)
             findings += text_findings(written, path, breaks=True)
             labels = frozenset(hidden.label for hidden in hidden_occurrences(written))
+            declared = source.read_yaml(path)
             found, metadata = _metadata_findings(
-                source.read_yaml(path),
+                declared,
                 path,
                 entry,
                 schema,
@@ -129,12 +135,15 @@ def validate_entry(
                 source.scenario_names(),
             )
             findings += found
+            if metadata is not None:  # it met its schema, so it is an object
+                declared_checked = cast(Mapping[str, Any], declared)
         except UnsafeInputError as error:
             findings += (_refused(error, path),)
     if "scenario.json" in names:
         path = f"{entry}/scenario.json"
         try:
             stored, document = source.read_json(path)
+            stored_document = document
             external_id = metadata.external_id if metadata is not None else None
             again = (
                 (lambda: renormalised(document, external_id, path))
@@ -154,4 +163,4 @@ def validate_entry(
                 findings += text_findings(source.read_text(path), path)
             except UnsafeInputError as error:
                 findings += (_refused(error, path),)
-    return findings
+    return findings + policy_findings(EntryContent(entry, names, declared_checked, stored_document))
