@@ -424,3 +424,65 @@ def test_a_renormalisation_refused_still_lets_the_metadata_be_cross_checked() ->
     findings = _validate({YAML: _changed(name="Other"), JSON: SCENARIO}, renormalised=broken)
 
     assert _codes(findings) == [("IO-014", JSON, ""), ("SCH-002", YAML, "/name")]
+
+
+def test_a_source_link_to_a_private_host_is_refused_by_the_policy() -> None:
+    metadata = _changed(sources=[{"url": "https://10.0.0.1/report.html", "tlp": "TLP:CLEAR"}])
+
+    assert _codes(_validate({YAML: metadata, JSON: SCENARIO})) == [
+        ("POL-001", YAML, "/sources/0/url")
+    ]
+
+
+def test_the_source_links_are_checked_only_once_the_metadata_meets_its_schema() -> None:
+    metadata = _changed(sources=[{"url": "https://10.0.0.1/report.html", "tlp": "TLP:CLEAR"}])
+    schema = FakeSchema(SchemaViolation("/severity", "not one of the severities"))
+
+    assert _codes(_validate({YAML: metadata, JSON: SCENARIO}, schema=schema)) == [
+        ("SCH-001", YAML, "/severity")
+    ]
+
+
+def test_a_file_that_is_not_the_entry_s_own_is_refused_by_the_policy() -> None:
+    files = {YAML: METADATA, JSON: SCENARIO, f"{ENTRY}/report.pdf": b"%PDF"}
+
+    assert _codes(_validate(files)) == [("POL-001", f"{ENTRY}/report.pdf", "")]
+
+
+def test_the_entry_s_files_are_checked_even_when_its_metadata_is_refused() -> None:
+    files = {
+        YAML: UnsafeInputError("IO-002", "not YAML", YAML),
+        JSON: SCENARIO,
+        f"{ENTRY}/report.pdf": b"%PDF",
+    }
+
+    assert _codes(_validate(files)) == [
+        ("IO-002", YAML, ""),
+        ("POL-001", f"{ENTRY}/report.pdf", ""),
+    ]
+
+
+def test_a_recurrence_in_the_stored_scenario_is_refused_by_the_policy() -> None:
+    scenario = copy.deepcopy(SCENARIO)
+    scenario["scenario_information"]["scenario_recurrence"] = "0 0 8 * * MON"
+
+    assert _codes(_validate({YAML: METADATA, JSON: scenario})) == [
+        ("POL-002", JSON, "/scenario_information/scenario_recurrence")
+    ]
+
+
+def test_a_stored_scenario_the_readers_refuse_is_not_given_to_the_policy() -> None:
+    files = {YAML: METADATA, JSON: UnsafeInputError("IO-006", "not JSON", JSON)}
+
+    assert _codes(_validate(files)) == [("IO-006", JSON, "")]
+
+
+def test_a_recurrence_is_refused_even_when_the_metadata_is_refused() -> None:
+    scenario = copy.deepcopy(SCENARIO)
+    scenario["scenario_information"]["scenario_recurrence"] = "0 0 8 * * MON"
+    files = {YAML: UnsafeInputError("IO-002", "not YAML", YAML), JSON: scenario}
+
+    assert _codes(_validate(files)) == [
+        ("IO-002", YAML, ""),
+        ("POL-002", JSON, "/scenario_information/scenario_recurrence"),
+    ]
