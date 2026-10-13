@@ -484,10 +484,11 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     Of the policy rules, POL-001 (sources linked to public pages, nothing copied into an entry),
     POL-002 (no recurrence), POL-003 (only allowed hosts), POL-004 (no forbidden action),
     POL-005 (a cleanup for every payload that changes the endpoint), POL-006 (no security
-    product named) and POL-007 (elevated privileges, for the reviewer) run. The other policy
-    rules, versioning against the previous release, the generated README.md, the payload
-    references, the CHANGELOG.md sections and the private deny-list are not run yet: an entry
-    that passes may still fail them.
+    product named), POL-007 (elevated privileges, for the reviewer), POL-009 (injects spaced
+    out) and POL-010 (no internal data) run. The other policy rules, versioning against the
+    previous release, the generated README.md, the payload references, the CHANGELOG.md
+    sections and the private deny-list are not run yet: an entry that passes may still fail
+    them.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""

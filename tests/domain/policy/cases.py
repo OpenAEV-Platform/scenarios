@@ -104,6 +104,28 @@ def with_payload(**payload: object) -> EntryContent:
     )
 
 
+def timed(*injects: tuple[int, bool], kind: str = "time-based", **payload: object) -> EntryContent:
+    """A scenario of ``kind`` whose injects start at the given offsets, each embedding a payload
+    or not."""
+    return content(
+        declared={**METADATA, "type": kind},
+        stored={
+            "scenario_information": {"scenario_name": "EASM"},
+            "scenario_injects": [
+                {
+                    "inject_depends_duration": offset,
+                    "inject_injector_contract": (
+                        {"injector_contract_payload": {"command_content": "whoami", **payload}}
+                        if embeds
+                        else {}
+                    ),
+                }
+                for offset, embeds in injects
+            ],
+        },
+    )
+
+
 CASES: dict[str, tuple[EntryContent, EntryContent]] = {
     "POL-001": (content(), with_source("https://10.0.0.1/report.html")),
     "POL-002": (content(), with_recurrence("scenario_recurrence", "0 0 8 * * MON")),
@@ -122,6 +144,11 @@ CASES: dict[str, tuple[EntryContent, EntryContent]] = {
     "POL-007": (
         with_payload(payload_elevation_required=False),
         with_payload(payload_elevation_required=True),
+    ),
+    "POL-009": (timed((0, True), (60, True)), timed((0, True), (30, True))),
+    "POL-010": (
+        content(stored={"scenario_information": {"scenario_mail_from": "a@example.org"}}),
+        content(stored={"scenario_information": {"scenario_mail_from": "a@corp.com"}}),
     ),
     "POL-005": (
         with_payload(

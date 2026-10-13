@@ -7,8 +7,10 @@ from scenario_tools.domain.policy.rules import (
     actions,
     cleanup,
     elevation,
+    internal,
     recurrence,
     sources,
+    spacing,
     targets,
     vendors,
 )
@@ -22,6 +24,8 @@ RULES: tuple[Rule, ...] = (
     cleanup.RULE,
     vendors.RULE,
     elevation.RULE,
+    spacing.RULE,
+    internal.RULE,
 )
 
 
@@ -29,7 +33,13 @@ def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, .
     """The findings of ``violations``, with the code and severity of ``rule``, so that a finding
     never says another rule's code or severity."""
     return tuple(
-        Finding(rule.code, rule.severity, violation.path, violation.field, violation.message)
+        Finding(
+            rule.code,
+            violation.severity or rule.severity,
+            violation.path,
+            violation.field,
+            violation.message,
+        )
         for violation in violations
     )
 

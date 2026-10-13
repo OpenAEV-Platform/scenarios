@@ -244,10 +244,11 @@ def test_each_refusal_names_its_list(key: str, values: object, message: str) -> 
 def test_a_host_outside_the_allowed_targets_is_refused(
     inject_content: dict[str, Any], field: str
 ) -> None:
-    (finding,) = policy_findings(DATA, with_inject_content(inject_content))
+    (finding,) = (
+        f for f in policy_findings(DATA, with_inject_content(inject_content)) if f.code == "POL-003"
+    )
 
-    assert (finding.code, finding.severity, finding.path, finding.field, finding.message) == (
-        "POL-003",
+    assert (finding.severity, finding.path, finding.field, finding.message) == (
         Severity.BLOCKING,
         JSON,
         f"/scenario_injects/0/inject_content{field}",
@@ -313,11 +314,11 @@ def test_a_host_outside_the_allowed_targets_is_refused(
     ],
 )
 def test_allowed_or_hostless_values_pass(value: str) -> None:
-    assert policy_findings(DATA, with_inject_content({"field": value})) == ()
+    assert _pol_003(policy_findings(DATA, with_inject_content({"field": value}))) == []
 
 
 def test_a_dotted_key_is_no_host_name() -> None:
-    assert policy_findings(DATA, with_inject_content({"user.email": "x"})) == ()
+    assert _pol_003(policy_findings(DATA, with_inject_content({"user.email": "x"}))) == []
 
 
 def test_a_key_and_its_value_are_reported_once() -> None:

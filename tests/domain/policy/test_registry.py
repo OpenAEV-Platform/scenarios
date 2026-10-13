@@ -65,6 +65,13 @@ def test_a_finding_carries_its_rule_s_code_and_severity(rule: Rule) -> None:
     assert all((f.code, f.severity) == (rule.code, rule.severity) for f in findings)
 
 
+def test_a_violation_may_lower_its_rule_s_severity() -> None:
+    rule = Rule("POL-999", Severity.BLOCKING, "A test rule.", lambda _data, _content: ())
+    violations = (Violation(f"{ENTRY}/scenario.json", "", "a note", Severity.INFO),)
+
+    assert [f.severity for f in findings_of(rule, violations)] == [Severity.INFO]
+
+
 def test_findings_of_turns_violations_into_findings_of_the_rule() -> None:
     rule = Rule("POL-999", Severity.INFO, "A test rule.", lambda _data, _content: ())
     violations = (Violation(f"{ENTRY}/scenario.yaml", "/name", "a message"),)
@@ -119,6 +126,12 @@ _KNOWN = (
     r"this text names a security product: a shared scenario stays vendor-neutral; describe the "
     r"behaviour instead",
     r"this payload asks for elevated privileges: check why it needs them",
+    r"this inject starts [0-9]+ seconds after the previous one that runs on the endpoint: space "
+    r"them by at least (60|120) seconds",
+    r"this value holds an e-mail address outside the example domains: use one such as "
+    r"user@example\.com",
+    r"(the scenario holds users|this team holds members|this variable holds a value): "
+    r"normalise the export again, which removes them",
     r"this command is longer than 65536 characters, its arguments given, too long to check: "
     r"shorten it",
     r"this value names a host outside the example names, test addresses and authorised "
