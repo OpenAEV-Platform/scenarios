@@ -272,3 +272,31 @@ def test_many_entries_with_the_same_name_are_named_up_to_three_sorted_and_counte
         "other entries have this scenario name: scenarios/techniques/e0, "
         "scenarios/techniques/e1, scenarios/techniques/e2 and 2 more"
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "at"),
+    [
+        ("scenarios/techniques/a\\b", "scenarios/techniques"),
+        ("scenarios/te\\ch/easm", "scenarios"),
+        ("scenarios/te\\ch", "scenarios"),
+        ("sce\\narios/techniques/easm", ""),
+        ("C:/techniques/easm", ""),
+    ],
+)
+def test_an_entry_whose_path_a_finding_cannot_show_is_reported_at_its_last_place_that_can(
+    path: str, at: str
+) -> None:
+    finding = _one(layout_findings(path, ("scenario.yaml", "scenario.json"), DOMAINS))
+
+    assert (finding.code, finding.severity, finding.path, finding.field) == (
+        "SCH-008",
+        Severity.BLOCKING,
+        at,
+        "",
+    )
+    assert finding.message == (
+        "an entry is a directory scenarios/<domain>/<slug>/ of the repository: a name on this "
+        "path holds a character that no domain or slug has and that a finding cannot show (a "
+        "backslash or a drive)"
+    )

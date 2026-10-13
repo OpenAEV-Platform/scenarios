@@ -486,3 +486,23 @@ def test_a_recurrence_is_refused_even_when_the_metadata_is_refused() -> None:
         ("IO-002", YAML, ""),
         ("POL-002", JSON, "/scenario_information/scenario_recurrence"),
     ]
+
+
+def test_an_entry_whose_path_a_finding_cannot_show_is_refused_without_reading_it() -> None:
+    entry = "scenarios/techniques/a\\b"
+
+    class Unread(FakeSource):
+        def _read(self, path: str) -> object:
+            raise AssertionError(f"{path} must not be read")
+
+    source = Unread({f"{entry}/scenario.yaml": METADATA, f"{entry}/scenario.json": SCENARIO})
+    findings = validate_entry(
+        entry,
+        source,
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+    )
+
+    assert _codes(findings) == [("SCH-008", "scenarios/techniques", "")]

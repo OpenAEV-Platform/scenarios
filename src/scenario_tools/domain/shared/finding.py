@@ -39,6 +39,14 @@ def _shorten_pointer(pointer: str) -> str:
     return pointer[: MESSAGE_LIMIT - 1].removesuffix("~") + "…"
 
 
+def reportable(path: str) -> bool:
+    """Whether a finding may name ``path``: relative to the repository, with ``/`` separators,
+    never leaving it, and never read as a path of another system."""
+    return not (
+        path.startswith("/") or "\\" in path or _DRIVE.match(path) or ".." in path.split("/")
+    )
+
+
 class Severity(Enum):
     BLOCKING = "blocking"
     INFO = "info"
@@ -55,12 +63,7 @@ class Finding:
     def __post_init__(self) -> None:
         if not _CODE.fullmatch(self.code):
             raise ValueError(f"finding code {self.code!r} is not like ABC-123")
-        if (
-            self.path.startswith("/")
-            or "\\" in self.path
-            or _DRIVE.match(self.path)
-            or ".." in self.path.split("/")
-        ):
+        if not reportable(self.path):
             raise ValueError(f"finding path {self.path!r} is not relative to the repository")
         if not _POINTER.fullmatch(self.field):
             raise ValueError(f"finding field {self.field!r} is not a JSON pointer")

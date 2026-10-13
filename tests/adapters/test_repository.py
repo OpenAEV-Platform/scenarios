@@ -382,3 +382,24 @@ def test_an_entry_that_cannot_be_listed_read_strictly_is_the_environment_s_fault
             RepositoryEntries(tmp_path, strict=True).entries()
     finally:
         directory.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("entry", "taken"),
+    [
+        ("scenarios/ransomware/a\\b", "scenarios/ransomware/a\\b"),
+        ("scenarios/ran\\som/akira", "scenarios/ran\\som"),
+    ],
+)
+def test_an_entry_a_finding_cannot_name_is_never_read(
+    tmp_path: Path, entry: str, taken: str
+) -> None:
+    _entry(tmp_path)
+    _entry(tmp_path, entry, "one")  # read, it would share the identifier
+
+    assert RepositoryEntries(tmp_path).entries() == (CatalogueEntry(ENTRY, "one", ""),)
+    assert RepositoryEntries(tmp_path).external_ids() == {"one": (ENTRY,)}
+    assert set(RepositoryEntries(tmp_path, strict=True).entries()) == {
+        CatalogueEntry(ENTRY, "one", ""),
+        CatalogueEntry(taken, "", "", False),  # unknown, so taken: intake waits for a fix
+    }
