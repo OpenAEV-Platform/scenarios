@@ -7,7 +7,6 @@ import unicodedata
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.policy.payloads import strings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
 
@@ -23,6 +22,7 @@ _EMAIL = re.compile(
     r"(?![\w.-])",
     re.IGNORECASE,
 )
+_DOTS = str.maketrans(dict.fromkeys((chr(0x3002), chr(0xFF61), chr(0xFF0E)), "."))  # full stops
 _EMAIL_MESSAGE = (
     "this value holds an e-mail address outside the example domains: use one such as "
     "user@example.com"
@@ -34,11 +34,34 @@ _EMPTIED = (
 )
 
 
+def _as_read(raw: str) -> str:
+    """``raw`` folded as a tool reads a domain: compatibility forms, invisible characters dropped,
+    and the full stops an IDNA tool accepts turned into ``.``."""
+    folded = unicodedata.normalize(
+        "NFKC", "".join(c for c in raw if unicodedata.category(c) != "Cf")
+    )
+    return folded.translate(_DOTS)
+
+
+def _texts(value: object, pointer: str) -> Iterator[tuple[str, str]]:
+    """Every string of ``value`` to read for an address, with the pointer to report it at: a value
+    at its own pointer, a key at the pointer of the object that holds it, so the key, which may be
+    an address, is never put in a finding's field."""
+    if isinstance(value, str):
+        yield pointer, value
+    elif isinstance(value, Mapping):
+        for key, child in value.items():
+            yield pointer, str(key)
+            escaped = str(key).replace("~", "~0").replace("/", "~1")
+            yield from _texts(child, f"{pointer}/{escaped}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _texts(child, f"{pointer}/{index}")
+
+
 def _addresses(stored: object, allowed: Any, path: str) -> Iterator[Violation]:
-    for field, raw in strings(stored, ""):
-        text = unicodedata.normalize(
-            "NFKC", "".join(c for c in raw if unicodedata.category(c) != "Cf")
-        )
+    for field, raw in _texts(stored, ""):
+        text = _as_read(raw)
         for match in _EMAIL.finditer(text):
             if not allowed.example_domain(match[1]):
                 yield Violation(path, field, _EMAIL_MESSAGE)

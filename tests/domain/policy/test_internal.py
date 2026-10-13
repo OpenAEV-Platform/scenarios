@@ -172,6 +172,10 @@ def test_a_scenario_whose_kind_is_unknown_is_not_timed(declared: object) -> None
         ({"w": "contact a@scanme.nmap.org"}, "/w"),  # a scan target is no e-mail domain
         ({"v": "write to a@corp.com."}, "/v"),  # a sentence-final period
         ({"u": "a@corp.xn--p1ai"}, "/u"),  # an internationalised domain in its A-label form
+        ({"admin@corp.com": "x"}, ""),  # a JSON key holding an address, reported at its object
+        ({"a": {"b@corp.com": 1}}, "/a"),  # a nested key
+        ({"t": "user@corp" + chr(0xFF61) + "com"}, "/t"),  # a halfwidth ideographic full stop
+        ({"d": "user@corp" + chr(0x3002) + "com"}, "/d"),  # an ideographic full stop
     ],
 )
 def test_an_e_mail_address_outside_the_example_domains_is_refused(
@@ -392,3 +396,12 @@ def test_a_non_mapping_inject_before_a_close_pair_does_not_hide_it() -> None:
     entry = content(declared={**METADATA, "type": "time-based"}, stored=stored)
 
     assert _found(policy_findings(DATA, entry), "POL-009") == [(_offset(2), Severity.BLOCKING)]
+
+
+def test_an_address_in_a_value_under_a_key_with_pointer_characters_is_reported_escaped() -> None:
+    assert _found(policy_findings(DATA, content(stored={"a/b": "x@corp.com"})), "POL-010") == [
+        ("/a~1b", Severity.BLOCKING)
+    ]
+    assert _found(policy_findings(DATA, content(stored={"a~b": "y@corp.com"})), "POL-010") == [
+        ("/a~0b", Severity.BLOCKING)
+    ]
