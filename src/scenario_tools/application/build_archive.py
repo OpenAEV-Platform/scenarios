@@ -36,7 +36,9 @@ def build_archive(
     try:
         findings = archive_findings(document, path)
         entry = EntryContent(path.rpartition("/")[0], frozenset(), None, document)
-        findings += rule_findings("POL-002", policy, entry)  # the archive carries no recurrence
+        # The archive carries no recurrence and names no host outside the allowed targets.
+        findings += rule_findings("POL-002", policy, entry)
+        findings += rule_findings("POL-003", policy, entry)
         findings += contract_findings(document)
     except ExportStructureError as error:
         raise UnsafeInputError(error.code, str(error), path) from error

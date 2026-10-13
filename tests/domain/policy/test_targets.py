@@ -198,8 +198,28 @@ def test_each_refusal_names_its_list(key: str, values: object, message: str) -> 
         ({"command": "feed:8.8.8.8"}, "/command"),
         ({"command": "cafe8.8.8.8"}, "/command"),
         ({"command": "ping 010.010.010.010"}, "/command"),
-        ({"command": "ping 0177.0.0.1"}, "/command"),
-        ({"command": "ping 0x7f.0.0.1"}, "/command"),
+        ({"command": "ping 0010.0.0.5"}, "/command"),  # octal: 8.0.0.5
+        ({"command": "ping 0x0a.0.0.5"}, "/command"),
+        ({"targets": "0x08080808"}, "/targets"),  # one part, the whole value: 8.8.8.8
+        ({"targets": "0x0000000008080808"}, "/targets"),  # zeros a resolver ignores
+        ({"command": "ping 000000000010.8.8.8"}, "/command"),
+        ({"command": "target is 8.8.8.8."}, "/command"),  # a sentence ends after it
+        ({"command": "ping 0x08.0x08.0x0808."}, "/command"),
+        ({"command": "addr:2001:4860::1"}, "/command"),  # one colon before an IPv6 address
+        ({"command": "ssh root@8.8.8.8"}, "/command"),  # an address after "@" is no e-mail
+        ({"command": "scp f root@10.0.0.5:/tmp"}, "/command"),
+        ({"command": "ssh root@[2001:4860::1]"}, "/command"),
+        ({"targets": "admin@[10.0.0.5]"}, "/targets"),  # a domain literal names an address
+        ({"command": "x@evil.com10.0.0.5"}, "/command"),
+        ({"command": "a@b.co.8.8.8.8"}, "/command"),
+        ({"command": "ping 0x100.0.0.1"}, "/command"),  # 100.0.0.1 glued to "0x": refused
+        ({"command": "ping 0x0a.0.0.255"}, "/command"),
+        ({"command": "ping 0xff.0.0.1"}, "/command"),
+        ({"command": "error 0x80070005, then ping 0x08.0x08.0x0808"}, "/command"),
+        ({"command": "mail a@b.com, then ping 0x08.0x08.0x0808"}, "/command"),
+        ({"command": "ping 0x08.0x08.0x0808"}, "/command"),  # three parts: 8.8.8.8
+        ({"command": "ping 010.0x80808"}, "/command"),  # two parts: 8.8.8.8
+        ({"targets": "01002004010"}, "/targets"),  # octal, one part, the whole value: 8.8.8.8
         ({"command": "ping 999.1.1.1"}, "/command"),
         # What a compatibility form or an IDNA tool turns into a host.
         ({"targets": "evil" + chr(0x3002) + "com"}, "/targets"),
@@ -273,6 +293,21 @@ def test_a_host_outside_the_allowed_targets_is_refused(
         "archive.tar.gz",
         "report.pdf.",
         "x fe80",
+        "ping 0177.0.0.1",  # octal loopback
+        "ping 0x7f000001",  # hexadecimal loopback
+        "reg add HKLM\\x /v y /t REG_DWORD /d 0x00000001",  # 0.0.0.1: this network, no host
+        "exit 0x1",
+        "write to admin@corp.com",  # an e-mail address, another rule's matter
+        "mail admin@[2001:db8::1]",  # a domain literal with a documentation address
+        "error 0x80070005",  # one part in free text: a number, never an address
+        "magic 0xdeadbeef",
+        "ping 0x08080808",  # one part in free text: a limit, a number cannot be told apart
+        "0x1.0x1000000",  # out of range: no resolver reads it as an address
+        "089",  # not octal: no address
+        "version 10.1",  # two decimal parts: a version
+        "Le 15.01.2024, la crise commence.",  # a date, never an octal address
+        "01.02.2024",
+        "chmod 0755 run.sh",  # a file mode
         "Pr" + chr(0xE9) + "parer l'exercice de crise.",  # a sentence, never a host
         chr(0xE9) + "a" * 70,  # a label IDNA cannot encode: no host
     ],

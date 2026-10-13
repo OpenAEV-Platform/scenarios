@@ -214,3 +214,31 @@ def test_a_contract_without_established_facts_keeps_the_entry_out() -> None:
     assert report.findings == (unknown,)
     assert data is None
     assert builder.calls == []
+
+
+def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> None:
+    builder = FakeBuilder()
+    document = {
+        "scenario_information": {},
+        "scenario_injects": [{"inject_content": {"targets": "10.0.0.5"}}],
+    }
+
+    report, data = build_archive(
+        document,
+        b"{}",
+        None,
+        PATH,
+        OUT,
+        builder,
+        renormalised=_same,
+        contract_findings=_no_contract_findings,
+        check=_unchecked,
+        limit=100,
+        policy=DATA,
+    )
+
+    assert [(f.code, f.field) for f in report.findings] == [
+        ("POL-003", "/scenario_injects/0/inject_content/targets")
+    ]
+    assert data is None
+    assert builder.calls == []

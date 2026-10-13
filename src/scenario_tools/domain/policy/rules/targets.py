@@ -39,10 +39,22 @@ _QUOTES = str.maketrans("", "", "'\"")  # a shell removes them
 _NOT_ADDRESS = re.compile(r"[^0-9A-Fa-f:.]+")  # an address holds nothing else
 _PORTED = re.compile(r"([^:]*):[0-9]*")  # a host and its port
 _SENTENCE_END = re.compile(r"[.:]+\Z")  # the dots and colons that end a sentence or a list
-# Four parts a resolver reads as an IPv4 address: decimal, with leading zeros or in hexadecimal.
-_IPV4 = re.compile(r"(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9.])")
-_PART = r"(?:0[xX][0-9A-Fa-f]{1,8}|0[0-7]{1,3}|[0-9]{1,3})"  # hexadecimal, octal or decimal
-_HEX_IPV4 = re.compile(rf"(?<![0-9A-Za-z.]){_PART}(?:\.{_PART}){{3}}(?![0-9A-Za-z.])")
+# Decimal IPv4 addresses, and the forms of one to four parts a resolver also reads as one
+# (inet_aton) when a part is hexadecimal or octal; decimal forms of fewer parts read as versions.
+# A sentence may end right after an address: a final dot is no part of it.
+# Never inside a longer dotted number (1.2.3.4.5), but after a name and its dot (b.co.8.8.8.8).
+_IPV4 = re.compile(r"(?<![0-9])(?<![0-9]\.)(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9]|\.[0-9])")
+_PART = r"(?:0[xX]0*[0-9A-Fa-f]{1,8}|0*[0-9]{1,11})"  # leading zeros a resolver ignores
+_RESOLVER_IPV4 = re.compile(
+    rf"(?<![0-9A-Za-z.]){_PART}(?:\.{_PART}){{0,3}}(?![0-9A-Za-z]|\.[0-9A-Za-z])"
+)
+_OCTAL = re.compile(r"0[0-9]+")  # a resolver reads it in base 8, and refuses 8 and 9
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")  # a number, such as a flag, never a host
+# An e-mail address, another rule's matter: a domain name ending with a top-level name of
+# letters, with nothing glued after it. An address after "@" (ssh, scp, a domain literal) is no
+# e-mail and stays. Bounded, so that the search stays linear.
+_EMAIL = re.compile(r"[\w.+-]{1,64}@(?:[\w-]{1,63}\.){1,8}[^\W\d_]{2,63}(?![\w-]|\.\w)")
+_ONE_COLON = re.compile(r"\A:(?!:)")  # "addr:" before an IPv6 address
 _LABEL = r"[^\W_](?:[\w-]{0,61}[^\W_])?"  # letters and digits of any script
 _WHOLE_HOST = re.compile(
     rf"(?P<host>(?:{_LABEL}\.)+[^\W\d_]{{2,63}}\.?)(?P<port>:[0-9]{{1,5}})?(?P<path>[/?#].*)?"
@@ -178,16 +190,51 @@ def _addresses(text: str) -> Iterator[str]:
     for token in _NOT_ADDRESS.split(text):
         if token.count(":") < 2 or not any(c.isdigit() for c in token):
             continue
-        for candidate in (token, _SENTENCE_END.sub("", token)):
+        ended = _SENTENCE_END.sub("", token)
+        for candidate in (token, ended, _ONE_COLON.sub("", ended)):
             if _is_address(candidate):
                 yield candidate
                 break
 
 
-def _odd_address(text: str) -> bool:
-    """Whether ``text`` writes an IPv4 address with a hexadecimal or a four-digit octal part,
-    which ``ipaddress`` refuses but a resolver reads."""
-    return any(not _is_address(match[0]) for match in _HEX_IPV4.finditer(text))
+def _base(part: str) -> int:
+    """The base a resolver reads ``part`` in: hexadecimal after "0x", octal after a 0."""
+    if part[:2].lower() == "0x":
+        return 16
+    return 8 if _OCTAL.fullmatch(part) else 10
+
+
+def _resolved(text: str) -> ipaddress.IPv4Address | None:
+    """The IPv4 address a resolver reads in ``text``: one to four parts with a hexadecimal one,
+    or one or four parts with an octal one; ``None`` otherwise, decimal forms of fewer parts and
+    octal ones of two or three, such as dates, reading as versions or numbers."""
+    parts = text.split(".")
+    bases = [_base(part) for part in parts]
+    if 16 not in bases and not (8 in bases and len(parts) in (1, 4)):
+        return None
+    try:
+        numbers = [int(part, bases[index]) for index, part in enumerate(parts)]
+    except ValueError:
+        return None  # "08": not octal
+    *head, last = numbers
+    if any(number > 255 for number in head) or last >= 256 ** (5 - len(numbers)):
+        return None
+    value = last
+    for index, number in enumerate(head):
+        value += number << (8 * (3 - index))
+    return ipaddress.IPv4Address(value)
+
+
+def _resolver_addresses(text: str, whole: str) -> Iterator[str]:
+    """Every IPv4 address a resolver reads in a hexadecimal or octal form of ``text``, but
+    those of this network, which are numbers. A form of one part counts only as the ``whole``
+    value: in free text it is a number, such as an error code."""
+    for match in _RESOLVER_IPV4.finditer(text):
+        if "." not in match[0] and match[0] != whole:
+            continue
+        address = _resolved(match[0])
+        if address is not None and address not in _THIS_NETWORK:
+            yield str(address)
 
 
 def _whole_host(text: str) -> str | None:
@@ -207,8 +254,11 @@ def _names_another_host(text: str, allowed: AllowedTargets, *, key: bool) -> boo
     text = _as_read(text)
     if any(not allowed.allows(host) for host in _link_hosts(text)):
         return True
-    if any(not allowed.allows(address) for address in _addresses(text)) or _odd_address(text):
-        return True
+    whole = text.strip()
+    for piece in _EMAIL.split(text):  # the text around e-mail addresses
+        found = (*_addresses(piece), *_resolver_addresses(piece, whole))
+        if any(not allowed.allows(address) for address in found):
+            return True
     if key:
         return False  # a key is never a whole host name: keys hold dotted names
     host = _whole_host(text)
