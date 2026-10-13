@@ -17,7 +17,7 @@ from scenario_tools.domain.shared.finding import Severity
 # version or a git URL (user@1.2.3, git@host:path) is not read as an address. The whole domain
 # is captured, up to its alphabetic top-level name, so that a real tail is never left out.
 _EMAIL = re.compile(
-    r"[\w.+-]{1,64}@((?:[a-z0-9-]{1,63}\.){1,32}[a-z]{2,24})(?![\w.-])", re.IGNORECASE
+    r"[\w.+-]{1,64}@((?:[a-z0-9-]{1,63}\.){1,32}[a-z]{2,24})\.?(?![\w.-])", re.IGNORECASE
 )
 _EMAIL_MESSAGE = (
     "this value holds an e-mail address outside the example domains: use one such as "

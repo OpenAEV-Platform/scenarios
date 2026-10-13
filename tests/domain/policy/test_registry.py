@@ -72,6 +72,13 @@ def test_a_violation_may_lower_its_rule_s_severity() -> None:
     assert [f.severity for f in findings_of(rule, violations)] == [Severity.INFO]
 
 
+def test_a_violation_never_raises_its_rule_s_severity() -> None:
+    rule = Rule("POL-999", Severity.INFO, "A test rule.", lambda _data, _content: ())
+    violations = (Violation(f"{ENTRY}/scenario.json", "", "a note", Severity.BLOCKING),)
+
+    assert [f.severity for f in findings_of(rule, violations)] == [Severity.INFO]
+
+
 def test_findings_of_turns_violations_into_findings_of_the_rule() -> None:
     rule = Rule("POL-999", Severity.INFO, "A test rule.", lambda _data, _content: ())
     violations = (Violation(f"{ENTRY}/scenario.yaml", "/name", "a message"),)

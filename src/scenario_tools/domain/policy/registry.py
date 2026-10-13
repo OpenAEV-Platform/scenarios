@@ -14,7 +14,7 @@ from scenario_tools.domain.policy.rules import (
     targets,
     vendors,
 )
-from scenario_tools.domain.shared.finding import Finding
+from scenario_tools.domain.shared.finding import Finding, Severity
 
 RULES: tuple[Rule, ...] = (
     sources.RULE,
@@ -36,7 +36,8 @@ def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, .
     return tuple(
         Finding(
             rule.code,
-            violation.severity or rule.severity,
+            # A violation severity only lowers the rule's, never raises it: only info takes over.
+            Severity.INFO if violation.severity is Severity.INFO else rule.severity,
             violation.path,
             violation.field,
             violation.message,
