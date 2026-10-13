@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from scenario_tools.domain.catalogue.structure import CONTRACT, INJECTS, PAYLOAD
+from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD, contracts_with_payloads
 
 COMMAND = "command_content"
 CLEANUP = "payload_cleanup_command"
@@ -37,21 +37,15 @@ class Payload:
 
 def payloads(stored: object) -> Iterator[Payload]:
     """Every embedded payload."""
-    injects = stored.get(INJECTS) if isinstance(stored, Mapping) else None
-    if not isinstance(injects, list):
-        return
-    for index, inject in enumerate(injects):
-        if not isinstance(inject, Mapping):
-            continue
-        contract = inject.get(CONTRACT)
-        payload = contract.get(PAYLOAD) if isinstance(contract, Mapping) else None
+    for pointer, inject, contract in contracts_with_payloads(stored):
+        payload = contract[PAYLOAD]
         if isinstance(payload, Mapping):
             given = inject.get(_CONTENT)
             yield Payload(
-                f"/{INJECTS}/{index}/{CONTRACT}/{PAYLOAD}",
+                f"{pointer}/{CONTRACT}/{PAYLOAD}",
                 payload,
                 given if isinstance(given, Mapping) else {},
-                f"/{INJECTS}/{index}/{_CONTENT}",
+                f"{pointer}/{_CONTENT}",
             )
 
 
