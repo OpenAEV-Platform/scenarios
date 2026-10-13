@@ -249,6 +249,9 @@ class _HTTPHandler(urllib.request.HTTPHandler):
 class _HTTPSHandler(urllib.request.HTTPSHandler):
     def __init__(self, watchdog: _Watchdog) -> None:
         self._tls = ssl.create_default_context()  # certificate and host name verified
+        # The default floor is the local OpenSSL configuration's, which may still accept
+        # TLS 1.0 and 1.1.
+        self._tls.minimum_version = ssl.TLSVersion.TLSv1_2
         super().__init__(context=self._tls)
         self._watchdog = watchdog
 

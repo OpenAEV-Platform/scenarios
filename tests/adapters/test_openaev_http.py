@@ -388,7 +388,9 @@ def test_the_watchdog_cuts_a_connection_wrapped_for_encryption() -> None:
     with socket.create_server(("127.0.0.1", 0)) as server:  # accepts, never answers
         watchdog = _Watchdog(5)
         raw = watchdog.create_connection(server.getsockname(), 5)
-        with ssl.create_default_context().wrap_socket(
+        tls = ssl.create_default_context()
+        tls.minimum_version = ssl.TLSVersion.TLSv1_2
+        with tls.wrap_socket(
             raw, server_hostname="platform.example.org", do_handshake_on_connect=False
         ) as encrypted:
             watchdog.watch(encrypted)
@@ -662,6 +664,14 @@ def test_an_encrypted_call_verifies_the_certificate_and_the_host_name() -> None:
 
     assert tls.verify_mode is ssl.CERT_REQUIRED
     assert tls.check_hostname
+
+
+def test_an_encrypted_call_refuses_protocols_older_than_tls_1_2() -> None:
+    # The default context leaves the floor to the local OpenSSL configuration, which may still
+    # accept TLS 1.0 and 1.1; the client sets it itself.
+    tls = _HTTPSHandler(_Watchdog(1))._tls
+
+    assert tls.minimum_version is ssl.TLSVersion.TLSv1_2
 
 
 def test_a_transport_failure_is_named_by_its_kind_only(platform: Platform) -> None:
