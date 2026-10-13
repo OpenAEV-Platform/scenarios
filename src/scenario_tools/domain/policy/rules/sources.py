@@ -10,6 +10,7 @@ is never quoted, since it may name a private host or carry a credential.
 """
 
 import ipaddress
+import itertools
 import re
 from collections.abc import Iterator, Mapping
 from typing import Any
@@ -42,34 +43,38 @@ _RESERVED = (
 )
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _TOP = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
-# Query and fragment keys that carry a credential: tokens, keys, passwords and the signatures
-# of pre-signed links, compared in lower case once percent-decoded.
-_CREDENTIAL_KEYS = frozenset(
-    {
-        "token",
-        "access_token",
-        "id_token",
-        "refresh_token",
-        "auth",
-        "authorization",
-        "key",
-        "api_key",
-        "apikey",
-        "sig",
-        "signature",
-        "password",
-        "passwd",
-        "pwd",
-        "secret",
-        "client_secret",
-        "x-amz-signature",
-        "x-amz-credential",
-        "x-amz-security-token",
-        "x-goog-signature",
-        "x-goog-credential",
-    }
+# Query and fragment keys that carry a credential, compared in lower case and without
+# separators, so that "auth_token", "accessToken" and "x-api-key" are all seen: a key that holds
+# one of these words, or that is one of these short names. A key needs a value to carry anything;
+# a bare word, such as an anchor, carries nothing. Names too common in public links ("code",
+# "state", "hash") and credentials in a path are left to the secret scan.
+_CREDENTIAL_WORDS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "passphrase",
+    "passcode",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "authkey",
+    "subscriptionkey",
+    "licensekey",
+    "signature",
+    "credential",
+    "sessionid",
+    "sessid",
+    "bearer",
+    "jwt",
 )
+_CREDENTIAL_NAMES = frozenset(
+    {"key", "sig", "auth", "authorization", "pwd", "pw", "pass", "sid", "otp"}
+)
+# A JSON Web Token, whatever key holds it, and user information in a link held by a value.
+_CARRIED = re.compile(r"eyJ[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.|://[^/?#@]*@")
 _ESCAPE = re.compile(r"%([0-9A-Fa-f]{2})")
+_DECODINGS = 3  # rounds of percent-decoding, so that a credential encoded twice is still seen
 _COPIED = "sources are linked, never copied into an entry"
 
 
@@ -101,12 +106,37 @@ def _host_problem(authority: str) -> str | None:
     return None
 
 
+def _unescape(escape: re.Match[str]) -> str:
+    return chr(int(escape[1], 16))
+
+
+def _forms(text: str) -> list[str]:
+    """``text`` and its percent-decodings, until one changes nothing or ``_DECODINGS`` rounds."""
+    forms = [text]
+    for _ in range(_DECODINGS):
+        decoded = _ESCAPE.sub(_unescape, forms[-1])
+        if decoded == forms[-1]:
+            break
+        forms.append(decoded)
+    return forms
+
+
 def _carries_credential(parameters: str) -> bool:
-    """Whether a query or a fragment holds a key that carries a credential."""
-    for parameter in re.split(r"[&;]", parameters):
-        key = _ESCAPE.sub(lambda escape: chr(int(escape[1], 16)), parameter.partition("=")[0])
-        if key.strip().lower() in _CREDENTIAL_KEYS:
+    """Whether a query or a fragment carries a credential, as written or once decoded: a pair
+    whose key names one, a value that holds a pair (``x=token=abc``), a token or a link with user
+    information. A fragment may hold parameters after a route or a "?", and a value may hold a
+    whole link, so every separator starts a pair."""
+    for form in _forms(parameters):
+        if _CARRIED.search(form):
             return True
+        for parameter in re.split(r"[&;?#/]", form):
+            parts = parameter.split("=")
+            for key, value in itertools.pairwise(parts):
+                name = re.sub(r"[^a-z0-9]", "", key.lower())
+                if value and (
+                    name in _CREDENTIAL_NAMES or any(word in name for word in _CREDENTIAL_WORDS)
+                ):
+                    return True
     return False
 
 

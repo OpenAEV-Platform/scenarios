@@ -43,8 +43,17 @@ def test_the_rule_is_pol_001_and_blocks() -> None:
         "https://example.org#part",
         "https://www.example1.org/",  # only the last label must be a top-level name
         "https://example.org/search?q=token&page=2",  # a value, never a key, names it
-        "https://example.org/a?keyword=x&tokens=2",  # other keys
-        "https://example.org/a#signature-section",  # a fragment that is no parameter list
+        "https://example.org/a?keyword=x&page=2&sort=asc",  # other keys
+        "https://example.org/a#signature-section",  # an anchor, no parameter
+        "https://example.org/a#token-handling",
+        "https://example.org/a?token",  # a key with no value carries nothing
+        "https://example.org/a?token=",
+        "https://example.org/search?q=password+spraying",  # a word in a value, not a key
+        "https://example.org/rfc#section-token-binding",
+        "https://example.org/a?id=CVE-2024-1234&keyword=x&author=y",
+        "https://example.org/a?q=%2541",  # decoded twice, still no credential
+        # Decoding stops after three rounds: no server decodes a key four times.
+        "https://example.org/a?%25252574oken=abc",
         "https://example.org/token/key/sig",  # a path is no query
         "https://example.org/a?%zz=1",  # a malformed escape is kept as it is
         "https://localhost.example.org/",  # reserved names end a host, they do not start it
@@ -109,7 +118,40 @@ def test_a_link_to_a_public_page_passes(url: str) -> None:
         ("https://x.com/?password=abc", CREDENTIAL),
         ("https://x.com/?%74oken=abc", CREDENTIAL),  # percent-encoded key
         ("https://x.com/?TOKEN=abc", CREDENTIAL),
-        ("https://x.com/?token", CREDENTIAL),  # a key with no value still names a credential
+        ("https://x.com/?auth_token=abc", CREDENTIAL),  # a credential word inside the key
+        ("https://x.com/?session_token=abc", CREDENTIAL),
+        ("https://x.com/?accessToken=abc", CREDENTIAL),
+        ("https://x.com/?x-api-key=abc", CREDENTIAL),
+        ("https://x.com/?client-secret=abc", CREDENTIAL),
+        ("https://x.com/?private_key=abc", CREDENTIAL),
+        ("https://x.com/?AWSAccessKeyId=abc&Signature=def", CREDENTIAL),
+        ("https://x.com/?X-Amz-Security-Token=abc", CREDENTIAL),
+        ("https://x.com/?user_password=abc", CREDENTIAL),
+        ("https://x.com/?a=1?token=abc", CREDENTIAL),  # a "?" inside the query
+        ("https://x.com/#callback?access_token=abc", CREDENTIAL),  # parameters in a fragment
+        ("https://x.com/#/route?token=abc", CREDENTIAL),
+        ("https://x.com/?%61uth_%74oken=abc", CREDENTIAL),
+        ("https://x.com/?api%2Dkey=abc", CREDENTIAL),
+        ("https://x.com/?next=https%3A%2F%2Fh.com%2F%3Ftoken%3Dabc", CREDENTIAL),  # in a value
+        ("https://x.com/?x=1%26token=abc", CREDENTIAL),  # an encoded separator
+        ("https://x.com/?x=token=abc", CREDENTIAL),  # a pair inside a value
+        ("https://x.com/?access_token%3Dabc", CREDENTIAL),
+        ("https://x.com/#a%26token%3Dabc", CREDENTIAL),
+        ("https://x.com/?%2574oken=abc", CREDENTIAL),  # encoded twice
+        ("https://x.com/?%252574oken=abc", CREDENTIAL),  # encoded three times, the bound
+        ("https://x.com/?q=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc", CREDENTIAL),  # a JWT
+        ("https://x.com/?u=https://user:pw@h.com/", CREDENTIAL),  # user information in a value
+        ("https://x.com/?jwt=abc", CREDENTIAL),
+        ("https://x.com/?bearer=abc", CREDENTIAL),
+        ("https://x.com/?authkey=abc", CREDENTIAL),
+        ("https://x.com/?passphrase=abc", CREDENTIAL),
+        ("https://x.com/?passcode=abc", CREDENTIAL),
+        ("https://x.com/?PHPSESSID=abc", CREDENTIAL),
+        ("https://x.com/?subscription-key=abc", CREDENTIAL),
+        ("https://x.com/?license_key=abc", CREDENTIAL),
+        ("https://x.com/?pw=abc", CREDENTIAL),
+        ("https://x.com/?sid=abc", CREDENTIAL),
+        ("https://x.com/?otp=123456", CREDENTIAL),
         ("https://x.com/#access_token=abc", CREDENTIAL),
         ("https://x.com/page#id_token=abc&state=1", CREDENTIAL),
         # Not a URI the schema accepts, refused all the same: only the last ":" opens a port.
