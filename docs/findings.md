@@ -57,7 +57,7 @@ These check an entry of the catalogue: its place, its `scenario.yaml` and its `s
 | `SCH-005` | An inject uses a contract the tools do not know: neither a built-in contract they recorded, nor one created from a payload. | Use a built-in contract, or open an issue so that it can be recorded. |
 | `SCH-006` | The copy of a built-in contract stored in the scenario differs from the one the tools recorded. | Export the scenario again from a platform at a supported version. |
 | `SCH-007` | (Info) Something to complete or review in `scenario.yaml`: for a new entry, a field the export cannot give or a default such as the version; for an update, the version to raise and the changelog section to add, and after a rename the name and facets to align. | Complete or confirm it before the pull request. |
-| `SCH-008` | The entry is not where an entry belongs (`scenarios/<domain>/<slug>/`, with a known domain and a kebab-case slug), or a required file is missing. A directory name with a backslash is reported at the last directory before it, and none of its files is read. | Move the entry, or add the missing file. |
+| `SCH-008` | The entry is not where an entry belongs (`scenarios/<domain>/<slug>/`, with a known domain and a kebab-case slug), or a required file is missing. A directory name with a backslash, or a path that starts with a drive such as `C:`, is reported at the last directory before it, and none of its files is read, by this check or by those that compare entries. | Move the entry, or add the missing file. |
 | `SCH-009` | The description still ends with `…`: it was cut to fit and was not reviewed. | Rewrite the end of the description and remove the mark. |
 | `SCH-010` | Another entry has the same `external_id`. | Give this entry its own identifier, or update the existing entry instead. |
 | `SCH-011` | (Info) The minimum platform version is older than the one the built-in contracts were checked on. | Raise it, or check the scenario on the older versions. |
@@ -77,7 +77,7 @@ written when one of them blocks. See [`intake.md`](intake.md).
 | `ITK-005` | An update's domain and slug are not those of the entry it names. | Give the entry's own domain and slug. |
 | `ITK-006` | An update's export has another scenario name than the entry, without `rewrite: true`. | Add `rewrite: true` if the scenario was really renamed. |
 | `ITK-007` | The threat or the sources of the request would make `scenario.yaml` break its schema. | Fix them as the `SCH-001` findings that follow say. |
-| `ITK-008` | An entry of the catalogue cannot be read: a link, a hidden name left by an interrupted run, or a `scenario.yaml` that is not a mapping. | Fix or remove that entry first. |
+| `ITK-008` | An entry of the catalogue cannot be read: a link, a hidden name left by an interrupted run, a name with a backslash or a drive, or a `scenario.yaml` that is not a mapping. | Fix or remove that entry first. |
 
 ## Versions and identifiers: `VER`
 

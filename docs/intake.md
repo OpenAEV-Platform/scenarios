@@ -81,7 +81,7 @@ Nothing is written when the request is refused:
 | `ITK-005` | an update whose `domain` and `slug` are not the entry's place |
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
-| `ITK-008` | an entry of the catalogue, or a domain, that is a link or a hidden name a cut run left (`.scenario-tools-<hex>`), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
+| `ITK-008` | an entry of the catalogue, or a domain, that is a link, a hidden name a cut run left (`.scenario-tools-<hex>`) or a name a finding cannot show (a backslash, a drive), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
 
 The export is also refused as `normalize` refuses it.
 

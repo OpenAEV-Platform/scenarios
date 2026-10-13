@@ -19,6 +19,7 @@ from scenario_tools.adapters.places import (
 )
 from scenario_tools.adapters.safe_readers import read_text_file, read_yaml_file
 from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
+from scenario_tools.domain.shared.finding import reportable
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 _T = TypeVar("_T")
@@ -231,16 +232,19 @@ class RepositoryEntries:
         if base.is_symlink():  # what it leads to is never read as the catalogue
             raise UnsafeInputError("IO-013", "a symbolic link, never followed", "scenarios")
         for domain, linked in _listing(base):
-            if is_hidden_name(domain) and not self._strict:
+            # A name a finding cannot name is no entry: never read, as a hidden name.
+            unnamed = not reportable(f"scenarios/{domain}")
+            if (is_hidden_name(domain) or unnamed) and not self._strict:
                 continue
-            if linked or is_hidden_name(domain):  # never read: unknown, so taken
+            if linked or is_hidden_name(domain) or unnamed:  # never read: unknown, so taken
                 found.append(CatalogueEntry(f"scenarios/{domain}", "", "", False))
                 continue
             for slug, linked in _listing(base / domain):
                 path = f"scenarios/{domain}/{slug}"
-                if is_hidden_name(slug) and not self._strict:
+                unnamed = not reportable(path)
+                if (is_hidden_name(slug) or unnamed) and not self._strict:
                     continue
-                if linked or is_hidden_name(slug):
+                if linked or is_hidden_name(slug) or unnamed:
                     found.append(CatalogueEntry(path, "", "", False))
                     continue
                 if self._strict and _holds_hidden(base / domain / slug):

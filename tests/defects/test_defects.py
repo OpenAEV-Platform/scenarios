@@ -201,3 +201,15 @@ def test_an_entry_whose_path_holds_a_backslash_is_refused_not_a_defect_of_the_to
     shutil.copytree(root / ENTRY, root / entry)
 
     assert _validate(root, entry) == (1, [("SCH-008", "blocking", at)])
+
+
+def test_an_entry_whose_path_holds_a_backslash_is_never_read_beside_another(
+    tmp_path: Path,
+) -> None:
+    root = _repository(tmp_path)
+    shutil.copytree(root / ENTRY, root / "scenarios/techniques/a\\b")  # same identifier, same name
+
+    assert _validate(root, ENTRY, "scenarios/techniques/a\\b") == (
+        1,
+        [("SCH-008", "blocking", "scenarios/techniques")],
+    )
