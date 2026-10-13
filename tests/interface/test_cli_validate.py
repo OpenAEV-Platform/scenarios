@@ -150,6 +150,20 @@ def test_unusable_recorded_contracts_are_the_environment_s_fault(
     assert "policy data cannot be used" in json.loads(result.stdout)["error"]
 
 
+@pytest.mark.parametrize("text", ["domains: example.com\n", "", "networks: []\n"])
+def test_unusable_allowed_targets_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / "policy" / "data" / "allowed-targets.yaml").write_text(text)
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3
+    assert "policy data cannot be used" in json.loads(result.stdout)["error"]
+
+
 def test_a_directory_that_cannot_be_searched_is_the_environment_s_fault(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

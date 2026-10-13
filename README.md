@@ -77,8 +77,8 @@ scenarios/
   file is always a real change of the scenario.
 
 The rules for both files are in [`schemas/`](schemas/). The data the checks use is in
-[`policy/`](policy/): the domains, the platform's built-in injector contracts, and the fields
-removed from an export.
+[`policy/`](policy/): the domains, the platform's built-in injector contracts, the fields
+removed from an export, and the hosts and addresses a scenario may name.
 
 ## The starter pack
 

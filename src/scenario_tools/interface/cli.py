@@ -56,6 +56,8 @@ from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
+from scenario_tools.domain.policy.rule import PolicyData
+from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import (
     COUNT_CODE,
     ERROR_LIMIT,
@@ -439,6 +441,7 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
             )
         try:
             builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+            policy = _policy_data(loader)
         except ValueError as error:
             raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
         path = repository_path(str(scenario), root)
@@ -460,6 +463,7 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
             ),
             check=lambda built: check_export_archive(built, str(out)),
             limit=ARCHIVE_LIMIT,
+            policy=policy,
         )
         if built is not None:
             write_output(out, built)
@@ -475,10 +479,11 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     """Check each of ENTRIES, an entry directory, against the schemas and the rules of an entry
     of the repository that holds them; exit with 1 if anything blocks one of them.
 
-    Of the policy rules, POL-001 (sources linked to public pages, nothing copied into an entry)
-    and POL-002 (no recurrence) run. The other policy rules, versioning against the previous
-    release, the generated README.md, the payload references, the CHANGELOG.md sections and the
-    private deny-list are not run yet: an entry that passes may still fail them.
+    Of the policy rules, POL-001 (sources linked to public pages, nothing copied into an entry),
+    POL-002 (no recurrence) and POL-003 (injects name only allowed hosts) run. The other policy
+    rules, versioning against the previous release, the generated README.md, the payload
+    references, the CHANGELOG.md sections and the private deny-list are not run yet: an entry
+    that passes may still fail them.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""
@@ -518,6 +523,7 @@ class _Rules:
     builtin: BuiltinContracts
     domains: tuple[str, ...]
     schema: JsonSchemaValidator
+    policy: PolicyData
 
     def validate(self, entry: str, source: RepositoryEntries) -> tuple[Finding, ...]:
         return validate_entry(
@@ -527,7 +533,13 @@ class _Rules:
             builtin=self.builtin,
             renormalised=renormaliser(self.loader),
             domains=self.domains,
+            policy=self.policy,
         )
+
+
+def _policy_data(loader: YamlDataLoader) -> PolicyData:
+    """The data the policy rules read: the allowed targets."""
+    return PolicyData(AllowedTargets.from_document(loader.load("allowed-targets")))
 
 
 def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
@@ -538,6 +550,7 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
         loader = YamlDataLoader(source.directory("policy/data"))
         builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
         domains = domains_from_document(loader.load("domains"))
+        policy = _policy_data(loader)
     except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
         raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
     try:
@@ -548,7 +561,7 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
     for name in ("scenario", "intake-request") if intake else ("scenario",):
         if not (schemas / f"{name}.schema.json").is_file():
             raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
-    return _Rules(loader, builtin, domains, schema)
+    return _Rules(loader, builtin, domains, schema, policy)
 
 
 REQUEST_LIMIT = 64 * 1024  # bytes of an intake request

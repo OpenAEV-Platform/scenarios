@@ -132,6 +132,10 @@ DEFECTS: dict[str, Callable[[Path], object]] = {
     "POL-001": lambda root: _metadata(
         root, lambda d: d["sources"][0].__setitem__("url", "https://10.0.0.1/report.html")
     ),
+    "POL-003": lambda root: _scenario(
+        root,
+        lambda d: d["scenario_injects"][0]["inject_content"].__setitem__("targets", "10.0.0.5"),
+    ),
     "POL-002": lambda root: _scenario(
         root,
         lambda d: d["scenario_information"].__setitem__("scenario_recurrence", "0 0 8 * * MON"),

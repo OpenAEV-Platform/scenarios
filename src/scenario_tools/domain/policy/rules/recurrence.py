@@ -5,7 +5,7 @@ the platform that imports it, which a shared scenario never does. A field holdin
 from collections.abc import Iterator, Mapping
 
 from scenario_tools.domain.catalogue.structure import INFORMATION
-from scenario_tools.domain.policy.rule import EntryContent, Rule, Violation
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
 
 RECURRENCE_FIELDS = ("scenario_recurrence", "scenario_recurrence_start", "scenario_recurrence_end")
@@ -27,7 +27,7 @@ def violations(document: object, path: str) -> Iterator[Violation]:
             )
 
 
-def _check(content: EntryContent) -> Iterator[Violation]:
+def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     return violations(content.stored, f"{content.directory}/scenario.json")
 
 

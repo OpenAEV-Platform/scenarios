@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 from scenario_tools.domain.policy.registry import RULES, findings_of, policy_findings, rule_findings
 from scenario_tools.domain.policy.rule import EntryContent, Rule, Violation
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Severity
-from tests.domain.policy.cases import CASES, ENTRY, content
+from tests.domain.policy.cases import CASES, DATA, ENTRY, content
 
 _JSON = st.recursive(
     st.none() | st.booleans() | st.integers() | st.text(max_size=20),
@@ -53,20 +53,20 @@ def test_every_rule_has_a_passing_and_a_failing_entry() -> None:
 def test_the_passing_entry_passes_and_the_failing_one_fails_on_this_rule_only(rule: Rule) -> None:
     passing, failing = CASES[rule.code]
 
-    assert policy_findings(passing) == ()
-    assert {finding.code for finding in policy_findings(failing)} == {rule.code}
+    assert policy_findings(DATA, passing) == ()
+    assert {finding.code for finding in policy_findings(DATA, failing)} == {rule.code}
 
 
 @pytest.mark.parametrize("rule", RULES, ids=lambda rule: rule.code)
 def test_a_finding_carries_its_rule_s_code_and_severity(rule: Rule) -> None:
-    findings = policy_findings(CASES[rule.code][1])
+    findings = policy_findings(DATA, CASES[rule.code][1])
 
     assert findings
     assert all((f.code, f.severity) == (rule.code, rule.severity) for f in findings)
 
 
 def test_findings_of_turns_violations_into_findings_of_the_rule() -> None:
-    rule = Rule("POL-999", Severity.INFO, "A test rule.", lambda _: ())
+    rule = Rule("POL-999", Severity.INFO, "A test rule.", lambda _data, _content: ())
     violations = (Violation(f"{ENTRY}/scenario.yaml", "/name", "a message"),)
 
     (finding,) = findings_of(rule, violations)
@@ -86,7 +86,7 @@ def test_the_rules_run_in_code_order() -> None:
         stored={"scenario_information": {"scenario_recurrence": "0 0 8 * * MON"}},
     )
 
-    assert [finding.code for finding in policy_findings(failing)] == ["POL-001", "POL-002"]
+    assert [finding.code for finding in policy_findings(DATA, failing)] == ["POL-001", "POL-002"]
 
 
 _URLS = st.builds(
@@ -113,6 +113,8 @@ _KNOWN = (
     rf"\({_OWN}\): sources are linked, never copied into an entry",
     r"scenario_recurrence(_start|_end)? is set: the importer would schedule the scenario, which "
     r"the catalogue never does",
+    r"this value names a host outside the example names, test addresses and authorised "
+    r"targets: use an example name, such as host\.example\.com, or a test address",
 )
 
 
@@ -127,9 +129,9 @@ def test_every_finding_stays_in_the_entry_bounded_and_quotes_nothing(
 ) -> None:
     content = EntryContent(ENTRY, files, declared, stored)
 
-    findings = policy_findings(content)
+    findings = policy_findings(DATA, content)
 
-    assert policy_findings(content) == findings  # the same, run after run
+    assert policy_findings(DATA, content) == findings  # the same, run after run
     for finding in findings:
         assert finding.path == ENTRY or finding.path.startswith(f"{ENTRY}/")
         assert len(finding.message) <= MESSAGE_LIMIT
@@ -142,10 +144,10 @@ def test_one_rule_can_be_asked_alone() -> None:
         stored={"scenario_information": {"scenario_recurrence": "0 0 8 * * MON"}},
     )
 
-    assert [f.code for f in rule_findings("POL-002", failing)] == ["POL-002"]
-    assert [f.code for f in rule_findings("POL-001", failing)] == ["POL-001"]
+    assert [f.code for f in rule_findings("POL-002", DATA, failing)] == ["POL-002"]
+    assert [f.code for f in rule_findings("POL-001", DATA, failing)] == ["POL-001"]
 
 
 def test_asking_a_rule_that_does_not_exist_is_a_defect() -> None:
     with pytest.raises(ValueError, match="not enough values to unpack"):
-        rule_findings("POL-999", content())
+        rule_findings("POL-999", DATA, content())

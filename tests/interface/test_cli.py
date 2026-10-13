@@ -324,7 +324,7 @@ def _entry(tmp_path: Path, name: str = "entry") -> Path:
     data = tmp_path / "repository" / "policy" / "data"
     if not data.exists():
         data.mkdir(parents=True)
-        for policy in ("volatile-fields.yaml", "builtin-contracts.yaml"):
+        for policy in ("volatile-fields.yaml", "builtin-contracts.yaml", "allowed-targets.yaml"):
             shutil.copy(REPOSITORY / "policy" / "data" / policy, data)
     entry = tmp_path / "repository" / "scenarios" / name
     entry.mkdir(parents=True)
