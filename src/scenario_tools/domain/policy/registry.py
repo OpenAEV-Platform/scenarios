@@ -2,11 +2,11 @@
 
 from collections.abc import Iterable
 
-from scenario_tools.domain.policy.rule import EntryContent, Rule, Violation
-from scenario_tools.domain.policy.rules import recurrence, sources
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
+from scenario_tools.domain.policy.rules import recurrence, sources, targets
 from scenario_tools.domain.shared.finding import Finding
 
-RULES: tuple[Rule, ...] = (sources.RULE, recurrence.RULE)
+RULES: tuple[Rule, ...] = (sources.RULE, recurrence.RULE, targets.RULE)
 
 
 def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, ...]:
@@ -18,13 +18,16 @@ def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, .
     )
 
 
-def rule_findings(code: str, content: EntryContent) -> tuple[Finding, ...]:
+def rule_findings(code: str, data: PolicyData, content: EntryContent) -> tuple[Finding, ...]:
     """The findings of the rule ``code`` alone for the entry ``content`` holds, for a command
     that asks one rule, as the archive asks for the recurrence."""
     (rule,) = (rule for rule in RULES if rule.code == code)
-    return findings_of(rule, rule.check(content))
+    return findings_of(rule, rule.check(data, content))
 
 
-def policy_findings(content: EntryContent) -> tuple[Finding, ...]:
-    """The findings of every rule for the entry ``content`` holds, rule after rule."""
-    return tuple(finding for rule in RULES for finding in findings_of(rule, rule.check(content)))
+def policy_findings(data: PolicyData, content: EntryContent) -> tuple[Finding, ...]:
+    """The findings of every rule for the entry ``content`` holds, rule after rule, with the
+    maintainers' ``data``."""
+    return tuple(
+        finding for rule in RULES for finding in findings_of(rule, rule.check(data, content))
+    )

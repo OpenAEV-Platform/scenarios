@@ -17,6 +17,7 @@ from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.schema import SchemaViolation
+from tests.domain.policy.cases import DATA
 
 ENTRY = "scenarios/ransomware/akira"
 YAML, JSON = f"{ENTRY}/scenario.yaml", f"{ENTRY}/scenario.json"
@@ -139,6 +140,7 @@ def _validate(
         builtin=BUILTIN,
         renormalised=renormalised,
         domains=DOMAINS,
+        policy=DATA,
     )
 
 
@@ -340,6 +342,7 @@ def test_an_entry_the_readers_cannot_list_is_a_finding_of_the_entry() -> None:
         builtin=BUILTIN,
         renormalised=_same,
         domains=DOMAINS,
+        policy=DATA,
     )
 
     assert findings == (Finding("IO-013", Severity.BLOCKING, ENTRY, "", "a symbolic link"),)
@@ -373,6 +376,7 @@ def test_a_built_in_contract_copy_other_than_the_recorded_one_is_refused() -> No
         builtin=builtin,
         renormalised=_same,
         domains=DOMAINS,
+        policy=DATA,
     )
 
     assert _codes(findings) == [("SCH-006", JSON, "/scenario_injects/0")]
@@ -388,7 +392,13 @@ def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
     source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw={YAML: f"# a note {RLO}\n"})
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
+        ENTRY,
+        source,
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -399,7 +409,13 @@ def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
     source = FakeSource({YAML: _changed(generated_by=f"x{RLO}"), JSON: SCENARIO}, raw=raw)
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
+        ENTRY,
+        source,
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -411,7 +427,13 @@ def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None
     source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw=raw)
 
     findings = validate_entry(
-        ENTRY, source, schema=FakeSchema(), builtin=BUILTIN, renormalised=_same, domains=DOMAINS
+        ENTRY,
+        source,
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -503,6 +525,7 @@ def test_an_entry_whose_path_a_finding_cannot_show_is_refused_without_reading_it
         builtin=BUILTIN,
         renormalised=_same,
         domains=DOMAINS,
+        policy=DATA,
     )
 
     assert _codes(findings) == [("SCH-008", "scenarios/techniques", "")]

@@ -10,7 +10,7 @@ import pytest
 from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rules.sources import OWN_FILES, RULE
 from scenario_tools.domain.shared.finding import Finding, Severity
-from tests.domain.policy.cases import ENTRY, content, with_source
+from tests.domain.policy.cases import DATA, ENTRY, content, with_source
 
 YAML = f"{ENTRY}/scenario.yaml"
 OWN = "CHANGELOG.md, README.md, scenario.json, scenario.yaml"
@@ -67,7 +67,7 @@ def test_the_rule_is_pol_001_and_blocks() -> None:
     ],
 )
 def test_a_link_to_a_public_page_passes(url: str) -> None:
-    assert policy_findings(with_source(url)) == ()
+    assert policy_findings(DATA, with_source(url)) == ()
 
 
 @pytest.mark.parametrize(
@@ -173,7 +173,7 @@ def test_a_link_to_a_public_page_passes(url: str) -> None:
     ],
 )
 def test_a_link_that_does_not_lead_to_a_public_page_is_refused(url: str, why: str) -> None:
-    (finding,) = policy_findings(with_source(url))
+    (finding,) = policy_findings(DATA, with_source(url))
 
     assert (finding.code, finding.severity, finding.path, finding.field, finding.message) == (
         "POL-001",
@@ -193,7 +193,7 @@ def test_each_refused_source_is_reported_at_its_own_pointer() -> None:
         ]
     }
 
-    assert _pol_001(policy_findings(content(declared=metadata))) == [
+    assert _pol_001(policy_findings(DATA, content(declared=metadata))) == [
         (YAML, "/sources/1/url"),
         (YAML, "/sources/2/url"),
     ]
@@ -213,28 +213,28 @@ def test_each_refused_source_is_reported_at_its_own_pointer() -> None:
     ],
 )
 def test_sources_the_schema_refuses_are_left_to_it(metadata: object) -> None:
-    assert _pol_001(policy_findings(content(declared=metadata))) == []
+    assert _pol_001(policy_findings(DATA, content(declared=metadata))) == []
 
 
 def test_a_source_the_schema_refuses_never_hides_the_ones_after_it() -> None:
     metadata = {"sources": [{"url": None}, {"url": "https://10.0.0.1/"}]}
 
-    assert _pol_001(policy_findings(content(declared=metadata))) == [(YAML, "/sources/1/url")]
+    assert _pol_001(policy_findings(DATA, content(declared=metadata))) == [(YAML, "/sources/1/url")]
 
 
 def test_the_entry_s_own_files_pass() -> None:
     assert frozenset({"scenario.yaml", "scenario.json", "README.md", "CHANGELOG.md"}) == OWN_FILES
-    assert policy_findings(content(files=OWN_FILES)) == ()
+    assert policy_findings(DATA, content(files=OWN_FILES)) == ()
 
 
 def test_a_missing_own_file_is_not_this_rule_s_matter() -> None:
-    assert policy_findings(content(files=frozenset())) == ()
+    assert policy_findings(DATA, content(files=frozenset())) == ()
 
 
 def test_each_file_that_is_not_the_entry_s_own_is_refused() -> None:
     files = frozenset({"scenario.yaml", "scenario.json", "report.pdf", "notes", ".DS_Store"})
 
-    findings = policy_findings(content(files=files))
+    findings = policy_findings(DATA, content(files=files))
 
     assert _pol_001(findings) == [
         (f"{ENTRY}/.DS_Store", ""),
@@ -253,7 +253,9 @@ def test_each_file_that_is_not_the_entry_s_own_is_refused() -> None:
     ["Scenario.yaml", "scenario.yml", "README", "readme.md", "attachments.zip", "scenario.json~"],
 )
 def test_a_name_close_to_an_own_file_is_not_one(name: str) -> None:
-    assert _pol_001(policy_findings(content(files=frozenset({name})))) == [(f"{ENTRY}/{name}", "")]
+    assert _pol_001(policy_findings(DATA, content(files=frozenset({name})))) == [
+        (f"{ENTRY}/{name}", "")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -277,7 +279,7 @@ def test_a_name_close_to_an_own_file_is_not_one(name: str) -> None:
     ],
 )
 def test_a_name_that_cannot_be_shown_is_reported_at_the_entry_without_it(name: str) -> None:
-    (finding,) = policy_findings(content(files=frozenset({"scenario.yaml", name})))
+    (finding,) = policy_findings(DATA, content(files=frozenset({"scenario.yaml", name})))
 
     assert (finding.code, finding.path, finding.field, finding.message) == (
         "POL-001",
@@ -291,14 +293,14 @@ def test_a_name_that_cannot_be_shown_is_reported_at_the_entry_without_it(name: s
 def test_names_that_cannot_be_shown_are_counted_in_one_finding() -> None:
     files = frozenset({"a\\b", "c\\d", "e\\f", "report.pdf"})
 
-    findings = policy_findings(content(files=files))
+    findings = policy_findings(DATA, content(files=files))
 
     assert _pol_001(findings) == [(ENTRY, ""), (f"{ENTRY}/report.pdf", "")]
     assert findings[0].message.startswith("the entry holds 3 files whose name cannot be shown")
 
 
 def test_two_names_that_cannot_be_shown_are_counted_as_files() -> None:
-    (finding,) = policy_findings(content(files=frozenset({"a\\b", "c\\d"})))
+    (finding,) = policy_findings(DATA, content(files=frozenset({"a\\b", "c\\d"})))
 
     assert finding.message.startswith("the entry holds 2 files whose name cannot be shown")
 
@@ -306,7 +308,9 @@ def test_two_names_that_cannot_be_shown_are_counted_as_files() -> None:
 def test_a_name_in_another_script_is_shown() -> None:
     name = "rapport-" + chr(0xE9) + "t" + chr(0xE9) + ".pdf"
 
-    assert _pol_001(policy_findings(content(files=frozenset({name})))) == [(f"{ENTRY}/{name}", "")]
+    assert _pol_001(policy_findings(DATA, content(files=frozenset({name})))) == [
+        (f"{ENTRY}/{name}", "")
+    ]
 
 
 def _seconds(rest: str) -> float:
@@ -315,7 +319,7 @@ def _seconds(rest: str) -> float:
     runs = []
     for _ in range(3):
         start = time.perf_counter()
-        policy_findings(content)
+        policy_findings(DATA, content)
         runs.append(time.perf_counter() - start)
     return min(runs)
 

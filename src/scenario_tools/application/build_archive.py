@@ -6,7 +6,7 @@ from scenario_tools.application.findings import not_normalised
 from scenario_tools.domain.catalogue.archive import archive_findings
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import rule_findings
-from scenario_tools.domain.policy.rule import EntryContent
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.finding import Finding, Report
 from scenario_tools.ports.archive import ArchiveBuilder
 from scenario_tools.ports.errors import UnsafeInputError
@@ -24,6 +24,7 @@ def build_archive(
     contract_findings: Callable[[object], tuple[Finding, ...]],
     check: Callable[[bytes], None],
     limit: int,
+    policy: PolicyData,
 ) -> tuple[Report, bytes | None]:
     """The report, and the archive when the report is ok. ``scenario`` holds the stored bytes
     of ``document``, found at ``path``; the archive, meant for ``out``, is never larger than
@@ -35,7 +36,7 @@ def build_archive(
     try:
         findings = archive_findings(document, path)
         entry = EntryContent(path.rpartition("/")[0], frozenset(), None, document)
-        findings += rule_findings("POL-002", entry)  # the archive carries no recurrence
+        findings += rule_findings("POL-002", policy, entry)  # the archive carries no recurrence
         findings += contract_findings(document)
     except ExportStructureError as error:
         raise UnsafeInputError(error.code, str(error), path) from error

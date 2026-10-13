@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
 
 
@@ -18,6 +19,13 @@ class EntryContent:
     files: frozenset[str]
     declared: Mapping[str, Any] | None
     stored: object
+
+
+@dataclass(frozen=True)
+class PolicyData:
+    """The maintainers' data the rules read, from ``policy/data``."""
+
+    targets: AllowedTargets
 
 
 @dataclass(frozen=True)
@@ -37,4 +45,4 @@ class Rule:
     code: str
     severity: Severity
     statement: str
-    check: Callable[[EntryContent], Iterable[Violation]]
+    check: Callable[[PolicyData, EntryContent], Iterable[Violation]]

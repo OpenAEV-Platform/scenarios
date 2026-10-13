@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from scenario_tools.domain.policy.rule import EntryContent
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData
+from scenario_tools.domain.policy.targets import AllowedTargets
 
 ENTRY = "scenarios/techniques/easm"
 OWN_FILES = frozenset({"scenario.yaml", "scenario.json"})
@@ -10,6 +11,28 @@ METADATA: dict[str, Any] = {
     "sources": [{"url": "https://attack.mitre.org/techniques/T1595/", "tlp": "TLP:CLEAR"}]
 }
 SCENARIO: dict[str, Any] = {"scenario_information": {"scenario_name": "EASM"}}
+TARGETS: dict[str, Any] = {
+    "domains": [
+        "example",
+        "example.com",
+        "example.net",
+        "example.org",
+        "test",
+        "invalid",
+        "localhost",
+    ],
+    "networks": [
+        "127.0.0.0/8",
+        "::1/128",
+        "192.0.2.0/24",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "2001:db8::/32",
+    ],
+    "lab_networks": ["10.42.0.0/16"],
+    "external_targets": ["scanme.nmap.org"],
+}
+DATA = PolicyData(AllowedTargets.from_document(TARGETS))
 
 
 def content(
@@ -29,7 +52,20 @@ def with_recurrence(field: str, value: object) -> EntryContent:
     return content(stored={"scenario_information": {"scenario_name": "EASM", field: value}})
 
 
+def with_inject_content(inject_content: object) -> EntryContent:
+    return content(
+        stored={
+            "scenario_information": {"scenario_name": "EASM"},
+            "scenario_injects": [{"inject_content": inject_content}],
+        }
+    )
+
+
 CASES: dict[str, tuple[EntryContent, EntryContent]] = {
     "POL-001": (content(), with_source("https://10.0.0.1/report.html")),
     "POL-002": (content(), with_recurrence("scenario_recurrence", "0 0 8 * * MON")),
+    "POL-003": (
+        with_inject_content({"targets": "192.0.2.10"}),
+        with_inject_content({"targets": "10.0.0.5"}),
+    ),
 }

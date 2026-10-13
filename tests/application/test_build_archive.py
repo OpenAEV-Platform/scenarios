@@ -7,6 +7,7 @@ import pytest
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.errors import UnsafeInputError
+from tests.domain.policy.cases import DATA
 
 PATH = "scenarios/ransomware/akira/scenario.json"
 OUT = "build/akira.zip"
@@ -50,6 +51,7 @@ def test_an_entry_is_built_from_its_stored_bytes() -> None:
         contract_findings=_no_contract_findings,
         check=checked.append,
         limit=100,
+        policy=DATA,
     )
 
     assert report.command == "archive"
@@ -74,6 +76,7 @@ def test_an_entry_the_archive_cannot_carry_is_never_built() -> None:
         contract_findings=_no_contract_findings,
         check=_unchecked,
         limit=100,
+        policy=DATA,
     )
 
     assert [(f.code, f.severity) for f in report.findings] == [("POL-002", Severity.BLOCKING)]
@@ -94,6 +97,7 @@ def test_an_archive_over_the_limit_is_refused() -> None:
             contract_findings=_no_contract_findings,
             check=_unchecked,
             limit=100,
+            policy=DATA,
         )
     assert (error.value.code, error.value.message, error.value.path) == (
         "IO-001",
@@ -114,6 +118,7 @@ def test_an_archive_at_the_limit_is_built() -> None:
         contract_findings=_no_contract_findings,
         check=_unchecked,
         limit=100,
+        policy=DATA,
     )
 
     assert data == b"x" * 100
@@ -132,6 +137,7 @@ def test_a_stored_scenario_not_shaped_like_one_is_refused_on_its_file() -> None:
             contract_findings=_no_contract_findings,
             check=_unchecked,
             limit=100,
+            policy=DATA,
         )
     assert (error.value.code, error.value.path) == ("IO-014", PATH)
     assert error.value.message == (
@@ -155,6 +161,7 @@ def test_an_archive_the_checks_refuse_is_never_returned() -> None:
             contract_findings=_no_contract_findings,
             check=refuse,
             limit=100,
+            policy=DATA,
         )
 
 
@@ -172,6 +179,7 @@ def test_a_stored_scenario_normalisation_would_change_is_refused() -> None:
         contract_findings=_no_contract_findings,
         check=_unchecked,
         limit=100,
+        policy=DATA,
     )
 
     assert [(f.code, f.severity, f.path, f.field) for f in report.findings] == [
@@ -200,6 +208,7 @@ def test_a_contract_without_established_facts_keeps_the_entry_out() -> None:
         contract_findings=lambda document: (unknown,),
         check=_unchecked,
         limit=100,
+        policy=DATA,
     )
 
     assert report.findings == (unknown,)

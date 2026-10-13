@@ -14,7 +14,7 @@ import re
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.policy.rule import EntryContent, Rule, Violation
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.characters import hidden_in
 from scenario_tools.domain.shared.finding import Severity
 
@@ -208,7 +208,7 @@ def _file_violations(directory: str, files: frozenset[str]) -> Iterator[Violatio
         )
 
 
-def _check(content: EntryContent) -> Iterator[Violation]:
+def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     yield from _source_violations(content.declared, f"{content.directory}/scenario.yaml")
     yield from _file_violations(content.directory, content.files)
 

@@ -1,0 +1,28 @@
+# The hosts and addresses an inject or an exercise text may name (POL-003). Anything else, a real
+# host above all, is refused: a shared scenario must never point at someone's system.
+
+# Example names (RFC 2606, RFC 6761), each with its subdomains.
+domains:
+  - example
+  - example.com
+  - example.net
+  - example.org
+  - test
+  - invalid
+  - localhost
+
+# Loopback, where an inject that runs on the endpoint reaches the endpoint itself, and the
+# documentation ranges (RFC 5737, RFC 3849).
+networks:
+  - 127.0.0.0/8
+  - ::1/128
+  - 192.0.2.0/24
+  - 198.51.100.0/24
+  - 203.0.113.0/24
+  - 2001:db8::/32
+
+# The ranges of the test environment, once it exists.
+lab_networks: []
+
+# Authorised external test targets: exact host names, never their subdomains.
+external_targets: []

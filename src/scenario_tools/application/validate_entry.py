@@ -19,7 +19,7 @@ from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import ExportFacts, ScenarioMetadata, cross_check
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import policy_findings
-from scenario_tools.domain.policy.rule import EntryContent
+from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 from scenario_tools.ports.errors import UnsafeInputError
@@ -102,10 +102,11 @@ def validate_entry(
     builtin: BuiltinContracts,
     renormalised: Callable[[object, str, str], bytes],
     domains: tuple[str, ...],
+    policy: PolicyData,
 ) -> tuple[Finding, ...]:
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
-    external ID and the scenario's path."""
+    external ID and the scenario's path; ``policy`` holds the data the policy rules read."""
     if not reportable(entry):  # none of its files could be named in a finding: none is read
         return layout_findings(entry, (), domains)
     try:
@@ -165,4 +166,5 @@ def validate_entry(
                 findings += text_findings(source.read_text(path), path)
             except UnsafeInputError as error:
                 findings += (_refused(error, path),)
-    return findings + policy_findings(EntryContent(entry, names, declared_checked, stored_document))
+    content = EntryContent(entry, names, declared_checked, stored_document)
+    return findings + policy_findings(policy, content)
