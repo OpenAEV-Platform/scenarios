@@ -10,7 +10,6 @@ is never quoted, since it may name a private host or carry a credential.
 """
 
 import ipaddress
-import itertools
 import re
 from collections.abc import Iterator, Mapping
 from typing import Any
@@ -22,9 +21,9 @@ from scenario_tools.domain.shared.finding import Severity
 OWN_FILES = frozenset({"scenario.yaml", "scenario.json", "README.md", "CHANGELOG.md"})
 _OWN = ", ".join(sorted(OWN_FILES))
 _SCHEME = "https://"
-# Names that never lead to a public page: the special-use names of RFC 2606, RFC 6761, RFC 7686
-# and RFC 8375 (the whole of .arpa), the top-level name kept for private use, and the names
-# local networks commonly use.
+# Names that never lead to a public page: the special-use names of RFC 2606, RFC 6761, RFC 6762,
+# RFC 7686, RFC 8375 (the whole of .arpa) and RFC 9476, the top-level name kept for private use,
+# and the names local networks commonly use.
 _RESERVED = (
     "localhost",
     "local",
@@ -33,6 +32,7 @@ _RESERVED = (
     "example",
     "onion",
     "arpa",
+    "alt",
     "internal",
     "localdomain",
     "lan",
@@ -41,6 +41,7 @@ _RESERVED = (
     "intranet",
     "private",
 )
+_NAME_LIMIT = 253  # the longest DNS name, as written, without its final dot
 _LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 _TOP = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
 # Query and fragment keys that carry a credential, compared in lower case and without
@@ -101,7 +102,11 @@ def _host_problem(authority: str) -> str | None:
     if "." not in host:
         return "has a host with no dot, which only a local network resolves"
     labels = host.split(".")
-    if not all(map(_LABEL.fullmatch, labels)) or not _TOP.fullmatch(labels[-1]):
+    if (
+        len(host) > _NAME_LIMIT
+        or not all(map(_LABEL.fullmatch, labels))
+        or not _TOP.fullmatch(labels[-1])
+    ):
         return "has a host that is not a public DNS name"
     return None
 
@@ -131,9 +136,12 @@ def _carries_credential(parameters: str) -> bool:
             return True
         for parameter in re.split(r"[&;?#/]", form):
             parts = parameter.split("=")
-            for key, value in itertools.pairwise(parts):
+            for index, key in enumerate(parts[:-1]):
+                # The value is all that follows the key's "=", even "=abc": it is empty only
+                # when nothing does, which is known without joining the rest again.
+                has_value = index + 2 < len(parts) or parts[index + 1] != ""
                 name = re.sub(r"[^a-z0-9]", "", key.lower())
-                if value and (
+                if has_value and (
                     name in _CREDENTIAL_NAMES or any(word in name for word in _CREDENTIAL_WORDS)
                 ):
                     return True

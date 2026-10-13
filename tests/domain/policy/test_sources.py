@@ -3,6 +3,8 @@ files. The schema already holds HTTPS and TLP:CLEAR; this rule checks what it ca
 
 Characters are written by code point, never raw, so that this file holds none of them."""
 
+import time
+
 import pytest
 
 from scenario_tools.domain.policy.registry import policy_findings
@@ -48,6 +50,7 @@ def test_the_rule_is_pol_001_and_blocks() -> None:
         "https://example.org/a#token-handling",
         "https://example.org/a?token",  # a key with no value carries nothing
         "https://example.org/a?token=",
+        "https://example.org/a?x=token=",  # an empty pair inside a value carries nothing
         "https://example.org/search?q=password+spraying",  # a word in a value, not a key
         "https://example.org/rfc#section-token-binding",
         "https://example.org/a?id=CVE-2024-1234&keyword=x&author=y",
@@ -58,6 +61,9 @@ def test_the_rule_is_pol_001_and_blocks() -> None:
         "https://example.org/a?%zz=1",  # a malformed escape is kept as it is
         "https://localhost.example.org/",  # reserved names end a host, they do not start it
         "https://www.examples.com/",
+        "https://" + ("a" * 63 + ".") * 3 + "a" * 57 + ".org/",  # 253 characters, the bound
+        "https://" + ("a" * 63 + ".") * 3 + "a" * 57 + ".org./",  # a final dot is not counted
+        "https://www.alternative.org/",
     ],
 )
 def test_a_link_to_a_public_page_passes(url: str) -> None:
@@ -94,6 +100,8 @@ def test_a_link_to_a_public_page_passes(url: str) -> None:
         ("https://portal.intranet/", LOCAL),
         ("https://files.private/", LOCAL),
         ("https://router.home/", LOCAL),
+        ("https://service.alt/", LOCAL),  # RFC 9476
+        ("https://" + ("a" * 63 + ".") * 3 + "a" * 58 + ".org/", NOT_PUBLIC),  # 254 characters
         ("https://WIKI.Internal./", LOCAL),
         ("https://127.1/", NOT_PUBLIC),  # read as 127.0.0.1 by some clients
         ("https://0x7f.1/", NOT_PUBLIC),
@@ -152,6 +160,8 @@ def test_a_link_to_a_public_page_passes(url: str) -> None:
         ("https://x.com/?pw=abc", CREDENTIAL),
         ("https://x.com/?sid=abc", CREDENTIAL),
         ("https://x.com/?otp=123456", CREDENTIAL),
+        ("https://x.com/?token==abc", CREDENTIAL),  # a value that starts with "="
+        ("https://x.com/?a=b&token===abc", CREDENTIAL),
         ("https://x.com/#access_token=abc", CREDENTIAL),
         ("https://x.com/page#id_token=abc&state=1", CREDENTIAL),
         # Not a URI the schema accepts, refused all the same: only the last ":" opens a port.
@@ -297,3 +307,25 @@ def test_a_name_in_another_script_is_shown() -> None:
     name = "rapport-" + chr(0xE9) + "t" + chr(0xE9) + ".pdf"
 
     assert _pol_001(policy_findings(content(files=frozenset({name})))) == [(f"{ENTRY}/{name}", "")]
+
+
+def _seconds(rest: str) -> float:
+    """The shortest of three runs on a link that ends with ``rest``."""
+    content = with_source("https://example.org/" + rest)
+    runs = []
+    for _ in range(3):
+        start = time.perf_counter()
+        policy_findings(content)
+        runs.append(time.perf_counter() - start)
+    return min(runs)
+
+
+@pytest.mark.parametrize(
+    "unit", ["=", "a=", "/", "%2541", "a=b&"], ids=["equals", "pairs", "slashes", "escapes", "and"]
+)
+def test_a_long_link_is_read_in_linear_time(unit: str) -> None:
+    # Four times the text must cost far less than sixteen times the time: linear, never
+    # quadratic, whatever a tracer or a mutation run adds to every step.
+    small, large = _seconds("?" + unit * 10_000), _seconds("?" + unit * 40_000)
+
+    assert large < 8 * small + 0.05
