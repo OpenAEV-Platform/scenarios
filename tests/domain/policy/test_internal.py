@@ -171,6 +171,7 @@ def test_a_scenario_whose_kind_is_unknown_is_not_timed(declared: object) -> None
         ({"z": "clone git@github.com:x/y"}, "/z"),  # a real domain, even in a git URL
         ({"w": "contact a@scanme.nmap.org"}, "/w"),  # a scan target is no e-mail domain
         ({"v": "write to a@corp.com."}, "/v"),  # a sentence-final period
+        ({"u": "a@corp.xn--p1ai"}, "/u"),  # an internationalised domain in its A-label form
     ],
 )
 def test_an_e_mail_address_outside_the_example_domains_is_refused(

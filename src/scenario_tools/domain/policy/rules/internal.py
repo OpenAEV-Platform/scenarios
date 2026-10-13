@@ -13,11 +13,15 @@ from scenario_tools.domain.shared.finding import Severity
 
 # An e-mail address: a local part, an "@", and a domain of labels ending in a letter top-level
 # name. Bounded, so that the search stays linear.
-# A local part, an "@", and a domain of labels ending in a top-level name of letters, so that a
-# version or a git URL (user@1.2.3, git@host:path) is not read as an address. The whole domain
-# is captured, up to its alphabetic top-level name, so that a real tail is never left out.
+# A local part, an "@", and a domain of labels ending in a top-level name of letters or an
+# "xn--" A-label, so that a version or a git URL (user@1.2.3, git@host:path) is not read as an
+# address while an internationalised domain is. The whole domain is captured, up to its top-level
+# name, so that a real tail is never left out. An internationalised domain in its raw (U-label)
+# form is left to the human review.
 _EMAIL = re.compile(
-    r"[\w.+-]{1,64}@((?:[a-z0-9-]{1,63}\.){1,32}[a-z]{2,24})\.?(?![\w.-])", re.IGNORECASE
+    r"[\w.+-]{1,64}@((?:[a-z0-9-]{1,63}\.){1,32}(?:[a-z]{2,24}|xn--[a-z0-9-]{2,59}))\.?"
+    r"(?![\w.-])",
+    re.IGNORECASE,
 )
 _EMAIL_MESSAGE = (
     "this value holds an e-mail address outside the example domains: use one such as "
