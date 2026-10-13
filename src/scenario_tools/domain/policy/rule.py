@@ -36,11 +36,13 @@ class PolicyData:
 @dataclass(frozen=True)
 class Violation:
     """One breach of a rule: the file relative to the repository, the JSON pointer of the field,
-    empty for the whole file, and what is wrong."""
+    empty for the whole file, what is wrong, and a severity that lowers the rule's when given
+    (an informative breach of a blocking rule)."""
 
     path: str
     field: str
     message: str
+    severity: "Severity | None" = None
 
 
 @dataclass(frozen=True)

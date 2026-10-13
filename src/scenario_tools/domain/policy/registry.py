@@ -7,12 +7,14 @@ from scenario_tools.domain.policy.rules import (
     actions,
     cleanup,
     elevation,
+    internal,
     recurrence,
     sources,
+    spacing,
     targets,
     vendors,
 )
-from scenario_tools.domain.shared.finding import Finding
+from scenario_tools.domain.shared.finding import Finding, Severity
 
 RULES: tuple[Rule, ...] = (
     sources.RULE,
@@ -22,14 +24,24 @@ RULES: tuple[Rule, ...] = (
     cleanup.RULE,
     vendors.RULE,
     elevation.RULE,
+    spacing.RULE,
+    internal.RULE,
 )
 
 
 def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, ...]:
-    """The findings of ``violations``, with the code and severity of ``rule``, so that a finding
-    never says another rule's code or severity."""
+    """The findings of ``violations``, with the code of ``rule`` and its severity, unless a
+    violation gives its own, which only lowers it (an informative breach of a blocking rule),
+    so that a finding never says another rule's code."""
     return tuple(
-        Finding(rule.code, rule.severity, violation.path, violation.field, violation.message)
+        Finding(
+            rule.code,
+            # A violation severity only lowers the rule's, never raises it: only info takes over.
+            Severity.INFO if violation.severity is Severity.INFO else rule.severity,
+            violation.path,
+            violation.field,
+            violation.message,
+        )
         for violation in violations
     )
 

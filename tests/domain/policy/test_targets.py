@@ -31,6 +31,15 @@ def _pol_003(findings: tuple[Finding, ...]) -> list[str]:
     return [f.field for f in findings if f.code == "POL-003"]
 
 
+def test_example_domain_accepts_example_names_only_not_external_targets() -> None:
+    allowed = _allowed()
+    assert allowed.example_domain("host.example.com")
+    assert allowed.example_domain("localhost")
+    assert not allowed.example_domain("scanme.nmap.org")  # an allowed scan target
+    assert not allowed.example_domain("127.0.0.1")  # a network, not a domain
+    assert allowed.example_domain("Host.Example.COM.")  # a trailing dot and any case
+
+
 def test_the_rule_is_pol_003_and_blocks() -> None:
     assert (RULE.code, RULE.severity) == ("POL-003", Severity.BLOCKING)
 
@@ -244,10 +253,11 @@ def test_each_refusal_names_its_list(key: str, values: object, message: str) -> 
 def test_a_host_outside_the_allowed_targets_is_refused(
     inject_content: dict[str, Any], field: str
 ) -> None:
-    (finding,) = policy_findings(DATA, with_inject_content(inject_content))
+    (finding,) = (
+        f for f in policy_findings(DATA, with_inject_content(inject_content)) if f.code == "POL-003"
+    )
 
-    assert (finding.code, finding.severity, finding.path, finding.field, finding.message) == (
-        "POL-003",
+    assert (finding.severity, finding.path, finding.field, finding.message) == (
         Severity.BLOCKING,
         JSON,
         f"/scenario_injects/0/inject_content{field}",
@@ -313,11 +323,11 @@ def test_a_host_outside_the_allowed_targets_is_refused(
     ],
 )
 def test_allowed_or_hostless_values_pass(value: str) -> None:
-    assert policy_findings(DATA, with_inject_content({"field": value})) == ()
+    assert _pol_003(policy_findings(DATA, with_inject_content({"field": value}))) == []
 
 
 def test_a_dotted_key_is_no_host_name() -> None:
-    assert policy_findings(DATA, with_inject_content({"user.email": "x"})) == ()
+    assert _pol_003(policy_findings(DATA, with_inject_content({"user.email": "x"}))) == []
 
 
 def test_a_key_and_its_value_are_reported_once() -> None:

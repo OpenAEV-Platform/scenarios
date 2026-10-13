@@ -56,6 +56,13 @@ class AllowedTargets:
                     ) from None
         return cls(tuple(lists["domains"]), tuple(networks), frozenset(lists["external_targets"]))
 
+    def example_domain(self, host: str) -> bool:
+        """Whether ``host`` is an example name, or a subdomain of one: a domain an e-mail
+        address may use. An authorised external target is a scan target, never an e-mail
+        domain, so it does not count here."""
+        host = host.strip().lower().removesuffix(".")
+        return any(host == domain or host.endswith(f".{domain}") for domain in self.domains)
+
     def allows(self, host: str) -> bool:
         """Whether ``host``, a name or an address, may be named."""
         host = host.strip().lower().removesuffix(".")
