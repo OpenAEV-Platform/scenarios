@@ -1,0 +1,43 @@
+# Forbidden actions (POL-004): what a shared scenario must never do on an endpoint. Each pattern
+# is a regular expression, matched in a command read in lower case, without the escapes and
+# quotes a shell removes, each line a statement ending with " ; ". Every repetition is bounded,
+# such as [^;&|]{0,300} between two words of one statement, so that a long command is read in
+# linear time. An action that removes a protection names, as `restore`, what restores it: it is
+# allowed only in a payload whose cleanup command does, never in the cleanup command itself.
+actions:
+  - pattern: '\bvssadmin(\.exe)?\b[^;&|]{0,300}\b(delete|resize)\b'
+    why: deletes shadow copies, which cannot be undone
+  - pattern: '\bwmic(\.exe)?\b[^;&|]{0,300}\bshadowcopy\b[^;&|]{0,300}\bdelete\b|\bwin32_shadowcopy\b[^;&|]{0,300}(\.delete\(|\|\s?remove-ciminstance)'
+    why: deletes shadow copies, which cannot be undone
+  - pattern: '\bwbadmin(\.exe)?\b[^;&|]{0,300}\bdelete\b'
+    why: deletes backups, which cannot be undone
+  - pattern: '\bbcdedit(\.exe)?\b[^;&|]{0,300}\brecoveryenabled\b'
+    why: turns off system recovery
+  - pattern: '\bformat(\.com|\.exe)?\b[^;&|]{0,40}\s[a-z]:|\bmkfs(\.\w{1,10})?\s|\bdiskpart\b|\bformat-volume\b|\bclear-disk\b|\bwipefs\b'
+    why: formats or wipes a disk
+  - pattern: '\bcipher(\.exe)?\s/w'
+    why: wipes the free space of a disk
+  - pattern: '\b(shred|sdelete(64)?)\b'
+    why: destroys files beyond recovery
+  - pattern: '\bdd\b[^;&|]{0,300}\bof=/dev/(?!null\b)'
+    why: overwrites a disk
+  - pattern: '\b(rm|del|erase|rd|rmdir|ri|remove-item)\b[^|;&]{0,300}\s(/\*?|[a-z]:\\?\*?|~/?|\$home)(\s|$)'
+    why: deletes a whole drive or home directory
+  - pattern: '\bwevtutil(\.exe)?\s(cl|clear-log)\b|\bclear-eventlog\b|\bclear-winevent\b|\bremove-eventlog\b|\bfsutil(\.exe)?\s+usn\s+deletejournal\b'
+    why: clears event logs or journals, which cannot be undone
+  - pattern: '\bcipher(\.exe)?\s/e\b|\bopenssl\s+enc\b|\bgpg\b[^;&|]{0,300}\s(-c|--symmetric|-e|--encrypt)\b'
+    why: encrypts data
+  - pattern: '\b(powershell|pwsh)(\.exe)?\b[^;&|]{0,300}\s-e(c|nc|ncodedcommand)?\s+[a-z0-9+/=]{16,}|\bfrombase64string\b|\bbase64\s+(-d|--decode)\b'
+    why: runs an encoded command, which a reviewer cannot read
+  - pattern: '\b(set|add)-mppreference\b[^;&|]{0,300}\s-(disable\w{0,40}\s+(\$true|1|true)\b|exclusion\w{0,20}\s|mapsreporting\s+0\b|puaprotection\s+0\b|enablecontrolledfolderaccess\s+disabled\b|submitsamplesconsent\s+2\b)'
+    why: turns off or narrows an antivirus protection
+    restore: '\b(set|remove)-mppreference\b[^;&|]{0,300}\s-(disable\w{0,40}\s+(\$false|0|false)\b|exclusion\w{0,20}\s|mapsreporting\s+[12]\b|puaprotection\s+1\b|enablecontrolledfolderaccess\s+enabled\b|submitsamplesconsent\s+[01]\b)'
+  - pattern: '\bnetsh(\.exe)?\b[^;&|]{0,300}\b(firewall|advfirewall)\b[^;&|]{0,300}\b(off|disable)\b|\bset-netfirewallprofile\b[^;&|]{0,300}-enabled\s+(\$?false|0)\b'
+    why: turns off the firewall
+    restore: '\bnetsh(\.exe)?\b[^;&|]{0,300}\b(firewall|advfirewall)\b[^;&|]{0,300}\b(on|enable)\b|\bset-netfirewallprofile\b[^;&|]{0,300}-enabled\s+(\$?true|1)\b'
+  - pattern: '\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b[^;&|]{0,100}\b(windefend|mpssvc|wscsvc|sense|eventlog|wdnissvc)\b|\btaskkill(\.exe)?\b[^;&|]{0,100}\bmsmpeng(\.exe)?\b'
+    why: stops a security service
+    restore: '\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b[^;&|]{0,100}\b(windefend|mpssvc|wscsvc|sense|eventlog|wdnissvc)\b'
+  - pattern: '\b(systemctl|service)\s+(stop|disable|mask)\b[^;&|]{0,100}\b(firewalld|auditd|apparmor|ufw)\b|\bservice\s+(firewalld|auditd|apparmor|ufw)\s+stop\b|\bauditctl\s+-e\s+0\b|\bsetenforce\s+(0|permissive)\b|\bufw\b[^;&|]{0,30}\bdisable\b'
+    why: stops a security control
+    restore: '\b(systemctl|service)\s+(start|enable|unmask)\b[^;&|]{0,100}\b(firewalld|auditd|apparmor|ufw)\b|\bservice\s+(firewalld|auditd|apparmor|ufw)\s+start\b|\bauditctl\s+-e\s+1\b|\bsetenforce\s+(1|enforcing)\b|\bufw\b[^;&|]{0,30}\benable\b'

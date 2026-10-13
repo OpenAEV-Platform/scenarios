@@ -1,0 +1,19 @@
+# Commands that write, create or start something (POL-005): a payload whose command, arguments
+# or prerequisites match one needs a cleanup command that undoes it. Read-only commands need
+# none. Each pattern is a regular expression, matched as the forbidden actions are, every
+# repetition bounded.
+commands:
+  - '\b(copy|xcopy|robocopy|move|expand|cp|mv|ren|ln|mklink|copy-item|move-item|rename-item|expand-archive|compress-archive|unzip)\b'
+  - '\b(new-item|set-content|add-content|out-file|tee-object|tee|set-itemproperty|new-itemproperty)\b|\[(system\.)?io\.file\]::write'
+  - '\b(new-service|register-scheduledtask|new-scheduledtask|new-localuser|add-localgroupmember)\b'
+  - '\bsc(\.exe)?(\s\\\\\S{1,255})?\s+create\b'
+  - '\breg(\.exe)?\s+(add|import|copy|load|save|export)\b'
+  - '\bschtasks(\.exe)?\b[^;&|]{0,300}\s/(create|change)\b'
+  - '\bwmic(\.exe)?\b[^;&|]{0,300}\bprocess\s+call\s+create\b'
+  - '\b(psexec(64)?|msiexec|regsvr32|rundll32|certutil|bitsadmin)(\.exe)?\b|\bstart-bitstransfer\b'
+  - '\bnet(\.exe)?\s+(user|localgroup|group)\b[^;&|]{0,300}\s/add\b|\bnet(\.exe)?\s+start\b'
+  - '\b(start-process|start-service)\b|\bsystemctl\s+(start|enable)\b|\blaunchctl\s+load\b'
+  - '\b(mkdir|md|touch|chmod|chown|icacls|takeown|useradd|usermod|install)\b|\bcrontab\b(?!\s+-l\b)'
+  - '\bsed\s+(-\w{0,10}\s+){0,5}-i\b|\btar\s+-?\w{0,10}x'
+  - '\b(invoke-webrequest|iwr|irm|invoke-restmethod)\b[^;&|]{0,300}\s-o(utfile)?\b|\b(curl|wget)\b[^;&|]{0,300}\s(-o|--output|-O)\s+(?!/dev/null\b)\S|\bwget\b(?![^;&|]{0,300}--spider)'
+  - '(^|[^<>2])>{1,2}\s*(?!\$null|nul\b|/dev/null|&)\S'

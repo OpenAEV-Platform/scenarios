@@ -80,7 +80,8 @@ def test_an_entry_with_payloads_waits_and_nothing_is_written(
 
     assert code == 1
     findings = json.loads(stdout)["findings"]
-    assert {finding["code"] for finding in findings} == {"PAY-004"}
+    # Payloads wait for their references, and those of this export reach public hosts.
+    assert {finding["code"] for finding in findings} == {"PAY-004", "POL-003"}
     assert {finding["path"] for finding in findings} == {"scenarios/domain/entry/scenario.json"}
     assert not (tmp_path / "entry.zip").exists()
 

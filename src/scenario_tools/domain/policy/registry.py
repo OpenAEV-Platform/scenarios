@@ -3,10 +3,16 @@
 from collections.abc import Iterable
 
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
-from scenario_tools.domain.policy.rules import recurrence, sources, targets
+from scenario_tools.domain.policy.rules import actions, cleanup, recurrence, sources, targets
 from scenario_tools.domain.shared.finding import Finding
 
-RULES: tuple[Rule, ...] = (sources.RULE, recurrence.RULE, targets.RULE)
+RULES: tuple[Rule, ...] = (
+    sources.RULE,
+    recurrence.RULE,
+    targets.RULE,
+    actions.RULE,
+    cleanup.RULE,
+)
 
 
 def findings_of(rule: Rule, violations: Iterable[Violation]) -> tuple[Finding, ...]:

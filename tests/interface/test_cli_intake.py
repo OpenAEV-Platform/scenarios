@@ -368,8 +368,13 @@ def test_a_blocking_finding_after_writing_keeps_the_files_and_says_so_in_the_pla
     assert result.exit_code == 1, result.output
     assert (root / "scenarios" / "intrusion-sets" / "salt-typhoon" / "scenario.yaml").exists()
     document = json.loads(plan.read_text(encoding="utf-8"))
-    assert document["blocking"] == 1
-    assert "SCH-009" in [f["code"] for f in json.loads(result.stdout)["findings"]]
+    blocking = [
+        f["code"] for f in json.loads(result.stdout)["findings"] if f["severity"] == "blocking"
+    ]
+    # The cut description, and what the starter-pack export does that the catalogue refuses:
+    # four payloads that reach public hosts, four that change the endpoint without cleanup.
+    assert document["blocking"] == 9
+    assert sorted(blocking) == ["POL-003"] * 4 + ["POL-005"] * 4 + ["SCH-009"]
 
 
 def test_a_plan_that_cannot_be_written_stops_the_run_before_any_entry(

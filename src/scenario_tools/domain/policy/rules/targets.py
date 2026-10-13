@@ -22,6 +22,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from scenario_tools.domain.catalogue.structure import INJECTS
+from scenario_tools.domain.policy.payloads import commands, payloads
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
@@ -276,6 +277,9 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
                 yield f"/{INJECTS}/{index}/{_CONTENT}", inject.get(_CONTENT)
     for part in _EXERCISE_TEXTS:
         yield f"/{part}", stored.get(part)
+    for payload in payloads(stored):
+        for field, command, _ in commands(payload):
+            yield field, command
 
 
 def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
