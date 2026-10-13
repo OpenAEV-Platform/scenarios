@@ -116,7 +116,8 @@ _KNOWN = (
     r"this command [a-z ,]+, which a shared scenario never does: remove it",
     r"this payload changes the endpoint \(it writes, creates or starts something\) but has no "
     r"cleanup command with an executor: add one that undoes it",
-    r"this command is longer than 65536 characters, too long to check: shorten it",
+    r"this command is longer than 65536 characters, its arguments given, too long to check: "
+    r"shorten it",
     r"this value names a host outside the example names, test addresses and authorised "
     r"targets: use an example name, such as host\.example\.com, or a test address",
 )

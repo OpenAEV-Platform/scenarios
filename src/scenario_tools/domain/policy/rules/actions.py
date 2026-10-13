@@ -5,12 +5,13 @@ values and the prerequisites. The message gives the maintainers' reason, never t
 
 from collections.abc import Iterator
 
-from scenario_tools.domain.policy.actions import as_command
+from scenario_tools.domain.policy.actions import as_command, starts, takes
 from scenario_tools.domain.policy.payloads import (
     CLEANUP,
     EXECUTOR,
     Payload,
     commands,
+    effective,
     payloads,
     text,
 )
@@ -18,7 +19,10 @@ from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Vi
 from scenario_tools.domain.shared.finding import Severity
 
 COMMAND_LIMIT = 65_536  # characters of one command: past that, no pattern is run on it
-_TOO_LONG = f"this command is longer than {COMMAND_LIMIT} characters, too long to check: shorten it"
+_TOO_LONG = (
+    f"this command is longer than {COMMAND_LIMIT} characters, its arguments given, too long to "
+    "check: shorten it"
+)
 
 
 def _runs(payload: Payload) -> bool:
@@ -29,20 +33,24 @@ def _runs(payload: Payload) -> bool:
 def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     path = f"{content.directory}/scenario.json"
     for payload in payloads(content.stored):
-        runs, restored = _runs(payload), as_command(text(payload, CLEANUP))
+        cleanup = effective(payload, text(payload, CLEANUP), COMMAND_LIMIT)
+        runs = _runs(payload)
+        restored = None if cleanup is None else as_command(cleanup)
         for field, command, where in commands(payload):
-            if len(command) > COMMAND_LIMIT:
+            resolved = effective(payload, command, COMMAND_LIMIT)
+            if resolved is None:
                 yield Violation(path, field, _TOO_LONG)
                 continue
-            read = as_command(command)
+            read = as_command(resolved)
             for action in data.forbidden:
-                if not action.pattern.search(read):
+                if not takes(action.steps, read):
                     continue
                 if (
                     action.restore is not None
                     and where != CLEANUP  # a cleanup never removes a protection
                     and runs
-                    and action.restore.search(restored)
+                    and restored is not None
+                    and starts(action.restore, restored)
                 ):
                     continue
                 yield Violation(

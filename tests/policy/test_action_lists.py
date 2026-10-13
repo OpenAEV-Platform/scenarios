@@ -10,7 +10,9 @@ from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.domain.policy.actions import (
     as_command,
     forbidden_from_document,
+    runs,
     side_effects_from_document,
+    takes,
 )
 
 DATA = YamlDataLoader(Path(__file__).parents[2] / "policy" / "data")
@@ -20,12 +22,12 @@ SIDE_EFFECTS = side_effects_from_document(DATA.load("side-effects"))
 
 def _forbidden(command: str) -> list[str]:
     read = as_command(command)
-    return [action.why for action in FORBIDDEN if action.pattern.search(read)]
+    return [action.why for action in FORBIDDEN if takes(action.steps, read)]
 
 
 def _changes(command: str) -> bool:
     read = as_command(command)
-    return any(pattern.search(read) for pattern in SIDE_EFFECTS)
+    return any(runs(steps, read) for steps in SIDE_EFFECTS)
 
 
 @pytest.mark.parametrize(
@@ -84,6 +86,21 @@ def _changes(command: str) -> bool:
         "[Convert]::FromBase64String($x)",
         "echo eA== | base64 -d | sh",
         '&("vssa"+"dmin") delete shadows',
+        "Set-MpPreference -DisableRealtimeMonitoring:$true",  # colon binding
+        "rm " + "-f " * 101 + "-rf /*",  # padding between the words
+        "bcdedit /set {default} recoveryenabled no",
+        "netsh firewall set opmode disable",
+        "Dism /Online /Disable-Feature /FeatureName:Windows-Defender",
+        "reg add HKLM\\SOFTWARE\\x /v DisableAntiSpyware /t REG_DWORD /d 1",
+        "iptables -F",
+        "nft flush ruleset",
+        "echo 0 > /sys/fs/selinux/enforce",
+        "Get-WmiObject Win32_ShadowCopy | Remove-WmiObject",
+        "rm -rf /etc",
+        "rm -rf ${HOME}",
+        "Remove-Item C:\\Windows -Recurse",
+        "echo x > /dev/sda",
+        "Get-Service windefend | Stop-Service",
     ],
 )
 def test_each_forbidden_action_is_matched(command: str) -> None:
@@ -107,6 +124,12 @@ def test_each_forbidden_action_is_matched(command: str) -> None:
         "gpg --list-keys; echo -e x",
         "Get-MpPreference",
         "grep -e abcdefghijklmnopqrstuvwxyz file",
+        "bcdedit /set {default} recoveryenabled yes",  # restores recovery
+        "Set-MpPreference -DisableRealtimeMonitoring $false",
+        "systemctl start auditd",
+        "Get-Process | Format-Table | Out-File c:\\x.txt",
+        "ufw status",
+        "ufw enable",
     ],
 )
 def test_harmless_commands_are_not_forbidden(command: str) -> None:
@@ -157,6 +180,10 @@ def test_harmless_commands_are_not_forbidden(command: str) -> None:
         "systemctl start x",
         "iwr https://x -OutFile y",
         "iwr https://x -o y",
+        "curl --output=artifact.bin https://x",
+        "curl -oartifact.bin https://x",
+        "curl -sSLo artifact.bin https://x",
+        "whoami 2>errors.log",
     ],
 )
 def test_each_command_that_changes_the_endpoint_is_matched(command: str) -> None:
@@ -180,6 +207,9 @@ def test_each_command_that_changes_the_endpoint_is_matched(command: str) -> None
         "Get-Service x",
         "reg query HKCU\\x",
         "sc query x",
+        "dir >> /dev/null",
+        "curl https://x | grep -o y",
+        "type x | sed -n 1p",
     ],
 )
 def test_read_only_commands_are_not_matched(command: str) -> None:
@@ -188,14 +218,17 @@ def test_read_only_commands_are_not_matched(command: str) -> None:
 
 def _seconds(command: str) -> float:
     read = as_command(command)
-    start = time.perf_counter()
-    for action in FORBIDDEN:
-        action.pattern.search(read)
-        if action.restore is not None:
-            action.restore.search(read)
-    for pattern in SIDE_EFFECTS:
-        pattern.search(read)
-    return time.perf_counter() - start
+    runs = []
+    for _ in range(3):
+        start = time.perf_counter()
+        for action in FORBIDDEN:
+            takes(action.steps, read)
+            if action.restore is not None:
+                takes(action.restore, read)
+        for steps in SIDE_EFFECTS:
+            takes(steps, read)
+        runs.append(time.perf_counter() - start)
+    return min(runs)
 
 
 @pytest.mark.parametrize(
@@ -211,10 +244,14 @@ def _seconds(command: str) -> float:
         "gpg ",
         "sc stop ",
         "invoke-webrequest ",
+        "a ; ",
+        "#{x} ",
     ],
 )
 def test_every_list_reads_a_long_command_in_linear_time(unit: str) -> None:
-    small, large = _seconds(unit * 2_000), _seconds(unit * 8_000)
+    # Up to the longest command a rule reads, 65,536 characters: four times the text must cost
+    # far less than sixteen times the time, whatever the machine.
+    count = 16_000 // len(unit)
+    small, large = _seconds(unit * count), _seconds(unit * 4 * count)
 
     assert large < 8 * small + 0.05
-    assert large < 1

@@ -5,9 +5,18 @@ none."""
 
 from collections.abc import Iterator
 
-from scenario_tools.domain.policy.actions import as_command
-from scenario_tools.domain.policy.payloads import CLEANUP, EXECUTOR, TYPE, commands, payloads, text
+from scenario_tools.domain.policy.actions import as_command, runs
+from scenario_tools.domain.policy.payloads import (
+    CLEANUP,
+    EXECUTOR,
+    TYPE,
+    commands,
+    effective,
+    payloads,
+    text,
+)
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
+from scenario_tools.domain.policy.rules.actions import COMMAND_LIMIT
 from scenario_tools.domain.shared.finding import Severity
 
 # Running a file or dropping one always changes the endpoint, whatever its command says.
@@ -23,11 +32,14 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     for payload in payloads(content.stored):
         if text(payload, CLEANUP).strip() and text(payload, EXECUTOR).strip():
             continue
-        changes = text(payload, TYPE) in _CHANGING_TYPES or any(
-            pattern.search(as_command(command))
+        resolved = [
+            effective(payload, command, COMMAND_LIMIT)
             for _, command, where in commands(payload)
             if where != CLEANUP
-            for pattern in data.side_effects
+        ]
+        reads = [as_command(found) for found in resolved if found is not None]  # else too long
+        changes = text(payload, TYPE) in _CHANGING_TYPES or any(
+            runs(steps, read) for read in reads for steps in data.side_effects
         )
         if changes:
             yield Violation(path, f"{payload.pointer}/{CLEANUP}", _MESSAGE)

@@ -1,11 +1,10 @@
 """A policy rule, the entry it reads and the violations it gives."""
 
-import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from scenario_tools.domain.policy.actions import ForbiddenAction
+from scenario_tools.domain.policy.actions import ForbiddenAction, Steps
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
 
@@ -29,7 +28,7 @@ class PolicyData:
 
     targets: AllowedTargets
     forbidden: tuple[ForbiddenAction, ...]
-    side_effects: tuple[re.Pattern[str], ...]
+    side_effects: tuple[Steps, ...]
 
 
 @dataclass(frozen=True)

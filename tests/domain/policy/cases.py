@@ -35,20 +35,22 @@ TARGETS: dict[str, Any] = {
 }
 FORBIDDEN: dict[str, Any] = {
     "actions": [
-        {"pattern": r"\bvssadmin\b.*\bdelete\b", "why": "deletes shadow copies"},
+        {"steps": [r"\bvssadmin\b", r"\bdelete\b"], "why": "deletes shadow copies"},
         {
-            "pattern": r"\bset-mppreference\b[^;&|]{0,300}\s-disable\w*\s+(\$true|1)",
+            "steps": [r"\bset-mppreference\b", r"\s-disable\w*[\s:]+(\$true|1)\b"],
             "why": "turns off an antivirus protection",
-            "restore": r"\bset-mppreference\b[^;&|]{0,300}\s-disable\w*\s+(\$false|0)",
+            "restore": [r"set-mppreference\b", r"\s-disable\w*[\s:]+(\$false|0)\b"],
         },
-        {"pattern": r"\bformat(\.com)?\s+[a-z]:", "why": "formats a disk"},
+        {"steps": [r"\bformat(\.com)?\s+[a-z]:"], "why": "formats a disk"},
     ]
 }
 SIDE_EFFECTS: dict[str, Any] = {
     "commands": [
-        r"\b(copy|expand|new-item|set-content)\b",
-        r"\bsc(\.exe)?\s+create\b",
-        r"(^|[^<>2])>{1,2}\s*(?!\$null|nul\b|/dev/null|&)\S",
+        [r"\b(copy|expand|new-item|set-content)\b"],
+        [r"\bsc(\.exe)?\s+create\b"],
+        [r"\bcurl\b", r"\s(-[a-z]{0,10}o|--output)(=|\s?)(?!/dev/null\b)\S"],
+        [r"(^|[^<>])\d?>{1,2}+\s*+(?!\$null|nul\b|/dev/null|&)\S"],
+        [r"\bsed\b", r"\s-\w{0,10}i\b"],
     ]
 }
 DATA = PolicyData(
