@@ -12,6 +12,7 @@ from scenario_tools.domain.shared.finding import (
     Finding,
     Report,
     Severity,
+    reportable,
     shorten,
 )
 
@@ -198,3 +199,17 @@ def test_a_report_with_changed_findings_is_not_limited_again() -> None:
     assert len(changed.findings) == REPORT_LIMIT + 1
     assert [f.field for f in changed.findings] == [f.field for f in report.findings]
     assert {f.message for f in changed.findings} == {"changed"}
+
+
+@pytest.mark.parametrize(
+    "path", ["", "a.yaml", "scenarios/x/scenario.json", "/etc/passwd", "../x", "a\\b", "C:/x"]
+)
+def test_reportable_says_what_a_finding_accepts(path: str) -> None:
+    try:
+        _finding(path=path)
+    except ValueError:
+        accepted = False
+    else:
+        accepted = True
+
+    assert reportable(path) is accepted

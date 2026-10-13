@@ -21,7 +21,7 @@ from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rule import EntryContent
 from scenario_tools.domain.shared.characters import hidden_occurrences
-from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
 from scenario_tools.ports.schema import SchemaValidator
@@ -106,6 +106,8 @@ def validate_entry(
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
     external ID and the scenario's path."""
+    if not reportable(entry):  # none of its files could be named in a finding: none is read
+        return layout_findings(entry, (), domains)
     try:
         names = source.names(entry)
     except UnsafeInputError as error:

@@ -184,3 +184,20 @@ def test_an_old_minimum_version_is_said_and_never_blocks(tmp_path: Path) -> None
     _metadata(root, lambda d: d["requires"].__setitem__("openaev", ">=3.0"))
 
     assert _validate(root, ENTRY) == (0, [("SCH-011", "info", f"{ENTRY}/scenario.yaml")])
+
+
+@pytest.mark.parametrize(
+    ("entry", "at"),
+    [
+        ("scenarios/techniques/a\\b", "scenarios/techniques"),
+        ("scenarios/te\\ch/easm", "scenarios"),
+        ("scenarios/te\\ch", "scenarios"),
+    ],
+)
+def test_an_entry_whose_path_holds_a_backslash_is_refused_not_a_defect_of_the_tool(
+    tmp_path: Path, entry: str, at: str
+) -> None:
+    root = _repository(tmp_path)
+    shutil.copytree(root / ENTRY, root / entry)
+
+    assert _validate(root, entry) == (1, [("SCH-008", "blocking", at)])

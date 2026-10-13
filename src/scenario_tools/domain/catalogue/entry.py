@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 
 from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import TRUNCATION_MARK, clean
-from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 
 REQUIRED = ("scenario.yaml", "scenario.json")
 SLUG_LIMIT = 64
@@ -47,6 +47,20 @@ def layout_findings(
     lacks among ``present``."""
     domains = tuple(domains)
     parts = path.split("/")
+    if not reportable(path):  # reported at the last place on its way that a finding can name
+        # The longest prefix a finding can name; the empty one always can.
+        kept = next(n for n in range(len(parts), -1, -1) if reportable("/".join(parts[:n])))
+        return (
+            Finding(
+                "SCH-008",
+                Severity.BLOCKING,
+                "/".join(parts[:kept]),
+                "",
+                "an entry is a directory scenarios/<domain>/<slug>/ of the repository: a name on "
+                "this path holds a character that no domain or slug has and that a finding cannot "
+                "show (a backslash or a drive)",
+            ),
+        )
     whys = []
     if len(parts) != 3 or parts[0] != "scenarios":
         whys.append("an entry is a directory scenarios/<domain>/<slug>/ of the repository")
