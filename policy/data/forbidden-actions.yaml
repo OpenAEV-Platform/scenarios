@@ -36,7 +36,9 @@ actions:
     why: clears event logs, which cannot be undone
   - steps: ['\bfsutil(\.exe)?\s+usn\s+deletejournal\b']
     why: deletes a file system journal, which cannot be undone
-  - steps: ['\b(cipher(\.exe)?\s/e|openssl\s+enc)\b']
+  - steps: ['\bcipher(\.exe)?\s/e\b']
+    why: encrypts data
+  - steps: ['\bopenssl\s+enc\b(?!.{0,300}\s(-d|--decrypt)\b)']
     why: encrypts data
   - steps: ['\bgpg\b', '\s(-c|--symmetric|-e|--encrypt)\b']
     why: encrypts data
@@ -109,9 +111,12 @@ actions:
   - steps: ['\bufw\s+(--force\s+)?disable\b']
     why: turns off the firewall
     restore: ['ufw\s+(--force\s+)?enable\b']
-  - steps: ['\b(iptables|ip6tables)\s+(-f|--flush)\b|\bnft\s+flush\s+ruleset\b']
+  - steps: ['\b(iptables|ip6tables)\b', '\s(-f|--flush)\b']
     why: removes every firewall rule
-    restore: ['(iptables-restore|ip6tables-restore|nft\s+-f)\b']
+    restore: ['(iptables-restore|ip6tables-restore)\b']
+  - steps: ['\bnft\b', '\sflush\b', '\sruleset\b']
+    why: removes every firewall rule
+    restore: ['nft\b', '\s-f\b']
   - steps: ['\bdism(\.exe)?\b', '/disable-feature\b', 'defender']
     why: removes the antivirus
   - steps: ['\breg(\.exe)?\s+add\b', '\bdisable(antispyware|antivirus|realtimemonitoring|behaviormonitoring)\b', '/d\s+1\b']

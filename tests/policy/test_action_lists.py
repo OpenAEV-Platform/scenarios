@@ -103,6 +103,9 @@ def _changes(command: str) -> bool:
         "Get-Service windefend | Stop-Service",
         "systemctl --quiet stop firewalld",
         "systemctl --no-block disable auditd",
+        "iptables -t filter -F",
+        "iptables --wait --flush",
+        "nft -c flush ruleset",
     ],
 )
 def test_each_forbidden_action_is_matched(command: str) -> None:
@@ -132,6 +135,7 @@ def test_each_forbidden_action_is_matched(command: str) -> None:
         "Get-Process | Format-Table | Out-File c:\\x.txt",
         "ufw status",
         "ufw enable",
+        "openssl enc -d -aes-256-cbc -in encrypted -out plain",
     ],
 )
 def test_harmless_commands_are_not_forbidden(command: str) -> None:
@@ -189,6 +193,10 @@ def test_harmless_commands_are_not_forbidden(command: str) -> None:
         "systemctl --user start example.service",
         "whoami &>errors.log",
         "whoami &>>errors.log",
+        "Restart-Service WinDefend",
+        "systemctl restart firewalld",
+        "service x restart",
+        "curl --remote-name https://x/file",
     ],
 )
 def test_each_command_that_changes_the_endpoint_is_matched(command: str) -> None:
@@ -215,6 +223,7 @@ def test_each_command_that_changes_the_endpoint_is_matched(command: str) -> None
         "dir >> /dev/null",
         "curl https://x | grep -o y",
         "type x | sed -n 1p",
+        "curl -o - https://x",
     ],
 )
 def test_read_only_commands_are_not_matched(command: str) -> None:
