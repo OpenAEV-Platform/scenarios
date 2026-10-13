@@ -101,6 +101,18 @@ def effective(payload: Payload, command: str, limit: int) -> str | None:
     return None if length + len(pieces[-1]) > limit else "".join(pieces)
 
 
+def strings(value: object, pointer: str) -> Iterator[tuple[str, str]]:
+    """Every text inside ``value``, with its JSON pointer."""
+    if isinstance(value, str):
+        yield pointer, value
+    elif isinstance(value, Mapping):
+        for key, child in value.items():
+            yield from strings(child, f"{pointer}/{_escaped(str(key))}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from strings(child, f"{pointer}/{index}")
+
+
 def commands(payload: Payload) -> Iterator[tuple[str, str, str]]:
     """Every command text of ``payload``: its pointer, the text and where it is (``COMMAND``,
     ``CLEANUP``, ``GET`` or ``CHECK`` for a prerequisite, ``ARGUMENT`` for an argument's
