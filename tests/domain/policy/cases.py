@@ -5,6 +5,7 @@ from typing import Any
 from scenario_tools.domain.policy.actions import forbidden_from_document, side_effects_from_document
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.vendors import vendors_from_document
 
 ENTRY = "scenarios/techniques/easm"
 OWN_FILES = frozenset({"scenario.yaml", "scenario.json"})
@@ -53,10 +54,15 @@ SIDE_EFFECTS: dict[str, Any] = {
         [r"\bsed\b", r"\s-\w{0,10}i\b"],
     ]
 }
+VENDORS: dict[str, Any] = {
+    "products": ["crowdstrike", "carbon black", "trend micro", "sentinel one"],
+    "words": ["eset", "tanium"],
+}
 DATA = PolicyData(
     AllowedTargets.from_document(TARGETS),
     forbidden_from_document(FORBIDDEN),
     side_effects_from_document(SIDE_EFFECTS),
+    vendors_from_document(VENDORS),
 )
 PAYLOAD = "/scenario_injects/0/inject_injector_contract/injector_contract_payload"
 
@@ -108,6 +114,14 @@ CASES: dict[str, tuple[EntryContent, EntryContent]] = {
     "POL-004": (
         with_payload(command_content="vssadmin list shadows"),
         with_payload(command_content="vssadmin delete shadows /all /quiet"),
+    ),
+    "POL-006": (
+        with_payload(command_content="whoami"),
+        with_payload(command_content="sc query CrowdStrike"),
+    ),
+    "POL-007": (
+        with_payload(payload_elevation_required=False),
+        with_payload(payload_elevation_required=True),
     ),
     "POL-005": (
         with_payload(

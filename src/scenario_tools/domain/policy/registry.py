@@ -3,7 +3,15 @@
 from collections.abc import Iterable
 
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
-from scenario_tools.domain.policy.rules import actions, cleanup, recurrence, sources, targets
+from scenario_tools.domain.policy.rules import (
+    actions,
+    cleanup,
+    elevation,
+    recurrence,
+    sources,
+    targets,
+    vendors,
+)
 from scenario_tools.domain.shared.finding import Finding
 
 RULES: tuple[Rule, ...] = (
@@ -12,6 +20,8 @@ RULES: tuple[Rule, ...] = (
     targets.RULE,
     actions.RULE,
     cleanup.RULE,
+    vendors.RULE,
+    elevation.RULE,
 )
 
 

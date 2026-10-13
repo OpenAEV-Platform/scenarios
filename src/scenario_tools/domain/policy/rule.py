@@ -1,5 +1,6 @@
 """A policy rule, the entry it reads and the violations it gives."""
 
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,7 @@ class PolicyData:
     targets: AllowedTargets
     forbidden: tuple[ForbiddenAction, ...]
     side_effects: tuple[Steps, ...]
+    vendors: re.Pattern[str]
 
 
 @dataclass(frozen=True)

@@ -59,6 +59,7 @@ from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_finding
 from scenario_tools.domain.policy.actions import forbidden_from_document, side_effects_from_document
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.vendors import vendors_from_document
 from scenario_tools.domain.shared.finding import (
     COUNT_CODE,
     ERROR_LIMIT,
@@ -481,8 +482,9 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     of the repository that holds them; exit with 1 if anything blocks one of them.
 
     Of the policy rules, POL-001 (sources linked to public pages, nothing copied into an entry),
-    POL-002 (no recurrence), POL-003 (only allowed hosts), POL-004 (no forbidden action) and
-    POL-005 (a cleanup for every payload that changes the endpoint) run. The other policy
+    POL-002 (no recurrence), POL-003 (only allowed hosts), POL-004 (no forbidden action),
+    POL-005 (a cleanup for every payload that changes the endpoint), POL-006 (no security
+    product named) and POL-007 (elevated privileges, for the reviewer) run. The other policy
     rules, versioning against the previous release, the generated README.md, the payload
     references, the CHANGELOG.md sections and the private deny-list are not run yet: an entry
     that passes may still fail them.
@@ -546,6 +548,7 @@ def _policy_data(loader: YamlDataLoader) -> PolicyData:
         AllowedTargets.from_document(loader.load("allowed-targets")),
         forbidden_from_document(loader.load("forbidden-actions")),
         side_effects_from_document(loader.load("side-effects")),
+        vendors_from_document(loader.load("vendor-names")),
     )
 
 

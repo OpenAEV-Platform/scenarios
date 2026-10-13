@@ -116,6 +116,9 @@ _KNOWN = (
     r"this command [a-z ,]+, which a shared scenario never does: remove it",
     r"this payload changes the endpoint \(it writes, creates or starts something\) but has no "
     r"cleanup command with an executor: add one that undoes it",
+    r"this text names a security product: a shared scenario stays vendor-neutral; describe the "
+    r"behaviour instead",
+    r"this payload asks for elevated privileges: check why it needs them",
     r"this command is longer than 65536 characters, its arguments given, too long to check: "
     r"shorten it",
     r"this value names a host outside the example names, test addresses and authorised "

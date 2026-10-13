@@ -330,6 +330,7 @@ def _entry(tmp_path: Path, name: str = "entry") -> Path:
             "allowed-targets.yaml",
             "forbidden-actions.yaml",
             "side-effects.yaml",
+            "vendor-names.yaml",
         ):
             shutil.copy(REPOSITORY / "policy" / "data" / policy, data)
     entry = tmp_path / "repository" / "scenarios" / name

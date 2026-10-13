@@ -755,7 +755,7 @@ def test_the_steps_of_a_restore_are_found_after_its_first_one() -> None:
             ]
         }
     )
-    data = PolicyData(DATA.targets, forbidden, DATA.side_effects)
+    data = PolicyData(DATA.targets, forbidden, DATA.side_effects, DATA.vendors)
     payload = with_payload(
         command_content="disable",
         payload_cleanup_command="enable ab",  # "ab" only inside the first step
