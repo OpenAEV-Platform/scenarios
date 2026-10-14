@@ -38,9 +38,10 @@ audit:
 	uv run pip-audit --strict --disable-pip --require-hashes -r "$$tmp/requirements.txt"
 
 # Every entry's sheet is the one render writes, whatever changed it: an exception granted in
-# another pull request leaves a sheet out of date that the entry's own checks never read.
+# another pull request leaves a sheet out of date that the entry's own checks never read. A link
+# in place of the catalogue, a domain or an entry is given to render, which refuses it.
 sheets:
-	find scenarios -mindepth 2 -maxdepth 2 \( -type d -o -type l \) \
+	find scenarios -maxdepth 2 \( -type l -o -path 'scenarios/*/*' -type d \) \
 		-exec uv run scenario-tools render --check -- {} +
 
 # The working copy's secrets, a check for the author: what gates a pull request is its workflow's

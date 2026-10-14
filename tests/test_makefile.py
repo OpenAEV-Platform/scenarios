@@ -2,8 +2,11 @@
 
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parents[1]
 MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -43,6 +46,21 @@ def test_an_entry_s_name_is_never_read_as_an_option(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Usage:" not in result.stdout
+
+
+@pytest.mark.parametrize("link", ["scenarios", "scenarios/techniques"])
+def test_a_link_in_place_of_the_catalogue_or_a_domain_is_refused(tmp_path: Path, link: str) -> None:
+    """What it leads to is never read: the run says so, never passes over it."""
+    shutil.copytree(ROOT / "policy", tmp_path / "policy")
+    shutil.copytree(ROOT / "scenarios", tmp_path / "elsewhere")
+    (tmp_path / link).parent.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "elsewhere" / Path(link).relative_to("scenarios")
+    (tmp_path / link).symlink_to(target, target_is_directory=True)
+
+    result = _sheets(tmp_path)
+
+    assert result.returncode != 0
+    assert f"IO-013 {link}:" in result.stdout
 
 
 def test_a_catalogue_without_an_entry_has_no_sheet_to_check(tmp_path: Path) -> None:
