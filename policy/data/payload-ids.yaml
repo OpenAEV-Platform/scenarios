@@ -1,0 +1,8 @@
+# Payload IDs agreed outside this repository, each for one payload content.
+#
+# The platform trusts a payload's ID: it does not read a payload whose ID it already holds. So a
+# payload's ID is the one derived from the hash of its content, which proves the content it names.
+# An entry here agrees another ID for one content, given by its hash: a payload the platform ships
+# as it is keeps the ID the platform knows it by. Any other content takes its derived ID. Each
+# entry is reviewed by the maintainers: it binds an ID to a content for every scenario.
+payloads: []

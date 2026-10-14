@@ -3,8 +3,9 @@
 The archive holds the reviewed ``scenario.json`` as it is, so it never changes content to make
 it importable, and it fails closed: a part a normalised scenario never has is refused, since the
 importer reads other parts too (an exercise set, a workflow whose steps rebuild payloads). A
-payload anywhere in the document is refused, until a payload reference names the payload whose
-ID the archive must set. A recurrence is the policy's matter, which the archive also asks.
+payload outside an inject's contract is refused, since no payload reference can name it; the
+payloads of the injects are checked against their references. A recurrence is the policy's
+matter, which the archive also asks.
 """
 
 from collections.abc import Iterator
@@ -70,17 +71,26 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
         contract = require_object(inject, INJECTS).get(CONTRACT)
         if contract is not None:
             require_object(contract, CONTRACT)
+    return payloads_outside_contracts(export, path)
+
+
+def payloads_outside_contracts(document: object, path: str) -> tuple[Finding, ...]:
+    """The payloads of ``document``, at ``path``, that sit outside an inject's contract: no
+    payload reference can name them, and the importer may read them still."""
+    injects = document.get(INJECTS) if isinstance(document, dict) else None
+    count = len(injects) if isinstance(injects, list) else 0
+    contracts = {f"/{INJECTS}/{index}/{CONTRACT}" for index in range(count)}
     return tuple(
         Finding(
             "PAY-004",
             Severity.BLOCKING,
             path,
             pointer,
-            "the document embeds a payload here: the archive cannot carry it until payload "
-            "references name their payloads",
+            "the document embeds a payload outside an inject's contract: no reference can name "
+            "it, and the archive cannot carry it",
         )
-        for pointer, item in _objects(export)
-        if item.get(PAYLOAD) not in (None, {})
+        for pointer, item in _objects(document)
+        if item.get(PAYLOAD) not in (None, {}) and pointer not in contracts
     )
 
 

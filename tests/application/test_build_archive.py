@@ -4,14 +4,20 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.application.assign_payloads import no_attached_files
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.verification.payload_hash import payload_hash
+from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.ports.errors import UnsafeInputError
 from tests.domain.policy.cases import DATA
 
 PATH = "scenarios/ransomware/akira/scenario.json"
 OUT = "build/akira.zip"
 DOCUMENT: dict[str, Any] = {"scenario_information": {}, "scenario_injects": []}
+NO_PAYLOADS: dict[str, Any] = {"payloads": []}
+NONE = AgreedIds({})
+PAYLOAD = {"payload_type": "Command", "payload_name": "a", "command_content": "id"}
 
 
 def _unchecked(data: bytes) -> None:
@@ -52,6 +58,8 @@ def test_an_entry_is_built_from_its_stored_bytes() -> None:
         check=checked.append,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert report.command == "archive"
@@ -77,6 +85,8 @@ def test_an_entry_the_archive_cannot_carry_is_never_built() -> None:
         check=_unchecked,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert [(f.code, f.severity) for f in report.findings] == [("POL-002", Severity.BLOCKING)]
@@ -98,6 +108,8 @@ def test_an_archive_over_the_limit_is_refused() -> None:
             check=_unchecked,
             limit=100,
             policy=DATA,
+            declared=NO_PAYLOADS,
+            agreed=NONE,
         )
     assert (error.value.code, error.value.message, error.value.path) == (
         "IO-001",
@@ -119,6 +131,8 @@ def test_an_archive_at_the_limit_is_built() -> None:
         check=_unchecked,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert data == b"x" * 100
@@ -138,6 +152,8 @@ def test_a_stored_scenario_not_shaped_like_one_is_refused_on_its_file() -> None:
             check=_unchecked,
             limit=100,
             policy=DATA,
+            declared=NO_PAYLOADS,
+            agreed=NONE,
         )
     assert (error.value.code, error.value.path) == ("IO-014", PATH)
     assert error.value.message == (
@@ -162,6 +178,8 @@ def test_an_archive_the_checks_refuse_is_never_returned() -> None:
             check=refuse,
             limit=100,
             policy=DATA,
+            declared=NO_PAYLOADS,
+            agreed=NONE,
         )
 
 
@@ -180,6 +198,8 @@ def test_a_stored_scenario_normalisation_would_change_is_refused() -> None:
         check=_unchecked,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert [(f.code, f.severity, f.path, f.field) for f in report.findings] == [
@@ -209,6 +229,8 @@ def test_a_contract_without_established_facts_keeps_the_entry_out() -> None:
         check=_unchecked,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert report.findings == (unknown,)
@@ -235,6 +257,8 @@ def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> 
         check=_unchecked,
         limit=100,
         policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
     )
 
     assert [(f.code, f.field) for f in report.findings] == [
@@ -242,3 +266,56 @@ def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> 
     ]
     assert data is None
     assert builder.calls == []
+
+
+def _with_payload(**fields: Any) -> dict[str, Any]:
+    payload = {**PAYLOAD, **fields}
+    return {
+        "scenario_information": {},
+        "scenario_injects": [{"inject_injector_contract": {"injector_contract_payload": payload}}],
+    }
+
+
+def _archive(document: object, declared: object) -> tuple[Any, bytes | None]:
+    return build_archive(
+        document,
+        b"{}",
+        None,
+        PATH,
+        OUT,
+        FakeBuilder(),
+        renormalised=_same,
+        contract_findings=_no_contract_findings,
+        check=_unchecked,
+        limit=100,
+        policy=DATA,
+        declared=declared,
+        agreed=NONE,
+    )
+
+
+def test_a_payload_named_by_its_reference_is_carried() -> None:
+    digest = payload_hash(PAYLOAD, (), no_attached_files).hex
+    identifier = derived_id(digest)
+    declared = {"payloads": [{"id": identifier, "version": "1.0.0", "sha256": digest}]}
+
+    report, data = _archive(_with_payload(payload_external_id=identifier), declared)
+
+    assert report.ok
+    assert data == b"archive"
+
+
+def test_a_payload_no_reference_names_is_never_carried() -> None:
+    report, data = _archive(_with_payload(), NO_PAYLOADS)
+
+    assert [(f.code, f.path) for f in report.findings] == [("PAY-001", PATH)]
+    assert data is None
+
+
+def test_a_reference_is_read_from_a_metadata_that_may_be_malformed() -> None:
+    identifier = derived_id(payload_hash(PAYLOAD, (), no_attached_files).hex)
+
+    report, data = _archive(_with_payload(payload_external_id=identifier), "not a mapping")
+
+    assert [f.code for f in report.findings] == ["PAY-001"]
+    assert data is None

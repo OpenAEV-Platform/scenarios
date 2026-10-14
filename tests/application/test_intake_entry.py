@@ -15,6 +15,8 @@ import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader, read_export
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
+from scenario_tools.adapters.safe_readers import yaml_bytes
+from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.intake_entry import (
     IntakeResult,
     intake_entry,
@@ -24,6 +26,7 @@ from scenario_tools.application.intake_entry import (
 )
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.ports.errors import EnvironmentProblemError
 
 ROOT = Path(__file__).parents[2]
@@ -54,10 +57,13 @@ class FakeSource:
         entries: tuple[CatalogueEntry, ...] = (),
         stored: tuple[bytes, object] | None = None,
         taken: frozenset[str] = frozenset(),
+        declared: dict[str, Any] | None = None,
     ) -> None:
         self._entries = entries
         self.stored = stored
         self.taken = taken
+        self.declared = declared
+        self.read: list[str] = []
 
     def entries(self) -> tuple[CatalogueEntry, ...]:
         return self._entries
@@ -75,10 +81,14 @@ class FakeSource:
         return frozenset({"scenario.yaml", "scenario.json"} if self.stored else {"scenario.yaml"})
 
     def read_yaml(self, path: str) -> object:
-        raise AssertionError("intake never asks")
+        assert path == f"{ENTRY}/scenario.yaml"  # an update reads the references it keeps
+        self.read.append("document")
+        return self.declared
 
     def read_text(self, path: str) -> str:
-        raise AssertionError("intake never asks")
+        assert path == f"{ENTRY}/scenario.yaml"  # the bytes an update replaces
+        self.read.append("text")
+        return yaml_bytes(self.declared).decode()
 
     def scenario_names(self) -> Mapping[str, tuple[str, ...]]:
         raise AssertionError("intake compares the entries themselves")
@@ -170,12 +180,14 @@ def test_an_export_holding_a_hidden_character_is_refused() -> None:
     assert result.scenario_json is None
 
 
-def _stored() -> FakeSource:
-    first = _intake(NEW)
+def _stored(export: Any = EASM) -> FakeSource:
+    first = _intake(NEW, export=export)
     assert first.scenario_json is not None
-    name = EASM["scenario_information"]["scenario_name"]
+    name = export["scenario_information"]["scenario_name"]
     return FakeSource(
-        (CatalogueEntry(ENTRY, ID, name),), (first.scenario_json, json.loads(first.scenario_json))
+        (CatalogueEntry(ENTRY, ID, name),),
+        (first.scenario_json, json.loads(first.scenario_json)),
+        declared=first.metadata,
     )
 
 
@@ -585,3 +597,130 @@ def test_a_commit_that_changes_before_the_plan_takes_the_entry_back() -> None:
 
     assert log.events[-3:] == ["current", "take back", "give back"]
     assert log.published is None
+
+
+SALT = read_export(ROOT / "tests" / "golden" / "exports" / "salt-typhoon-cve-ttps-validation.zip")
+
+
+def _payloads(result: IntakeResult) -> list[dict[str, Any]]:
+    assert result.metadata is not None
+    return list(result.metadata["payloads"])
+
+
+def test_a_new_entry_gives_each_payload_its_reference() -> None:
+    result = _intake(NEW, export=SALT)
+
+    assert result.scenario_json is not None
+    assert len(_payloads(result)) == 11
+    assert (
+        payload_findings(result.metadata, json.loads(result.scenario_json), ENTRY, AgreedIds({}))
+        == ()
+    )
+
+
+def test_an_update_with_the_same_payloads_keeps_their_references_and_changes_nothing() -> None:
+    result = _intake(UPDATE, _stored(SALT), export=SALT)
+
+    assert (result.refusals, result.changed, result.metadata) == ((), False, None)
+
+
+def test_an_update_whose_payload_changed_gives_it_a_new_id_and_rewrites_scenario_yaml() -> None:
+    source = _stored(SALT)
+    assert source.declared is not None
+    changed = copy.deepcopy(SALT)
+    payloads = [
+        inject["inject_injector_contract"]["injector_contract_payload"]
+        for inject in changed["scenario_injects"]
+        if (inject.get("inject_injector_contract") or {}).get("injector_contract_payload")
+    ]
+    payloads[0]["command_content"] += " # changed"
+
+    result = _intake(UPDATE, source, export=changed)
+
+    assert result.changed
+    assert result.previous is not None
+    assert set(result.previous) == {"scenario.yaml", "scenario.json"}
+    before = {reference["id"] for reference in source.declared["payloads"]}
+    after = {reference["id"] for reference in _payloads(result)}
+    assert (len(before - after), len(after - before)) == (1, 1)
+    assert result.scenario_json is not None
+    assert (
+        payload_findings(result.metadata, json.loads(result.scenario_json), ENTRY, AgreedIds({}))
+        == ()
+    )
+
+
+def test_an_update_whose_metadata_is_no_object_leaves_the_references_to_the_check() -> None:
+    source = _stored(SALT)
+    source.declared = None
+
+    result = _intake(UPDATE, source, export=SALT)
+
+    assert (result.refusals, result.metadata) == ((), None)
+
+
+def test_an_update_whose_payload_cannot_be_hashed_leaves_it_to_the_check() -> None:
+    source = _stored()
+    changed = copy.deepcopy(SALT)
+    changed["scenario_information"] = copy.deepcopy(EASM["scenario_information"])
+    for inject in changed["scenario_injects"]:
+        payload = (inject.get("inject_injector_contract") or {}).get("injector_contract_payload")
+        if payload:
+            payload["payload_detection_remediations"] = [{"detection_remediation_values": "x"}]
+
+    result = _intake(UPDATE, source, export=changed)
+
+    assert result.metadata is None
+
+
+def test_an_update_reads_the_text_it_replaces_before_the_document_it_assigns() -> None:
+    # A change in between then makes the writer refuse, never write over the newer file.
+    source = _stored(SALT)
+
+    _intake(UPDATE, source, export=SALT)
+
+    assert source.read == ["text", "document"]
+
+
+def test_a_new_entry_whose_payload_cannot_be_hashed_leaves_it_to_the_check() -> None:
+    export = copy.deepcopy(SALT)
+    for inject in export["scenario_injects"]:
+        payload = (inject.get("inject_injector_contract") or {}).get("injector_contract_payload")
+        if payload:
+            payload["payload_detection_remediations"] = [{"detection_remediation_values": "x"}]
+
+    result = _intake(NEW, export=export)
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    assert _payloads(result) == []
+    assert b'payload_external_id": "' not in result.scenario_json
+
+
+class _BadRegistry:
+    def load(self, name: str) -> Any:
+        return {"payloads": "x"} if name == "payload-ids" else DATA.load(name)
+
+
+def test_a_malformed_registry_is_an_environment_problem() -> None:
+    refused = r"^policy data cannot be used: payload-ids: "
+    with pytest.raises(EnvironmentProblemError, match=refused):
+        intake_entry(
+            SALT,
+            dict(NEW),
+            request_path=REQUEST,
+            export_path=EXPORT,
+            source=FakeSource(),
+            data=_BadRegistry(),
+            schema=SCHEMA,
+            domains=DOMAINS,
+        )
+
+
+def test_an_update_of_an_entry_without_scenario_yaml_leaves_the_references_to_the_check() -> None:
+    source = _stored(SALT)
+    source.names = lambda entry: frozenset({"scenario.json"})  # type: ignore[method-assign]
+
+    result = _intake(UPDATE, source, export=SALT)
+
+    assert (result.refusals, result.metadata, source.read) == ((), None, [])

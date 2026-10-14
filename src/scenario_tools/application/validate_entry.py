@@ -5,7 +5,9 @@ findings of the others, nor of the other entries."""
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
+from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.findings import not_normalised
+from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings, text_findings
 from scenario_tools.domain.catalogue.entry import (
     duplicate_findings,
@@ -22,6 +24,7 @@ from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
+from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
 from scenario_tools.ports.schema import SchemaValidator
@@ -103,10 +106,12 @@ def validate_entry(
     renormalised: Callable[[object, str, str], bytes],
     domains: tuple[str, ...],
     policy: PolicyData,
+    agreed: AgreedIds,
 ) -> tuple[Finding, ...]:
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
-    external ID and the scenario's path; ``policy`` holds the data the policy rules read."""
+    external ID and the scenario's path; ``policy`` holds the data the policy rules read, and
+    ``agreed`` the payload IDs the registry agrees."""
     if not reportable(entry):  # none of its files could be named in a finding: none is read
         return layout_findings(entry, (), domains)
     try:
@@ -154,11 +159,13 @@ def validate_entry(
                 else None
             )
             found, facts = _scenario_findings(stored, document, path, builtin, again)
-            findings += found
+            findings += found + payloads_outside_contracts(document, path)
         except UnsafeInputError as error:
             findings += (_refused(error, path),)
     if metadata is not None and facts is not None:
         findings += cross_check(metadata, facts, f"{entry}/scenario.yaml")
+    if declared_checked is not None and stored_document is not None:
+        findings += payload_findings(declared_checked, stored_document, entry, agreed)
     for name in _TEXTS:
         if name in names:
             path = f"{entry}/{name}"
