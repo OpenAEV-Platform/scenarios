@@ -4,7 +4,8 @@ name: Pull request entries
 # branch, whose tools, policy data and schemas are checked out; the pull request's head is checked
 # out beside them as data only, and only the files of the entries it adds, changes or removes are
 # taken over, links copied as links, never followed, with the policy exceptions it grants for them,
-# which a code owner approves (none is taken while the base branch names no code owner). No code of the pull request runs. The token is read-only and no
+# which a code owner approves (none is taken while the base branch names no code owner of the
+# policy data). No code of the pull request runs. The token is read-only and no
 # secret is used, so a pull request from a fork is judged the same way. Its other changes (tools,
 # policy, schemas) are the tools CI's.
 on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
@@ -93,7 +94,10 @@ jobs:
             echo "refused, not a regular file: pull/$exceptions" >&2
             exit 1
           elif ! cmp -s -- "pull/$exceptions" "$exceptions"; then
-            if [ ! -f .github/CODEOWNERS ]; then
+            # A rule of the base branch's code owners for the policy data, the registry or above.
+            owners='^/policy/(data/(exceptions\.yaml)?)?[[:space:]]+@'
+            if [ ! -f .github/CODEOWNERS ] || [ -L .github/CODEOWNERS ] \
+              || ! grep -qE "$owners" .github/CODEOWNERS; then
               echo "refused: the pull request changes the policy exceptions, and no code owner can approve them yet" >&2
               exit 1
             fi

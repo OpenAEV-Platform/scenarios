@@ -1,4 +1,5 @@
-# Breaches of a policy rule the maintainers accept, each for one field of one version of an entry.
+# Breaches of a policy rule the maintainers accept, each for one field of an entry's scenario as it
+# is, the scenario.json it runs.
 #
 # A legitimate new attack may need to breach a rule: run a command a shared scenario avoids, leave
 # something no cleanup can undo, name a security product, or start two endpoint injects close
@@ -9,10 +10,12 @@
 # code, the field exactly as `scenario-tools validate` reports it, the sha256 of the entry's
 # `scenario.json` it was granted for (`sha256sum scenario.json`), and why, in one line. It is
 # granted in the pull request of the entry it covers, once the entry is reviewed, and a code owner
-# approves it there; the pull request checks take none while the repository names no code owner. A change to the entry changes the hash: the exception then covers nothing and
-# blocks (POL-011), until the maintainers review the change and give the exception the new hash,
-# which the finding shows. An exception whose entry leaves the catalogue fails the repository's
-# tests: the pull request that removes the entry removes its exceptions.
+# of the policy data approves it there; the pull request checks take none while there is no such
+# code owner. A change to the entry's `scenario.json` changes the hash: the exception then covers
+# nothing and blocks (POL-011), until the maintainers review the change and give the exception the
+# new hash, which the finding shows. A change to `scenario.yaml` alone, its version say, leaves
+# what runs, and the exception, as they are. An exception whose entry leaves the catalogue fails
+# the repository's tests: the pull request that removes the entry removes its exceptions.
 #
 #   - entry: <the entry's external_id>
 #     code: POL-006

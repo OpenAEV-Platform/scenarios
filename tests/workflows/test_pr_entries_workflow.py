@@ -237,7 +237,7 @@ def _base_and_pull(tmp_path: Path, pull: str | None, *, owners: bool = True) -> 
     (tmp_path / EXCEPTIONS).write_text("exceptions: []\n")
     if owners:
         (tmp_path / ".github").mkdir()
-        (tmp_path / ".github" / "CODEOWNERS").write_text("/policy/ @maintainers\n")
+        (tmp_path / ".github" / "CODEOWNERS").write_text("* @everyone\n/policy/ @maintainers\n")
     (tmp_path / "pull" / "policy" / "data").mkdir(parents=True)
     if pull is not None:
         (tmp_path / "pull" / EXCEPTIONS).write_text(pull)
@@ -263,14 +263,35 @@ def test_the_exceptions_a_pull_request_grants_are_taken_and_pointed_out(tmp_path
     assert "a code owner approves each one" in (tmp_path / "summary").read_text()
 
 
-def test_no_exception_is_granted_while_no_code_owner_can_approve_it(tmp_path: Path) -> None:
-    _base_and_pull(tmp_path, "exceptions: [granted]\n", owners=False)
+@pytest.mark.parametrize("owners", [False, True])
+def test_no_exception_is_granted_while_no_code_owner_can_approve_it(
+    tmp_path: Path, owners: bool
+) -> None:
+    """No code owners at all, or none for the policy data: a file for /docs/ only, say."""
+    _base_and_pull(tmp_path, "exceptions: [granted]\n", owners=owners)
+    if owners:
+        (tmp_path / ".github" / "CODEOWNERS").write_text("/docs/ @maintainers\n/policy/data/x @a\n")
 
     result = _run_exceptions(tmp_path)
 
     assert result.returncode != 0
     assert "no code owner can approve them yet" in result.stderr
     assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+
+
+@pytest.mark.parametrize(
+    "line", ["/policy/data/ @maintainers", "/policy/data/exceptions.yaml @a @b", "/policy/\t@a"]
+)
+def test_code_owners_of_the_policy_data_let_the_exceptions_be_taken(
+    tmp_path: Path, line: str
+) -> None:
+    _base_and_pull(tmp_path, "exceptions: [granted]\n")
+    (tmp_path / ".github" / "CODEOWNERS").write_text(f"# owners\n{line}\n")
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: [granted]\n"
 
 
 @pytest.mark.parametrize("owners", [True, False])

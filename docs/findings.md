@@ -96,8 +96,8 @@ written when one of them blocks. See [`intake.md`](intake.md).
 ## Other checks
 
 A blocking `POL-004`, `POL-005`, `POL-006` or `POL-009` finding can be excepted when the breach is
-legitimate, for one field of one version of an entry: the maintainers add the exception, with the
-hash of the entry's `scenario.json` and a justification, to `policy/data/exceptions.yaml`, and the
+legitimate, for one field of an entry's `scenario.json` as it is: the maintainers add the exception,
+with the hash of that `scenario.json` and a justification, to `policy/data/exceptions.yaml`, and the
 finding is then reported as information, with the justification. No other finding can be
 excepted.
 
