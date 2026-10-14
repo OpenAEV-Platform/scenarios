@@ -9,12 +9,15 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.application.assign_payloads import no_attached_files
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.facts import BuiltinContracts
 from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.domain.catalogue.metadata import InjectFacts
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.verification.payload_hash import payload_hash
+from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.schema import SchemaViolation
 from tests.domain.policy.cases import DATA
@@ -141,6 +144,7 @@ def _validate(
         renormalised=renormalised,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
 
@@ -343,6 +347,7 @@ def test_an_entry_the_readers_cannot_list_is_a_finding_of_the_entry() -> None:
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert findings == (Finding("IO-013", Severity.BLOCKING, ENTRY, "", "a symbolic link"),)
@@ -377,6 +382,7 @@ def test_a_built_in_contract_copy_other_than_the_recorded_one_is_refused() -> No
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert _codes(findings) == [("SCH-006", JSON, "/scenario_injects/0")]
@@ -399,6 +405,7 @@ def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -416,6 +423,7 @@ def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -434,6 +442,7 @@ def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -526,6 +535,68 @@ def test_an_entry_whose_path_a_finding_cannot_show_is_refused_without_reading_it
         renormalised=_same,
         domains=DOMAINS,
         policy=DATA,
+        agreed=AgreedIds({}),
     )
 
     assert _codes(findings) == [("SCH-008", "scenarios/techniques", "")]
+
+
+def _with_payload(**fields: Any) -> dict[str, Any]:
+    scenario = copy.deepcopy(SCENARIO)
+    payload = {"payload_type": "Command", "payload_name": "a", "command_content": "id", **fields}
+    scenario["scenario_injects"] = [
+        {"inject_injector_contract": {"injector_contract_payload": payload}}
+    ]
+    return scenario
+
+
+def _payload_codes(findings: tuple[Finding, ...]) -> list[tuple[str, str, str]]:
+    return [code for code in _codes(findings) if code[0].startswith("PAY")]
+
+
+def test_a_payload_no_reference_names_is_refused() -> None:
+    findings = _validate({YAML: METADATA, JSON: _with_payload()})
+
+    assert _payload_codes(findings) == [
+        (
+            "PAY-001",
+            JSON,
+            "/scenario_injects/0/inject_injector_contract/injector_contract_payload"
+            "/payload_external_id",
+        )
+    ]
+
+
+def test_a_payload_named_by_its_reference_passes() -> None:
+    bare = _with_payload()
+    payload = bare["scenario_injects"][0]["inject_injector_contract"]["injector_contract_payload"]
+    digest = payload_hash(payload, (), no_attached_files).hex
+    identifier = derived_id(digest)
+    named = _with_payload(payload_external_id=identifier)
+
+    findings = _validate(
+        {
+            YAML: _changed(payloads=[{"id": identifier, "version": "1.0.0", "sha256": digest}]),
+            JSON: named,
+        }
+    )
+
+    assert _payload_codes(findings) == []
+
+
+def test_references_are_checked_only_once_the_metadata_meets_its_schema() -> None:
+    findings = _validate(
+        {YAML: METADATA, JSON: _with_payload()},
+        schema=FakeSchema(SchemaViolation("/payloads", "is not valid")),
+    )
+
+    assert _payload_codes(findings) == []
+
+
+def test_a_payload_outside_an_inject_s_contract_is_refused() -> None:
+    scenario = copy.deepcopy(SCENARIO)
+    scenario["scenario_articles"] = [{"injector_contract_payload": {"payload_name": "a"}}]
+
+    assert _payload_codes(_validate({YAML: METADATA, JSON: scenario})) == [
+        ("PAY-004", JSON, "/scenario_articles/0")
+    ]

@@ -68,7 +68,7 @@ def test_the_attachments_go_with_the_scenario(tmp_path: Path) -> None:
     assert zipfile.ZipFile(out).read("attachments.zip") == ENCRYPTED
 
 
-def test_an_entry_with_payloads_waits_and_nothing_is_written(
+def test_an_entry_whose_payloads_no_reference_names_is_refused_and_nothing_is_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -80,8 +80,8 @@ def test_an_entry_with_payloads_waits_and_nothing_is_written(
 
     assert code == 1
     findings = json.loads(stdout)["findings"]
-    # Payloads wait for their references, and those of this export reach public hosts.
-    assert {finding["code"] for finding in findings} == {"PAY-004", "POL-003"}
+    # No reference names its payloads yet, and those of this export reach public hosts.
+    assert {finding["code"] for finding in findings} == {"PAY-001", "POL-003"}
     assert {finding["path"] for finding in findings} == {"scenarios/domain/entry/scenario.json"}
     assert not (tmp_path / "entry.zip").exists()
 

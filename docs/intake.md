@@ -59,9 +59,17 @@ three lists, `sources` at most 50 entries, `generated_by` 1 to 200 characters, a
 from 1 to 2^53-1. `domain` and `slug` are names,
 never a path, whatever the schema says.
 
-An update rewrites `scenario.json` only. `scenario.yaml` is never rewritten: raise its
-`version`, add the section to `CHANGELOG.md`, and, after a rename, align its `name`, `category`
-and `main_focus` with the export. Each inject the export no longer has is listed (`VER-012`).
+Intake gives each payload the scenario embeds the ID its content has, written in the payload's
+`payload_external_id` and in a reference of `scenario.yaml` with its hash, as
+`scenario-tools payloads --assign` does. The ID is derived from the hash of the payload's content,
+unless `policy/data/payload-ids.yaml` agrees another ID for that very content: an unchanged
+payload keeps its ID, a changed one takes a new one.
+
+An update rewrites `scenario.json`, and `scenario.yaml` only when the references of its payloads
+change: it is then written in the tools' layout, so a comment added to it by hand is not kept.
+Raise its `version`, add the section to `CHANGELOG.md`, and, after a rename, align its `name`,
+`category` and `main_focus` with the export. Each inject the export no longer has is listed
+(`VER-012`).
 
 ## What is refused
 

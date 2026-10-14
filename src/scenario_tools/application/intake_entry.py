@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
@@ -18,7 +19,7 @@ from scenario_tools.domain.catalogue.intake import (
     same_name,
 )
 from scenario_tools.domain.catalogue.structure import INFORMATION
-from scenario_tools.domain.shared.canonical import ContentHash
+from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError
@@ -30,9 +31,9 @@ from scenario_tools.ports.schema import SchemaValidator
 @dataclass(frozen=True)
 class IntakeResult:
     """What intake makes of a request: the findings that refuse it, or what to write (the stored
-    ``scenario.json``, and for a new entry its ``scenario.yaml``), whether it changes anything,
-    what is left to complete, and the bytes of each file an update replaces, as read: none for
-    a new entry, which replaces nothing."""
+    ``scenario.json``, and its ``scenario.yaml`` for a new entry, or for an update whose payload
+    references change), whether it changes anything, what is left to complete, and the bytes of
+    each file an update replaces, as read: none for a new entry, which replaces nothing."""
 
     request: IntakeRequest | None
     refusals: tuple[Finding, ...] = ()
@@ -120,8 +121,8 @@ def intake_files(
     result: IntakeResult, render: Callable[[dict[str, Any]], bytes]
 ) -> dict[str, bytes]:
     """The files intake writes in the entry, by name, in the order they are written: its
-    ``scenario.yaml`` first for a new entry, as ``render`` writes it, then its ``scenario.json``;
-    none when the request is refused or changes nothing."""
+    ``scenario.yaml`` first when there is one to write, as ``render`` writes it, then its
+    ``scenario.json``; none when the request is refused or changes nothing."""
     if result.refusals or not result.changed or result.scenario_json is None:
         return {}
     files = {} if result.metadata is None else {"scenario.yaml": render(result.metadata)}
@@ -215,7 +216,12 @@ def _new(
     left = tuple(
         finding for finding in prepared.to_complete if finding.field.strip("/") not in given
     )
-    return IntakeResult(request, (), prepared.scenario_json, metadata, left, changed=True)
+    scenario_json = prepared.scenario_json
+    assigned = assigned_entry(metadata, json.loads(scenario_json), request.entry, agreed_ids(data))
+    if assigned.metadata is not None and assigned.stored is not None:
+        metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
+    # Otherwise the entry's check, run once it is written, says why in the plan.
+    return IntakeResult(request, (), scenario_json, metadata, left, changed=True)
 
 
 def _update(
@@ -243,8 +249,25 @@ def _update(
     )
     if prepared.refusals:
         return IntakeResult(request, prepared.refusals)
-    changed = prepared.scenario_json != stored
     metadata_path = f"{request.entry}/scenario.yaml"
+    scenario_json = prepared.scenario_json
+    metadata: dict[str, Any] | None = None
+    previous_files = {"scenario.json": stored}
+    # Without scenario.yaml, the entry's check says it is missing. The text first: if the file
+    # changes before its document is read, the writer, which checks the text it replaces, refuses
+    # to write over the newer file.
+    declared: object = None
+    if "scenario.yaml" in source.names(request.entry):
+        written = source.read_text(metadata_path)
+        declared = source.read_yaml(metadata_path)
+    assigned = assigned_entry(declared, json.loads(scenario_json), request.entry, agreed_ids(data))
+    if assigned.metadata is not None and assigned.stored is not None:
+        scenario_json = stored_form(assigned.stored)
+        if assigned.metadata != declared:  # its references change: scenario.yaml too
+            metadata = assigned.metadata
+            previous_files["scenario.yaml"] = written.encode()
+    # Otherwise the entry's check, run once it is written, says why in the plan.
+    changed = scenario_json != stored or metadata is not None
     left: tuple[Finding, ...] = ()
     if changed:
         left += (
@@ -277,6 +300,4 @@ def _update(
         )
         for inject in prepared.removed_injects
     )
-    return IntakeResult(
-        request, (), prepared.scenario_json, None, left, changed, {"scenario.json": stored}
-    )
+    return IntakeResult(request, (), scenario_json, metadata, left, changed, previous_files)

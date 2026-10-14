@@ -43,9 +43,21 @@ from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
 from scenario_tools.adapters.repository import RepositoryEntries
-from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
+from scenario_tools.adapters.safe_readers import (
+    YAML_LIMIT,
+    parse_yaml,
+    read_json_file,
+    read_regular_file,
+    read_yaml_file,
+    yaml_bytes,
+)
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
+from scenario_tools.application.assign_payloads import (
+    agreed_ids,
+    assigned_entry,
+    payload_findings,
+)
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
@@ -60,6 +72,7 @@ from scenario_tools.domain.policy.actions import forbidden_from_document, side_e
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.policy.vendors import vendors_from_document
+from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import (
     COUNT_CODE,
     ERROR_LIMIT,
@@ -69,6 +82,7 @@ from scenario_tools.domain.shared.finding import (
     Severity,
     shorten,
 )
+from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -434,7 +448,8 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
 
     def produce() -> Report:
         loader = YamlDataLoader(root / "policy" / "data")
-        external_id = _declared_external_id(metadata)
+        declared = read_yaml_file(metadata)
+        external_id = declared.get("external_id") if isinstance(declared, dict) else None
         if not isinstance(external_id, str) or not _CANONICAL_UUID.fullmatch(external_id):
             message = "external_id must be a UUID in lower case with hyphens"
             where = repository_path(str(metadata), root)
@@ -466,12 +481,67 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
             check=lambda built: check_export_archive(built, str(out)),
             limit=ARCHIVE_LIMIT,
             policy=policy,
+            declared=declared,
+            agreed=agreed_ids(loader),
         )
         if built is not None:
             write_output(out, built)
         return report
 
     _emit(ctx, "archive", produce, root)
+
+
+@main.command(name="payloads")
+@click.argument("entry", type=click.Path(path_type=Path, file_okay=False, exists=True))
+@click.option(
+    "--assign",
+    is_flag=True,
+    help="Give each payload its ID, in scenario.json and in the references of scenario.yaml.",
+)
+@click.pass_context
+def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
+    """Check that each payload ENTRY's scenario embeds carries the ID its content has, the one
+    derived from its hash or the one policy/data/payload-ids.yaml agrees for it, and that a
+    reference of its scenario.yaml gives that ID with the payload's hash. With --assign, give
+    each payload that ID and write the references; scenario.yaml is written again in the tools'
+    layout, so a comment in it is not kept."""
+    entry = Path(os.path.realpath(entry))
+    metadata, scenario = entry / "scenario.yaml", entry / "scenario.json"
+    levels: list[Path] = []
+    try:
+        levels = _policy_levels(entry)
+        root = _repository_root(levels, entry)
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, "payloads", _refused(error), levels[-1] if levels else None)
+
+    def produce() -> Report:
+        agreed = agreed_ids(YamlDataLoader(root / "policy" / "data"))
+        where = repository_path(str(entry), root)
+        # Its bytes and its document from one read: the bytes are what --assign replaces.
+        written = read_regular_file(metadata, YAML_LIMIT)
+        declared = parse_yaml(written, path=str(metadata))
+        data, stored = read_stored_scenario(scenario)
+        if not assign:
+            return Report("payloads", payload_findings(declared, stored, where, agreed))
+        result = assigned_entry(declared, stored, where, agreed)
+        if result.metadata is None or result.stored is None:
+            return Report("payloads", result.refusals)
+        previous = {"scenario.yaml": written, "scenario.json": data}
+        files = {
+            "scenario.yaml": yaml_bytes(result.metadata),
+            "scenario.json": stored_form(result.stored),
+        }
+        changed = {name: content for name, content in files.items() if content != previous[name]}
+        # Both files are replaced only if each still holds what was read; the check after the
+        # block makes sure a later run reads what was written.
+        with RepositoryWriter(RepositoryEntries(root)).writing(
+            where, changed, previous=previous
+        ) as replaced:
+            replaced.check()
+        # The assignment gives every payload its reference: the check of what was given says so.
+        return Report("payloads", payload_findings(result.metadata, result.stored, where, agreed))
+
+    _emit(ctx, "payloads", produce, root)
 
 
 @main.command(name="validate")
@@ -529,6 +599,7 @@ class _Rules:
     domains: tuple[str, ...]
     schema: JsonSchemaValidator
     policy: PolicyData
+    agreed: AgreedIds
 
     def validate(self, entry: str, source: RepositoryEntries) -> tuple[Finding, ...]:
         return validate_entry(
@@ -539,6 +610,7 @@ class _Rules:
             renormalised=renormaliser(self.loader),
             domains=self.domains,
             policy=self.policy,
+            agreed=self.agreed,
         )
 
 
@@ -572,7 +644,7 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
     for name in ("scenario", "intake-request") if intake else ("scenario",):
         if not (schemas / f"{name}.schema.json").is_file():
             raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
-    return _Rules(loader, builtin, domains, schema, policy)
+    return _Rules(loader, builtin, domains, schema, policy, agreed_ids(loader))
 
 
 REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
