@@ -24,6 +24,7 @@ dev = [
     "bandit>=1.9.4",
     "hypothesis>=6.168.5",
     "import-linter>=2.15",
+    "markdown-it-py>=4.2.0",  # the tests' CommonMark parser, to prove a sheet holds no markup
     "mutmut>=3.8.0",
     "mypy>=1.13",
     "pip-audit>=2.10.1",

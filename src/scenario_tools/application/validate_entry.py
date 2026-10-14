@@ -9,6 +9,7 @@ from typing import Any, cast
 from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.findings import not_normalised
 from scenario_tools.application.previous_version import previous_version
+from scenario_tools.application.render_sheet import sheet_findings
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings, text_findings
 from scenario_tools.domain.catalogue.entry import (
@@ -26,6 +27,7 @@ from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
+from scenario_tools.domain.sheet.sheet import render_sheet
 from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.domain.verification.versioning import changelog_findings, versioning_findings
 from scenario_tools.ports.errors import UnsafeInputError
@@ -210,6 +212,9 @@ def validate_entry(
         findings += _version_findings(
             entry, names, source, previous, declared_checked, stored_document
         )
+    if declared_checked is not None and isinstance(stored_document, Mapping):
+        sheet = render_sheet(declared_checked, stored_document, policy.exceptions)
+        findings += sheet_findings(entry, names, source, sheet)
     for name in _TEXTS:
         if name in names:
             path = f"{entry}/{name}"

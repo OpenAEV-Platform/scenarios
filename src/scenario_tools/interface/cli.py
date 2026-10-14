@@ -65,6 +65,7 @@ from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
+from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
@@ -597,8 +598,8 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
     previous version, the copy the base branch holds: its version must be raised as the change
     needs, its inject IDs stay, and a new payload is pointed out (POL-008); an entry the base
     branch does not hold is new.
-    The checks of the generated README.md and of the private deny-list are not run yet: an
-    entry that passes may still fail them.
+    The sheet, README.md, must be the one render writes (GEN-001). The check of the private
+    deny-list is not run yet: an entry that passes may still fail it.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""
@@ -620,6 +621,39 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@main.command(name="render")
+@click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--check", is_flag=True, help="Write nothing: report a README.md that is not the sheet."
+)
+@click.pass_context
+def render(ctx: click.Context, entries: tuple[Path, ...], check: bool) -> None:
+    """Write the sheet of each of ENTRIES, an entry directory: its README.md, rendered from
+    scenario.yaml and scenario.json, with the policy exceptions the maintainers granted it. With
+    --check, write nothing and report GEN-001 for a README.md missing or not the sheet. The
+    contributor's texts are plain text in it, never Markdown, a link or an image.
+
+    No symbolic link inside the repository is followed, nor written through; the path that
+    leads to the repository may go through one."""
+    root, relatives = _one_repository(ctx, "render", entries)
+
+    def produce() -> Report:
+        source = RepositoryEntries(root)
+        exceptions = policy_exceptions(YamlDataLoader(source.directory("policy/data")))
+        findings: list[Finding] = []
+        for entry in dict.fromkeys(relatives):  # an entry given twice is rendered once
+            if check:
+                findings += check_sheet(entry, source, exceptions)
+                continue
+            sheet = sheet_of(entry, source, exceptions)
+            findings += sheet.refusals
+            if sheet.text is not None:
+                write_output(root / entry / SHEET, sheet.text.encode())
+        return Report("render", tuple(findings))
+
+    _emit(ctx, "render", produce, root)
 
 
 @main.command(name="diff")

@@ -218,9 +218,15 @@ def test_an_update_with_a_changed_export_rewrites_scenario_json_only() -> None:
     assert result.scenario_json is not None
     assert b"A new subtitle" in result.scenario_json
     assert [(f.code, f.path, f.field) for f in result.to_complete] == [
-        ("SCH-007", f"{ENTRY}/scenario.yaml", "/version")
+        ("SCH-007", f"{ENTRY}/scenario.yaml", "/version"),
+        ("SCH-007", f"{ENTRY}/README.md", ""),
     ]
     assert "CHANGELOG.md" in result.to_complete[0].message
+    assert result.to_complete[1].message == (
+        "the sheet follows scenario.yaml: once it is complete, render it again with "
+        "`scenario-tools render`"
+    )
+    assert result.sheet is None  # an update leaves the sheet to render once the version is raised
 
 
 def test_an_update_of_an_unknown_entry_is_refused() -> None:
@@ -246,7 +252,7 @@ def test_a_new_entry_writes_its_metadata_then_its_scenario() -> None:
 
     files = intake_files(result, _render)
 
-    assert list(files) == ["scenario.yaml", "CHANGELOG.md", "scenario.json"]
+    assert list(files) == ["scenario.yaml", "CHANGELOG.md", "README.md", "scenario.json"]
     assert files["scenario.yaml"] == b"yaml"
     assert files["scenario.json"] == result.scenario_json
 
@@ -462,7 +468,12 @@ def test_an_entry_and_its_plan_are_written_in_one_go() -> None:
     assert log.events == [
         "reserve",
         "render",
-        ("write", ENTRY, ("scenario.yaml", "CHANGELOG.md", "scenario.json"), None),  # a new one
+        (
+            "write",
+            ENTRY,
+            ("scenario.yaml", "CHANGELOG.md", "README.md", "scenario.json"),
+            None,
+        ),  # a new one
         ("validate", ENTRY),
         "current",
         "check",
@@ -508,7 +519,12 @@ def test_an_unchanged_update_still_has_its_plan_and_its_checks() -> None:
 _STEPS = {
     "reserve": "reserve",
     "render": "render",
-    "write": ("write", ENTRY, ("scenario.yaml", "CHANGELOG.md", "scenario.json"), None),
+    "write": (
+        "write",
+        ENTRY,
+        ("scenario.yaml", "CHANGELOG.md", "README.md", "scenario.json"),
+        None,
+    ),
     "validate": ("validate", ENTRY),
     "current": "current",  # the checkout first, then what was written: a change meanwhile shows
     "check": "check",
@@ -747,8 +763,12 @@ def test_a_new_entry_starts_its_changelog_with_its_version_and_the_day() -> None
     assert list(intake_files(result, yaml_bytes)) == [
         "scenario.yaml",
         "CHANGELOG.md",
+        "README.md",
         "scenario.json",
     ]
+    assert result.sheet is not None
+    assert result.sheet.decode().startswith("<!-- This sheet is generated")
+    assert "\n# EASM Scenario\n" in result.sheet.decode()
     (note,) = (f for f in result.to_complete if f.path == f"{ENTRY}/CHANGELOG.md")
     assert (note.code, note.severity, note.field, note.message) == (
         "SCH-007",

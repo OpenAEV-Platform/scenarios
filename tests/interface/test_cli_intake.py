@@ -116,6 +116,7 @@ def test_a_new_entry_is_written_in_place_with_its_plan(
     entry = root / ENTRY
     assert sorted(path.name for path in entry.iterdir()) == [
         "CHANGELOG.md",
+        "README.md",
         "scenario.json",
         "scenario.yaml",
     ]
@@ -126,6 +127,7 @@ def test_a_new_entry_is_written_in_place_with_its_plan(
     assert document["changed"] is True
     assert document["files"] == [
         {"path": f"{ENTRY}/CHANGELOG.md", "sha256": _sha256(entry / "CHANGELOG.md")},
+        {"path": f"{ENTRY}/README.md", "sha256": _sha256(entry / "README.md")},
         {"path": f"{ENTRY}/scenario.json", "sha256": _sha256(entry / "scenario.json")},
         {"path": f"{ENTRY}/scenario.yaml", "sha256": _sha256(entry / "scenario.yaml")},
     ]
@@ -486,6 +488,7 @@ def test_a_plan_that_cannot_be_published_puts_an_update_back(
     assert (root / ENTRY / "scenario.json").read_bytes() == stored
     assert sorted(path.name for path in (root / ENTRY).iterdir()) == [
         "CHANGELOG.md",
+        "README.md",
         "scenario.json",
         "scenario.yaml",
     ]

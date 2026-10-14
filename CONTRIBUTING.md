@@ -20,8 +20,9 @@ the template that fits: bug report, feature request, question or technical impro
 2. Open an issue that describes the scenario and the threat it plays.
 3. Follow [`docs/intake.md`](docs/intake.md): write a short request, run `scenario-tools intake`,
    and complete what its plan lists.
-4. Run `scenario-tools validate` on the entry, then open a pull request with the title and body
-   the plan gives.
+4. Run `scenario-tools render` on the entry, which writes its sheet, `README.md`, from
+   `scenario.yaml` and `scenario.json`: never edit the sheet by hand. Then run
+   `scenario-tools validate`, and open a pull request with the title and body the plan gives.
 
 A scenario holds **public content only**: no customer data, no internal address, no real
 credential, nothing you would not show at a conference. Targets are placeholders that each user

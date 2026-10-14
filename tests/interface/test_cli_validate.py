@@ -49,6 +49,8 @@ def _complete_entry(
     ]
     (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
     (entry / "CHANGELOG.md").write_text("## 1.0.0 — 2026-10-12\n", encoding="utf-8")
+    rendered = _invoke(monkeypatch, "render", str(entry))  # its sheet, as a contributor renders it
+    assert rendered.exit_code == 0, rendered.output
     return entry
 
 
@@ -84,6 +86,7 @@ def test_what_blocks_an_entry_is_reported_and_exits_one(
         ("SCH-008", "scenarios/techniques/easm-copy/scenario.json", ""),
         ("SCH-010", "scenarios/techniques/easm-copy/scenario.yaml", "/external_id"),
         ("SCH-012", "scenarios/techniques/easm-copy/scenario.yaml", "/name"),
+        ("GEN-001", "scenarios/techniques/easm/README.md", ""),  # edited, no longer the sheet
         ("IO-017", "scenarios/techniques/easm/README.md", ""),
         ("SCH-009", "scenarios/techniques/easm/scenario.yaml", "/description"),
         ("SCH-010", "scenarios/techniques/easm/scenario.yaml", "/external_id"),
@@ -197,6 +200,7 @@ def test_an_exception_of_the_registry_that_covers_nothing_blocks(
         f"exceptions:\n  - entry: {ENTRY_ID}\n    code: POL-006\n    field: /scenario_name\n"
         f"    sha256: {'a' * 64}\n    justification: a reason long enough to be read\n"
     )
+    _invoke(monkeypatch, "render", str(entry))  # the sheet shows the exception granted
     stored = hashlib.sha256((entry / "scenario.json").read_bytes()).hexdigest()
 
     result = _invoke(monkeypatch, "validate", str(entry))
@@ -228,6 +232,7 @@ def test_a_stored_scenario_of_another_entry_is_not_what_normalisation_writes(
     metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
     metadata["external_id"] = "0b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
     (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+    _invoke(monkeypatch, "render", str(entry))  # the sheet shows the external ID
 
     result = _invoke(monkeypatch, "validate", str(entry))
 
@@ -243,7 +248,10 @@ def test_an_entry_given_twice_is_checked_once(
 
     result = _invoke(monkeypatch, "validate", str(entry), str(entry / "."))
 
-    assert _findings(result) == [("IO-017", "scenarios/techniques/easm/README.md", "")]
+    assert _findings(result) == [
+        ("GEN-001", "scenarios/techniques/easm/README.md", ""),  # edited, no longer the sheet
+        ("IO-017", "scenarios/techniques/easm/README.md", ""),
+    ]
 
 
 def test_the_help_says_which_checks_run_yet(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -283,7 +291,10 @@ def test_one_repository_reached_by_two_paths_is_one_repository(
     result = _invoke(monkeypatch, "validate", str(entry), str(linked))
 
     assert result.exit_code == 1, result.output
-    assert _findings(result) == [("IO-017", "scenarios/techniques/easm/README.md", "")]
+    assert _findings(result) == [
+        ("GEN-001", "scenarios/techniques/easm/README.md", ""),  # edited, no longer the sheet
+        ("IO-017", "scenarios/techniques/easm/README.md", ""),
+    ]
 
 
 def test_a_repository_that_cannot_be_looked_at_is_the_environment_s_fault(
@@ -388,6 +399,7 @@ def test_an_entry_is_compared_with_its_previous_version(
     metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
     metadata["description"] = "Another description"
     (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+    _invoke(monkeypatch, "render", str(entry))  # as a contributor renders the sheet again
 
     result = _invoke(monkeypatch, "validate", "--previous-root", str(base), str(entry))
 
