@@ -782,3 +782,15 @@ def test_an_update_leaves_the_changelog_to_its_author() -> None:
     result = _intake(UPDATE, _stored())
 
     assert result.changelog is None
+
+
+def test_a_sheet_over_what_a_readme_may_hold_is_not_written() -> None:
+    """The entry's check, run once the files are written, says why in the plan."""
+    export = copy.deepcopy(EASM)
+    export["scenario_injects"][0]["inject_title"] = "t" * 1_100_000
+
+    result = _intake(NEW, export=export)
+
+    assert result.refusals == ()
+    assert result.sheet is None
+    assert "README.md" not in intake_files(result, _render)

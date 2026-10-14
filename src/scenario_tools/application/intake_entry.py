@@ -23,7 +23,7 @@ from scenario_tools.domain.catalogue.intake import (
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.sheet.sheet import render_sheet
+from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.plan import PlanSink
@@ -245,7 +245,9 @@ def _new(
             "a starting section for this version: say what it holds before the pull request",
         ),
     )
-    sheet = render_sheet(metadata, json.loads(scenario_json), policy_exceptions(data)).encode()
+    rendered = render_sheet(metadata, json.loads(scenario_json), policy_exceptions(data)).encode()
+    # A sheet over what a README.md may hold is not written: the entry's check says so.
+    sheet = rendered if len(rendered) <= SHEET_LIMIT else None
     return IntakeResult(
         request,
         (),
