@@ -37,9 +37,11 @@ audit:
 	uv export --frozen --format requirements-txt --no-emit-project --quiet -o "$$tmp/requirements.txt" && \
 	uv run pip-audit --strict --disable-pip --require-hashes -r "$$tmp/requirements.txt"
 
+# The working copy's secrets, a check for the author: what gates a pull request is its workflow's
+# scan, with the target branch's rules, of its entries and of every commit it brings.
 secrets:
 	@gitleaks version | grep -qx '$(GITLEAKS_VERSION)' || { echo "gitleaks $(GITLEAKS_VERSION) required"; exit 1; }
-	gitleaks dir . --no-banner --redact
+	gitleaks dir . --config .gitleaks.local.toml --no-banner --redact
 
 # The workflows: actionlint for their syntax and expressions, zizmor for their security.
 workflows:

@@ -1,5 +1,7 @@
 """The stage 1 workflow: the base branch judges the entries a pull request adds or changes."""
 
+import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -347,4 +349,230 @@ def test_exceptions_reached_through_a_link_are_refused(tmp_path: Path, linked: s
     assert result.returncode != 0
     assert f"refused, a link: {linked}" in result.stderr
     assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+    assert (tmp_path / "summary").read_text() == ""
+
+
+# The pull request's commits, scanned for secrets
+
+COMMITS = "Look for secrets in the pull request's commits"
+
+
+def _commits_step() -> dict[str, Any]:
+    [step] = [step for step in STEPS if step.get("name") == COMMITS]
+    return step
+
+
+def test_every_commit_of_the_pull_request_is_scanned_whatever_validate_says() -> None:
+    """A merge keeps every commit: a secret a later commit removes stays in the history."""
+    step = _commits_step()
+
+    assert step["if"] == "${{ !cancelled() }}"
+    assert step["env"] == {
+        "BASE": "${{ github.event.pull_request.base.sha }}",
+        "HEAD": "${{ github.event.pull_request.head.sha }}",
+    }
+    script = str(step["run"])
+    assert '--config "$GITHUB_WORKSPACE/.gitleaks.toml"' in script  # never the pull request's
+    assert "--ignore-gitleaks-allow" in script
+    assert '--log-opts="--diff-merges=first-parent $BASE..$HEAD"' in script  # a merge's own
+    assert "-- pull/.git" in script  # its git directory: no file of its tree is read
+
+
+def test_archives_are_opened_by_every_scan() -> None:
+    scans = [str(step["run"]) for step in STEPS if 'gitleaks" ' in str(step.get("run", ""))]
+
+    assert len(scans) == 2
+    assert all("--max-archive-depth 2" in scan for scan in scans)
+
+
+def _git(directory: Path, *arguments: str) -> str:
+    return subprocess.run(  # noqa: S603 - git on a repository of the test
+        ["git", "-C", str(directory), *arguments],  # noqa: S607 - git from the PATH
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _commit(directory: Path, name: str, text: str) -> str:
+    (directory / name).write_text(text)
+    _git(directory, "add", "--all")
+    _git(directory, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", name)
+    return _git(directory, "rev-parse", "HEAD")
+
+
+def _gitleaks() -> str:
+    found = shutil.which("gitleaks")
+    if found is None:
+        pytest.fail("gitleaks is required, as `make secrets` says")
+    return found
+
+
+def _run_scan(tmp_path: Path, script: str, **variables: str) -> subprocess.CompletedProcess[str]:
+    """A secret scan step of the workflow, with the pinned gitleaks where the job installs it."""
+    (tmp_path / "temp").mkdir(exist_ok=True)
+    if not (tmp_path / "temp" / "gitleaks").exists():
+        (tmp_path / "temp" / "gitleaks").symlink_to(_gitleaks())
+    shutil.copy(WORKFLOW.parents[2] / ".gitleaks.toml", tmp_path / ".gitleaks.toml")
+    (tmp_path / "summary").touch()
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "RUNNER_TEMP": str(tmp_path / "temp"),
+        "GITHUB_WORKSPACE": str(tmp_path),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        **variables,
+    }
+    return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
+        ["/bin/bash", "-c", script],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _scan_commits(tmp_path: Path, base: str, head: str) -> subprocess.CompletedProcess[str]:
+    return _run_scan(tmp_path, str(_commits_step()["run"]), BASE=base, HEAD=head)
+
+
+def _pull(tmp_path: Path) -> tuple[Path, str]:
+    pull = tmp_path / "pull"
+    pull.mkdir()
+    _git(pull, "init", "--quiet")
+    _git(pull, "config", "user.email", "contributor@example.com")
+    _git(pull, "config", "user.name", "Contributor")
+    return pull, _commit(pull, "README.md", "a catalogue\n")
+
+
+KEY = "".join(["ghp_", "A1b2C3d4E5f6G7h8I9j0", "K1l2M3n4O5p6Q7r8"])  # never one constant
+
+
+def test_a_secret_a_later_commit_removes_and_hides_is_still_found(tmp_path: Path) -> None:
+    pull, base = _pull(tmp_path)
+    _commit(pull, "notes.txt", f'token = "{KEY}"\n')
+    found = subprocess.run(  # noqa: S603 - the pinned gitleaks, on the test's repository
+        [
+            _gitleaks(),
+            "git",
+            str(pull),
+            "--no-banner",
+            "--report-format",
+            "json",
+            "--report-path",
+            str(tmp_path / "report.json"),
+            "--exit-code",
+            "0",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    assert found.returncode == 0
+    fingerprint = json.loads((tmp_path / "report.json").read_text())[0]["Fingerprint"]
+    (pull / "notes.txt").unlink()
+    (pull / ".gitleaksignore").write_text(f"{fingerprint}\n")  # the pull request's own ignore
+    head = _commit(pull, "cleanup", "")
+
+    result = _scan_commits(tmp_path, base, head)
+
+    assert result.returncode != 0
+    assert "leaks found: 1" in result.stdout + result.stderr  # the secret, not a broken scan
+    assert "CONTRIBUTING.md" in (tmp_path / "summary").read_text()  # what to do, in the run
+
+
+def test_commits_without_a_secret_pass_and_the_base_s_history_is_not_scanned(
+    tmp_path: Path,
+) -> None:
+    pull, _ = _pull(tmp_path)
+    base = _commit(pull, "old.txt", f'token = "{KEY}"\n')  # the base branch's, already merged
+    head = _commit(pull, "scenario.txt", "a scenario\n")
+
+    result = _scan_commits(tmp_path, base, head)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "no leaks found" in result.stdout + result.stderr
+
+
+def test_a_secret_only_a_merge_commit_brings_is_found(tmp_path: Path) -> None:
+    """A merge's own changes, a conflict's resolution say, are no other commit's."""
+    pull, base = _pull(tmp_path)
+    _git(pull, "checkout", "--quiet", "-b", "side")
+    _commit(pull, "side.txt", "a side change\n")
+    _git(pull, "checkout", "--quiet", "-")
+    _commit(pull, "main.txt", "a main change\n")
+    _git(pull, "-c", "commit.gpgsign=false", "merge", "--quiet", "--no-ff", "--no-commit", "side")
+    (pull / "evil.txt").write_text(f'token = "{KEY}"\n')
+    _git(pull, "add", "--all")
+    _git(pull, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "merge")
+    head = _git(pull, "rev-parse", "HEAD")
+
+    result = _scan_commits(tmp_path, base, head)
+
+    assert result.returncode != 0
+    assert "leaks found: 1" in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("which", ["BASE", "HEAD"])
+def test_a_range_that_cannot_be_read_fails_the_scan(tmp_path: Path, which: str) -> None:
+    """Never "0 commits scanned, no leaks found" for a commit the clone does not hold."""
+    pull, base = _pull(tmp_path)
+    head = _commit(pull, "scenario.txt", "a scenario\n")
+    commits = {"BASE": base, "HEAD": head, which: "0" * 40}
+
+    result = _scan_commits(tmp_path, commits["BASE"], commits["HEAD"])
+
+    assert result.returncode != 0
+    assert "refused, not a commit of the pull request's clone" in result.stderr
+
+
+ENTRIES_SCAN = "Look for secrets in the changed entries"
+
+
+def _entries_scan(tmp_path: Path, entry: str) -> subprocess.CompletedProcess[str]:
+    [step] = [step for step in STEPS if step.get("name") == ENTRIES_SCAN]
+    (tmp_path / "temp").mkdir(exist_ok=True)
+    (tmp_path / "temp" / "entries").write_bytes(entry.encode() + b"\0")
+    return _run_scan(tmp_path, str(step["run"]))
+
+
+def test_an_entry_s_own_ignore_file_never_hides_a_secret(tmp_path: Path) -> None:
+    entry = tmp_path / "scenarios" / "techniques" / "x"
+    entry.mkdir(parents=True)
+    (entry / "scenario.json").write_text(f'{{"token": "{KEY}"}}\n')
+    report = tmp_path / "report.json"
+    subprocess.run(  # noqa: S603 - the pinned gitleaks, on the test's entry
+        [
+            _gitleaks(),
+            "dir",
+            str(entry),
+            "--no-banner",
+            "--report-format",
+            "json",
+            "--report-path",
+            str(report),
+            "--exit-code",
+            "0",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    fingerprints = {finding["Fingerprint"] for finding in json.loads(report.read_text())}
+    (entry / ".gitleaksignore").write_text("".join(f"{line}\n" for line in fingerprints))
+
+    result = _entries_scan(tmp_path, "scenarios/techniques/x")
+
+    assert result.returncode != 0
+    assert "refused, an ignore file: scenarios/techniques/x/.gitleaksignore" in result.stderr
+    assert "leaks found" in result.stdout + result.stderr
+    assert "CONTRIBUTING.md" in (tmp_path / "summary").read_text()
+
+
+def test_an_entry_without_a_secret_passes_the_scan(tmp_path: Path) -> None:
+    entry = tmp_path / "scenarios" / "techniques" / "x"
+    entry.mkdir(parents=True)
+    (entry / "scenario.json").write_text('{"scenario_name": "x"}\n')
+
+    result = _entries_scan(tmp_path, "scenarios/techniques/x")
+
+    assert result.returncode == 0, result.stdout + result.stderr
     assert (tmp_path / "summary").read_text() == ""

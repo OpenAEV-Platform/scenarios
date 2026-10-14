@@ -1,0 +1,10 @@
+# The local scan's rules, `make secrets`: the shared rules of .gitleaks.toml, with Python's caches
+# of a working copy left out, never committed, whose compiled tests hold their cases' text joined
+# end to end. The pull request scans never read this file. Run from the repository's root: gitleaks
+# reads the extended file's path from the working directory.
+[extend]
+path = ".gitleaks.toml"
+
+[[allowlists]]
+description = "Local caches of the tools' tests"
+paths = ['''(^|/)__pycache__/''', '''(^|/)\.pytest_cache/''']

@@ -26,7 +26,17 @@ the template that fits: bug report, feature request, question or technical impro
 A scenario holds **public content only**: no customer data, no internal address, no real
 credential, nothing you would not show at a conference. Targets are placeholders that each user
 fills in on their own platform. Reviewers check this, and the automated checks scan every entry
-for secrets.
+and every commit of the pull request for secrets, OpenAEV tokens included: an agent's install
+command, for example, carries one, so use a placeholder such as `<token>` instead.
+
+If the secret scan reports something:
+
+- **A real secret:** revoke it first, wherever it was issued. A commit keeps it even when a later
+  commit removes it, so rewrite your branch without it (`git rebase -i` onto the target branch,
+  editing or dropping the commit), then `git push --force-with-lease`.
+- **Not a secret:** say so in the pull request, quoting the rule the scan names. A maintainer
+  adjusts the shared rules; an ignore file or a `gitleaks:allow` comment in the pull request is
+  never read.
 
 ### When a policy rule blocks a legitimate attack
 

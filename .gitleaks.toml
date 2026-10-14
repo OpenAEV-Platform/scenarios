@@ -1,4 +1,45 @@
-# The rules every secret scan uses: gitleaks' own, unchanged. The workflow that scans the entries of a
-# pull request gives this file explicitly, so that a configuration inside an entry is never read.
+# The rules every secret scan uses: gitleaks' own, and the repository's for OpenAEV credentials.
+# The workflow that scans a pull request gives this file explicitly, so that a configuration or an
+# ignore file of the pull request is never read. It leaves no path out: the local scan's own file,
+# .gitleaks.local.toml, leaves out the caches of a working copy.
+#
+# An OpenAEV token is a bare UUID, like every identifier of a scenario: a rule reads it by its
+# context, sent as a bearer token or given to a token option or key, never alone. A placeholder
+# (`<token>`, `${OPENAEV_TOKEN}`, `#{token}`) is no UUID and matches nothing. Between a word and
+# its value, a space, an escaped line break (`\n` in JSON) or a line continuation (`\`, `` ` ``,
+# `^`) may stand.
 [extend]
 useDefault = true
+
+[[rules]]
+id = "openaev-bearer-token"
+description = "An OpenAEV token sent as a bearer token, as an agent's install command does"
+regex = '''(?i)\bbearer(?:\s|\\[nrt]|\\|`|\^)+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["bearer"]
+
+[[rules]]
+id = "openaev-token"
+description = "An OpenAEV token given to a token option or key, as an implant's command does"
+regex = '''(?i)(?:--token(?:(?:\s|\\[nrt]|\\|`|\^)+|=)|token[\\"']*\s*[:=](?:\s|\\[nrt]|\\|`|\^)*)[\\"']*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b'''
+secretGroup = 1
+keywords = ["token"]
+
+[[rules]]
+id = "openaev-admin-password"
+description = "The OpenAEV administrator's password"
+regex = '''(?i)\b(?:openaev|openbas)[_.]+admin[_.]+password[\\"']*\s*[:=](?:\s|\\[nrt]|\\|`|\^)*[\\"']*([\x21\x26\x28-\x3b\x3d-\x5b\x5d-\x7a\x7c-\x7e][\x21\x23-\x26\x28-\x5b\x5d-\x7e]{3,})'''
+secretGroup = 1
+keywords = ["password"]
+
+[[rules.allowlists]]
+description = "The platform's documented placeholder"
+regexTarget = "secret"
+regexes = ['''(?i)^changeme$''']
+
+[[rules]]
+id = "openaev-tracking-link"
+description = "The token of an OpenAEV tracking link, which opens it for anyone"
+regex = '''/url/access\?token=([A-Za-z0-9]{32})\b'''
+secretGroup = 1
+keywords = ["/url/access"]
