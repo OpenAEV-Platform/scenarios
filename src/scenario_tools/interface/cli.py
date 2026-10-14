@@ -531,9 +531,10 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
             "scenario.yaml": yaml_bytes(result.metadata),
             "scenario.json": stored_form(result.stored),
         }
-        changed = {name: content for name, content in files.items() if content != previous[name]}
-        # Both files are replaced only if each still holds what was read; the check after the
-        # block makes sure a later run reads what was written.
+        # Both files go together, each replaced only if it still holds what was read, so that a
+        # change to either meanwhile is refused; nothing to change writes nothing. The check after
+        # the block makes sure a later run reads what was written.
+        changed = files if files != previous else {}
         with RepositoryWriter(RepositoryEntries(root)).writing(
             where, changed, previous=previous
         ) as replaced:

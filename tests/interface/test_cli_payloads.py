@@ -142,14 +142,15 @@ def test_assign_gives_the_id_the_registry_agrees_for_a_content(tmp_path: Path) -
     assert crowdoor["payload_external_id"] == AGREED
 
 
-def test_a_malformed_registry_is_an_environment_error(tmp_path: Path) -> None:
+@pytest.mark.parametrize("content", ["payloads: x\n", "payloads: [\n"], ids=["shape", "yaml"])
+def test_a_malformed_registry_is_an_environment_error(tmp_path: Path, content: str) -> None:
     entry = _entry(tmp_path)
-    (tmp_path / "policy" / "data" / "payload-ids.yaml").write_text("payloads: x\n")
+    (tmp_path / "policy" / "data" / "payload-ids.yaml").write_text(content)
 
     result = CliRunner().invoke(main, ["payloads", str(entry)])
 
     assert result.exit_code == 3
-    assert "payload-ids: the document must be a mapping holding payloads" in result.output
+    assert "policy data cannot be used: " in result.output
 
 
 def test_assign_writes_nothing_when_a_payload_cannot_be_hashed(tmp_path: Path) -> None:

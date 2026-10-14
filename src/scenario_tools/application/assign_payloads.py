@@ -14,7 +14,7 @@ from scenario_tools.domain.verification.payload_references import (
     reference_findings,
 )
 from scenario_tools.ports.data import DataLoader
-from scenario_tools.ports.errors import EnvironmentProblemError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ def agreed_ids(data: DataLoader) -> AgreedIds:
     """The payload IDs the registry agrees, from the repository's data."""
     try:
         return AgreedIds.from_document(data.load("payload-ids"))
-    except ValueError as error:
+    except (ValueError, UnsafeInputError) as error:  # the repository's data, not the entry's
         raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
 
 
