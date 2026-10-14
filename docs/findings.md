@@ -92,6 +92,8 @@ written when one of them blocks. See [`intake.md`](intake.md).
 | `VER-010` | Matching the injects of the export with those of the previous version is ambiguous. | Give the match explicitly, in a mapping file for `normalize --map`. |
 | `VER-011` | A match given with `--map` is invalid: an unknown identifier, one used twice, or one that would collide. | Fix the mapping file. |
 | `VER-012` | (Info) An inject of the previous version is no longer in the export. | Check it was removed on purpose, and say so in the changelog. |
+| `VER-013` | (Info) A change of the entry since the base branch's copy, from `diff`: where it is (the file and the pointer of what changed, the list for an inject or item removed), the version it needs, and the ID of the inject or item it concerns; never a value. The 30 that need the most are listed; `VER-014` says how many more. | Nothing to do; `validate` judges the version. |
+| `VER-014` | (Info) The least version the changes of the entry need, from `diff`, why, and whether the entry's version is enough; or that nothing needs a new version, that the entry is new, or that it cannot be compared. It comes first, on the entry itself. | When it says too low, raise `version` to it at least, as `VER-001` asks. |
 
 ## Other checks
 

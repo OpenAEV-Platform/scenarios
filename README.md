@@ -99,6 +99,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `intake` | Turns a platform export and a short request into a new entry, or an update of one, and writes the plan of the pull request |
 | `normalize` | Writes the normalised `scenario.json` of an export |
 | `validate` | Checks entries against the schemas and the repository's rules (some rules are not run yet) |
+| `diff` | Lists what changed in entries since the base branch's copy, each change with the version it needs |
 | `payloads` | Checks that `scenario.yaml` names each payload an entry embeds, with its hash; with `--assign`, gives each payload its ID |
 | `archive` | Builds the archive of an entry that the platform's importer reads |
 | `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |

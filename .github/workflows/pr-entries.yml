@@ -126,6 +126,22 @@ jobs:
           cat "$RUNNER_TEMP/findings"
           exit "$status"
 
+      - name: Show what changes in each entry
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          # For the reviewer, whatever validate said: each change and the version it needs.
+          [ -f "$RUNNER_TEMP/entries" ] || exit 0  # the entries were never taken
+          mapfile -d '' entries < "$RUNNER_TEMP/entries"
+          if [ "${#entries[@]}" -eq 0 ]; then exit 0; fi
+          uv run --frozen --no-dev scenario-tools diff --previous-root "$RUNNER_TEMP/previous" \
+            -- "${entries[@]}" > "$RUNNER_TEMP/diff" 2>&1 || true
+          {
+            echo "## Changes"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/diff"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install gitleaks (pinned, checksum verified)
         if: ${{ !cancelled() }}
         env:

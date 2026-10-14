@@ -576,3 +576,18 @@ def test_an_entry_without_a_secret_passes_the_scan(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (tmp_path / "summary").read_text() == ""
+
+
+def test_the_diff_of_the_changed_entries_is_written_for_the_reviewer() -> None:
+    """Informative: it runs whatever validate says, and never fails the job."""
+    names = [step.get("name", "") for step in STEPS]
+    shown = names.index("Show what changes in each entry")
+    step = STEPS[shown]
+
+    assert names.index("Validate the changed entries") < shown
+    assert step["if"] == "${{ !cancelled() }}"
+    script = str(step["run"])
+    assert 'scenario-tools diff --previous-root "$RUNNER_TEMP/previous"' in script
+    assert '-- "${entries[@]}"' in script
+    assert "GITHUB_STEP_SUMMARY" in script
+    assert "|| true" in script

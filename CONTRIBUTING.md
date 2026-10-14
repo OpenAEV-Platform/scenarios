@@ -70,8 +70,13 @@ git remote add upstream https://github.com/OpenAEV-Platform/scenarios.git  # onc
 git fetch upstream main
 git worktree add --detach ../scenarios-main upstream/main
 uv run scenario-tools validate --previous-root ../scenarios-main -- scenarios/<domain>/<entry>
+uv run scenario-tools diff --previous-root ../scenarios-main -- scenarios/<domain>/<entry>
 git worktree remove ../scenarios-main
 ```
+
+`diff` gives the least version the changes need and whether the entry's is enough, then each
+change, where it is and the version it needs; the pull request shows the same list in its checks'
+summary.
 
 If you cloned the project itself, use `origin/main` in place of `upstream/main`. If the pull
 request's check disagrees with your run, rebase your branch on the project's `main`.

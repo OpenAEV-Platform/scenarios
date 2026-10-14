@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.findings import not_normalised
+from scenario_tools.application.previous_version import previous_version
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings, text_findings
 from scenario_tools.domain.catalogue.entry import (
@@ -99,23 +100,6 @@ def _scenario_findings(
     return findings, facts
 
 
-def _previous_version(
-    entry: str, external_id: object, previous: EntrySource
-) -> tuple[object, object] | None:
-    """The entry as the base branch holds it, at its path or, moved, at the one its external ID
-    has there: its metadata and its stored scenario, ``None`` for a file it lacks; ``None`` when
-    the base branch holds no such entry, a new one."""
-    if not previous.exists(entry):
-        moved = previous.external_ids().get(str(external_id), ())
-        if not moved:
-            return None
-        entry = moved[0]
-    names = previous.names(entry)
-    metadata = previous.read_yaml(f"{entry}/scenario.yaml") if "scenario.yaml" in names else None
-    stored = previous.read_json(f"{entry}/scenario.json")[1] if "scenario.json" in names else None
-    return metadata, stored
-
-
 def _version_findings(
     entry: str,
     names: frozenset[str],
@@ -132,7 +116,7 @@ def _version_findings(
         findings = ()  # the check of the entry's texts says why it cannot be read
     try:
         before = (
-            _previous_version(entry, declared["external_id"], previous)
+            previous_version(entry, declared["external_id"], previous)
             if previous is not None
             else None
         )
