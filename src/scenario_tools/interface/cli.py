@@ -633,9 +633,10 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
 @click.pass_context
 def diff(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path) -> None:
     """Show what changed in each of ENTRIES, an entry directory, since its copy in the checkout
-    of the base branch at --previous-root, found by its external ID when it moved: each change,
-    where it is and the version it needs (VER-013), then the least version the changes need
-    (VER-014), as validate classifies them. Never a value of the entry. Exit with 0 whatever
+    of the base branch at --previous-root, found by its external ID when it moved, as validate
+    classifies them: first the least version the changes need and whether the entry's is enough
+    (VER-014), then each change, where it is, the inject or item it concerns and the version it
+    needs (VER-013), the 30 that need the most. Never a value of the entry. Exit with 0 whatever
     changed: validate judges the version.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
