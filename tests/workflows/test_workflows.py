@@ -194,7 +194,9 @@ def _expressions(text: str) -> Iterator[str]:
 
 _NAMED_SECRET = re.compile(r"\bsecrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
 _SECRETS = re.compile(r"\bsecrets\b", re.IGNORECASE)
-_TOKEN = re.compile(r"\bgithub\b(?:\s*\[|\s*\.\s*token\b|(?!\s*\.))", re.IGNORECASE)
+_TOKEN = re.compile(  # any `github` that is not one of its named fields, the token aside
+    r"\bgithub\b(?:\s*\[|\s*\.\s*token\b|(?!\s*\.\s*[A-Za-z_]))", re.IGNORECASE
+)
 _INHERIT = re.compile(r"\bsecrets\s*:\s*inherit\b", re.IGNORECASE)
 
 
@@ -248,6 +250,8 @@ def workflow_secrets(text: str) -> set[str]:
         ("token: ${{ GitHub . Token }}", {"GitHub . Token"}),
         ("token: ${{ github['token'] }}", {"github["}),
         ("all: ${{ toJSON(github) }}", {"github"}),
+        ("all: ${{ toJSON(github.*) }}", {"github"}),
+        ("all: ${{ toJSON(github . *) }}", {"github"}),
         ("uses: ./.github/workflows/x.yml\n    secrets: inherit", {"secrets: inherit"}),
         ("ref: ${{ github.event.pull_request.base.sha }}", set()),
         ("run: echo the secrets of a scenario, on GitHub, from https://github.com/x", set()),
