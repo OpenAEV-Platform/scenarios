@@ -59,6 +59,9 @@ three lists, `sources` at most 50 entries, `generated_by` 1 to 200 characters, a
 from 1 to 2^53-1. `domain` and `slug` are names,
 never a path, whatever the schema says.
 
+A new entry starts its `CHANGELOG.md` with the section of its version and the day of the run,
+`## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request.
+
 Intake gives each payload the scenario embeds the ID its content has, written in the payload's
 `payload_external_id` and in a reference of `scenario.yaml` with its hash, as
 `scenario-tools payloads --assign` does. The ID is derived from the hash of the payload's content,
@@ -128,9 +131,11 @@ addresses included, becomes public, and the issue the body closes is the one the
 names.
 
 1. create a branch from `base`, and add the files the plan lists under `files`, with what
-   completing the list changed: for an update, `scenario.yaml` with its raised `version` and
+   completing the list changed: for a new entry, the starting section of its `CHANGELOG.md`, which
+   says what the version holds; for an update, `scenario.yaml` with its raised `version` and
    `CHANGELOG.md` with its new section, which the run never writes;
-2. run `scenario-tools validate` on the entry: nothing may block;
+2. run `scenario-tools validate` on the entry, with `--previous-root` pointing at a checkout of
+   the base branch for an update: nothing may block;
 3. commit them, signed, and push the branch;
 4. open the pull request with the plan's `title` and `body`.
 

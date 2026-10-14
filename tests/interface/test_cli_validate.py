@@ -47,6 +47,7 @@ def _complete_entry(
         {"url": "https://attack.mitre.org/techniques/T1595/", "tlp": "TLP:CLEAR"}
     ]
     (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+    (entry / "CHANGELOG.md").write_text("## 1.0.0 — 2026-10-12\n", encoding="utf-8")
     return entry
 
 
@@ -334,3 +335,47 @@ def test_rules_that_cannot_be_read_are_the_environment_s_fault(
 
     assert result.exit_code == 3, result.output
     assert "cannot be used" in json.loads(result.stdout)["error"]
+
+
+def test_an_entry_is_compared_with_its_previous_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _complete_entry(monkeypatch, _repository(tmp_path / "pull"))
+    base = tmp_path / "base"
+    shutil.copytree(entry, base / "scenarios/techniques/easm")
+    metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
+    metadata["description"] = "Another description"
+    (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+
+    result = _invoke(monkeypatch, "validate", "--previous-root", str(base), str(entry))
+
+    assert result.exit_code == 1, result.output
+    assert _findings(result) == [("VER-001", "scenarios/techniques/easm/scenario.yaml", "/version")]
+
+
+def test_an_entry_the_previous_root_does_not_hold_is_new(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _complete_entry(monkeypatch, _repository(tmp_path / "pull"))
+    (tmp_path / "base").mkdir()
+
+    result = _invoke(monkeypatch, "validate", "--previous-root", str(tmp_path / "base"), str(entry))
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+
+
+def test_without_a_previous_root_the_run_says_versions_are_not_compared(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A green run on a contributor's machine, red in the pull request, would surprise."""
+    entry = _complete_entry(monkeypatch, _repository(tmp_path))
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["ok"] is True
+    assert result.stderr == (
+        "validate: without --previous-root, each entry is checked as a new one: its version is "
+        "not compared with the base branch's\n"
+    )

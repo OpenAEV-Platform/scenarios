@@ -8,6 +8,7 @@ itself fails, so that a defect of the tool never reads as a defect of the conten
 
 import contextlib
 import dataclasses
+import datetime
 import json
 import os
 import re
@@ -550,8 +551,13 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
 
 @main.command(name="validate")
 @click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--previous-root",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    help="The root of a checkout of the base branch: each entry is compared with its copy there.",
+)
 @click.pass_context
-def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
+def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path | None) -> None:
     """Check each of ENTRIES, an entry directory, against the schemas and the rules of an entry
     of the repository that holds them; exit with 1 if anything blocks one of them.
 
@@ -559,10 +565,12 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     POL-002 (no recurrence), POL-003 (only allowed hosts), POL-004 (no forbidden action),
     POL-005 (a cleanup for every payload that changes the endpoint), POL-006 (no security
     product named), POL-007 (elevated privileges, for the reviewer), POL-009 (injects spaced
-    out) and POL-010 (no internal data) run. The other policy rules, versioning against the
-    previous release, the generated README.md, the payload references, the CHANGELOG.md
-    sections and the private deny-list are not run yet: an entry that passes may still fail
-    them.
+    out) and POL-010 (no internal data) run, with the payload references and the CHANGELOG.md
+    sections. With --previous-root, each entry is compared with its previous version, the copy
+    the base branch holds: its version must be raised as the change needs, its inject IDs stay,
+    and a new payload is pointed out (POL-008); an entry the base branch does not hold is new.
+    The checks of the generated README.md and of the private deny-list are not run yet: an
+    entry that passes may still fail them.
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""
@@ -582,13 +590,20 @@ def validate(ctx: click.Context, entries: tuple[Path, ...]) -> None:
     if len(roots) > 1:
         raise click.UsageError("the entries belong to different repositories")
     [root] = roots.values()
+    if previous_root is None:  # what the pull request compares, a local run would not
+        click.echo(
+            "validate: without --previous-root, each entry is checked as a new one: its version "
+            "is not compared with the base branch's",
+            err=True,
+        )
 
     def produce() -> Report:
         source = RepositoryEntries(root)
         rules = _rules(source)
+        previous = RepositoryEntries(previous_root.absolute()) if previous_root else None
         findings: list[Finding] = []
         for entry in dict.fromkeys(relatives):  # an entry given twice is checked once
-            findings += rules.validate(entry, source)
+            findings += rules.validate(entry, source, previous)
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
@@ -605,7 +620,9 @@ class _Rules:
     policy: PolicyData
     agreed: AgreedIds
 
-    def validate(self, entry: str, source: RepositoryEntries) -> tuple[Finding, ...]:
+    def validate(
+        self, entry: str, source: RepositoryEntries, previous: RepositoryEntries | None = None
+    ) -> tuple[Finding, ...]:
         return validate_entry(
             entry,
             source,
@@ -615,6 +632,7 @@ class _Rules:
             domains=self.domains,
             policy=self.policy,
             agreed=self.agreed,
+            previous=previous,
         )
 
 
@@ -712,6 +730,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                     data=rules.loader,
                     schema=rules.schema,
                     domains=rules.domains,
+                    today=datetime.date.today(),
                 )
                 if result.refusals or result.request is None:
                     return Report("intake", result.refusals)
