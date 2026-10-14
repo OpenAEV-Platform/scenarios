@@ -71,6 +71,7 @@ from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.policy.actions import forbidden_from_document, side_effects_from_document
+from scenario_tools.domain.policy.exceptions import exceptions_from_document
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.policy.vendors import vendors_from_document
@@ -566,9 +567,11 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
     POL-005 (a cleanup for every payload that changes the endpoint), POL-006 (no security
     product named), POL-007 (elevated privileges, for the reviewer), POL-009 (injects spaced
     out) and POL-010 (no internal data) run, with the payload references and the CHANGELOG.md
-    sections. With --previous-root, each entry is compared with its previous version, the copy
-    the base branch holds: its version must be raised as the change needs, its inject IDs stay,
-    and a new payload is pointed out (POL-008); an entry the base branch does not hold is new.
+    sections; a finding policy/data/exceptions.yaml excepts is information, and an exception
+    that covers none blocks (POL-011). With --previous-root, each entry is compared with its
+    previous version, the copy the base branch holds: its version must be raised as the change
+    needs, its inject IDs stay, and a new payload is pointed out (POL-008); an entry the base
+    branch does not hold is new.
     The checks of the generated README.md and of the private deny-list are not run yet: an
     entry that passes may still fail them.
 
@@ -637,13 +640,15 @@ class _Rules:
 
 
 def _policy_data(loader: YamlDataLoader) -> PolicyData:
-    """The data the policy rules read: the allowed targets, the forbidden actions and the
-    commands that change an endpoint."""
+    """The data the policy rules read: the allowed targets, the forbidden actions, the
+    commands that change an endpoint, the vendors' names, and the exceptions the maintainers
+    accept."""
     return PolicyData(
         AllowedTargets.from_document(loader.load("allowed-targets")),
         forbidden_from_document(loader.load("forbidden-actions")),
         side_effects_from_document(loader.load("side-effects")),
         vendors_from_document(loader.load("vendor-names")),
+        exceptions_from_document(loader.load("exceptions")),
     )
 
 

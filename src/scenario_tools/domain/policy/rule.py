@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from scenario_tools.domain.policy.actions import ForbiddenAction, Steps
+from scenario_tools.domain.policy.exceptions import PolicyException
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
 
@@ -21,16 +22,19 @@ class EntryContent:
     files: frozenset[str]
     declared: Mapping[str, Any] | None
     stored: object
+    stored_sha256: str | None = None  # the hash of scenario.json as stored, once read
 
 
 @dataclass(frozen=True)
 class PolicyData:
-    """The maintainers' data the rules read, from ``policy/data``."""
+    """The maintainers' data the rules read, and the exceptions they accept, from
+    ``policy/data``."""
 
     targets: AllowedTargets
     forbidden: tuple[ForbiddenAction, ...]
     side_effects: tuple[Steps, ...]
     vendors: re.Pattern[str]
+    exceptions: tuple[PolicyException, ...] = ()  # the breaches the maintainers accept
 
 
 @dataclass(frozen=True)

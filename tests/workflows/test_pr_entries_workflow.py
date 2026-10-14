@@ -203,3 +203,127 @@ def test_a_link_in_the_base_is_never_kept_as_a_previous_version(tmp_path: Path) 
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / "previous" / "scenarios").exists()
     assert (tmp_path / "elsewhere").is_dir()
+
+
+# The policy exceptions a pull request grants
+
+EXCEPTIONS = "policy/data/exceptions.yaml"
+
+
+def _exceptions_script() -> str:
+    [step] = [
+        step for step in STEPS if step.get("name") == "Take the pull request's policy exceptions"
+    ]
+    return str(step["run"])
+
+
+def _run_exceptions(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    (tmp_path / "summary").write_text("")
+    environment = {"PATH": "/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary")}
+    return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
+        ["/bin/bash", "-c", _exceptions_script()],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _base_and_pull(tmp_path: Path, pull: str | None, *, owners: bool = True) -> None:
+    """A base branch with no exception, with code owners or not, and a pull request whose
+    registry holds ``pull``, or that has none."""
+    (tmp_path / "policy" / "data").mkdir(parents=True)
+    (tmp_path / EXCEPTIONS).write_text("exceptions: []\n")
+    if owners:
+        (tmp_path / ".github").mkdir()
+        (tmp_path / ".github" / "CODEOWNERS").write_text("/policy/ @maintainers\n")
+    (tmp_path / "pull" / "policy" / "data").mkdir(parents=True)
+    if pull is not None:
+        (tmp_path / "pull" / EXCEPTIONS).write_text(pull)
+
+
+def test_the_exceptions_are_taken_after_the_entries_and_before_the_validation() -> None:
+    names = [step.get("name", "") for step in STEPS]
+
+    taken = names.index("Take the pull request's policy exceptions")
+    assert names.index("Take the changed entries from the pull request") < taken
+    assert taken < names.index("Validate the changed entries")
+
+
+def test_the_exceptions_a_pull_request_grants_are_taken_and_pointed_out(tmp_path: Path) -> None:
+    """Reviewed in the same diff as the entry they cover; a code owner approves them."""
+    _base_and_pull(tmp_path, "exceptions: [granted]\n")
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: [granted]\n"
+    assert result.stdout.startswith(f"::warning file={EXCEPTIONS}::")  # in the checks list
+    assert "a code owner approves each one" in (tmp_path / "summary").read_text()
+
+
+def test_no_exception_is_granted_while_no_code_owner_can_approve_it(tmp_path: Path) -> None:
+    _base_and_pull(tmp_path, "exceptions: [granted]\n", owners=False)
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode != 0
+    assert "no code owner can approve them yet" in result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+
+
+@pytest.mark.parametrize("owners", [True, False])
+def test_unchanged_exceptions_leave_the_base_s(tmp_path: Path, owners: bool) -> None:
+    _base_and_pull(tmp_path, "exceptions: []\n", owners=owners)
+
+    result = _run_exceptions(tmp_path)
+
+    assert (result.returncode, result.stdout) == (0, ""), result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+    assert (tmp_path / "summary").read_text() == ""
+
+
+def test_a_pull_request_without_exceptions_keeps_the_base_s(tmp_path: Path) -> None:
+    _base_and_pull(tmp_path, None)
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+    assert "the base branch's are kept" in (tmp_path / "summary").read_text()
+
+
+def test_exceptions_that_are_no_file_are_refused(tmp_path: Path) -> None:
+    _base_and_pull(tmp_path, None)
+    (tmp_path / "pull" / EXCEPTIONS).mkdir()
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode != 0
+    assert "refused, not a regular file" in result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+
+
+@pytest.mark.parametrize("linked", ["pull/policy", "pull/policy/data", f"pull/{EXCEPTIONS}"])
+def test_exceptions_reached_through_a_link_are_refused(tmp_path: Path, linked: str) -> None:
+    (tmp_path / "policy" / "data").mkdir(parents=True)
+    (tmp_path / EXCEPTIONS).write_text("exceptions: []\n")
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "data").mkdir(parents=True)
+    (elsewhere / "data" / "exceptions.yaml").write_text("exceptions: [linked]\n")
+    (elsewhere / "exceptions.yaml").write_text("exceptions: [linked]\n")
+    target = {
+        "pull/policy": elsewhere,
+        "pull/policy/data": elsewhere / "data",
+        f"pull/{EXCEPTIONS}": elsewhere / "exceptions.yaml",
+    }[linked]
+    (tmp_path / linked).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / linked).symlink_to(target)
+
+    result = _run_exceptions(tmp_path)
+
+    assert result.returncode != 0
+    assert f"refused, a link: {linked}" in result.stderr
+    assert (tmp_path / EXCEPTIONS).read_text() == "exceptions: []\n"
+    assert (tmp_path / "summary").read_text() == ""

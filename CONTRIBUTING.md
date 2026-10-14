@@ -28,6 +28,20 @@ credential, nothing you would not show at a conference. Targets are placeholders
 fills in on their own platform. Reviewers check this, and the automated checks scan every entry
 for secrets.
 
+### When a policy rule blocks a legitimate attack
+
+A new attack may need to breach a rule: run a command a shared scenario avoids, leave something no
+cleanup can undo, name a security product, or start two endpoint injects close together
+(`POL-004`, `POL-005`, `POL-006`, `POL-009`). Say why in the pull request, quoting the finding. If
+the maintainers agree, once the entry is otherwise reviewed, they grant an exception for that field
+and that version of the entry in `policy/data/exceptions.yaml`, in your pull request, and a code
+owner approves it: the finding becomes information. An exception covers the entry's
+`scenario.json` as it is, so change nothing more in the entry after it is granted. A later change
+to the entry, a new version included, changes that hash: the checks then block again and give the
+new hash, and a maintainer, once the change is reviewed, gives the exception that hash in the same
+pull request (from a fork, allow edits from maintainers). The other rules have no exception, and
+no exception is taken before the repository names the code owners who approve them.
+
 ### Versions
 
 Each entry has a version, in `scenario.yaml`, and a `CHANGELOG.md` with one section per version,

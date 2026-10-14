@@ -3,9 +3,10 @@ name: Pull request entries
 # The base branch judges a pull request: pull_request_target runs this file as it is on the base
 # branch, whose tools, policy data and schemas are checked out; the pull request's head is checked
 # out beside them as data only, and only the files of the entries it adds, changes or removes are
-# taken over, links copied as links, never followed. No code of the pull request runs. The token
-# is read-only and no secret is used, so a pull request from a fork is judged the same way. Its
-# other changes (tools, policy, schemas) are the tools CI's.
+# taken over, links copied as links, never followed, with the policy exceptions it grants for them,
+# which a code owner approves (none is taken while the base branch names no code owner). No code of the pull request runs. The token is read-only and no
+# secret is used, so a pull request from a fork is judged the same way. Its other changes (tools,
+# policy, schemas) are the tools CI's.
 on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -75,6 +76,32 @@ jobs:
               printf '%s\0' "$entry" >> "$RUNNER_TEMP/entries"
             fi
           done < "$RUNNER_TEMP/changed"
+
+      - name: Take the pull request's policy exceptions
+        run: |
+          set -euo pipefail
+          # Granted with the entry they cover, reviewed in the same diff; a code owner approves
+          # them before the merge, so none is taken while the base branch names no code owner.
+          exceptions=policy/data/exceptions.yaml
+          for part in pull/policy pull/policy/data "pull/$exceptions"; do
+            if [ -L "$part" ]; then echo "refused, a link: $part" >&2; exit 1; fi
+          done
+          if [ ! -e "pull/$exceptions" ]; then
+            echo "The pull request has no policy exceptions: the base branch's are kept." \
+              >> "$GITHUB_STEP_SUMMARY"
+          elif [ ! -f "pull/$exceptions" ]; then
+            echo "refused, not a regular file: pull/$exceptions" >&2
+            exit 1
+          elif ! cmp -s -- "pull/$exceptions" "$exceptions"; then
+            if [ ! -f .github/CODEOWNERS ]; then
+              echo "refused: the pull request changes the policy exceptions, and no code owner can approve them yet" >&2
+              exit 1
+            fi
+            cp -- "pull/$exceptions" "$exceptions"
+            echo "::warning file=$exceptions::the pull request changes the policy exceptions: a code owner approves each one before the merge"
+            echo "The pull request changes the policy exceptions: a code owner approves each one before the merge." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Validate the changed entries
         run: |
