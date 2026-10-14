@@ -53,6 +53,7 @@ jobs:
           set -euo pipefail
           uv run --frozen --no-dev scenario-tools changed-entries pull --base "$BASE" > "$RUNNER_TEMP/changed"
           : > "$RUNNER_TEMP/entries"
+          mkdir -p -- "$RUNNER_TEMP/previous"
           while IFS= read -r -d '' entry; do
             # Never a place outside the catalogue, whatever lists it.
             case "/$entry/" in
@@ -62,6 +63,11 @@ jobs:
               scenarios|scenarios/*) ;;
               *) echo "refused, outside the catalogue: $entry" >&2; exit 1 ;;
             esac
+            # The base's copy is the entry's previous version, kept for the version checks.
+            if [ -e "$entry" ] && [ ! -L "$entry" ]; then
+              case "$entry" in */*) mkdir -p -- "$RUNNER_TEMP/previous/${entry%/*}" ;; esac
+              cp -P -R -- "$entry" "$RUNNER_TEMP/previous/$entry"
+            fi
             rm -rf -- "$entry"  # removed or changed: the base's copy goes
             if [ -e "pull/$entry" ] || [ -L "pull/$entry" ]; then
               case "$entry" in */*) mkdir -p -- "${entry%/*}" ;; esac
@@ -79,7 +85,8 @@ jobs:
             exit 0
           fi
           status=0
-          uv run --frozen --no-dev scenario-tools validate -- "${entries[@]}" > "$RUNNER_TEMP/findings" 2>&1 || status=$?
+          uv run --frozen --no-dev scenario-tools validate --previous-root "$RUNNER_TEMP/previous" \
+            -- "${entries[@]}" > "$RUNNER_TEMP/findings" 2>&1 || status=$?
           {
             echo "## Entries"
             echo

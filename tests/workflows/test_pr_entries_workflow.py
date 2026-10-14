@@ -60,7 +60,8 @@ def test_entries_are_copied_as_they_are_links_never_followed() -> None:
 def test_the_changed_entries_are_validated_and_scanned_for_secrets() -> None:
     scripts = "\n".join(step.get("run", "") for step in STEPS)
 
-    assert 'scenario-tools validate -- "${entries[@]}"' in scripts
+    assert 'scenario-tools validate --previous-root "$RUNNER_TEMP/previous"' in scripts
+    assert '-- "${entries[@]}"' in scripts
     assert "GITHUB_STEP_SUMMARY" in scripts
     assert '--config "$GITHUB_WORKSPACE/.gitleaks.toml"' in scripts  # never an entry's own
     assert "--ignore-gitleaks-allow" in scripts
@@ -145,3 +146,60 @@ def test_an_entry_of_the_catalogue_is_taken_over(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "scenarios" / "techniques" / "easm" / "scenario.yaml").read_text() == "pull"
     assert (tmp_path / "entries").read_bytes() == b"scenarios/techniques/easm\0"
+    kept = tmp_path / "previous" / "scenarios" / "techniques" / "easm" / "scenario.yaml"
+    assert kept.read_text() == "base"  # the previous version, for the version checks
+
+
+def _run_copy(tmp_path: Path, listing: bytes) -> subprocess.CompletedProcess[str]:
+    (tmp_path / "listing").write_bytes(listing)
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "RUNNER_TEMP": str(tmp_path),
+        "LISTING": str(tmp_path / "listing"),
+    }
+    return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
+        ["/bin/bash", "-c", _copy_script()],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_a_removed_entry_keeps_its_previous_version_and_is_not_validated(tmp_path: Path) -> None:
+    (tmp_path / "scenarios" / "techniques" / "easm").mkdir(parents=True)
+    (tmp_path / "scenarios" / "techniques" / "easm" / "scenario.yaml").write_text("base")
+    (tmp_path / "pull").mkdir()
+
+    result = _run_copy(tmp_path, b"scenarios/techniques/easm\0")
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "scenarios" / "techniques" / "easm").exists()
+    assert (tmp_path / "entries").read_bytes() == b""
+    kept = tmp_path / "previous" / "scenarios" / "techniques" / "easm" / "scenario.yaml"
+    assert kept.read_text() == "base"  # a moved entry is found again by its external ID
+
+
+def test_a_new_entry_has_no_previous_version(tmp_path: Path) -> None:
+    (tmp_path / "pull" / "scenarios" / "techniques" / "easm").mkdir(parents=True)
+    (tmp_path / "pull" / "scenarios" / "techniques" / "easm" / "scenario.yaml").write_text("pull")
+
+    result = _run_copy(tmp_path, b"scenarios/techniques/easm\0")
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "previous").is_dir()
+    assert not (tmp_path / "previous" / "scenarios").exists()
+
+
+def test_a_link_in_the_base_is_never_kept_as_a_previous_version(tmp_path: Path) -> None:
+    (tmp_path / "scenarios" / "techniques").mkdir(parents=True)
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "scenarios" / "techniques" / "easm").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "pull").mkdir()
+
+    result = _run_copy(tmp_path, b"scenarios/techniques/easm\0")
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "previous" / "scenarios").exists()
+    assert (tmp_path / "elsewhere").is_dir()

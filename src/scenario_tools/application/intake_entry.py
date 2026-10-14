@@ -1,6 +1,7 @@
 """Intake an export into the catalogue: everything that would refuse the request is found before
 anything is written, so that a refused request leaves the repository as it was."""
 
+import datetime
 import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ class IntakeResult:
     to_complete: tuple[Finding, ...] = ()
     changed: bool = False
     previous: dict[str, bytes] | None = None
+    changelog: bytes | None = None  # a new entry's starting CHANGELOG.md
 
 
 def _scenario_name(export: Any) -> str:
@@ -65,9 +67,10 @@ def intake_entry(
     data: DataLoader,
     schema: SchemaValidator,
     domains: tuple[str, ...],
+    today: datetime.date,
 ) -> IntakeResult:
     """What intake makes of ``export`` and the request read from ``request_path``, against the
-    catalogue ``source`` reads."""
+    catalogue ``source`` reads; a new entry's changelog starts on ``today``."""
     # What the request writes is checked as the export is, before anything else: a hidden
     # character is said as such, whatever the schema would say of the field that holds it.
     hidden = hidden_character_findings(request_document, request_path)
@@ -113,7 +116,7 @@ def intake_entry(
     if refusals:
         return IntakeResult(request, refusals)
     if request.mode == NEW:
-        return _new(request, export, export_path, request_path, data, schema)
+        return _new(request, export, export_path, request_path, data, schema, today)
     return _update(request, export, name, export_path, data, source)
 
 
@@ -126,6 +129,8 @@ def intake_files(
     if result.refusals or not result.changed or result.scenario_json is None:
         return {}
     files = {} if result.metadata is None else {"scenario.yaml": render(result.metadata)}
+    if result.changelog is not None:
+        files["CHANGELOG.md"] = result.changelog
     files["scenario.json"] = result.scenario_json
     return files
 
@@ -191,6 +196,7 @@ def _new(
     request_path: str,
     data: DataLoader,
     schema: SchemaValidator,
+    today: datetime.date,
 ) -> IntakeResult:
     metadata_path = f"{request.entry}/scenario.yaml"
     prepared = prepare_entry(
@@ -221,7 +227,22 @@ def _new(
     if assigned.metadata is not None and assigned.stored is not None:
         metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
     # Otherwise the entry's check, run once it is written, says why in the plan.
-    return IntakeResult(request, (), scenario_json, metadata, left, changed=True)
+    changelog = (
+        f"# Changelog\n\n## {metadata['version']} \u2014 {today.isoformat()}\n\n"
+        "First version in the catalogue.\n"
+    ).encode()
+    left += (
+        Finding(
+            "SCH-007",
+            Severity.INFO,
+            f"{request.entry}/CHANGELOG.md",
+            "",
+            "a starting section for this version: say what it holds before the pull request",
+        ),
+    )
+    return IntakeResult(
+        request, (), scenario_json, metadata, left, changed=True, changelog=changelog
+    )
 
 
 def _update(

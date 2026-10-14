@@ -114,13 +114,18 @@ def test_a_new_entry_is_written_in_place_with_its_plan(
 
     assert result.exit_code == 0, result.output
     entry = root / ENTRY
-    assert sorted(path.name for path in entry.iterdir()) == ["scenario.json", "scenario.yaml"]
+    assert sorted(path.name for path in entry.iterdir()) == [
+        "CHANGELOG.md",
+        "scenario.json",
+        "scenario.yaml",
+    ]
     metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
     assert (metadata["external_id"], metadata["threat"]) == (ID, NEW["threat"])
     document = json.loads(plan.read_text(encoding="utf-8"))
     assert document["base"] == _git(root, "rev-parse", "HEAD")
     assert document["changed"] is True
     assert document["files"] == [
+        {"path": f"{ENTRY}/CHANGELOG.md", "sha256": _sha256(entry / "CHANGELOG.md")},
         {"path": f"{ENTRY}/scenario.json", "sha256": _sha256(entry / "scenario.json")},
         {"path": f"{ENTRY}/scenario.yaml", "sha256": _sha256(entry / "scenario.yaml")},
     ]
@@ -480,6 +485,7 @@ def test_a_plan_that_cannot_be_published_puts_an_update_back(
     assert "No space left on device" in result.output  # the failure meant, nothing else
     assert (root / ENTRY / "scenario.json").read_bytes() == stored
     assert sorted(path.name for path in (root / ENTRY).iterdir()) == [
+        "CHANGELOG.md",
         "scenario.json",
         "scenario.yaml",
     ]

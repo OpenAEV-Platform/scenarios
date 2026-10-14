@@ -30,6 +30,7 @@ RLO = chr(0x202E)
 BUILTIN = BuiltinContracts("3.261005.0", {}, {})
 DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
 STORED = b"{stored}"
+LOG = "## 1.0.0 — 2026-10-12\n"
 METADATA: dict[str, Any] = {
     "schema_version": 1,
     "external_id": ID,
@@ -72,7 +73,9 @@ class FakeSource:
         self.catalogue = catalogue or (CatalogueEntry(ENTRY, ID, str(METADATA["name"])),)
 
     def names(self, entry: str) -> frozenset[str]:
-        return frozenset(path.rsplit("/", 1)[1] for path in self.files if path.startswith(entry))
+        return frozenset(
+            path.rsplit("/", 1)[1] for path in self.files if path.startswith(f"{entry}/")
+        )
 
     def _read(self, path: str) -> object:
         value = self.files[path]
@@ -134,7 +137,9 @@ def _validate(
     renormalised: Any = _same,
     catalogue: tuple[CatalogueEntry, ...] | None = None,
 ) -> tuple[Finding, ...]:
-    files = files if files is not None else {YAML: METADATA, JSON: SCENARIO}
+    given = files if files is not None else {YAML: METADATA, JSON: SCENARIO}
+    # A changelog by default, absent when a test gives it as None.
+    files = {name: value for name, value in {CHANGELOG: LOG, **given}.items() if value is not None}
     source = FakeSource(files, others, catalogue=catalogue)
     return validate_entry(
         ENTRY,
@@ -316,7 +321,8 @@ def test_hidden_characters_in_the_stored_scenario_are_refused() -> None:
 
 @pytest.mark.parametrize("name", [README, CHANGELOG])
 def test_the_markdown_files_are_checked_as_written_when_present(name: str) -> None:
-    files: dict[str, object] = {YAML: METADATA, JSON: SCENARIO, name: f"# Notes\n{RLO}\\u200b\n"}
+    text = f"## 1.0.0 — 2026-10-12\n# Notes\n{RLO}\\u200b\n"  # a valid changelog besides
+    files: dict[str, object] = {YAML: METADATA, JSON: SCENARIO, name: text}
 
     findings = _validate(files)
 
@@ -375,7 +381,11 @@ def test_a_built_in_contract_copy_other_than_the_recorded_one_is_refused() -> No
     findings = validate_entry(
         ENTRY,
         FakeSource(
-            {YAML: _changed(requires=requires), JSON: dict(SCENARIO, scenario_injects=[inject])}
+            {
+                YAML: _changed(requires=requires),
+                JSON: dict(SCENARIO, scenario_injects=[inject]),
+                CHANGELOG: LOG,
+            }
         ),
         schema=FakeSchema(),
         builtin=builtin,
@@ -395,7 +405,9 @@ def test_metadata_that_is_no_mapping_is_left_to_its_schema() -> None:
 
 
 def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
-    source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw={YAML: f"# a note {RLO}\n"})
+    source = FakeSource(
+        {YAML: METADATA, JSON: SCENARIO, CHANGELOG: LOG}, raw={YAML: f"# a note {RLO}\n"}
+    )
 
     findings = validate_entry(
         ENTRY,
@@ -413,7 +425,9 @@ def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
 
 def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
     raw = {YAML: f"generated_by: x{RLO}\n"}
-    source = FakeSource({YAML: _changed(generated_by=f"x{RLO}"), JSON: SCENARIO}, raw=raw)
+    source = FakeSource(
+        {YAML: _changed(generated_by=f"x{RLO}"), JSON: SCENARIO, CHANGELOG: LOG}, raw=raw
+    )
 
     findings = validate_entry(
         ENTRY,
@@ -432,7 +446,7 @@ def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
 
 def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None:
     raw = {YAML: f"# note{chr(0x2028)}name: Akira\n"}
-    source = FakeSource({YAML: METADATA, JSON: SCENARIO}, raw=raw)
+    source = FakeSource({YAML: METADATA, JSON: SCENARIO, CHANGELOG: LOG}, raw=raw)
 
     findings = validate_entry(
         ENTRY,
@@ -599,4 +613,172 @@ def test_a_payload_outside_an_inject_s_contract_is_refused() -> None:
 
     assert _payload_codes(_validate({YAML: METADATA, JSON: scenario})) == [
         ("PAY-004", JSON, "/scenario_articles/0")
+    ]
+
+
+class FakePrevious:
+    """The base branch's copy of the catalogue, holding the entry or not."""
+
+    def __init__(self, files: Mapping[str, object]) -> None:
+        self.files = dict(files)
+
+    def exists(self, path: str) -> bool:
+        return any(name.startswith(f"{path}/") for name in self.files)
+
+    def names(self, entry: str) -> frozenset[str]:
+        return frozenset(
+            path.rsplit("/", 1)[1] for path in self.files if path.startswith(f"{entry}/")
+        )
+
+    def read_yaml(self, path: str) -> object:
+        value = self.files[path]
+        if isinstance(value, UnsafeInputError):
+            raise value
+        return value
+
+    def read_json(self, path: str) -> tuple[bytes, object]:
+        return STORED, self.files[path]
+
+    def external_ids(self) -> Mapping[str, tuple[str, ...]]:
+        found: dict[str, tuple[str, ...]] = {}
+        for path, value in sorted(self.files.items()):
+            if path.endswith("/scenario.yaml") and isinstance(value, Mapping):
+                entry = path.rsplit("/", 1)[0]
+                found[value["external_id"]] = (*found.get(value["external_id"], ()), entry)
+        return found
+
+
+def _validate_after(previous: FakePrevious, metadata: dict[str, Any]) -> tuple[Finding, ...]:
+    return validate_entry(
+        ENTRY,
+        FakeSource(
+            {YAML: metadata, JSON: SCENARIO, CHANGELOG: f"## {metadata['version']} — 2026-10-14\n"}
+        ),
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
+        agreed=AgreedIds({}),
+        previous=previous,  # type: ignore[arg-type]
+    )
+
+
+def test_an_entry_is_compared_with_the_version_the_base_branch_holds() -> None:
+    previous = FakePrevious({YAML: METADATA, JSON: SCENARIO})
+
+    found = _validate_after(previous, _changed(name="Another name", version="1.0.0"))
+
+    assert [code for code in _codes(found) if code[0].startswith("VER")] == [
+        ("VER-001", YAML, "/version")
+    ]
+    assert _codes(_validate_after(previous, _changed(version="1.0.0"))) == []
+
+
+def test_an_entry_the_base_branch_does_not_hold_is_new() -> None:
+    assert _codes(_validate_after(FakePrevious({}), _changed(version="0.0.1"))) == []
+
+
+OLD = "scenarios/ransomware/akira-old"
+
+
+def test_an_entry_moved_is_compared_with_its_copy_where_the_base_branch_holds_it() -> None:
+    """Moved, an entry keeps its external ID: a change never passes as a new entry's."""
+    previous = FakePrevious(
+        {
+            f"{OLD}/scenario.yaml": METADATA,
+            f"{OLD}/scenario.json": SCENARIO,
+            "scenarios/x/y/scenario.yaml": _changed(external_id="other"),
+        }
+    )
+
+    found = _validate_after(previous, _changed(name="Another name", version="0.0.1"))
+
+    assert [code for code in _codes(found) if code[0].startswith("VER")] == [
+        ("VER-002", YAML, "/version")
+    ]
+    assert _codes(_validate_after(previous, _changed(version="1.0.0"))) == []
+
+
+@pytest.mark.parametrize("held", [{YAML: METADATA}, {JSON: SCENARIO}, {f"{ENTRY}/README.md": "x"}])
+def test_a_base_copy_without_its_files_blocks(held: dict[str, object]) -> None:
+    """Damaged on the base branch, an entry is never taken for a new one."""
+    found = _validate_after(FakePrevious(held), METADATA)
+
+    assert _codes(found) == [("VER-006", YAML, "")]
+
+
+def test_a_moved_entry_held_twice_on_the_base_branch_is_compared_with_the_first() -> None:
+    """Two entries sharing an external ID: a base branch the checks would have refused."""
+    previous = FakePrevious(
+        {
+            f"{OLD}/scenario.yaml": METADATA,
+            f"{OLD}/scenario.json": SCENARIO,
+            f"{OLD}2/scenario.yaml": _changed(version="9.0.0"),
+            f"{OLD}2/scenario.json": SCENARIO,
+        }
+    )
+
+    assert _codes(_validate_after(previous, _changed(version="1.0.0"))) == []
+
+
+def test_an_unreadable_changelog_still_lets_the_version_be_compared() -> None:
+    """Its refusal blocks already; the version's findings come with it, not after its fix."""
+    files = {
+        YAML: _changed(version="0.0.1"),
+        JSON: SCENARIO,
+        CHANGELOG: UnsafeInputError("IO-013", "a link", CHANGELOG),
+    }
+    found = validate_entry(
+        ENTRY,
+        FakeSource(files),
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
+        agreed=AgreedIds({}),
+        previous=FakePrevious({YAML: METADATA, JSON: SCENARIO}),  # type: ignore[arg-type]
+    )
+
+    assert [code for code, _, _ in _codes(found)] == ["VER-002", "IO-013"]
+
+
+def test_a_previous_version_that_cannot_be_read_is_a_finding() -> None:
+    refused = UnsafeInputError("IO-013", "a link", YAML)
+    previous = FakePrevious({YAML: refused, JSON: SCENARIO})
+
+    (finding,) = _validate_after(previous, METADATA)
+    assert (finding.code, finding.path, finding.message) == (
+        "IO-013",
+        YAML,
+        "the base branch's copy of this file cannot be read: a link",
+    )
+
+
+def test_a_changelog_that_cannot_be_read_is_a_finding() -> None:
+    files = {
+        YAML: METADATA,
+        JSON: SCENARIO,
+        CHANGELOG: UnsafeInputError("IO-013", "a link", CHANGELOG),
+    }
+    source = FakeSource(files)
+
+    found = validate_entry(
+        ENTRY,
+        source,
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=DATA,
+        agreed=AgreedIds({}),
+    )
+
+    assert _codes(found) == [("IO-013", CHANGELOG, "")]  # said once, by the texts' check
+
+
+def test_a_missing_changelog_is_refused() -> None:
+    assert _codes(_validate({YAML: METADATA, JSON: SCENARIO, CHANGELOG: None})) == [
+        ("VER-004", CHANGELOG, "")
     ]

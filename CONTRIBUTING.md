@@ -28,6 +28,29 @@ credential, nothing you would not show at a conference. Targets are placeholders
 fills in on their own platform. Reviewers check this, and the automated checks scan every entry
 for secrets.
 
+### Versions
+
+Each entry has a version, in `scenario.yaml`, and a `CHANGELOG.md` with one section per version,
+newest first, such as `## 1.2.0 — 2026-10-14`. A change to an entry raises its version as far as
+the change needs, against the entry on the base branch: a major version for its attack chain, its
+targets, an inject's contract, its requirements, or anything removed; a minor one for an inject or
+a payload added, or an inject's content changed; a patch for text and descriptive metadata. The
+finding gives the reason and the least version, and
+[`docs/findings.md`](docs/findings.md) the rules. The pull request runs this comparison against
+the base branch as it is when the check runs; to run it before, point `--previous-root` at a
+checkout of the project's `main`, not your fork's:
+
+```sh
+git remote add upstream https://github.com/OpenAEV-Platform/scenarios.git  # once, from a fork
+git fetch upstream main
+git worktree add --detach ../scenarios-main upstream/main
+uv run scenario-tools validate --previous-root ../scenarios-main -- scenarios/<domain>/<entry>
+git worktree remove ../scenarios-main
+```
+
+If you cloned the project itself, use `origin/main` in place of `upstream/main`. If the pull
+request's check disagrees with your run, rebase your branch on the project's `main`.
+
 ## Working on the tools
 
 The tools are written in Python 3.12 and managed with [uv](https://docs.astral.sh/uv/):

@@ -87,6 +87,7 @@ def _same_name(root: Path) -> None:
     arguments = ["normalize", str(EXPORT), "--out", str(again), "--external-id", OTHER_ID]
     assert CliRunner().invoke(main, arguments).exit_code == 0
     shutil.copy(root / ENTRY / "scenario.yaml", again / "scenario.yaml")
+    shutil.copy(root / ENTRY / "CHANGELOG.md", again / "CHANGELOG.md")
     _metadata(
         root, lambda d: d.__setitem__("external_id", OTHER_ID), "scenarios/techniques/easm-again"
     )

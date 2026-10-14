@@ -5,6 +5,7 @@ Characters are written by code point, never raw, so that this file holds none of
 
 import contextlib
 import copy
+import datetime
 import hashlib
 import json
 from collections.abc import Iterator, Mapping
@@ -35,6 +36,7 @@ DATA = YamlDataLoader(ROOT / "policy" / "data")
 SCHEMA = JsonSchemaValidator(ROOT / "schemas")
 DOMAINS = ("vulnerabilities", "intrusion-sets", "ransomware", "techniques")
 ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
+TODAY = datetime.date(2026, 10, 14)
 ENTRY = "scenarios/techniques/easm"
 REQUEST = "request.yaml"
 EXPORT = "export.zip"
@@ -109,6 +111,7 @@ def _intake(
         data=DATA,
         schema=SCHEMA,
         domains=DOMAINS,
+        today=TODAY,
     )
 
 
@@ -129,7 +132,10 @@ def test_a_new_entry_is_its_export_and_a_starting_metadata_the_request_completes
     assert SCHEMA.validate("scenario", result.metadata) == ()
     left = {finding.field for finding in result.to_complete}
     assert not left & {"/threat", "/sources"}  # given by the request
-    assert {finding.path for finding in result.to_complete} == {f"{ENTRY}/scenario.yaml"}
+    assert {finding.path for finding in result.to_complete} == {
+        f"{ENTRY}/scenario.yaml",
+        f"{ENTRY}/CHANGELOG.md",
+    }
 
 
 @pytest.mark.parametrize(
@@ -240,7 +246,7 @@ def test_a_new_entry_writes_its_metadata_then_its_scenario() -> None:
 
     files = intake_files(result, _render)
 
-    assert list(files) == ["scenario.yaml", "scenario.json"]
+    assert list(files) == ["scenario.yaml", "CHANGELOG.md", "scenario.json"]
     assert files["scenario.yaml"] == b"yaml"
     assert files["scenario.json"] == result.scenario_json
 
@@ -456,7 +462,7 @@ def test_an_entry_and_its_plan_are_written_in_one_go() -> None:
     assert log.events == [
         "reserve",
         "render",
-        ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),  # a new one
+        ("write", ENTRY, ("scenario.yaml", "CHANGELOG.md", "scenario.json"), None),  # a new one
         ("validate", ENTRY),
         "current",
         "check",
@@ -502,7 +508,7 @@ def test_an_unchanged_update_still_has_its_plan_and_its_checks() -> None:
 _STEPS = {
     "reserve": "reserve",
     "render": "render",
-    "write": ("write", ENTRY, ("scenario.yaml", "scenario.json"), None),
+    "write": ("write", ENTRY, ("scenario.yaml", "CHANGELOG.md", "scenario.json"), None),
     "validate": ("validate", ENTRY),
     "current": "current",  # the checkout first, then what was written: a change meanwhile shows
     "check": "check",
@@ -569,6 +575,7 @@ def test_a_place_outside_the_catalogue_is_refused_whatever_the_schema(
         data=DATA,
         schema=_Lenient(),  # type: ignore[arg-type]
         domains=(*DOMAINS, "../x"),
+        today=TODAY,
     )
 
     assert _codes(result.refusals) == [("SCH-001", REQUEST, pointer)]
@@ -584,6 +591,7 @@ def test_a_request_that_is_no_mapping_is_refused_whatever_the_schema() -> None:
         data=DATA,
         schema=_Lenient(),  # type: ignore[arg-type]
         domains=DOMAINS,
+        today=TODAY,
     )
 
     assert _codes(result.refusals) == [("SCH-001", REQUEST, "")]
@@ -714,6 +722,7 @@ def test_a_malformed_registry_is_an_environment_problem() -> None:
             data=_BadRegistry(),
             schema=SCHEMA,
             domains=DOMAINS,
+            today=TODAY,
         )
 
 
@@ -724,3 +733,32 @@ def test_an_update_of_an_entry_without_scenario_yaml_leaves_the_references_to_th
     result = _intake(UPDATE, source, export=SALT)
 
     assert (result.refusals, result.metadata, source.read) == ((), None, [])
+
+
+def test_a_new_entry_starts_its_changelog_with_its_version_and_the_day() -> None:
+    result = _intake(NEW)
+
+    assert (
+        result.changelog
+        == (
+            "# Changelog\n\n## 1.0.0 \u2014 2026-10-14\n\nFirst version in the catalogue.\n"
+        ).encode()
+    )
+    assert list(intake_files(result, yaml_bytes)) == [
+        "scenario.yaml",
+        "CHANGELOG.md",
+        "scenario.json",
+    ]
+    (note,) = (f for f in result.to_complete if f.path == f"{ENTRY}/CHANGELOG.md")
+    assert (note.code, note.severity, note.field, note.message) == (
+        "SCH-007",
+        Severity.INFO,
+        "",
+        "a starting section for this version: say what it holds before the pull request",
+    )
+
+
+def test_an_update_leaves_the_changelog_to_its_author() -> None:
+    result = _intake(UPDATE, _stored())
+
+    assert result.changelog is None

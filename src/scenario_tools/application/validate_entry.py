@@ -25,6 +25,7 @@ from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 from scenario_tools.domain.verification.payload_references import AgreedIds
+from scenario_tools.domain.verification.versioning import changelog_findings, versioning_findings
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
 from scenario_tools.ports.schema import SchemaValidator
@@ -97,6 +98,55 @@ def _scenario_findings(
     return findings, facts
 
 
+def _previous_version(
+    entry: str, external_id: object, previous: EntrySource
+) -> tuple[object, object] | None:
+    """The entry as the base branch holds it, at its path or, moved, at the one its external ID
+    has there: its metadata and its stored scenario, ``None`` for a file it lacks; ``None`` when
+    the base branch holds no such entry, a new one."""
+    if not previous.exists(entry):
+        moved = previous.external_ids().get(str(external_id), ())
+        if not moved:
+            return None
+        entry = moved[0]
+    names = previous.names(entry)
+    metadata = previous.read_yaml(f"{entry}/scenario.yaml") if "scenario.yaml" in names else None
+    stored = previous.read_json(f"{entry}/scenario.json")[1] if "scenario.json" in names else None
+    return metadata, stored
+
+
+def _version_findings(
+    entry: str,
+    names: frozenset[str],
+    source: EntrySource,
+    previous: EntrySource | None,
+    declared: Mapping[str, Any],
+    stored: Mapping[str, Any],
+) -> tuple[Finding, ...]:
+    log = f"{entry}/CHANGELOG.md"
+    try:
+        text = source.read_text(log) if "CHANGELOG.md" in names else None
+        findings = changelog_findings(text, declared["version"], log)
+    except UnsafeInputError:
+        findings = ()  # the check of the entry's texts says why it cannot be read
+    try:
+        before = (
+            _previous_version(entry, declared["external_id"], previous)
+            if previous is not None
+            else None
+        )
+    except UnsafeInputError as error:
+        message = f"the base branch's copy of this file cannot be read: {error.message}"
+        return (*findings, Finding(error.code, Severity.BLOCKING, error.path, "", message))
+    return findings + versioning_findings(
+        before,
+        declared,
+        stored,
+        metadata_path=f"{entry}/scenario.yaml",
+        scenario_path=f"{entry}/scenario.json",
+    )
+
+
 def validate_entry(
     entry: str,
     source: EntrySource,
@@ -107,11 +157,14 @@ def validate_entry(
     domains: tuple[str, ...],
     policy: PolicyData,
     agreed: AgreedIds,
+    previous: EntrySource | None = None,
 ) -> tuple[Finding, ...]:
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
     external ID and the scenario's path; ``policy`` holds the data the policy rules read, and
-    ``agreed`` the payload IDs the registry agrees."""
+    ``agreed`` the payload IDs the registry agrees. ``previous`` reads the entry as the base
+    branch holds it, its previous version, found by its external ID when it moved; without it,
+    or when it holds no such entry, the entry is new."""
     if not reportable(entry):  # none of its files could be named in a finding: none is read
         return layout_findings(entry, (), domains)
     try:
@@ -166,6 +219,10 @@ def validate_entry(
         findings += cross_check(metadata, facts, f"{entry}/scenario.yaml")
     if declared_checked is not None and stored_document is not None:
         findings += payload_findings(declared_checked, stored_document, entry, agreed)
+    if declared_checked is not None and isinstance(stored_document, Mapping):
+        findings += _version_findings(
+            entry, names, source, previous, declared_checked, stored_document
+        )
     for name in _TEXTS:
         if name in names:
             path = f"{entry}/{name}"
