@@ -801,6 +801,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                     raise EnvironmentProblemError(
                         "the checkout's commit changed while it was checked: run again"
                     )
+                source.check_held()  # git found the checkout by its path: still the one held
                 rules = _rules(source, intake=True)
                 result = intake_entry(
                     read_export(export),
@@ -818,6 +819,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                 entry = result.request.entry
                 ours = frozenset(f"{entry}/{name}" for name in intake_files(result, yaml_bytes))
                 _refuse_converting(root, ours)  # files not written yet: attributes match them too
+                source.check_held()
                 with _stop_requests_held():
                     left = write_intake(
                         result,
