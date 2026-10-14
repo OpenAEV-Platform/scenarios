@@ -9,6 +9,7 @@ from typing import Any
 
 from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
 from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
 from scenario_tools.domain.catalogue.intake import (
@@ -22,6 +23,7 @@ from scenario_tools.domain.catalogue.intake import (
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.plan import PlanSink
@@ -44,6 +46,7 @@ class IntakeResult:
     changed: bool = False
     previous: dict[str, bytes] | None = None
     changelog: bytes | None = None  # a new entry's starting CHANGELOG.md
+    sheet: bytes | None = None  # a new entry's README.md
 
 
 def _scenario_name(export: Any) -> str:
@@ -131,6 +134,8 @@ def intake_files(
     files = {} if result.metadata is None else {"scenario.yaml": render(result.metadata)}
     if result.changelog is not None:
         files["CHANGELOG.md"] = result.changelog
+    if result.sheet is not None:
+        files[SHEET] = result.sheet
     files["scenario.json"] = result.scenario_json
     return files
 
@@ -240,8 +245,18 @@ def _new(
             "a starting section for this version: say what it holds before the pull request",
         ),
     )
+    rendered = render_sheet(metadata, json.loads(scenario_json), policy_exceptions(data)).encode()
+    # A sheet over what a README.md may hold is not written: the entry's check says so.
+    sheet = rendered if len(rendered) <= SHEET_LIMIT else None
     return IntakeResult(
-        request, (), scenario_json, metadata, left, changed=True, changelog=changelog
+        request,
+        (),
+        scenario_json,
+        metadata,
+        left,
+        changed=True,
+        changelog=changelog,
+        sheet=sheet,
     )
 
 
@@ -298,6 +313,14 @@ def _update(
                 metadata_path,
                 "/version",
                 "raise the version for this change and add its section to CHANGELOG.md",
+            ),
+            Finding(
+                "SCH-007",
+                Severity.INFO,
+                f"{request.entry}/{SHEET}",
+                "",
+                "the sheet follows scenario.yaml: once it is complete, render it again with "
+                "`scenario-tools render`",
             ),
         )
     entry = next(entry for entry in source.entries() if entry.path == request.entry)

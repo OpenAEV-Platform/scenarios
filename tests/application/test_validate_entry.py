@@ -4,6 +4,7 @@ finding of the entry, so that one broken file never hides the others' findings.
 Characters are written by code point, never raw, so that this file holds none of them."""
 
 import copy
+import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,7 +16,9 @@ from scenario_tools.domain.catalogue.facts import BuiltinContracts
 from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.domain.catalogue.metadata import InjectFacts
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.policy.exceptions import PolicyException
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.sheet.sheet import render_sheet
 from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.ports.errors import UnsafeInputError
@@ -67,7 +70,10 @@ class FakeSource:
         raw: Mapping[str, str] | None = None,
         catalogue: tuple[CatalogueEntry, ...] | None = None,
     ) -> None:
-        self.files = dict(files)
+        # The sheet the entry gives by default, as render writes it; a file given as None is
+        # absent.
+        given = {README: _sheet(files), **files} if files.get(YAML) is not None else dict(files)
+        self.files = {name: value for name, value in given.items() if value is not None}
         self.others = others or {ID: (ENTRY,)}
         self.raw = dict(raw or {})
         self.catalogue = catalogue or (CatalogueEntry(ENTRY, ID, str(METADATA["name"])),)
@@ -129,6 +135,15 @@ def _same(document: object, external_id: str, path: str) -> bytes:
     return STORED
 
 
+def _sheet(files: Mapping[str, object]) -> str | None:
+    """The sheet of the entry ``files`` hold, when their metadata and stored scenario are
+    objects: the README.md render writes."""
+    metadata, stored = files.get(YAML), files.get(JSON)
+    if not isinstance(metadata, Mapping) or not isinstance(stored, Mapping):
+        return None
+    return render_sheet(metadata, stored, DATA.exceptions)
+
+
 def _validate(
     files: Mapping[str, object] | None = None,
     *,
@@ -138,8 +153,7 @@ def _validate(
     catalogue: tuple[CatalogueEntry, ...] | None = None,
 ) -> tuple[Finding, ...]:
     given = files if files is not None else {YAML: METADATA, JSON: SCENARIO}
-    # A changelog by default, absent when a test gives it as None.
-    files = {name: value for name, value in {CHANGELOG: LOG, **given}.items() if value is not None}
+    files = {CHANGELOG: LOG, **given}  # a changelog by default, absent when given as None
     source = FakeSource(files, others, catalogue=catalogue)
     return validate_entry(
         ENTRY,
@@ -326,7 +340,66 @@ def test_the_markdown_files_are_checked_as_written_when_present(name: str) -> No
 
     findings = _validate(files)
 
-    assert _codes(findings) == [("IO-017", name, "")]
+    stale = [("GEN-001", README, "")] if name == README else []  # nor is it the sheet
+    assert _codes(findings) == [*stale, ("IO-017", name, "")]
+
+
+def test_a_missing_sheet_is_a_finding() -> None:
+    (finding,) = _validate({YAML: METADATA, JSON: SCENARIO, README: None})
+
+    assert (finding.code, finding.severity, finding.path, finding.field, finding.message) == (
+        "GEN-001",
+        Severity.BLOCKING,
+        README,
+        "",
+        "README.md is missing: write it with `scenario-tools render`, from scenario.yaml and "
+        "scenario.json",
+    )
+
+
+def test_a_sheet_that_is_not_the_one_the_entry_gives_is_a_finding() -> None:
+    sheet = _sheet({YAML: METADATA, JSON: SCENARIO})
+    assert sheet is not None
+
+    (finding,) = _validate({YAML: METADATA, JSON: SCENARIO, README: sheet + "edited\n"})
+
+    assert (finding.code, finding.severity, finding.path, finding.message) == (
+        "GEN-001",
+        Severity.BLOCKING,
+        README,
+        "README.md is not the sheet scenario.yaml and scenario.json give: render it again with "
+        "`scenario-tools render` rather than edit it",
+    )
+
+
+def test_the_sheet_shows_the_entry_s_policy_exceptions() -> None:
+    """The maintainers' registry is part of what the sheet says: a granted exception changes it."""
+    exception = PolicyException(ID, "POL-006", "/x", "a" * 64, "A reason long enough to show.")
+    with_exception = dataclasses.replace(DATA, exceptions=(exception,))
+    files = {YAML: METADATA, JSON: SCENARIO, CHANGELOG: LOG}
+    sheet = render_sheet(METADATA, SCENARIO, (exception,))
+
+    found = validate_entry(
+        ENTRY,
+        FakeSource({**files, README: sheet}),
+        schema=FakeSchema(),
+        builtin=BUILTIN,
+        renormalised=_same,
+        domains=DOMAINS,
+        policy=with_exception,
+        agreed=AgreedIds({}),
+    )
+
+    assert "GEN-001" not in [code for code, _, _ in _codes(found)]  # the sheet shows it
+
+
+def test_the_sheet_is_not_checked_while_scenario_yaml_breaks_its_schema() -> None:
+    """Its own check says what is wrong; a sheet rendered from it would say nothing more."""
+    broken = FakeSchema(SchemaViolation("/name", "required"))
+
+    found = _validate({YAML: METADATA, JSON: SCENARIO, README: None}, schema=broken)
+
+    assert "GEN-001" not in [code for code, _, _ in _codes(found)]
 
 
 def test_a_markdown_file_the_readers_refuse_is_a_finding_too() -> None:

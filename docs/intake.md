@@ -60,7 +60,8 @@ from 1 to 2^53-1. `domain` and `slug` are names,
 never a path, whatever the schema says.
 
 A new entry starts its `CHANGELOG.md` with the section of its version and the day of the run,
-`## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request.
+`## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request, and gets its sheet, `README.md`,
+which `scenario-tools render` writes from `scenario.yaml` and `scenario.json`.
 
 Intake gives each payload the scenario embeds the ID its content has, written in the payload's
 `payload_external_id` and in a reference of `scenario.yaml` with its hash, as
@@ -71,8 +72,9 @@ payload keeps its ID, a changed one takes a new one.
 An update rewrites `scenario.json`, and `scenario.yaml` only when the references of its payloads
 change: it is then written in the tools' layout, so a comment added to it by hand is not kept.
 Raise its `version`, add the section to `CHANGELOG.md`, and, after a rename, align its `name`,
-`category` and `main_focus` with the export. Each inject the export no longer has is listed
-(`VER-012`).
+`category` and `main_focus` with the export; then render the sheet again with
+`scenario-tools render`, since it shows what changed. Each inject the export no longer has is
+listed (`VER-012`).
 
 ## What is refused
 
@@ -134,8 +136,9 @@ names.
    completing the list changed: for a new entry, the starting section of its `CHANGELOG.md`, which
    says what the version holds; for an update, `scenario.yaml` with its raised `version` and
    `CHANGELOG.md` with its new section, which the run never writes;
-2. run `scenario-tools validate` on the entry, with `--previous-root` pointing at a checkout of
-   the base branch for an update: nothing may block;
+2. render the sheet again with `scenario-tools render`, since completing the entry changes it,
+   then run `scenario-tools validate` on the entry, with `--previous-root` pointing at a checkout
+   of the base branch for an update: nothing may block;
 3. commit them, signed, and push the branch;
 4. open the pull request with the plan's `title` and `body`.
 

@@ -31,7 +31,11 @@ def _repository(tmp_path: Path) -> Path:
 
 
 def _validate(root: Path, *entries: str) -> tuple[int, list[tuple[str, str, str]]]:
-    """The exit code, and every finding as code, severity and path, duplicates kept."""
+    """The exit code, and every finding as code, severity and path, duplicates kept, once each
+    entry's sheet is rendered again, as a contributor does after a change: a defect is in what
+    the sheet is rendered from, never in a sheet left behind."""
+    for entry in entries:
+        CliRunner().invoke(main, ["render", str(root / entry)])  # what it cannot render, it says
     result = CliRunner().invoke(
         main, ["--format", "json", "validate", *(str(root / entry) for entry in entries)]
     )
