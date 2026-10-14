@@ -41,10 +41,10 @@ flowchart LR
    removes what belongs to that one platform: internal identifiers, dates, users, the sender's
    address. It also writes a short description file next to it.
 3. The entry is proposed in a **pull request**. Automated checks run `validate` and a secret scan
-   on every entry it adds or changes. The tools, the rules and the workflow that run them are
-   those of the branch the pull request targets, so that a pull request cannot change what judges
-   it. Some rules of `validate` are not run yet. A human review then checks that the entry is
-   complete, safe to publish, and does what it says.
+   on every entry it adds or changes, and the secret scan on every commit it brings. The tools,
+   the rules and the workflow that run them are those of the branch the pull request targets, so
+   that a pull request cannot change what judges it. Some rules of `validate` are not run yet. A
+   human review then checks that the entry is complete, safe to publish, and does what it says.
 4. Once merged, the scenario is part of the **catalogue**.
 5. *Planned:* the catalogue is published in releases. Each archive comes with its hash (a
    fingerprint of the file), so that a platform can verify what it installs. OpenAEV platforms

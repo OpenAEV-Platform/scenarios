@@ -144,7 +144,45 @@ jobs:
           set -uo pipefail
           status=0
           while IFS= read -r -d '' entry; do  # every entry, whatever the one before found
+            # The scan reads an ignore file at the root it scans: an entry's never hides anything.
+            while IFS= read -r -d '' ignore; do
+              echo "refused, an ignore file: $ignore" >&2
+              rm -rf -- "$ignore"
+              status=1
+            done < <(find "$entry" -name .gitleaksignore -print0)
             "$RUNNER_TEMP/gitleaks" dir --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
-              --ignore-gitleaks-allow --no-banner --redact -- "$entry" || status=1
+              --ignore-gitleaks-allow --max-archive-depth 2 --no-banner --redact -- "$entry" \
+              || status=1
           done < "$RUNNER_TEMP/entries"
+          if [ "$status" -ne 0 ]; then
+            echo "A secret scan found something in the entries: CONTRIBUTING.md says what to do." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: Look for secrets in the pull request's commits
+        if: ${{ !cancelled() }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Every commit the pull request brings, not only its last tree: a merge keeps them all,
+          # a secret a later commit removes included, and a merge's own changes are read too.
+          # Read through its git directory, so that no file of the pull request, an ignore file
+          # say, is read as the scan's configuration. A range it cannot read fails, never passes.
+          for commit in "$BASE" "$HEAD"; do
+            if ! git -C pull rev-parse --quiet --verify "$commit^{commit}" > /dev/null; then
+              echo "refused, not a commit of the pull request's clone: $commit" >&2
+              exit 1
+            fi
+          done
+          status=0
+          "$RUNNER_TEMP/gitleaks" git --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
+            --ignore-gitleaks-allow --max-archive-depth 2 --no-banner --redact \
+            --log-opts="--diff-merges=first-parent $BASE..$HEAD" -- pull/.git || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "A secret scan found something in the commits: CONTRIBUTING.md says what to do." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
           exit "$status"
