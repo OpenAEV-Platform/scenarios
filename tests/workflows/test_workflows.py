@@ -11,7 +11,49 @@ import yaml
 DIRECTORY = Path(__file__).parents[2] / ".github" / "workflows"
 WORKFLOWS = sorted(DIRECTORY.iterdir())  # every file GitHub could run, whatever its name
 _PINNED = re.compile(r"[^@\s]+@[0-9a-f]{40}")
-_MOVES = re.compile(r"(^|[\s;&|(])(cd|pushd)\s|--project\b|--directory\b")
+# The commits an action may be given to check out, both fixed by the event.
+COMMITS = frozenset(
+    {"${{ github.event.pull_request.base.sha }}", "${{ github.event.pull_request.head.sha }}"}
+)
+# A static guard, never a proof: what would run the base branch's tools from the pull request's
+# tree, or run a file of it. Code-owner review of the workflows is the barrier.
+_MOVES = re.compile(
+    r"(^|[\s;&|(])(cd|pushd)\s"  # a move into another directory
+    r"|--project\b|--directory\b"  # a tool told to run from another one
+    r"|(^|[\s;&|(])(?!git\s)[\w.-]+\s+-C\s*[\"']?pull\b"  # but git, which reads it as data
+    r"|(^|[;&|(]|\bthen|\bdo|\belse)\s*[\"']?(\./)?pull/"  # a file of it as a command
+    r"|\b(source|bash|sh|zsh|python3?|node|perl|ruby|make)\b[^\n;&|]*[\s\"'=](\./)?pull/"
+    r"|(^|[\s;&|(])\.\s+[\"']?(\./)?pull/",
+    re.MULTILINE,
+)
+
+
+@pytest.mark.parametrize(
+    ("script", "moves"),
+    [
+        ("cd pull", True),
+        ("  pushd pull/scenarios", True),
+        ("uv run --project pull scenario-tools validate", True),
+        ("uv run --directory pull x", True),
+        ("make -C pull check", True),
+        ('make -C "pull"', True),
+        ("pull/run.sh", True),
+        ('if true; then "pull/run.sh"; fi', True),
+        ("bash pull/run.sh", True),
+        ("python3 pull/x.py", True),
+        (". pull/env.sh", True),
+        ("source pull/env.sh", True),
+        ("git -C pull rev-parse HEAD", False),
+        ('cp -P -R -- "pull/$entry" "$entry"', False),
+        ('cmp -s -- "pull/$exceptions" "$exceptions"', False),
+        ('if [ -e "pull/$entry" ]; then', False),
+        ("uv run scenario-tools changed-entries pull --base x", False),
+    ],
+)
+def test_a_script_that_runs_from_or_runs_the_pull_request_s_tree_is_seen(
+    script: str, moves: bool
+) -> None:
+    assert bool(_MOVES.search(script)) is moves
 
 
 def _load(path: Path) -> dict[Any, Any]:
@@ -55,7 +97,14 @@ def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> Non
     """An action's input may run what it is given, as a script does: only a ref is computed."""
     for step in _steps(_load(path)):
         for key, value in (step.get("with") or {}).items():
-            assert "${{" not in str(value) or key == "ref", (step.get("name"), key)
+            computed = "${{" in str(value)
+            assert not computed or (key == "ref" and value in COMMITS), (step.get("name"), key)
+
+
+def test_a_ref_that_is_no_commit_is_refused() -> None:
+    """A branch's name moves after the run is triggered: only a commit's SHA is fixed."""
+    assert "${{ github.head_ref }}" not in COMMITS
+    assert "${{ github.event.pull_request.head.ref }}" not in COMMITS
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -127,7 +176,22 @@ def test_a_pull_request_target_checks_out_the_pull_request_beside_the_base_only(
 ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "tools-ci.yml": frozenset({"HYGIENE_TERMS"}),  # the private terms of the hygiene test
 }
-_EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
+
+
+def _expressions(text: str) -> Iterator[str]:
+    """Every ``${{ … }}`` expression of ``text``, a ``}}`` inside a quoted string ending none,
+    as GitHub reads them; an expression left open runs to the end of the text."""
+    start = text.find("${{")
+    while start != -1:
+        index, quoted = start + 3, False
+        while index < len(text) and (quoted or not text.startswith("}}", index)):
+            if text[index] == "'":
+                quoted = not quoted  # a doubled quote inside a string toggles twice
+            index += 1
+        yield text[start + 3 : index]
+        start = text.find("${{", index)
+
+
 _NAMED_SECRET = re.compile(r"\bsecrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
 _SECRETS = re.compile(r"\bsecrets\b", re.IGNORECASE)
 _TOKEN = re.compile(r"\bgithub\b(?:\s*\[|\s*\.\s*token\b|(?!\s*\.))", re.IGNORECASE)
@@ -139,7 +203,7 @@ def secrets_used(text: str) -> set[str]:
     included, by the text that reaches it: any `secrets` not followed by a name, any `github`
     that is not one of its named fields."""
     used: set[str] = {match.group(0) for match in _INHERIT.finditer(text)}
-    for expression in _EXPRESSION.findall(text):
+    for expression in _expressions(text):
         named = _NAMED_SECRET.findall(expression)
         used |= {name.upper() for name in named}
         if len(_SECRETS.findall(expression)) > len(named):
@@ -177,6 +241,9 @@ def workflow_secrets(text: str) -> set[str]:
         ("token: ${{ secrets [ 'X' ] }}", {"secrets"}),
         ("all: ${{ toJSON(secrets) }}", {"secrets"}),
         ("one: ${{ format('{0}', secrets) }} ${{ secrets.A }}", {"A", "secrets"}),
+        ("one: ${{ format('{{x}} {0}', secrets.FOO) }}", {"FOO"}),
+        ("one: ${{ format('it''s }} {0}', secrets.FOO) }}", {"FOO"}),
+        ("open: ${{ secrets.FOO", {"FOO"}),
         ("token: ${{ github.token }}", {"github.token"}),
         ("token: ${{ GitHub . Token }}", {"GitHub . Token"}),
         ("token: ${{ github['token'] }}", {"github["}),
