@@ -51,7 +51,8 @@ a code owner approves it: the finding becomes information. The exception names t
 scenario runs changes that hash: the checks then block again and give the new hash, and a
 maintainer, once the change is reviewed, gives the exception that hash in the same pull request
 (from a fork, allow edits from maintainers). A change to `scenario.yaml` alone, such as its
-version, keeps the exception. The other rules have no exception, and no exception is taken before
+version, keeps the exception. The entry's sheet lists its exceptions: render it again once one
+changes. The other rules have no exception, and no exception is taken before
 the repository names the code owners who approve them.
 
 ### Versions

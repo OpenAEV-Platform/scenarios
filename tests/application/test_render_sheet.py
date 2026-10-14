@@ -1,8 +1,8 @@
 """Render an entry's sheet, and check the README.md it holds."""
 
-from scenario_tools.application.render_sheet import check_sheet, sheet_of
+from scenario_tools.application.render_sheet import check_sheet, sheet_findings, sheet_of
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.domain.sheet.sheet import render_sheet
+from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.ports.errors import UnsafeInputError
 from tests.application.test_validate_entry import (
     ENTRY,
@@ -58,9 +58,31 @@ def test_the_check_of_an_entry_that_cannot_be_read_says_why() -> None:
     assert refusal.message.startswith("the sheet cannot be rendered")
 
 
-def test_a_readme_the_readers_refuse_is_left_to_the_check_of_the_texts() -> None:
+def test_the_check_reports_a_readme_the_readers_refuse() -> None:
+    """On its own, nothing else would: validate leaves it to the check of the entry's texts."""
     refused = UnsafeInputError("IO-013", "a link", README)
 
-    assert (
-        check_sheet(ENTRY, FakeSource({YAML: METADATA, JSON: SCENARIO, README: refused}), ()) == ()
+    (finding,) = check_sheet(
+        ENTRY, FakeSource({YAML: METADATA, JSON: SCENARIO, README: refused}), ()
     )
+
+    assert (finding.code, finding.severity, finding.path) == ("IO-013", Severity.BLOCKING, README)
+
+
+def test_a_sheet_over_what_a_readme_may_hold_is_never_written() -> None:
+    """Rendered, it would be a README.md no check could read: refused, render and validate alike."""
+    titled = {**SCENARIO, "scenario_injects": [{"inject_id": "a", "inject_title": "t" * 1_100_000}]}
+
+    sheet = sheet_of(ENTRY, FakeSource({YAML: METADATA, JSON: titled}), ())
+    (validated,) = sheet_findings(
+        ENTRY,
+        frozenset({"README.md"}),
+        FakeSource({YAML: METADATA, JSON: titled}),
+        "x" * (SHEET_LIMIT + 1),
+    )
+
+    assert sheet.text is None
+    (refusal,) = sheet.refusals
+    assert (refusal.code, refusal.path) == ("GEN-001", README)
+    assert refusal.message.startswith("the sheet would be over the 1 MiB a README.md may hold")
+    assert (validated.code, validated.message) == (refusal.code, refusal.message)

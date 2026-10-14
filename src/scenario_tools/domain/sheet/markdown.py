@@ -6,9 +6,11 @@ address, is shown as code instead, since GitHub links them even escaped."""
 import re
 import string
 
+from scenario_tools.domain.shared.characters import HIDDEN
+
 _ESCAPED = re.compile(f"([{re.escape(string.punctuation)}])")
 # Linear on any word: what GitHub would link (a scheme's "://", "www.", an e-mail address).
-_LINKED = re.compile(r"(?i)://|www\.|[^\s@]@[^\s@]+\.[^\s@]")
+_LINKED = re.compile(r"(?i)://|www\.|[^\s@]@[^\s@]+\.\S")
 _WORDS = re.compile(r"(\s+)")
 _TICKS = re.compile(r"`+")
 _LINES = re.compile(r"\r\n|\r|\n")
@@ -22,9 +24,11 @@ def _code(word: str) -> str:
 
 
 def _visible(word: str) -> str:
-    """A character no reader sees, a control or a bidirectional mark that would reorder the text
-    around it, as its code point: ``U+202E``."""
-    return "".join(char if char.isprintable() else f"U+{ord(char):04X}" for char in word)
+    """A character no reader sees, a control, a filler or a bidirectional mark that would reorder
+    the text around it, as its code point: ``U+202E``."""
+    return "".join(
+        char if char.isprintable() and char not in HIDDEN else f"U+{ord(char):04X}" for char in word
+    )
 
 
 def _word(word: str) -> str:

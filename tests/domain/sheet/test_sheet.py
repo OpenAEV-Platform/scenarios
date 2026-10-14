@@ -8,8 +8,9 @@ from typing import Any
 import pytest
 from markdown_it import MarkdownIt
 
+from scenario_tools.adapters.safe_readers import TEXT_LIMIT
 from scenario_tools.domain.policy.exceptions import PolicyException
-from scenario_tools.domain.sheet.sheet import NOTICE, depths, duration, render_sheet
+from scenario_tools.domain.sheet.sheet import NOTICE, SHEET_LIMIT, depths, duration, render_sheet
 
 ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 METADATA: dict[str, Any] = {
@@ -495,3 +496,14 @@ def test_each_inject_s_depth_is_its_longest_chain_of_parents() -> None:
     ]
 
     assert depths(injects) == {"c": 2, "e": 1, "d": 0, "s": 0, "a": 0, "b": 1}
+
+
+def test_an_empty_payload_is_no_payload() -> None:
+    """As the export and its normalisation read it."""
+    stored = {"scenario_injects": [inject("a", "A", 0, injector_contract_payload={})]}
+
+    assert "## Payloads\n\nNone.\n" in render_sheet(METADATA, stored, ())
+
+
+def test_the_sheet_limit_is_the_one_a_readme_is_read_with() -> None:
+    assert SHEET_LIMIT == TEXT_LIMIT

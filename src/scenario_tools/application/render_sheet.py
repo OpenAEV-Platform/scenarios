@@ -7,7 +7,7 @@ from typing import Any
 
 from scenario_tools.domain.policy.exceptions import PolicyException, exceptions_from_document
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.sheet.sheet import render_sheet
+from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
@@ -30,21 +30,35 @@ def _stale(path: str, missing: bool) -> Finding:
     return Finding("GEN-001", Severity.BLOCKING, path, "", message)
 
 
+def _oversized(path: str) -> Finding:
+    message = (
+        "the sheet would be over the 1 MiB a README.md may hold: shorten the scenario's titles "
+        "and texts"
+    )
+    return Finding("GEN-001", Severity.BLOCKING, path, "", message)
+
+
 def sheet_findings(
     entry: str,
     names: frozenset[str],
     source: EntrySource,
     sheet: str,
+    *,
+    report_unreadable: bool = False,
 ) -> tuple[Finding, ...]:
-    """``GEN-001`` when the entry's README.md is missing or is not ``sheet``; a README.md the
-    readers refuse is the check of the entry's texts' to report."""
+    """``GEN-001`` when the entry's README.md is missing or is not ``sheet``, or when ``sheet`` is
+    larger than a README.md may be; a README.md the readers refuse is reported when asked, which
+    validate leaves to its check of the entry's texts."""
     path = f"{entry}/{SHEET}"
+    if len(sheet.encode()) > SHEET_LIMIT:
+        return (_oversized(path),)
     if SHEET not in names:
         return (_stale(path, missing=True),)
     try:
         held = source.read_text(path)
-    except UnsafeInputError:
-        return ()
+    except UnsafeInputError as error:
+        refusal = Finding(error.code, Severity.BLOCKING, error.path, "", error.message)
+        return (refusal,) if report_unreadable else ()
     return () if held == sheet else (_stale(path, missing=False),)
 
 
@@ -71,7 +85,10 @@ def sheet_of(entry: str, source: EntrySource, exceptions: Sequence[PolicyExcepti
         return Sheet(None, (Finding(error.code, Severity.BLOCKING, error.path, "", error.message),))
     if not isinstance(metadata, Mapping) or not isinstance(stored, Mapping):
         return Sheet(None, (Finding("GEN-001", Severity.BLOCKING, metadata_path, "", _UNREAD),))
-    return Sheet(render_sheet(metadata, stored, exceptions), names=names)
+    text = render_sheet(metadata, stored, exceptions)
+    if len(text.encode()) > SHEET_LIMIT:
+        return Sheet(None, (_oversized(f"{entry}/{SHEET}"),), names)
+    return Sheet(text, names=names)
 
 
 def check_sheet(
@@ -82,7 +99,7 @@ def check_sheet(
     sheet = sheet_of(entry, source, exceptions)
     if sheet.text is None:
         return sheet.refusals
-    return sheet_findings(entry, sheet.names, source, sheet.text)
+    return sheet_findings(entry, sheet.names, source, sheet.text, report_unreadable=True)
 
 
 def policy_exceptions(data: DataLoader) -> tuple[PolicyException, ...]:

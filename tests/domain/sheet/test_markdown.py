@@ -34,6 +34,7 @@ def _inline_tokens(markdown: str) -> list[tuple[str, str]]:
         ("see https://x.example/a.", "see `https://x.example/a.`"),
         ("www.example.com", "`www.example.com`"),
         ("mail a@corp.example now", "mail `a@corp.example` now"),
+        ("0@0.@", "`0@0.@`"),  # found by the property below: an address's end is never trusted
         ("HTTP://X.EXAMPLE", "`HTTP://X.EXAMPLE`"),
         ("ftp://a`b", "``ftp://a`b``"),
         ("`https://x.example`", "`` `https://x.example` ``"),
@@ -43,6 +44,7 @@ def _inline_tokens(markdown: str) -> list[tuple[str, str]]:
         ("   leading and trailing  ", "leading and trailing"),
         ("a\u202eb\u200bc", "aU\\+202EbU\\+200Bc"),
         ("x\x00y", "xU\\+0000y"),
+        ("a\u2800b\u3164c\u115fd\uffa0e", "aU\\+2800bU\\+3164cU\\+115FdU\\+FFA0e"),
     ],
 )
 def test_an_inline_text_is_escaped_and_an_address_is_code(text: str, markdown: str) -> None:

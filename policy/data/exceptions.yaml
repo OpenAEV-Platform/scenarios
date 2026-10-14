@@ -15,8 +15,7 @@
 # nothing and blocks (POL-011), until the maintainers review the change and give the exception the
 # new hash, which the finding shows. A change to `scenario.yaml` alone, its version say, leaves
 # what runs, and the exception, as they are. An exception whose entry leaves the catalogue fails
-# the repository's tests: the pull request that removes the entry removes its exceptions. The
-# entry's sheet lists its exceptions: render it again (`scenario-tools render`) once one changes.
+# the repository's tests: the pull request that removes the entry removes its exceptions.
 #
 #   - entry: <the entry's external_id>
 #     code: POL-006
