@@ -574,6 +574,43 @@ def test_attributes_set_while_the_entry_is_written_get_no_plan(
     assert not (root / ENTRY).exists()
 
 
+@pytest.mark.parametrize("read", ["uncommitted", "converting"])
+def test_a_checkout_swapped_while_git_reads_it_is_seen_before_anything_is_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, read: str
+) -> None:
+    """git finds the checkout by its path: once it has read it, that path must still name the
+    checkout held, or what git said is of another."""
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+    reading = getattr(cli_module, read)
+    swaps: list[str] = []
+
+    def swapped(*arguments: Any) -> Any:
+        found = reading(*arguments)
+        if not swaps:  # another checkout, the same commit, in its place
+            shutil.copytree(root, tmp_path / "other", symlinks=True)
+            root.rename(tmp_path / "held")
+            (tmp_path / "other").rename(root)
+            swaps.append(read)
+        return found
+
+    def never(*arguments: Any, **options: Any) -> Any:
+        raise AssertionError("nothing is written once the checkout is another")
+
+    monkeypatch.setattr(f"scenario_tools.interface.cli.{read}", swapped)
+    monkeypatch.setattr("scenario_tools.interface.cli.write_intake", never)
+    if read == "uncommitted":  # seen once the commit and the changes are read, before the rest
+        monkeypatch.setattr("scenario_tools.interface.cli.intake_entry", never)
+
+    result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
+
+    assert result.exit_code == 3, result.output
+    assert "no longer names the repository this run holds" in result.output
+    assert not plan.exists()
+    assert not (tmp_path / "held" / ENTRY).exists()
+    assert not (root / ENTRY).exists()
+
+
 def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

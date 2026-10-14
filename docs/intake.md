@@ -231,8 +231,10 @@ before the run, so that a plan left by another run is never taken for this one's
   repository directly anyway. What the run wrote is checked before the plan is published: the
   checkout, the entry, each file written and the plan's place. A change there stops the run,
   which takes back what it wrote. A file another adds to the entry is not looked for. git
-  reads the checkout by its path: one swapped for another checkout and back while git runs is
-  not seen.
+  finds the checkout by its path as it starts, then works from the directory it found, as far
+  as git 2.43 shows; once git has read it, the run checks that the path still names the
+  checkout it holds, before anything is written, and again before the plan is published. A
+  checkout swapped for another and back while git starts is not seen.
 
 A run killed outright (SIGKILL), with no chance to take anything back, may leave an incomplete
 entry, whose directories may be open to their owner alone, an empty or partly written plan, or
