@@ -4,6 +4,7 @@ import base64
 import errno
 import io
 import os
+import re
 import secrets
 import stat
 import zipfile
@@ -426,3 +427,49 @@ def test_a_file_written_only_if_new_never_replaces_one_that_appeared(tmp_path: P
 
     assert (tmp_path / "scenario.yaml").read_bytes() == b"completed: by hand\n"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["scenario.yaml"]
+
+
+def test_a_temporary_file_left_after_the_target_is_written_is_said_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The target stands: the run says so, and names the leftover to remove, never "cannot
+    write"."""
+    real_unlink = os.unlink
+
+    def stuck(path: str, *, dir_fd: int | None = None) -> None:
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(os, "unlink", stuck)
+    target = tmp_path / "scenario.yaml"
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        write_output(target, b"name: x\n", create=True)
+
+    monkeypatch.setattr(os, "unlink", real_unlink)
+    assert target.read_bytes() == b"name: x\n"
+    [leftover] = [path for path in tmp_path.iterdir() if path.name != "scenario.yaml"]
+    assert re.fullmatch(r"\.scenario-tools-[0-9a-f]{16}", leftover.name)
+    assert str(error.value) == (
+        f"{target} is written, but its temporary file {leftover.name} beside it could not be "
+        "removed: Device or resource busy; the run stopped there: remove it, then run the "
+        "command again"
+    )
+
+
+def test_a_temporary_file_already_gone_after_the_target_is_written_is_no_problem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing is left to remove: the write succeeded."""
+    real_unlink = os.unlink
+
+    def gone(path: str, *, dir_fd: int | None = None) -> None:
+        real_unlink(path, dir_fd=dir_fd)
+        raise FileNotFoundError(errno.ENOENT, "No such file or directory")
+
+    monkeypatch.setattr(os, "unlink", gone)
+    target = tmp_path / "scenario.yaml"
+
+    write_output(target, b"name: x\n", create=True)
+
+    assert [path.name for path in tmp_path.iterdir()] == ["scenario.yaml"]
+    assert target.read_bytes() == b"name: x\n"

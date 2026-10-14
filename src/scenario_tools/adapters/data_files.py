@@ -150,26 +150,25 @@ def _not_followed(path: Path, error: OSError) -> Exception:
 
 def write_output(path: Path, data: bytes, *, create: bool = False) -> None:
     """Write ``data`` to ``path``, replacing a regular file at once: the data go to a new
-    temporary file in the same directory, which is then renamed over the target. A failure
-    leaves the previous output as it was, a hard link to another file never receives the data,
-    and the mode is 0644 whatever the umask. Neither the output directory nor the target may be
-    a link, and the target must be a regular file if it exists. With ``create``, the target is
-    only ever created: the temporary file is linked to its name, which fails if a file of that
-    name appeared in the meantime, and that file is left as it is."""
+    temporary file in the same directory, named ``.scenario-tools-<hex>``, which is then renamed
+    over the target. A failure leaves the previous output as it was, a hard link to another file
+    never receives the data, and the mode is 0644 whatever the umask. Neither the output
+    directory nor the target may be a link, and the target must be a regular file if it exists;
+    the directory, once open, is never looked up again by its path. With ``create``, the target
+    is only ever created: the temporary file is linked to its name, which fails if a file of that
+    name appeared in the meantime, and that file is left as it is; a temporary file that cannot
+    be removed once the target is written is said by its name, the target as written."""
     try:
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     except OSError as error:
         raise _not_followed(path.parent, error) from error
     try:
-        write_in(directory, path, data, create=create)
+        _write_in(directory, path, data, create=create)
     finally:
         os.close(directory)
 
 
-def write_in(directory: int, path: Path, data: bytes, *, create: bool = False) -> tuple[int, int]:
-    """Write ``data`` as ``write_output`` does, in the directory open as ``directory``, which is
-    never looked up again by its path: ``path`` names the file in what is reported, and its name
-    is the file written. The identity of the file written is given."""
+def _write_in(directory: int, path: Path, data: bytes, *, create: bool) -> None:
     temporary = hidden_name()
     try:
         try:
@@ -188,12 +187,10 @@ def write_in(directory: int, path: Path, data: bytes, *, create: bool = False) -
                 write_all(descriptor, data)
                 os.fchmod(descriptor, 0o644)
                 os.fsync(descriptor)
-                status = os.fstat(descriptor)
             finally:
                 os.close(descriptor)
             if create:
                 os.link(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
-                os.unlink(temporary, dir_fd=directory)
             else:
                 os.rename(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
         except FileExistsError as error:
@@ -205,6 +202,16 @@ def write_in(directory: int, path: Path, data: bytes, *, create: bool = False) -
             if isinstance(error, OSError):
                 raise _not_followed(path, error) from error
             raise
+        if create:  # the target is written: a temporary file left is said, never a failure to write
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except FileNotFoundError:  # gone already: nothing is left
+                pass
+            except OSError as error:
+                raise EnvironmentProblemError(
+                    f"{path} is written, but its temporary file {temporary} beside it could not "
+                    f"be removed: {error.strerror}; the run stopped there: remove it, then run "
+                    "the command again"
+                ) from error
     except OSError as error:  # the target's status could not be read
         raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
-    return status.st_dev, status.st_ino
