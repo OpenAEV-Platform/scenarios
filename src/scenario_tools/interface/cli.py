@@ -65,6 +65,7 @@ from scenario_tools.application.intake_entry import intake_entry, intake_files, 
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
+from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
@@ -521,8 +522,10 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
         written = read_regular_file(metadata, YAML_LIMIT)
         declared = parse_yaml(written, path=str(metadata))
         data, stored = read_stored_scenario(scenario)
-        if not assign:
-            return Report("payloads", payload_findings(declared, stored, where, agreed))
+        # A payload outside an inject's contract is never named: nothing is given then.
+        outside = payloads_outside_contracts(stored, f"{where}/scenario.json")
+        if not assign or outside:
+            return Report("payloads", outside + payload_findings(declared, stored, where, agreed))
         result = assigned_entry(declared, stored, where, agreed)
         if result.metadata is None or result.stored is None:
             return Report("payloads", result.refusals)

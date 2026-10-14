@@ -196,3 +196,22 @@ def test_an_entry_outside_a_repository_is_refused(tmp_path: Path) -> None:
     code, _ = _run("payloads", str(entry))
 
     assert code == 3
+
+
+@pytest.mark.parametrize("arguments", [(), ("--assign",)], ids=["check", "assign"])
+def test_a_payload_outside_an_inject_s_contract_is_refused_and_nothing_is_written(
+    tmp_path: Path, arguments: tuple[str, ...]
+) -> None:
+    entry = _entry(tmp_path, "easm-scenario")
+    stored = json.loads((entry / "scenario.json").read_bytes())
+    stored["scenario_articles"] = [{"injector_contract_payload": {"payload_name": "hidden"}}]
+    (entry / "scenario.json").write_bytes(stored_form(stored))
+    before = {name: (entry / name).read_bytes() for name in ("scenario.yaml", "scenario.json")}
+
+    code, document = _run("payloads", str(entry), *arguments)
+
+    assert code == 1
+    assert [(f["code"], f["field"]) for f in document["findings"]] == [
+        ("PAY-004", "/scenario_articles/0")
+    ]
+    assert {name: (entry / name).read_bytes() for name in before} == before
