@@ -19,6 +19,7 @@ LOCAL = REPOSITORY / ".gitleaks.local.toml"  # the local scan's: the shared rule
 TOKEN = str(uuid.uuid5(uuid.NAMESPACE_URL, "https://example.com/a-test-token"))  # stable ids
 LINK = "".join(["Zq8"] * 10 + ["Xy"])  # 32 letters and digits, as a tracking link's token
 PASSWORD = "".join(["Tr0ub4dor", "-and-3"])  # joined at run time, never one constant
+CONTINUED, CMD_CONTINUED = " \\\n  ", "^\r\n"  # a shell line continuation, and cmd's
 
 
 VERSION = "8.30.1"  # the Makefile's and the workflows'
@@ -108,6 +109,11 @@ def scan(
         (f"implant --token \\\n  {TOKEN}", "openaev-token"),
         (f'adminToken = "{TOKEN}"', "openaev-token"),
         (f"access_token: {TOKEN}", "openaev-token"),
+        (f'curl -H "Authorization: Bearer ^\r\n{TOKEN}"', "openaev-bearer-token"),
+        (f"implant.exe --token ^\r\n  {TOKEN}", "openaev-token"),
+        (f"set OPENAEV_TOKEN=^\r\n{TOKEN}", "openaev-token"),
+        (f"OPENAEV_ADMIN_PASSWORD={CONTINUED}{PASSWORD}", "openaev-admin-password"),
+        (f"set OPENAEV_ADMIN_PASSWORD={CMD_CONTINUED}{PASSWORD}", "openaev-admin-password"),
     ],
     ids=[
         "agent install, curl",
@@ -129,6 +135,11 @@ def scan(
         "option after a line continuation",
         "camel case key",
         "suffixed key",
+        "bearer after a cmd continuation",
+        "option after a cmd continuation",
+        "key after a cmd continuation",
+        "password after a line continuation",
+        "password after a cmd continuation",
     ],
 )
 def test_an_openaev_credential_is_reported(tmp_path: Path, text: str, rule: str) -> None:
