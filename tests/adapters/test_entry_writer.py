@@ -660,6 +660,30 @@ def test_a_refused_write_leaves_no_directory_open(
     assert sorted(opened) == sorted(closed)
 
 
+@pytest.mark.parametrize("step", ["identity", "mode"])
+@pytest.mark.parametrize("where", ["akira", "scenarios"], ids=["entry", "above"])
+def test_a_stop_while_a_directory_is_made_leaves_no_directory_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str, where: str
+) -> None:
+    if where == "akira":  # the entry the only directory the run makes
+        (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+
+    def stopped(*arguments: Any) -> None:
+        raise KeyboardInterrupt
+
+    if step == "identity":
+        monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", stopped)
+    else:
+        monkeypatch.setattr(os, "fchmod", stopped)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(KeyboardInterrupt):
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    # Only the descriptors: a stop is held while the run writes, so this one is a defect's way.
+    assert opened
+    assert sorted(opened) == sorted(closed)
+
+
 def test_a_repository_that_cannot_be_opened_is_the_environment_s_fault(tmp_path: Path) -> None:
     with pytest.raises(EnvironmentProblemError, match="cannot read"):
         _write(tmp_path / "missing", {"scenario.json": b"{}"}, new=True)

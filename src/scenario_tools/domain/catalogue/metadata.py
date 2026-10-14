@@ -289,12 +289,9 @@ def _times(count: int, one: str, several: str) -> str:
     return f"{count} {one if count == 1 else several}"
 
 
-# How an informative finding ends when it asks for nothing: such a one is no checklist item.
-NOTHING_TO_DO = "nothing to do"
-
-
-def _cleaned_reason(cleaned: Cleaned) -> str:
-    """What cleaning the export's description changed, by counts, never its text."""
+def _cleaned_reason(cleaned: Cleaned) -> tuple[str, bool]:
+    """What cleaning the export's description changed, by counts, never its text, and whether
+    that asks for nothing."""
     changes = []
     if cleaned.breaks:
         changes.append(f"{_times(cleaned.breaks, 'line break', 'line breaks')} unified")
@@ -306,8 +303,8 @@ def _cleaned_reason(cleaned: Cleaned) -> str:
     if cleaned.hard_breaks:
         lost = _times(cleaned.hard_breaks, "Markdown hard break", "Markdown hard breaks")
         verb = "is" if cleaned.hard_breaks == 1 else "are"
-        return f"{reason}; {lost} (two spaces ending a line) {verb} lost: check its layout"
-    return f"{reason}; {NOTHING_TO_DO}"
+        return f"{reason}; {lost} (two spaces ending a line) {verb} lost: check its layout", False
+    return f"{reason}; nothing to do", True
 
 
 def _bounded(value: str, limit: int, field: str) -> tuple[str, tuple[str, str] | None]:
@@ -348,6 +345,7 @@ def starting_metadata(
     marked, or left empty when it cannot be; another text over its bound or a value outside its
     list is left empty; each is reported, never copied whole."""
     todo: dict[str, str] = dict(_DEFAULTS)
+    asking_nothing: set[str] = set()  # the fields whose finding is said, and asks for nothing
     name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
     cleaned = clean(description)
     digest = hashlib.sha256(description.encode()).hexdigest()
@@ -373,7 +371,10 @@ def starting_metadata(
         why_description = ("/description", "write a description: the export has none")
         description = ""
     elif cleaned.changed:
-        why_description = ("/description", _cleaned_reason(cleaned))
+        said, asks_nothing = _cleaned_reason(cleaned)
+        why_description = ("/description", said)
+        if asks_nothing:  # said, and no item of a checklist
+            asking_nothing.add("/description")
     else:
         why_description = None
     severity = facts.severity if facts.severity in SEVERITIES else ""
@@ -457,6 +458,9 @@ def starting_metadata(
         "payloads": [],
     }
     findings = tuple(
-        Finding("SCH-007", Severity.INFO, path, *todo_item) for todo_item in todo.items()
+        Finding(
+            "SCH-007", Severity.INFO, path, field, message, asks_nothing=field in asking_nothing
+        )
+        for field, message in todo.items()
     )
     return metadata, findings

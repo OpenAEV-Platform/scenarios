@@ -11,7 +11,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from scenario_tools.domain.catalogue.metadata import NOTHING_TO_DO
 from scenario_tools.domain.shared.characters import visible
 from scenario_tools.domain.shared.finding import REPORT_LIMIT, Finding, Severity
 
@@ -188,11 +187,7 @@ def _span(text: str) -> str:
 def _checklist(findings: Iterable[Finding]) -> list[Finding]:
     """Each finding once, in order: an informative one is dropped when it asks for nothing, or
     when a blocking one names the same file and field."""
-    kept = [
-        finding
-        for finding in dict.fromkeys(findings)
-        if not (finding.severity is Severity.INFO and finding.message.endswith(NOTHING_TO_DO))
-    ]
+    kept = [finding for finding in dict.fromkeys(findings) if not finding.asks_nothing]
     blocked = {(f.path, f.field) for f in kept if f.severity is Severity.BLOCKING}
     return [
         finding

@@ -76,6 +76,22 @@ def test_a_report_is_ok_only_without_blocking_findings() -> None:
     assert not Report("validate", (info, _finding())).ok
 
 
+def test_only_an_informative_finding_asks_for_nothing() -> None:
+    assert _finding(severity=Severity.INFO, asks_nothing=True).asks_nothing
+    assert not _finding(severity=Severity.INFO).asks_nothing
+    with pytest.raises(ValueError, match="only an informative finding asks for nothing"):
+        _finding(asks_nothing=True)
+
+
+def test_a_finding_that_asks_for_nothing_is_reported_as_any_other() -> None:
+    """The mark is for what lists the findings to act on, never part of the contract."""
+    idle = _finding(severity=Severity.INFO, asks_nothing=True)
+
+    assert Report("validate", (idle,)).document() == (
+        Report("validate", (_finding(severity=Severity.INFO),)).document()
+    )
+
+
 def test_a_report_document_follows_the_contract() -> None:
     document = Report("validate", (_finding(),)).document()
 
