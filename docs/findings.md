@@ -95,6 +95,12 @@ written when one of them blocks. See [`intake.md`](intake.md).
 
 ## Other checks
 
+A blocking `POL-004`, `POL-005`, `POL-006` or `POL-009` finding can be excepted when the breach is
+legitimate, for one field of an entry's `scenario.json` as it is: the maintainers add the exception,
+with the hash of that `scenario.json` and a justification, to `policy/data/exceptions.yaml`, and the
+finding is then reported as information, with the justification. No other finding can be
+excepted.
+
 | Code | What it means | What to do |
 |---|---|---|
 | `GEN-002` | The stored `scenario.json` is not what normalisation gives for it. | Run `normalize` or `intake` again instead of editing the file by hand. |
@@ -115,5 +121,6 @@ written when one of them blocks. See [`intake.md`](intake.md).
 | `POL-008` | (Info) A payload this scenario did not run in its previous version; for a new entry, each of its payloads. | Review what it runs; nothing blocks. |
 | `POL-009` | In a time-based scenario, two injects that run a payload on the endpoint are less than 60 seconds apart (blocking), or less than 120 seconds before a heavy payload such as an executable or a dropped file (info). | Space the injects by at least 60 seconds, or 120 for a heavy payload. |
 | `POL-010` | The scenario holds a user, a team member, a variable value or an e-mail address of a real domain. | Export the scenario again with the fixed options and run `normalize`, which removes them; use an example domain such as `example.com`. |
+| `POL-011` | An exception of `policy/data/exceptions.yaml` for this entry covers none of its findings: the entry's `scenario.json` changed since the exception was granted (the finding gives its new hash), the breach was fixed, or its field moved. | A maintainer reviews the change, then gives the exception the new hash or field, or removes it. |
 | `OAV-001` | The platform skipped an inject at import, because it lacks the injector, contract or payload. | Install what the message names on the platform, then import again. |
 | `TTL-001` | The pull request title breaks the convention. | Write it as `type(scope): description (#issue)`, as `CONTRIBUTING.md` says. |

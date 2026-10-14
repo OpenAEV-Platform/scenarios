@@ -2,6 +2,7 @@
 refuse is a finding of the entry, not an end of the run, so that one broken file never hides the
 findings of the others, nor of the other entries."""
 
+import hashlib
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
@@ -176,6 +177,7 @@ def validate_entry(
     facts: ExportFacts | None = None
     declared_checked: Mapping[str, Any] | None = None  # once it meets its schema, for the policy
     stored_document: object = None  # the stored scenario.json once read, for the policy
+    stored_sha256: str | None = None  # its hash, the version an exception names
     if "scenario.yaml" in names:
         path = f"{entry}/scenario.yaml"
         try:
@@ -205,6 +207,7 @@ def validate_entry(
         try:
             stored, document = source.read_json(path)
             stored_document = document
+            stored_sha256 = hashlib.sha256(stored).hexdigest()
             external_id = metadata.external_id if metadata is not None else None
             again = (
                 (lambda: renormalised(document, external_id, path))
@@ -230,5 +233,5 @@ def validate_entry(
                 findings += text_findings(source.read_text(path), path)
             except UnsafeInputError as error:
                 findings += (_refused(error, path),)
-    content = EntryContent(entry, names, declared_checked, stored_document)
+    content = EntryContent(entry, names, declared_checked, stored_document, stored_sha256)
     return findings + policy_findings(policy, content)

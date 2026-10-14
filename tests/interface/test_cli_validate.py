@@ -1,6 +1,7 @@
 """The validate command: an entry checked as the data model says, from the repository that holds
 it, whatever the working directory; its exit code says whether anything blocks it."""
 
+import hashlib
 import json
 import os
 import shutil
@@ -163,6 +164,47 @@ def test_unusable_allowed_targets_are_the_environment_s_fault(
 
     assert result.exit_code == 3
     assert "policy data cannot be used" in json.loads(result.stdout)["error"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "exceptions: {}\n",
+        "",
+        f"exceptions:\n  - entry: x\n    code: POL-006\n    field: ''\n    sha256: {'a' * 64}\n"
+        "    justification: a reason long enough to be read\n",
+    ],
+)
+def test_an_unusable_exceptions_registry_is_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / "policy" / "data" / "exceptions.yaml").write_text(text)
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3
+    assert "policy data cannot be used" in json.loads(result.stdout)["error"]
+
+
+def test_an_exception_of_the_registry_that_covers_nothing_blocks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / "policy" / "data" / "exceptions.yaml").write_text(
+        f"exceptions:\n  - entry: {ENTRY_ID}\n    code: POL-006\n    field: /scenario_name\n"
+        f"    sha256: {'a' * 64}\n    justification: a reason long enough to be read\n"
+    )
+    stored = hashlib.sha256((entry / "scenario.json").read_bytes()).hexdigest()
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 1, result.output
+    assert _findings(result) == [("POL-011", "policy/data/exceptions.yaml", "/exceptions/0")]
+    # The hash the maintainers give the exception once they have reviewed the entry.
+    assert f"(sha256 now {stored})" in json.loads(result.stdout)["findings"][0]["message"]
 
 
 def test_a_directory_that_cannot_be_searched_is_the_environment_s_fault(
