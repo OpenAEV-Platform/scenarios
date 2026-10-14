@@ -7,14 +7,16 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.catalogue.intake import (
+    BODY_ITEMS_LIMIT,
     CatalogueEntry,
     IntakeRequest,
     domain_refusals,
     intake_plan,
     intake_refusals,
+    name_key,
     same_name,
 )
-from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Severity
 from scenario_tools.domain.shared.title import check_pull_request_title
 
 ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
@@ -441,3 +443,142 @@ def test_the_body_lists_a_bounded_number_of_items_and_counts_every_blocking_one(
     assert len(items) == 100
     assert "and 50 more: run validate on the entry to see them all" in plan["body"]
     assert plan["blocking"] == 150  # exact, whatever the body shows
+
+
+# Cases that pin behaviour no other test saw: exact messages and bodies, and the body's budget
+# to the character.
+
+FILES_BODY = (
+    "Files:\n"
+    f"- `scenarios/ransomware/akira-crisis/scenario.json` `{'2' * 64}`\n"
+    f"- `scenarios/ransomware/akira-crisis/scenario.yaml` `{'1' * 64}`\n"
+)
+
+
+def test_the_body_is_written_as_it_is_read() -> None:
+    findings = [
+        Finding("SCH-007", Severity.INFO, "a/scenario.yaml", "/version", "raise it"),
+        Finding("SCH-001", Severity.BLOCKING, "a/x", "", "broken"),
+    ]
+
+    assert _plan(checklist=findings)["body"] == (
+        "Closes #12\n\nEntry `scenarios/ransomware/akira-crisis`, from a platform export.\n\n"
+        "Left to complete or review:\n"
+        "- [ ] `a/scenario.yaml` `/version`: `raise it`\n"
+        "- [ ] `a/x` ``: `broken`\n\n" + FILES_BODY
+    )
+    assert _plan(changed=False)["body"] == (
+        "Closes #12\n\nThe export gives the stored scenario.json again: nothing to propose.\n\n"
+        + FILES_BODY
+    )
+
+
+def _taking(index: int, size: int) -> Finding:
+    """A finding whose item takes ``size`` characters of the body's budget, its line break
+    included: a message is shortened, so the field holds the rest."""
+    message = "m" * MESSAGE_LIMIT
+    field = f"/{index:03d}".ljust(size - len(f"- [ ] `p` ``: `{message}`") - 1, "x")
+    return Finding("SCH-001", Severity.BLOCKING, "p", field, message)
+
+
+@pytest.mark.parametrize(("spare", "kept"), [(0, 98), (1, 97)])
+def test_the_items_fill_the_body_s_budget_to_the_last_character(spare: int, kept: int) -> None:
+    """Items that take the whole budget are all listed; one character more and the last is
+    not, and is counted."""
+    findings = [_taking(index, 614) for index in range(97)]
+    findings.append(_taking(97, BODY_ITEMS_LIMIT - 97 * 614 + spare))
+
+    body = _plan(checklist=findings)["body"]
+
+    assert body.count("- [ ] ") == kept
+    assert ("- and 1 more:" in body) is (kept == 97)
+
+
+def test_a_request_without_threat_or_sources_gives_them_empty() -> None:
+    document = {key: value for key, value in DOCUMENT.items() if key not in {"threat", "sources"}}
+
+    assert IntakeRequest.from_document(document).metadata() == {
+        "threat": {},
+        "sources": [],
+        "generated_by": "run 42",
+    }
+
+
+def test_a_name_s_key_keeps_one_space_between_its_words() -> None:
+    assert name_key("  Akira \t  Crisis  ") == "akira crisis"
+
+
+@pytest.mark.parametrize("name", ["", "Another name"])
+def test_an_entry_without_the_name_takes_no_name(name: str) -> None:
+    other = CatalogueEntry("scenarios/techniques/other", OTHER, name)
+
+    assert _refusals(_request(), "Akira crisis", other) == ()
+
+
+@pytest.mark.parametrize(
+    ("entries", "code", "message"),
+    [
+        (
+            (
+                CatalogueEntry("scenarios/x/b", "", "", readable=False),
+                CatalogueEntry("scenarios/x/a", "", "", readable=False),
+            ),
+            "ITK-008",
+            "the catalogue cannot be checked: scenarios/x/a, scenarios/x/b cannot be read; fix it "
+            "first, as validate says",
+        ),
+        (
+            (
+                CatalogueEntry("scenarios/x/b", OTHER, "Akira crisis"),
+                CatalogueEntry("scenarios/x/a", OTHER, "Akira crisis"),
+            ),
+            "ITK-003",
+            "another entry has this scenario name: scenarios/x/a, scenarios/x/b",
+        ),
+        (
+            (
+                CatalogueEntry("scenarios/x/b", ID, "B"),
+                CatalogueEntry("scenarios/x/a", ID, "A"),
+            ),
+            "ITK-001",
+            "an entry has it: scenarios/x/a, scenarios/x/b",
+        ),
+    ],
+)
+def test_a_new_entry_s_refusal_names_every_entry_in_order(
+    entries: tuple[CatalogueEntry, ...], code: str, message: str
+) -> None:
+    (finding,) = _refusals(_request(), "Akira crisis", *entries)
+
+    assert (finding.code, finding.message) == (code, message)
+
+
+def test_an_update_s_refusals_say_why() -> None:
+    (unknown,) = _refusals(_request(mode="update"))
+    entry = CatalogueEntry("scenarios/ransomware/akira-crisis", ID, "Another name")
+    (renamed,) = _refusals(_request(mode="update"), "Akira crisis", entry)
+
+    assert unknown.message == "no entry has it"
+    assert renamed.message == (
+        "the export's scenario name differs from the entry's: another scenario would take its "
+        "identifier; declare rewrite: true if it is the same scenario renamed, then align "
+        "scenario.yaml with the export by hand"
+    )
+
+
+def test_an_entry_held_deeper_than_a_domain_is_in_another_domain() -> None:
+    """Its path names no domain: the request's domain is the field that differs."""
+    deeper = CatalogueEntry("scenarios/ransomware/akira/crisis", ID, "Akira crisis")
+
+    (finding,) = _refusals(_request(mode="update"), "Akira crisis", deeper)
+
+    assert (finding.code, finding.field) == ("ITK-005", "/domain")
+
+
+def test_a_format_character_never_reaches_the_body() -> None:
+    """A soft hyphen or a joiner, which the hidden-character checks keep where a script needs
+    them, is no use in a code span: the body drops every format character."""
+    message = "raise\u00adit\u200cnow"
+    findings = [Finding("SCH-007", Severity.INFO, "a", "/v", message)]
+
+    assert "`raiseitnow`" in _plan(checklist=findings)["body"]
