@@ -162,20 +162,44 @@ def _same(first: object, second: object) -> bool:
     return first == second
 
 
-def _metadata_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iterator[Change]:
+_YAML, _JSON = "scenario.yaml", "scenario.json"
+
+
+@dataclass(frozen=True)
+class LocatedChange:
+    """A change where it is: the file of the entry, the pointer of what changed in it as it is
+    now, and the identifier of the inject or the item it concerns, if any: a reviewer finds an
+    inject by it, and a removed one is no longer where a pointer could name it."""
+
+    change: Change
+    file: str
+    field: str
+    item: str = ""
+
+
+def _segment(key: object) -> str:
+    """A key as a segment of a JSON pointer (RFC 6901)."""
+    return "/" + str(key).replace("~", "~0").replace("/", "~1")
+
+
+def _metadata_changes(
+    before: Mapping[str, Any], after: Mapping[str, Any]
+) -> Iterator[LocatedChange]:
     for key in sorted(set(before) | set(after)):
         if key in _NOT_COMPARED or _same(before.get(key), after.get(key)):
             continue
         if key in _METADATA_MAJOR:
-            yield Change(Bump.MAJOR, _METADATA_MAJOR[key])
+            change = Change(Bump.MAJOR, _METADATA_MAJOR[key])
         elif key in _METADATA_PATCH:
-            yield Change(Bump.PATCH, f"its {key} changed")
+            change = Change(Bump.PATCH, f"its {key} changed")
         else:
-            yield Change(Bump.MAJOR, f"its {key} changed")
+            change = Change(Bump.MAJOR, f"its {key} changed")
+        yield LocatedChange(change, _YAML, _segment(key))
 
 
 def _by_id(items: object, key: str) -> dict[str, Mapping[str, Any]] | None:
-    """The items of a collection by their identifier; ``None`` when it is not shaped as one."""
+    """The items of a collection by their identifier, in the order of the list; ``None`` when
+    it is not shaped as one."""
     if items is None:
         return {}
     if not isinstance(items, list):
@@ -192,24 +216,32 @@ def _by_id(items: object, key: str) -> dict[str, Mapping[str, Any]] | None:
     return found
 
 
-def _membership(what: str, old: Mapping[str, Any], new: Mapping[str, Any]) -> Iterator[Change]:
-    if set(old) - set(new):
-        yield Change(Bump.MAJOR, f"{what} removed")
-    if set(new) - set(old):
-        yield Change(Bump.MINOR, f"{what} added")
+def _membership(
+    what: str, pointer: str, old: Mapping[str, Any], new: Mapping[str, Any]
+) -> Iterator[LocatedChange]:
+    """The items removed, by their identifier, then the items added, where they now are."""
+    for identifier in old:
+        if identifier not in new:
+            yield LocatedChange(Change(Bump.MAJOR, f"{what} removed"), _JSON, pointer, identifier)
+    for index, identifier in enumerate(new):
+        if identifier not in old:
+            added = Change(Bump.MINOR, f"{what} added")
+            yield LocatedChange(added, _JSON, f"{pointer}/{index}", identifier)
 
 
-def _contract_changes(before: object, after: object) -> Iterator[Change]:
+def _contract_changes(
+    before: object, after: object, pointer: str, item: str
+) -> Iterator[LocatedChange]:
     if not isinstance(before, Mapping) or not isinstance(after, Mapping):
-        yield _CONTRACT_CHANGED
+        yield LocatedChange(_CONTRACT_CHANGED, _JSON, pointer, item)
         return
     if not _same(before.get(_CONTRACT_ID), after.get(_CONTRACT_ID)):
-        yield _CONTRACT_CHANGED
+        yield LocatedChange(_CONTRACT_CHANGED, _JSON, pointer + _segment(_CONTRACT_ID), item)
     if not _same(before.get(PAYLOAD), after.get(PAYLOAD)):
-        yield _PAYLOAD_CHANGED
+        yield LocatedChange(_PAYLOAD_CHANGED, _JSON, pointer + _segment(PAYLOAD), item)
     rest = {key for key in set(before) | set(after) if key not in (_CONTRACT_ID, PAYLOAD)}
     if any(not _same(before.get(key), after.get(key)) for key in rest):
-        yield _CONTRACT_CHANGED
+        yield LocatedChange(_CONTRACT_CHANGED, _JSON, pointer, item)
 
 
 def _without_targets(content: object) -> object:
@@ -218,55 +250,68 @@ def _without_targets(content: object) -> object:
     return {key: value for key, value in content.items() if key not in _CONTENT_TARGETS}
 
 
-def _content_changes(before: object, after: object) -> Iterator[Change]:
+def _content_changes(
+    before: object, after: object, pointer: str, item: str
+) -> Iterator[LocatedChange]:
     """An inject's content: the targets it holds are its targets, the rest its content."""
     old = before if isinstance(before, Mapping) else {}
     new = after if isinstance(after, Mapping) else {}
     if any(not _same(old.get(key), new.get(key)) for key in _CONTENT_TARGETS):
-        yield _TARGETS
+        yield LocatedChange(_TARGETS, _JSON, pointer, item)
     if not _same(_without_targets(before), _without_targets(after)):
-        yield _CONTENT
+        yield LocatedChange(_CONTENT, _JSON, pointer, item)
 
 
-def _inject_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iterator[Change]:
+def _inject_changes(
+    before: Mapping[str, Any], after: Mapping[str, Any], pointer: str, item: str
+) -> Iterator[LocatedChange]:
     for key in sorted(set(before) | set(after)):
         if _same(before.get(key), after.get(key)):
             continue
+        at = pointer + _segment(key)
         if key == CONTRACT:
-            yield from _contract_changes(before.get(key), after.get(key))
+            yield from _contract_changes(before.get(key), after.get(key), at, item)
         elif key == _CONTENT_FIELD:
-            yield from _content_changes(before.get(key), after.get(key))
+            yield from _content_changes(before.get(key), after.get(key), at, item)
         else:
-            yield _INJECT_FIELDS.get(key, Change(Bump.MAJOR, f"an inject's {key} changed"))
+            change = _INJECT_FIELDS.get(key, Change(Bump.MAJOR, f"an inject's {key} changed"))
+            yield LocatedChange(change, _JSON, at, item)
 
 
-def _injects(before: object, after: object) -> Iterator[Change]:
+def _injects(before: object, after: object) -> Iterator[LocatedChange]:
     old, new = _by_id(before, _INJECT_ID), _by_id(after, _INJECT_ID)
+    pointer = _segment(INJECTS)
     if old is None or new is None:
-        yield Change(Bump.MAJOR, f"its {INJECTS} changed")
+        yield LocatedChange(Change(Bump.MAJOR, f"its {INJECTS} changed"), _JSON, pointer)
         return
-    yield from _membership("an inject", old, new)
-    for identifier in sorted(set(old) & set(new)):
-        yield from _inject_changes(old[identifier], new[identifier])
+    yield from _membership("an inject", pointer, old, new)
+    for index, identifier in enumerate(new):
+        if identifier in old:
+            at = f"{pointer}/{index}"
+            yield from _inject_changes(old[identifier], new[identifier], at, identifier)
 
 
-def _information(before: object, after: object) -> Iterator[Change]:
+def _information(before: object, after: object) -> Iterator[LocatedChange]:
+    pointer = _segment(_INFORMATION)
     if not isinstance(before, Mapping) or not isinstance(after, Mapping):
-        yield Change(Bump.MAJOR, f"its {_INFORMATION} changed")
+        yield LocatedChange(Change(Bump.MAJOR, f"its {_INFORMATION} changed"), _JSON, pointer)
         return
     for key in sorted(set(before) | set(after)):
         if not _same(before.get(key), after.get(key)):
             bump = Bump.PATCH if key in _INFORMATION_PATCH else Bump.MAJOR
-            yield Change(bump, f"its {key} changed")
+            yield LocatedChange(Change(bump, f"its {key} changed"), _JSON, pointer + _segment(key))
 
 
-def _collection(part: str, before: object, after: object) -> Iterator[Change]:
+def _collection(part: str, before: object, after: object) -> Iterator[LocatedChange]:
     old, new = _by_id(before, _COLLECTIONS[part]), _by_id(after, _COLLECTIONS[part])
+    pointer = _segment(part)
     if old is None or new is None:
-        yield Change(Bump.MAJOR, f"its {part} changed")
+        yield LocatedChange(Change(Bump.MAJOR, f"its {part} changed"), _JSON, pointer)
         return
-    yield from _membership(f"an item of {part}", old, new)
-    for identifier in sorted(set(old) & set(new)):
+    yield from _membership(f"an item of {part}", pointer, old, new)
+    for index, identifier in enumerate(new):
+        if identifier not in old:
+            continue
         first, second = old[identifier], new[identifier]
         differing = {
             key for key in set(first) | set(second) if not _same(first.get(key), second.get(key))
@@ -274,12 +319,13 @@ def _collection(part: str, before: object, after: object) -> Iterator[Change]:
         if not differing:
             continue
         if all(key.endswith(_TEXT_ENDINGS) for key in differing):
-            yield Change(Bump.PATCH, f"an item of {part} changed its text")
+            change = Change(Bump.PATCH, f"an item of {part} changed its text")
         else:
-            yield Change(Bump.MINOR, f"an item of {part} changed")
+            change = Change(Bump.MINOR, f"an item of {part} changed")
+        yield LocatedChange(change, _JSON, f"{pointer}/{index}", identifier)
 
 
-def _stored_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iterator[Change]:
+def _stored_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iterator[LocatedChange]:
     for part in sorted(set(before) | set(after)):
         old, new = before.get(part), after.get(part)
         if part == _USERS or _same(old, new):
@@ -291,7 +337,22 @@ def _stored_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iter
         elif part in _COLLECTIONS:
             yield from _collection(part, old, new)
         else:
-            yield Change(Bump.MAJOR, f"its {part} changed")
+            yield LocatedChange(Change(Bump.MAJOR, f"its {part} changed"), _JSON, _segment(part))
+
+
+def located_changes(
+    previous_metadata: Mapping[str, Any],
+    previous_stored: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    stored: Mapping[str, Any],
+) -> list[LocatedChange]:
+    """Every change from the previous version to this one, where it is, in the order found:
+    ``scenario.yaml`` then ``scenario.json``, each part in the order of its keys, and the
+    injects and items in the order of their list."""
+    return [
+        *_metadata_changes(previous_metadata, metadata),
+        *_stored_changes(previous_stored, stored),
+    ]
 
 
 def changes(
@@ -302,12 +363,9 @@ def changes(
 ) -> list[Change]:
     """The changes from the previous version to this one, each kind once, in the order found."""
     found: list[Change] = []
-    for change in (
-        *_metadata_changes(previous_metadata, metadata),
-        *_stored_changes(previous_stored, stored),
-    ):
-        if change not in found:
-            found.append(change)
+    for located in located_changes(previous_metadata, previous_stored, metadata, stored):
+        if located.change not in found:
+            found.append(located.change)
     return found
 
 
@@ -437,6 +495,66 @@ def versioning_findings(
         )
     findings.extend(_same_injects(previous_stored.get(INJECTS), stored.get(INJECTS), scenario_path))
     return (*findings, *news)
+
+
+_UNCOMPARED = (
+    "the base branch's copy of this entry cannot be compared: its scenario.yaml or its "
+    "scenario.json is missing, or it has no valid version"
+)
+
+
+_LISTED = 30  # the changes an entry's diff lists: the least version always comes first
+
+
+def _listed(located: LocatedChange, entry: str) -> Finding:
+    level = _LEVELS[located.change.bump]
+    named = f" (ID {located.item})" if located.item else ""
+    message = f"{located.change.reason}: needs a {level} version{named}"
+    return Finding("VER-013", Severity.INFO, f"{entry}/{located.file}", located.field, message)
+
+
+def diff_findings(
+    previous: tuple[object, object] | None,
+    metadata: Mapping[str, Any],
+    stored: Mapping[str, Any],
+    *,
+    entry: str,
+) -> tuple[Finding, ...]:
+    """The semantic diff of the entry at ``entry`` with ``previous``, its metadata and its stored
+    scenario as the base branch holds them, ``None`` for a new entry, as information: first the
+    least version the changes need, at the entry, so that a report cut at its limit keeps it, with
+    how many changes are not listed; then each change, where it is, the version it needs and the
+    inject or item it concerns, the ``_LISTED`` that need the most. Never a value."""
+
+    def least(message: str) -> Finding:
+        return Finding("VER-014", Severity.INFO, entry, "", message)
+
+    if previous is None:
+        return (least("a new entry: the base branch holds no previous version to compare with"),)
+    old, old_stored = previous
+    if not isinstance(old, Mapping) or not isinstance(old_stored, Mapping):
+        return (least(_UNCOMPARED),)
+    before = _version(old.get("version"))
+    if before is None:
+        return (least(_UNCOMPARED),)
+    found = located_changes(old, old_stored, metadata, stored)
+    # The ones that need the most, in the order found among equals: a major one is never left out.
+    ranked = sorted(found, key=lambda located: located.change.bump, reverse=True)
+    listed = tuple(_listed(located, entry) for located in ranked[:_LISTED])
+    required = required_bump([located.change for located in found])
+    if required.bump is Bump.NONE:
+        return (least("nothing changed that needs a new version"), *listed)
+    given = metadata.get("version")
+    declared = declared_bump(old["version"], given)
+    verdict = "enough" if declared is not None and declared >= required.bump else "too low"
+    summary = (
+        f"these changes need {_least(before, required.bump)} at least, a "
+        f"{_LEVELS[required.bump]} version ({required.reason}), from {old['version']}; the entry "
+        f"gives {given if _version(given) else 'no valid version'}: {verdict}"
+    )
+    if len(found) > _LISTED:
+        summary += f"; {len(found) - _LISTED} more changes, not listed"
+    return (least(summary), *listed)
 
 
 _HEADING = re.compile(  # a hyphen, an en dash or an em dash: they look alike

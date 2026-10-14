@@ -61,6 +61,7 @@ from scenario_tools.application.assign_payloads import (
 )
 from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.check_title import check_title as check_title_use_case
+from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
@@ -550,6 +551,30 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
     _emit(ctx, "payloads", produce, root)
 
 
+def _one_repository(
+    ctx: click.Context, command: str, entries: tuple[Path, ...]
+) -> tuple[Path, list[str]]:
+    """The repository that holds every one of ``entries``, and each entry relative to it; an
+    entry no repository holds is refused input, and entries of two repositories a usage error."""
+    # Not resolved: a link on the way is refused when the entry is read, never followed.
+    directories = [Path(os.path.normpath(entry.absolute())) for entry in entries]
+    levels: list[Path] = []
+    roots: dict[tuple[int, int], Path] = {}  # each repository once, however it is reached
+    relatives: list[str] = []
+    try:
+        for directory in directories:
+            levels = _levels_as_given(directory)
+            root = _repository_root(levels, directory)
+            roots.setdefault(_identity(root), root)
+            relatives.append(directory.relative_to(root).as_posix())
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, command, _refused(error), levels[-1] if levels else None)
+    if len(roots) > 1:
+        raise click.UsageError("the entries belong to different repositories")
+    [root] = roots.values()
+    return root, relatives
+
+
 @main.command(name="validate")
 @click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
 @click.option(
@@ -577,22 +602,7 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
 
     No symbolic link inside the repository is followed; the path that leads to the repository
     may go through one."""
-    # Not resolved: a link on the way is refused when the entry is read, never followed.
-    directories = [Path(os.path.normpath(entry.absolute())) for entry in entries]
-    levels: list[Path] = []
-    roots: dict[tuple[int, int], Path] = {}  # each repository once, however it is reached
-    relatives: list[str] = []
-    try:
-        for directory in directories:
-            levels = _levels_as_given(directory)
-            root = _repository_root(levels, directory)
-            roots.setdefault(_identity(root), root)
-            relatives.append(directory.relative_to(root).as_posix())
-    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
-        _emit(ctx, "validate", _refused(error), levels[-1] if levels else None)
-    if len(roots) > 1:
-        raise click.UsageError("the entries belong to different repositories")
-    [root] = roots.values()
+    root, relatives = _one_repository(ctx, "validate", entries)
     if previous_root is None:  # what the pull request compares, a local run would not
         click.echo(
             "validate: without --previous-root, each entry is checked as a new one: its version "
@@ -610,6 +620,37 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@main.command(name="diff")
+@click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
+@click.option(
+    "--previous-root",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    help="The root of a checkout of the base branch: each entry is compared with its copy there.",
+)
+@click.pass_context
+def diff(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path) -> None:
+    """Show what changed in each of ENTRIES, an entry directory, since its copy in the checkout
+    of the base branch at --previous-root, found by its external ID when it moved: each change,
+    where it is and the version it needs (VER-013), then the least version the changes need
+    (VER-014), as validate classifies them. Never a value of the entry. Exit with 0 whatever
+    changed: validate judges the version.
+
+    No symbolic link inside the repository is followed; the path that leads to the repository
+    may go through one."""
+    root, relatives = _one_repository(ctx, "diff", entries)
+
+    def produce() -> Report:
+        source = RepositoryEntries(root)
+        previous = RepositoryEntries(previous_root.absolute())
+        findings: list[Finding] = []
+        for entry in dict.fromkeys(relatives):  # an entry given twice is shown once
+            findings += diff_entry(entry, source, previous)
+        return Report("diff", tuple(findings))
+
+    _emit(ctx, "diff", produce, root)
 
 
 @dataclasses.dataclass(frozen=True)
