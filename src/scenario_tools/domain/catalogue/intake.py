@@ -139,8 +139,8 @@ def intake_refusals(
     [entry] = same
     if entry.path != request.entry:
         message = f"the entry with this external_id is {entry.path}, not {request.entry}"
-        domain = entry.path.split("/")[1] if entry.path.count("/") == 2 else ""
-        pointer = "/domain" if domain != request.domain else "/slug"  # the field that differs
+        in_domain = entry.path.rpartition("/")[0] == f"scenarios/{request.domain}"
+        pointer = "/slug" if in_domain else "/domain"  # the field that differs
         return refused("ITK-005", request_path, pointer, message)
     if same_name(entry.name, name):
         return ()
