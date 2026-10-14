@@ -2,7 +2,8 @@
 
 A finding has a code (two or three capital letters, a hyphen and three digits), a severity, the
 path of the file relative to the repository root (empty when the input is not a file), the JSON
-pointer of the field (empty for the whole input) and a message. The path, the field and the
+pointer of the field (empty for the whole input) and a message; an informative one may be
+marked as asking for nothing, which is no part of the report. The path, the field and the
 message are shortened to ``MESSAGE_LIMIT`` characters regardless of who builds the finding, since
 all three may carry contributor content. A report is ok when it holds no blocking finding, lists
 its findings in a stable order, and shows at most ``REPORT_LIMIT`` of them: one last finding
@@ -59,6 +60,7 @@ class Finding:
     path: str
     field: str
     message: str
+    asks_nothing: bool = False  # what lists the findings to act on leaves it out
 
     def __post_init__(self) -> None:
         if not _CODE.fullmatch(self.code):
@@ -69,6 +71,8 @@ class Finding:
             raise ValueError(f"finding field {self.field!r} is not a JSON pointer")
         if not self.message:
             raise ValueError("finding message is empty")
+        if self.asks_nothing and self.severity is not Severity.INFO:
+            raise ValueError("only an informative finding asks for nothing")
         object.__setattr__(self, "path", shorten(self.path))
         object.__setattr__(self, "field", _shorten_pointer(self.field))
         object.__setattr__(self, "message", shorten(self.message))

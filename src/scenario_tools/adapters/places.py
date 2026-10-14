@@ -52,7 +52,11 @@ def described(failure: BaseException | None) -> str:
     return f" (after: {str(failure) or type(failure).__name__})"
 
 
-def identity(descriptor: int, where: str) -> tuple[int, int]:
+# Which file or directory one is: its device and inode, never another's while it is held open.
+Identity = tuple[int, int]
+
+
+def identity(descriptor: int, where: str) -> Identity:
     """Which file or directory ``descriptor`` is: one held open is never another's."""
     try:
         status = os.fstat(descriptor)
@@ -125,7 +129,7 @@ def write_all(descriptor: int, data: bytes) -> None:
         view = view[os.write(descriptor, view) :]
 
 
-def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
+def create_in(directory: int, path: Path, data: bytes) -> Identity:
     """Create ``path``'s name in ``directory`` with ``data``, only where nothing is, a link
     included, with mode 0644 whatever the umask; a file that cannot be written whole is taken
     back, never another put at its name, and one whose identity cannot be read is left, and
@@ -137,7 +141,7 @@ def create_in(directory: int, path: Path, data: bytes) -> tuple[int, int]:
         raise PlaceTakenError(f"cannot write {path}: it already exists") from error
     except OSError as error:
         raise EnvironmentProblemError(f"cannot write {path}: {error.strerror}") from error
-    made: tuple[int, int] | None = None
+    made: Identity | None = None
     try:
         try:
             status = os.fstat(descriptor)
@@ -217,7 +221,7 @@ def not_taken_back(outcome: str, where: str) -> str | None:
 def take_back(
     directory: int,
     name: str,
-    made: tuple[int, int],
+    made: Identity,
     undo: Callable[[str], None],
     *,
     where: str,

@@ -363,6 +363,11 @@ def _message(findings: tuple[Finding, ...], field: str) -> str:
     return finding.message
 
 
+def _asks_nothing(findings: tuple[Finding, ...], field: str) -> bool:
+    [finding] = [f for f in findings if f.field == field]
+    return finding.asks_nothing
+
+
 def test_the_starting_metadata_takes_what_the_export_establishes() -> None:
     metadata, _ = _start()
 
@@ -656,6 +661,7 @@ def test_a_single_change_is_said_in_the_singular() -> None:
         "1 line end trimmed; 1 Markdown hard break (two spaces ending a line) is lost: "
         "check its layout"
     )
+    assert not _asks_nothing(findings, "/description")
 
 
 def test_a_description_with_only_blank_lines_around_says_so() -> None:
@@ -666,6 +672,10 @@ def test_a_description_with_only_blank_lines_around_says_so() -> None:
         "the export's description was cleaned for scenario.yaml: the blank lines around the "
         "text removed; nothing to do"
     )
+    assert _asks_nothing(findings, "/description")
+    assert [field for field in _todo(findings) if _asks_nothing(findings, field)] == [
+        "/description"
+    ]
 
 
 def test_a_clean_description_is_not_reported() -> None:

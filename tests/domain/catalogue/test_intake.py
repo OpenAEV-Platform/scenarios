@@ -312,7 +312,7 @@ def test_the_plan_counts_the_blocking_findings_left() -> None:
 def test_the_checklist_holds_one_item_per_field_and_nothing_with_nothing_to_do() -> None:
     noted = Finding("SCH-007", Severity.INFO, "p", "/description", "cut at a paragraph end")
     blocking = Finding("SCH-009", Severity.BLOCKING, "p", "/description", "ends with the mark")
-    idle = Finding("SCH-007", Severity.INFO, "p", "/name", "blanks around it; nothing to do")
+    idle = Finding("SCH-007", Severity.INFO, "p", "/name", "blanks removed", asks_nothing=True)
 
     body = _plan(checklist=(noted, blocking, idle))["body"]
 
@@ -336,6 +336,14 @@ def test_every_finding_on_a_field_is_listed_once_and_counted_once() -> None:
         "- [ ] `p` `/name`: `too long`",
     ]
     assert plan["blocking"] == 2
+
+
+def test_a_finding_is_dropped_for_asking_nothing_never_for_its_words() -> None:
+    worded = Finding("SCH-007", Severity.INFO, "p", "/name", "blanks; nothing to do")
+
+    items = [line for line in _plan(checklist=(worded,))["body"].splitlines() if "- [ ]" in line]
+
+    assert items == ["- [ ] `p` `/name`: `blanks; nothing to do`"]
 
 
 def test_only_an_informative_finding_is_dropped_for_having_nothing_to_do() -> None:
