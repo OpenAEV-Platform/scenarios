@@ -39,10 +39,10 @@ plan must not exist yet.
 
    | Code | What it means | What to do |
    |---|---|---|
-   | `0` | The entry and its plan are written; what the plan lists is left to complete | Go on |
+   | `0` | The entry and its plan are written; what the plan lists is left to complete | Go on, unless the plan's `changed` is `false`: the export gives the stored scenario again, there is nothing to propose, so stop |
    | `1` | The request is refused (no plan), or a check blocks the entry (a plan) | Read the findings in [`findings.md`](findings.md): fix the request and run again, or fix the entry's files in place |
    | `2` | A usage error, nothing ran: the options, or a plan already there | Fix the command, or remove the old plan |
-   | `3` | The environment stopped the run | Read the message: a change not committed under `scenarios/`, `policy/` or `schemas/`, or another `intake` run holding the checkout, can be fixed, by going back to `main` or by waiting; otherwise stop, and report the message as it is |
+   | `3` | The environment stopped the run | Read the message. Another `intake` run holding the checkout: wait. A change not committed under `scenarios/`, `policy/` or `schemas/`: if it is an entry this agent left unfinished, complete and commit it on its own branch first; if it is not, stop and report it, never discard another's work. Otherwise stop, and report the message as it is |
    | `4` | A defect of the tools | Stop, and report it |
 
 2. **Complete what the plan's `body` lists:** the fields of `scenario.yaml` it names; the
@@ -58,13 +58,16 @@ plan must not exist yet.
    uv run scenario-tools validate --previous-root <base-checkout> -- <entry>  # an update
    ```
 
-   Nothing may block. A blocking finding is fixed in the entry, never worked around. Without
-   `--previous-root`, the version is not compared: for an update, always give it.
+   A blocking finding is fixed in the entry, never worked around. The only finding left may be
+   a `POL-004`, `POL-005`, `POL-006` or `POL-009` the attack needs to breach: the pull request
+   then asks for an exception, as below, and the maintainers grant it or refuse it before any
+   merge. Without `--previous-root`, the version is not compared: for an update, always give it.
 4. **Propose the entry:** a branch from the plan's `base`, the whole entry directory added, a
    signed commit with the plan's `title`, then a pull request with the plan's `title` and `body`.
    It adds or changes only that entry.
-5. **Go back** to `main` before the next intake: the entry just proposed is a change of the
-   checkout until it is merged, and the next run refuses it.
+5. **Go back** to `main` before the next intake, once the entry is committed on its branch:
+   switching does not clear what is not committed, and the next run refuses any change left
+   under `scenarios/`, `policy/` or `schemas/`.
 
 ## When a check refuses the pull request
 
