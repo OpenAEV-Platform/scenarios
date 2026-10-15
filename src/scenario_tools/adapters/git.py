@@ -2,16 +2,15 @@
 
 import datetime
 import os
-import re
 import shutil
 
 # Only to ask git for the commit and the changes, with fixed arguments.
 import subprocess  # nosec B404
 from pathlib import Path
 
+from scenario_tools.domain.shared.commits import is_commit_id
 from scenario_tools.ports.errors import EnvironmentProblemError
 
-_COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _TIMEOUT = 30  # seconds
 
 
@@ -73,7 +72,7 @@ def head_commit(root: Path) -> str:
             "cannot read the commit of the repository: it is not the top of a checkout"
         )
     commit = (_git(root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}") or "").strip()
-    if not _COMMIT.fullmatch(commit):
+    if not is_commit_id(commit):
         raise EnvironmentProblemError(
             "cannot read the commit of the repository: no commit checked out"
         )
@@ -84,7 +83,7 @@ def commit_time(root: Path, commit: str) -> datetime.datetime:
     """The committer time of ``commit``, a full commit ID of the checkout at ``root``, with its
     offset from UTC: when the commit was made where it was made, never when it is read."""
     unread = EnvironmentProblemError(f"cannot read the time of the commit {commit!r}")
-    if not _COMMIT.fullmatch(commit):  # never read by git as an option, nor as a name
+    if not is_commit_id(commit):  # never read by git as an option, nor as a name
         raise unread
     told = (_git(root, "show", "-s", "--format=%cI", commit) or "").strip()
     try:
@@ -94,6 +93,28 @@ def commit_time(root: Path, commit: str) -> datetime.datetime:
     if moment.utcoffset() is None:
         raise unread
     return moment
+
+
+def last_commit(root: Path, path: str, *, at: str) -> str:
+    """The full ID of the last commit that changed ``path``, relative to the checkout at
+    ``root``, in the history of ``at``, a full commit ID, whatever the checkout is at."""
+    unread = EnvironmentProblemError(f"cannot read the last commit that changed {path!r}")
+    parts = path.split("/")
+    if not path or path.startswith(("-", "/")) or any(part in ("", ".", "..") for part in parts):
+        raise unread  # never read by git as an option, nor as a place outside the checkout
+    if not is_commit_id(at):  # never read as a name, a range nor an option
+        raise unread
+    if (_git(root, "rev-parse", "--is-shallow-repository") or "").strip() != "false":
+        raise EnvironmentProblemError(
+            f"cannot read the last commit that changed {path!r}: the checkout is shallow, or "
+            "its history cannot be read; fetch its whole history"
+        )
+    # Literally: a path is never read as a pattern, which could name another's.
+    told = _git(root, "--literal-pathspecs", "log", "-1", "--format=%H", at, "--", path)
+    told = (told or "").strip()
+    if not is_commit_id(told):
+        raise unread
+    return told
 
 
 def uncommitted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:
@@ -202,7 +223,7 @@ def changed_entries(root: Path, base: str) -> tuple[str, ...]:
     never crossed, and so is a file of ``scenarios`` that is no domain, for its own check to
     refuse. A changed path whose name is not UTF-8 fails: it would not be listed rightly; so does
     one with an empty, ``.`` or ``..`` component, which a commit made by hand can hold."""
-    if not _COMMIT.fullmatch(base):  # never read by git as an option, nor as a range
+    if not is_commit_id(base):  # never read by git as an option, nor as a range
         raise EnvironmentProblemError(
             f"cannot read the changes of the pull request: {base!r} is not a commit"
         )

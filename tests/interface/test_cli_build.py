@@ -52,9 +52,11 @@ def _repository(
 
 
 def _approvals(tmp_path: Path, approvers: list[str] | None = None) -> Path:
+    """The approvals of the checkout's commit, as the release workflow collects them."""
     path = tmp_path / "approvals.json"
     entry = {"pull_request": 123, "approvers": ["alice"] if approvers is None else approvers}
-    path.write_text(json.dumps({"schema_version": 1, "entries": {EASM: entry}}))
+    commit = _git(tmp_path / "repository", "rev-parse", "HEAD")
+    path.write_text(json.dumps({"schema_version": 1, "commit": commit, "entries": {EASM: entry}}))
     return path
 
 
@@ -421,7 +423,8 @@ def test_a_released_version_whose_status_changed_builds_nothing(
          "commit.gpgsign=false", "commit", "-q", "-am", "deprecated")  # fmt: skip
     out = tmp_path / "release"
 
-    result = _build(root, approvals, out, str(tmp_path / "first" / "manifest.json"))
+    previous = str(tmp_path / "first" / "manifest.json")
+    result = _build(root, _approvals(tmp_path), out, previous)
 
     assert result.exit_code == 1, result.output
     codes = [f["code"] for f in json.loads(result.output)["findings"]]
@@ -446,4 +449,22 @@ def test_a_previous_release_listing_a_scenario_twice_builds_nothing(
 
     assert result.exit_code == 3, result.output
     assert f"the previous release lists {EASM_ID} twice" in result.output
+    assert not out.exists()
+
+
+def test_approvals_collected_at_another_commit_build_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch)
+    approvals = _approvals(tmp_path)
+    (root / "README.md").write_text("x")
+    _git(root, "add", "README.md")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", "next")  # fmt: skip
+    out = tmp_path / "release"
+
+    result = _build(root, approvals, out)
+
+    assert result.exit_code == 3, result.output
+    assert "not at the commit built" in result.output
     assert not out.exists()

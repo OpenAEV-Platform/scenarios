@@ -103,7 +103,8 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `diff` | Lists what changed in entries since the base branch's copy, each change with the version it needs |
 | `payloads` | Checks that `scenario.yaml` names each payload an entry embeds, with its hash; with `--assign`, gives each payload its ID |
 | `archive` | Builds the archive of an entry that the platform's importer reads |
-| `build` | Builds a release of the catalogue from a commit: every entry's archive and the manifest that lists them |
+| `build` | Builds a release of the catalogue from a commit: every entry's archive and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
+| `approvals` | Collects who approved the last change of every entry, for `build` |
 | `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |

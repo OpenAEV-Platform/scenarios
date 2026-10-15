@@ -99,7 +99,8 @@ written when one of them blocks. See [`intake.md`](intake.md).
 ## Releases: `REL`
 
 `build` reads, for each entry of the catalogue, the pull request that last changed it and those
-who approved it, from an approvals file. It also refuses, with `VER-002`, a version lower than
+who approved it, from the approvals file `scenario-tools approvals` writes (see
+[`releases.md`](releases.md)). It also refuses, with `VER-002`, a version lower than
 the one the previous release holds.
 
 | Code | What it means | What to do |

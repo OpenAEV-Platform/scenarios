@@ -107,13 +107,25 @@ def test_a_ref_that_is_no_commit_is_refused() -> None:
     assert "${{ github.event.pull_request.head.ref }}" not in COMMITS
 
 
+# A job's own permissions, by workflow and job: reads only, and only where a job needs one.
+ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
+    # The approvals of each entry, from the pull requests' reviews.
+    "release.yml": {"approvals": {"contents": "read", "pull-requests": "read"}},
+}
+
+
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_every_workflow_reads_the_repository_only(path: Path) -> None:
     document = _load(path)
 
     assert document["permissions"] == {"contents": "read"}
-    for job in document["jobs"].values():
-        assert "permissions" not in job, "a job never widens the token"
+    allowed = ALLOWED_JOB_PERMISSIONS.get(path.name, {})
+    for name, job in document["jobs"].items():
+        if name in allowed:
+            assert job["permissions"] == allowed[name]
+            assert set(job["permissions"].values()) == {"read"}
+        else:
+            assert "permissions" not in job, "a job never widens the token"
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -175,6 +187,35 @@ def test_a_pull_request_target_checks_out_the_pull_request_beside_the_base_only(
 # decoded its escapes.
 ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "tools-ci.yml": frozenset({"HYGIENE_TERMS"}),  # the private terms of the hygiene test
+    "release.yml": frozenset({"github.token"}),  # to read the reviews, in its approvals job
+}
+# The jobs of a workflow that may use what it is allowed; the others use nothing.
+SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals"})}
+# And within them, the steps that use it, each by its name and exactly what it runs: never a step
+# that runs another's code but the tools.
+SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "release.yml": {
+        "approvals": {
+            "Build only the first release, until releases are published": {
+                "env": {"GH_TOKEN": "${{ github.token }}"},
+                "run": (
+                    'count=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq length)\n'
+                    'if [ "$count" != "0" ]; then\n'
+                    '  echo "The repository has a release: the next one needs the previous '
+                    'manifest, which the release workflow does not read yet."\n'
+                    "  exit 1\n"
+                    "fi\n"
+                ),
+            },
+            "Collect the approvals": {
+                "env": {"GITHUB_TOKEN": "${{ github.token }}"},
+                "run": (
+                    "uv run --frozen --no-dev scenario-tools approvals --repo . "
+                    "--out ../approvals.json"
+                ),
+            },
+        }
+    }
 }
 
 
@@ -274,6 +315,19 @@ def test_a_workflow_uses_only_the_secrets_it_is_allowed(path: Path) -> None:
     used = workflow_secrets(path.read_text(encoding="utf-8"))
 
     assert used <= ALLOWED_SECRETS.get(path.name, frozenset()), sorted(used)
+    if path.name in SECRET_JOBS:
+        document = _load(path)
+        assert "env" not in document  # never every job's
+        assert "defaults" not in document
+        for name, job in document["jobs"].items():
+            assert "env" not in job, name  # never every step's
+            assert "defaults" not in job, name
+            names = [step["name"] for step in job["steps"]]
+            assert len(names) == len(set(names)), name  # a name allowed is one step only
+            allowed = SECRET_STEPS[path.name].get(name, {})
+            for step in job["steps"]:
+                if workflow_secrets(yaml.safe_dump(step)):
+                    assert step == {"name": step["name"], **allowed[step["name"]]}, step["name"]
 
 
 # Triggers: those that run on the repository's own events by default; any other, which may run
@@ -312,3 +366,35 @@ def test_every_declared_workflow_exists() -> None:
 
     assert set(ALLOWED_SECRETS) <= names
     assert set(ALLOWED_TRIGGERS) <= names
+    assert set(ALLOWED_JOB_PERMISSIONS) <= names
+    assert set(SECRET_JOBS) <= names
+
+
+def test_the_two_builds_of_a_release_are_the_same_job() -> None:
+    """What makes them independent is that they run apart, never that they differ."""
+    jobs = _load(DIRECTORY / "release.yml")["jobs"]
+    one, two = (yaml.safe_dump(jobs[name]) for name in ("build-one", "build-two"))
+
+    assert one.replace("release-one", "X").replace("first runner", "Y") == (
+        two.replace("release-two", "X").replace("second runner", "Y")
+    )
+
+
+def test_a_release_is_built_by_hand_from_the_default_branch_and_from_the_approvals() -> None:
+    """Its approvals job runs the tools with the token: what it runs is first the branch whose
+    changes were reviewed, compared by the shell, where case counts."""
+    document = _load(DIRECTORY / "release.yml")
+    jobs = document["jobs"]
+    first = jobs["approvals"]["steps"][0]
+
+    assert set(_triggers(document)) == {"workflow_dispatch"}
+    assert first["name"] == "Build from the default branch only"
+    assert first["env"] == {"DEFAULT_BRANCH": "${{ github.event.repository.default_branch }}"}
+    assert (
+        'if [ -z "$DEFAULT_BRANCH" ] || [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]'
+        in (first["run"])
+    )
+    assert "exit 1" in first["run"]
+    assert "if" not in first
+    assert (jobs["build-one"]["needs"], jobs["build-two"]["needs"]) == ("approvals", "approvals")
+    assert jobs["compare"]["needs"] == ["build-one", "build-two"]
