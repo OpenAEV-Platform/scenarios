@@ -17,9 +17,10 @@ from scenario_tools.domain.verification.release_output import (
     payload_content_findings,
 )
 
-VECTOR = json.loads(
+VECTORS = json.loads(
     (Path(__file__).parents[3] / "conformance" / "payload-hash.json").read_text(encoding="utf-8")
-)["vectors"][1]
+)["vectors"]
+VECTOR = VECTORS[1]
 PAYLOAD_ID = "starter-pack-command"
 PAYLOAD = dict(VECTOR["payload"], payload_external_id=PAYLOAD_ID)  # its ID is outside its hash
 NAME = "0b5c1a6e-4f0e-4b8e-9d2a-1c3e5f7a9b0d-1.0.0.zip"
@@ -35,10 +36,10 @@ def _item(**payloads: str) -> dict[str, Any]:
     }
 
 
-def _stored(*payloads: dict[str, Any]) -> dict[str, Any]:
+def _stored(*payloads: object, attack_patterns: list[str] = VECTOR["attack_patterns"]) -> Any:
     contract = {
         "injector_contract_attack_patterns": [
-            {"attack_pattern_external_id": external} for external in VECTOR["attack_patterns"]
+            {"attack_pattern_external_id": external} for external in attack_patterns
         ]
     }
     return {
@@ -140,6 +141,52 @@ def test_a_payload_without_its_id_is_refused(payload_id: object) -> None:
     assert (finding.code, finding.message) == (
         "VRF-008",
         "the archive embeds a payload without its ID, which the manifest cannot list",
+    )
+
+
+def test_a_payload_that_is_not_an_object_is_refused_as_one_without_its_id() -> None:
+    (finding,) = payload_content_findings(_item(), _stored("a payload"), _no_files)
+
+    assert (finding.code, finding.message) == (
+        "VRF-008",
+        "the archive embeds a payload without its ID, which the manifest cannot list",
+    )
+
+
+def test_an_attached_file_enters_the_hash_by_the_bytes_the_archive_holds() -> None:
+    executable = next(v for v in VECTORS if v["payload"].get("payload_type") == "Executable")
+    payload = dict(executable["payload"], payload_external_id=PAYLOAD_ID)
+    stored = _stored(payload, attack_patterns=executable["attack_patterns"])
+
+    findings = payload_content_findings(
+        _item(**{PAYLOAD_ID: executable["sha256"]}), stored, executable["files"].get
+    )
+
+    assert findings == ()
+
+
+@pytest.mark.parametrize(
+    "refused",
+    [
+        dict(PAYLOAD, payload_external_id=None),
+        dict(PAYLOAD, payload_external_id="other-payload"),
+        dict(PAYLOAD, payload_platforms="Windows"),
+    ],
+    ids=["without its ID", "not listed", "not hashable"],
+)
+def test_a_payload_refused_leaves_the_next_one_verified(refused: dict[str, Any]) -> None:
+    changed = dict(PAYLOAD, command_content="Write-Output changed")
+
+    findings = payload_content_findings(
+        _item(**{PAYLOAD_ID: VECTOR["sha256"]}), _stored(refused, changed), _no_files
+    )
+
+    assert len(findings) == 2
+    assert _codes(findings)[1] == (
+        "VRF-008",
+        NAME,
+        "/scenario_injects/1/inject_injector_contract/injector_contract_payload",
+        f"the payload {PAYLOAD_ID} has another content than the hash the manifest lists",
     )
 
 
