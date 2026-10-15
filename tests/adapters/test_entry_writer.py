@@ -1600,3 +1600,34 @@ def test_a_stop_as_a_directory_is_made_says_what_it_left(
             assert (tmp_path / ENTRY).is_dir()
     finally:
         umask(before)
+
+
+def test_a_stop_as_a_directory_is_made_says_it_may_be_left_when_it_cannot_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+    umask = os.umask
+    calls: list[int] = []
+
+    def blind(*arguments: Any, **keywords: Any) -> os.stat_result:
+        raise OSError(errno.EIO, "Input/output error")
+
+    def stopped(mask: int) -> int:
+        calls.append(mask)
+        if len(calls) == 2:  # once made, as the umask is put back: then nothing can be looked at
+            monkeypatch.setattr(os, "stat", blind)
+            raise KeyboardInterrupt
+        return umask(mask)
+
+    before = umask(0o022)
+    umask(before)
+    monkeypatch.setattr(os, "umask", stopped)
+    try:
+        with pytest.raises(EnvironmentProblemError) as error:
+            _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    finally:
+        umask(before)
+        monkeypatch.undo()
+    assert f"what was made at {ENTRY} cannot be told" in str(error.value)
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert (tmp_path / ENTRY).is_dir()

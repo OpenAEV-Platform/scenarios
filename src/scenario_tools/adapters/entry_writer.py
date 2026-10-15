@@ -137,11 +137,14 @@ def _new_directory(parent: int, name: str, where: str, doing: str) -> tuple[int,
 
 
 def _present(parent: int, name: str) -> bool:
-    """Whether anything is at ``name`` in ``parent``, a link included."""
+    """Whether anything may be at ``name`` in ``parent``, a link included: only a name known
+    to be missing is not."""
     try:
         os.stat(name, dir_fd=parent, follow_symlinks=False)
-    except OSError:
+    except FileNotFoundError:
         return False
+    except OSError:
+        return True  # it cannot be seen, so it may be there
     return True
 
 
