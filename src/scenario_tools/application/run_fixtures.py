@@ -8,15 +8,23 @@ from scenario_tools.application.fixture_expectations import Expectation
 from scenario_tools.application.verify_release import unsafe_cause
 from scenario_tools.domain.shared.finding import Finding, Report, Severity
 
-Outcome = tuple[tuple[str, str, str, str | None], ...]
+Said = tuple[str, str, str, str | None]
+Outcome = tuple[Said, ...]
+
+
+def _order(said: Said) -> tuple[str, str, str, str]:
+    code, path, field, cause = said
+    return code, path, field, cause or ""  # no cause sorts first, and is kept as none
 
 
 def _given(report: Report) -> Outcome:
-    return tuple(sorted((f.code, f.path, f.field, unsafe_cause(f)) for f in report.findings))
+    findings = ((f.code, f.path, f.field, unsafe_cause(f)) for f in report.findings)
+    return tuple(sorted(findings, key=_order))
 
 
 def _expected(expectation: Expectation) -> Outcome:
-    return tuple(sorted((f.code, f.path, f.field, f.cause) for f in expectation.findings))
+    findings = ((f.code, f.path, f.field, f.cause) for f in expectation.findings)
+    return tuple(sorted(findings, key=_order))
 
 
 def _said(outcome: Outcome) -> str:

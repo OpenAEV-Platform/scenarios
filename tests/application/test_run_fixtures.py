@@ -69,3 +69,29 @@ def test_a_directory_no_fixture_names_and_a_fixture_without_its_directory_fail()
         ("CNF-002", "gone", "the fixture has no directory"),
         ("CNF-002", "stray", "no fixture of expected.json names this directory"),
     ]
+
+
+def test_findings_that_differ_only_by_a_cause_and_none_are_compared_without_failing() -> None:
+    expected = Expectation(
+        "unsafe",
+        "U.",
+        (
+            ExpectedFinding("VRF-007", "a.zip", "", "IO-010"),
+            ExpectedFinding("VRF-007", "a.zip", "", None),
+        ),
+    )
+    after = Expectation("zz-after", "Z.", ())
+    no_cause = Finding("VRF-007", Severity.BLOCKING, "a.zip", "", "refused")
+
+    report = _run(
+        (expected, after),
+        {
+            "unsafe": Report("verify", (UNSAFE, no_cause, UNSAFE)),
+            "zz-after": Report("verify", (MISSING,)),
+        },
+    )
+
+    assert [(f.code, f.path) for f in report.findings] == [
+        ("CNF-001", "unsafe"),
+        ("CNF-001", "zz-after"),
+    ]
