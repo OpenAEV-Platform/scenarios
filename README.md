@@ -141,6 +141,8 @@ always read it before you run it, and only run it against systems you are allowe
    name, threat, sources), run `intake`, and complete what its plan lists.
 3. Run `validate` on your entry, then open a pull request with the title and body the plan gives.
 
+An agent that proposes scenarios starts from [`AGENTS.md`](AGENTS.md).
+
 A few rules apply to every pull request:
 
 - **Public content only.** No customer data, no internal addresses, no real credentials. Targets
@@ -165,6 +167,6 @@ A few rules apply to every pull request:
 | [`scenarios/`](scenarios/) | The catalogue's entries, one folder each |
 | [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
-| [`docs/`](docs/) | Guides: adding an entry, the starter-pack identifiers, the findings |
+| [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the findings, releases and their consumers, security |
 | [`src/`](src/) | The source of `scenario-tools` |
 | [`tests/`](tests/) | Its tests, with real platform exports as reference data |
