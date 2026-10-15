@@ -9,12 +9,15 @@ import pytest
 
 from scenario_tools.domain.release.manifest import (
     Approval,
+    Approvals,
     ArchiveFacts,
     BuiltEntry,
     PreviousRelease,
     approval_findings,
+    approvals_document,
     approvals_from_document,
     archive_name,
+    is_github_login,
     issued_at_text,
     manifest,
     manifest_item,
@@ -173,8 +176,11 @@ def test_a_previous_release_name_that_is_none_is_refused(previous: str) -> None:
         release_name(MOMENT, previous)
 
 
+COMMIT = "c" * 40
+
+
 def _approvals(**entries: Any) -> dict[str, Any]:
-    return {"schema_version": 1, "entries": entries}
+    return {"schema_version": 1, "commit": COMMIT, "entries": entries}
 
 
 def test_the_approvals_file_gives_each_entry_its_pull_request_and_its_approvers() -> None:
@@ -183,10 +189,9 @@ def test_the_approvals_file_gives_each_entry_its_pull_request_and_its_approvers(
         **{"scenarios/x/y": {"pull_request": 7, "approvers": []}},
     )
 
-    assert approvals_from_document(document) == {
-        ENTRY: Approval(122, ("alice", "bob")),
-        "scenarios/x/y": Approval(7, ()),
-    }
+    assert approvals_from_document(document) == Approvals(
+        COMMIT, {ENTRY: Approval(122, ("alice", "bob")), "scenarios/x/y": Approval(7, ())}
+    )
 
 
 @pytest.mark.parametrize(
@@ -194,9 +199,11 @@ def test_the_approvals_file_gives_each_entry_its_pull_request_and_its_approvers(
     [
         [],
         {"entries": {}},
-        {"schema_version": 2, "entries": {}},
-        {"schema_version": 1, "entries": []},
-        {"schema_version": 1, "entries": {}, "more": 1},
+        {"schema_version": 2, "commit": COMMIT, "entries": {}},
+        {"schema_version": 1, "commit": COMMIT, "entries": []},
+        {"schema_version": 1, "commit": COMMIT, "entries": {}, "more": 1},
+        {"schema_version": 1, "entries": {}},
+        {"schema_version": 1, "commit": "HEAD", "entries": {}},
         _approvals(**{ENTRY: {"pull_request": 0, "approvers": []}}),
         _approvals(**{ENTRY: {"pull_request": True, "approvers": []}}),
         _approvals(**{ENTRY: {"pull_request": "122", "approvers": []}}),
@@ -312,9 +319,10 @@ NEEDED = "schema_version 1 and an object of entries are needed"
 @pytest.mark.parametrize(
     ("document", "why"),
     [
-        ([], "it needs a schema_version and entries, and nothing else"),
-        ({"schema_version": 2, "entries": {}}, NEEDED),
-        ({"schema_version": 1, "entries": []}, NEEDED),
+        ([], "it needs a schema_version, a commit and entries, and nothing else"),
+        ({"schema_version": 2, "commit": COMMIT, "entries": {}}, NEEDED),
+        ({"schema_version": 1, "commit": COMMIT, "entries": []}, NEEDED),
+        ({"schema_version": 1, "commit": "HEAD", "entries": {}}, "'HEAD' is not a commit ID"),
         (_approvals(x={"pull_request": 1, "approvers": []}), "'x' is not the path of an entry"),
         (_approvals(**{ENTRY: {"pull_request": 1}}),
          f"{ENTRY} needs a pull request and its approvers, and nothing else"),
@@ -340,7 +348,9 @@ def test_the_approvals_file_takes_its_bounds_whole() -> None:
     approvers = ["a" * 39, *(f"u{n}" for n in range(9))]
     document = _approvals(**{ENTRY: {"pull_request": 1, "approvers": approvers}})
 
-    assert approvals_from_document(document) == {ENTRY: Approval(1, tuple(sorted(approvers)))}
+    assert approvals_from_document(document).entries == {
+        ENTRY: Approval(1, tuple(sorted(approvers)))
+    }
 
 
 def test_the_first_pull_request_may_be_merged_before_review() -> None:
@@ -450,3 +460,29 @@ def test_what_only_one_release_says_of_a_version_is_a_change() -> None:
     (finding,) = released_item_findings(ENTRY, now, previous)
 
     assert "saying otherwise of more," in finding.message
+
+
+def test_the_approvals_document_is_what_build_reads() -> None:
+    entries = {"scenarios/x/b": Approval(12, ("bob",)), "scenarios/x/a": Approval(7, ())}
+
+    document = approvals_document(Approvals(COMMIT, entries))
+
+    assert document == {
+        "schema_version": 1,
+        "commit": COMMIT,
+        "entries": {
+            "scenarios/x/a": {"pull_request": 7, "approvers": []},
+            "scenarios/x/b": {"pull_request": 12, "approvers": ["bob"]},
+        },
+    }
+    assert list(document["entries"]) == ["scenarios/x/a", "scenarios/x/b"]
+    assert approvals_from_document(document) == Approvals(COMMIT, entries)
+
+
+@pytest.mark.parametrize(
+    ("login", "fit"),
+    [("alice", True), ("a-b", True), ("a" * 39, True), ("a" * 40, False), ("Alice", False),
+     ("-a", False), ("a--b", False), ("a_b", False), ("", False), (1, False)],
+)  # fmt: skip
+def test_a_github_login_is_one_in_lower_case_as_github_allows(login: object, fit: bool) -> None:
+    assert is_github_login(login) is fit

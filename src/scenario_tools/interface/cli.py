@@ -39,8 +39,10 @@ from scenario_tools.adapters.git import (
     converted,
     converting,
     head_commit,
+    last_commit,
     uncommitted,
 )
+from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
@@ -68,6 +70,7 @@ from scenario_tools.application.build_release import (
     entry_for_release,
 )
 from scenario_tools.application.check_title import check_title as check_title_use_case
+from scenario_tools.application.collect_approvals import collect_approvals
 from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
@@ -90,13 +93,15 @@ from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.policy.vendors import vendors_from_document
 from scenario_tools.domain.release.manifest import (
     CHANNELS,
+    REPOSITORY,
     PreviousRelease,
+    approvals_document,
     approvals_from_document,
     archive_name,
     merged_before_review_from_document,
     previous_release,
 )
-from scenario_tools.domain.shared.canonical import stored_form
+from scenario_tools.domain.shared.canonical import jcs, stored_form
 from scenario_tools.domain.shared.finding import (
     COUNT_CODE,
     ERROR_LIMIT,
@@ -541,6 +546,59 @@ def _previous(path: Path, schema: JsonSchemaValidator) -> PreviousRelease:
         raise EnvironmentProblemError(str(error)) from error
 
 
+def _output(out: Path, root: Path, *, directory: bool) -> Path:
+    """``out`` as a release command writes it: outside the repository at ``root``, in a
+    directory that exists, where nothing is, or an empty ``directory``; a usage error
+    otherwise."""
+    out = Path(os.path.normpath(out.absolute()))
+    if _inside(out, root):
+        raise click.UsageError("--out may not be inside the repository")
+    if not out.parent.is_dir():
+        raise click.UsageError("--out must be in a directory that exists")
+    empty = directory and not out.is_symlink() and out.is_dir() and not any(out.iterdir())
+    if os.path.lexists(out) and not empty:
+        kind = "a new or empty directory" if directory else "a new file"
+        raise click.UsageError(f"--out names a place that is taken: give {kind}")
+    return out
+
+
+@main.command(name="approvals")
+@click.option("--repo", "repo", required=True, type=click.Path(path_type=Path, file_okay=False))
+@click.option("--out", required=True, type=click.Path(path_type=Path, dir_okay=False))
+@click.pass_context
+def approvals_command(ctx: click.Context, repo: Path, out: Path) -> None:
+    """Write to --out, a new file outside the repository, who approved the last change of every
+    entry of the checkout at --repo, as build reads it: the pull request merged into the
+    default branch as the last commit that changed the entry, and those who approved what it
+    merged, asked of GitHub with the token in GITHUB_TOKEN."""
+    root = Path(os.path.realpath(repo))
+    out = _output(out, root, directory=False)
+
+    def produce() -> Report:
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if not token:
+            raise EnvironmentProblemError("GITHUB_TOKEN is not set: GitHub cannot be asked")
+        running = os.environ.get("GITHUB_REPOSITORY") or REPOSITORY
+        if running != REPOSITORY:  # a release names this repository: never another's history
+            raise EnvironmentProblemError(
+                f"the release is of {REPOSITORY}, not of {running}: approvals are read there only"
+            )
+        github = HttpGitHub(token, REPOSITORY)
+        source = RepositoryEntries(root, strict=True)
+        found = collect_approvals(
+            source.places(),
+            commit=head_commit(root),
+            repository=REPOSITORY,
+            last_commit=lambda entry: last_commit(root, entry),
+            pulls_of=github.pulls_of,
+            reviews_of=github.reviews_of,
+        )
+        write_output(out, jcs(approvals_document(found)), create=True)
+        return Report("approvals")
+
+    _emit(ctx, "approvals", produce, root)
+
+
 @main.command(name="build")
 @click.option("--repo", "repo", required=True, type=click.Path(path_type=Path, file_okay=False))
 @click.option(
@@ -561,19 +619,11 @@ def build(
     repository, once every entry passes its checks and has its approvals. --previous-release is
     the channel's previous manifest, or none for its first release."""
     root = Path(os.path.realpath(repo))
-    out = Path(os.path.normpath(out.absolute()))
+    out = _output(out, root, directory=True)
     earlier = None if previous == "none" else Path(previous)
-    for given, place in (
-        ("--out", out),
-        ("--approvals", approvals),
-        ("--previous-release", earlier),
-    ):
+    for given, place in (("--approvals", approvals), ("--previous-release", earlier)):
         if place is not None and _inside(place, root):
             raise click.UsageError(f"{given} may not be inside the repository")
-    if not out.parent.is_dir():
-        raise click.UsageError("--out must be in a directory that exists")
-    if out.is_symlink() or (out.exists() and (not out.is_dir() or any(out.iterdir()))):
-        raise click.UsageError("--out names a place that is taken: give a new or empty directory")
 
     def produce() -> Report:
         source = RepositoryEntries(root, strict=True)  # what a cut run left is never ignored
@@ -589,6 +639,11 @@ def build(
             rules = _rules(source)
             try:
                 granted = approvals_from_document(read_json_file(approvals))
+                if granted.commit != base:
+                    raise ValueError(
+                        f"approvals: collected at {granted.commit}, not at the commit built, "
+                        f"{base}: collect them again"
+                    )
                 loaded = rules.loader.load("merged-before-review")
                 before = merged_before_review_from_document(loaded)
                 tabletop = rules.loader.load("tabletop-injectors")
@@ -615,7 +670,7 @@ def build(
             report, release = build_release(
                 source.places(),
                 build_entry,
-                approvals=granted,
+                approvals=granted.entries,
                 before_review=before,
                 previous=released,
                 channel=channel,

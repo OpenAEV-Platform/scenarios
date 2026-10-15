@@ -73,7 +73,9 @@ def usable_token(value: str | None) -> str:
     return "" if token_problem(token) else token
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect never followed: the token would go with it."""
+
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None  # the redirect answer then comes back as an error
 
@@ -356,7 +358,7 @@ class HttpOpenAEV:
                 return EnvironmentProblemError(message)
 
             handlers: list[urllib.request.BaseHandler] = [
-                _NoRedirect(),
+                NoRedirect(),
                 _HTTPHandler(watchdog),
                 _HTTPSHandler(watchdog),
             ]

@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from scenario_tools.domain.shared.commits import is_commit_id
 from scenario_tools.domain.shared.finding import Finding, Severity
 
 CHANNELS = ("edge", "stable")
@@ -64,6 +65,15 @@ class Approval:
 
     pull_request: int
     approvers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Approvals:
+    """The approval of each entry, by its path, collected at ``commit``, the commit a release of
+    them is built from."""
+
+    commit: str
+    entries: Mapping[str, Approval]
 
 
 @dataclass(frozen=True)
@@ -162,6 +172,12 @@ def _malformed(why: str) -> ValueError:
     return ValueError(f"approvals: the file is not as the release workflow writes it: {why}")
 
 
+def is_github_login(value: object) -> bool:
+    """Whether ``value`` is a GitHub login in lower case: letters, digits and inner single
+    hyphens, 39 characters at most."""
+    return isinstance(value, str) and len(value) <= _LOGIN_LIMIT and bool(_LOGIN.fullmatch(value))
+
+
 def _approval(entry: str, value: object) -> Approval:
     if not isinstance(value, dict) or set(value) != {"pull_request", "approvers"}:
         raise _malformed(f"{entry} needs a pull request and its approvers, and nothing else")
@@ -171,26 +187,45 @@ def _approval(entry: str, value: object) -> Approval:
     if not isinstance(approvers, list) or len(approvers) > _APPROVERS_LIMIT:
         raise _malformed(f"{entry} needs a list of at most {_APPROVERS_LIMIT} approvers")
     for login in approvers:
-        if not (isinstance(login, str) and len(login) <= _LOGIN_LIMIT and _LOGIN.fullmatch(login)):
+        if not is_github_login(login):
             raise _malformed(f"{entry} has an approver that is no GitHub login in lower case")
     if len(set(approvers)) != len(approvers):
         raise _malformed(f"{entry} names an approver twice")
     return Approval(number, tuple(sorted(approvers)))
 
 
-def approvals_from_document(document: object) -> dict[str, Approval]:
-    """The approval of each entry, by its path, from the approvals file the release workflow
-    writes; one out of its shape is refused, never read in part."""
-    if not isinstance(document, dict) or set(document) != {"schema_version", "entries"}:
-        raise _malformed("it needs a schema_version and entries, and nothing else")
+def approvals_from_document(document: object) -> Approvals:
+    """The approval of each entry, by its path, and the commit they were collected at, from the
+    approvals file the release workflow writes; one out of its shape is refused, never read in
+    part."""
+    if not isinstance(document, dict) or set(document) != {"schema_version", "commit", "entries"}:
+        raise _malformed("it needs a schema_version, a commit and entries, and nothing else")
     if document["schema_version"] != 1 or not isinstance(document["entries"], dict):
         raise _malformed("schema_version 1 and an object of entries are needed")
+    commit = document["commit"]
+    if not isinstance(commit, str) or not is_commit_id(commit):
+        raise _malformed(f"{commit!r} is not a commit ID")
     approvals = {}
     for entry, value in document["entries"].items():
         if not _ENTRY.fullmatch(entry):
             raise _malformed(f"{entry!r} is not the path of an entry")
         approvals[entry] = _approval(entry, value)
-    return approvals
+    return Approvals(commit, approvals)
+
+
+def approvals_document(approvals: Approvals) -> dict[str, Any]:
+    """The approvals file ``build`` reads, its entries sorted by path."""
+    return {
+        "schema_version": 1,
+        "commit": approvals.commit,
+        "entries": {
+            entry: {
+                "pull_request": approvals.entries[entry].pull_request,
+                "approvers": list(approvals.entries[entry].approvers),
+            }
+            for entry in sorted(approvals.entries)
+        },
+    }
 
 
 def merged_before_review_from_document(document: object) -> frozenset[int]:

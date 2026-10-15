@@ -16,6 +16,7 @@ from scenario_tools.adapters.git import (
     converted,
     converting,
     head_commit,
+    last_commit,
     uncommitted,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError
@@ -603,3 +604,50 @@ def test_a_changed_path_leaving_the_catalogue_fails_rather_than_being_listed(
 
     with pytest.raises(EnvironmentProblemError, match="never a place outside the catalogue"):
         changed_entries(root, base)
+
+
+def test_the_last_commit_that_changed_a_path_is_read(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    first = _git(root, "rev-parse", "HEAD")
+    (root / "README.md").write_text("changed")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
+
+    assert last_commit(root, "scenarios/a/b") == first
+    assert last_commit(root, "README.md") == _git(root, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("path", ["scenarios/none", "-p", "", "../x", "/etc"])
+def test_a_path_no_commit_changed_or_no_path_of_the_checkout_is_the_environment_s_fault(
+    tmp_path: Path, path: str
+) -> None:
+    root = _committed(tmp_path)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
+        last_commit(root, path)
+
+
+def test_a_path_is_read_as_it_is_never_as_a_pattern(tmp_path: Path) -> None:
+    root = _committed(tmp_path)  # holds scenarios/a/b
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
+        last_commit(root, "scenarios/a/*")
+
+
+def test_the_last_of_two_commits_that_changed_a_path_is_given(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    (root / "scenarios/a/b/scenario.json").write_text("y")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
+
+    assert last_commit(root, "scenarios/a/b") == _git(root, "rev-parse", "HEAD")
+
+
+def test_a_shallow_clone_has_no_history_to_read(tmp_path: Path) -> None:
+    """What changed a path last may be beyond its boundary, which git would give instead."""
+    root = _committed(tmp_path / "full")
+    shallow = tmp_path / "shallow"
+    _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{root}", str(shallow))
+
+    with pytest.raises(EnvironmentProblemError, match="shallow"):
+        last_commit(shallow, "scenarios/a/b")
