@@ -20,6 +20,7 @@ from scenario_tools.adapters.data_files import (
     read_export_archive,
     read_mapping,
     read_stored_scenario,
+    scenario_from_archive,
     write_output,
 )
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -473,3 +474,75 @@ def test_a_temporary_file_already_gone_after_the_target_is_written_is_no_problem
 
     assert [path.name for path in tmp_path.iterdir()] == ["scenario.yaml"]
     assert target.read_bytes() == b"name: x\n"
+
+
+def _built(entries: list[tuple[str, bytes, bytes]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, comment, data in entries:
+            entry = zipfile.ZipInfo(name)
+            entry.comment = comment
+            archive.writestr(entry, data)
+    return buffer.getvalue()
+
+
+SCENARIO = b'{"scenario_injects": []}'
+
+
+def test_the_scenario_of_a_release_archive_is_read_once_it_is_as_built() -> None:
+    from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
+    from tests.adapters.test_safe_zip import ENCRYPTED
+
+    for attachments in (None, ENCRYPTED):
+        data = ZipArchiveBuilder().build(SCENARIO, attachments)
+
+        assert scenario_from_archive(data, "a.zip") == {"scenario_injects": []}
+
+
+@pytest.mark.parametrize(
+    ("entries", "said"),
+    [
+        ([("scenario.json", b"Scenario", SCENARIO), ("evil.sh", b"", b"x")], "holds evil.sh"),
+        ([("scenario.json", b"Scenario", SCENARIO), ("x/y.bin", b"Foo", b"x")], "holds x/y.bin"),
+        ([("scenario.json", b"", SCENARIO)], "scenario.json is not the scenario entry"),
+        ([("other.json", b"Scenario", SCENARIO)], "holds other.json"),
+        ([("attachments.zip", b"", b"x")], "has no scenario.json"),
+        ([("scenario.json", b"Scenario", SCENARIO), ("attachments.zip", b"Attachment", b"x")],
+         "attachments.zip is not the attachments entry"),
+    ],
+)  # fmt: skip
+def test_a_release_archive_holding_anything_else_is_refused(
+    entries: list[tuple[str, bytes, bytes]], said: str
+) -> None:
+    with pytest.raises(UnsafeInputError, match=said) as error:
+        scenario_from_archive(_built(entries), "a.zip")
+    assert (error.value.code, error.value.path) == ("IO-014", "a.zip")
+
+
+def test_attachments_that_do_not_open_as_the_importer_opens_them_are_refused() -> None:
+    data = _built([("scenario.json", b"Scenario", SCENARIO), ("attachments.zip", b"", b"no zip")])
+
+    with pytest.raises(UnsafeInputError) as error:
+        scenario_from_archive(data, "a.zip")
+    assert (error.value.code, error.value.path) == ("IO-007", "a.zip/attachments.zip")
+
+
+def test_bytes_that_are_no_archive_are_refused() -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        scenario_from_archive(b"not a zip", "a.zip")
+    assert (error.value.code, error.value.path) == ("IO-007", "a.zip")
+
+
+def test_attachments_encrypted_with_another_password_are_refused() -> None:
+    import zlib
+
+    from tests.adapters.test_safe_zip import VISIBLE, _deflate, _handmade, _zipcrypto
+
+    crc = zlib.crc32(VISIBLE)
+    other = _zipcrypto(_deflate(VISIBLE), b"another", crc >> 24)
+    attachments = _handmade(other, method=8, crc=crc, size=len(VISIBLE), flags=1)
+    data = _built([("scenario.json", b"Scenario", SCENARIO), ("attachments.zip", b"", attachments)])
+
+    with pytest.raises(UnsafeInputError) as error:
+        scenario_from_archive(data, "a.zip")
+    assert (error.value.code, error.value.path) == ("IO-007", "a.zip/attachments.zip")

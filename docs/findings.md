@@ -109,6 +109,21 @@ the one the previous release holds.
 | `REL-002` | The pull request that last changed the entry has no approval, and is not listed in `policy/data/merged-before-review.yaml` as merged before reviews were required. | Change the entry through a reviewed pull request. |
 | `REL-003` | The previous release lists a scenario that no entry has. A released scenario is withdrawn by a new version, never removed. | Bring the entry back, with `status` set to `DEPRECATED` or `REVOKED` in a new version. |
 
+## Verifying a release: `VRF`
+
+`verify` checks a release as its consumers will, before it is published: the manifest, then each
+archive it lists. A release fails on any of these findings. A manifest that cannot be read at all
+is reported by its `IO` finding; an archive refused as unsafe is `VRF-007`, whose message starts
+with the `IO` code that refused it. `VRF-001` to `VRF-005` are kept for signed releases, which do
+not exist yet.
+
+| Code | What it means | What to do |
+|---|---|---|
+| `VRF-006` | An archive the manifest lists is missing, or its size or its SHA-256 is not the one listed; or a file stands beside the archives that the manifest does not list, and would be published with them. | Publish the archives `build` wrote, unchanged, beside their manifest, and nothing else. |
+| `VRF-007` | An archive is unsafe to extract, or is not what `build` writes: too large, too many entries, an entry name leaving the extraction directory, a link, a layout the checks refuse; any entry but `scenario.json` and `attachments.zip`, or an `attachments.zip` that does not open with the shared password. | Build the release again with `build`; never edit an archive. |
+| `VRF-008` | A payload an archive embeds is not listed in the manifest, has another content than the canonical hash listed, has no ID or cannot be hashed; or the manifest lists a payload the archive does not embed, or lists one twice. | Build the release again with `build`, from entries that pass `validate`. |
+| `VRF-009` | The manifest does not meet its schema, lists a scenario twice, or names an archive after another scenario or version than the item's; or an approved manifest does not name its release approver. | Build the manifest with `build`; the release job adds the approver. |
+
 ## Other checks
 
 A blocking `POL-004`, `POL-005`, `POL-006` or `POL-009` finding can be excepted when the breach is

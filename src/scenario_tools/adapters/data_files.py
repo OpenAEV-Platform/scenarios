@@ -29,6 +29,11 @@ from scenario_tools.adapters.safe_zip import (
     archive_from_bytes,
     open_zip,
 )
+from scenario_tools.adapters.zip_archive import (
+    ATTACHMENTS_ENTRY,
+    SCENARIO_COMMENT,
+    SCENARIO_ENTRY,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 _DATA_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -82,6 +87,30 @@ def check_export_archive(data: bytes, path: str) -> None:
     entry whose comment is ``Scenario``, whatever its name) and no document; ``path`` names the
     archive in the refusal."""
     _export_document(archive_from_bytes(data, path=path))
+
+
+def scenario_from_archive(data: bytes, path: str) -> Any:
+    """The scenario of a release archive, once the archive is exactly what build writes:
+    ``scenario.json``, the scenario entry, and an ``attachments.zip`` that opens with the
+    shared password, or not; anything else, or anything unsafe, is ``UnsafeInputError``.
+    ``path`` names the archive in the refusal."""
+    archive = archive_from_bytes(data, path=path)
+    for name in archive.names:
+        if name not in (SCENARIO_ENTRY, ATTACHMENTS_ENTRY):
+            raise UnsafeInputError("IO-014", f"a release archive never holds {name}", path)
+    if SCENARIO_ENTRY not in archive.names:
+        raise UnsafeInputError("IO-014", f"the archive has no {SCENARIO_ENTRY}", path)
+    if archive.comment(SCENARIO_ENTRY) != SCENARIO_COMMENT:
+        raise UnsafeInputError("IO-014", f"{SCENARIO_ENTRY} is not the scenario entry", path)
+    if ATTACHMENTS_ENTRY in archive.names:
+        if archive.comment(ATTACHMENTS_ENTRY) != b"":
+            message = f"{ATTACHMENTS_ENTRY} is not the attachments entry"
+            raise UnsafeInputError("IO-014", message, path)
+        nested = f"{path}/{ATTACHMENTS_ENTRY}"
+        attachments = archive_from_bytes(archive.read(ATTACHMENTS_ENTRY), path=nested)
+        for name in attachments.names:
+            attachments.read(name, password=ATTACHMENTS_PASSWORD)
+    return parse_json(archive.read(SCENARIO_ENTRY), path=path)
 
 
 def read_export_archive(path: Path) -> bytes:
