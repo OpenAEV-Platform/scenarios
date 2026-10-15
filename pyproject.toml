@@ -101,8 +101,8 @@ forbidden_modules = ["scenario_tools.application", "scenario_tools.interface"]
 exclude_dirs = ["tests"]
 
 [tool.mutmut]
-# The whole package is copied so that the tests can import it; only the policy and
-# verification contexts are mutated, everything else is excluded below.
+# The whole package is copied so that the tests can import it; the domain is mutated, but
+# for the contexts excluded below with everything else.
 source_paths = ["src/"]
 do_not_mutate = [
     "*/scenario_tools/__init__.py",
@@ -113,7 +113,6 @@ do_not_mutate = [
     "*/scenario_tools/domain/__init__.py",
     "*/scenario_tools/domain/shared/*",
     "*/scenario_tools/domain/catalogue/*",
-    "*/scenario_tools/domain/release/*",
     "*/scenario_tools/domain/lab/*",
 ]
 # Mutants are judged by the domain tests only; the architecture tests would reject

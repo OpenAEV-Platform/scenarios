@@ -203,6 +203,26 @@ class RepositoryEntries:
             self._entries = self._read_entries()
         return self._entries
 
+    def places(self) -> tuple[str, ...]:
+        """Every place the catalogue holds an entry at, sorted: each entry read, and every
+        other name two levels under ``scenarios/``, whatever it is, so that what a release
+        leaves out is said. A linked domain is one place, never crossed."""
+        found = {entry.path for entry in self.entries()}
+        base = self._root / "scenarios"
+        for domain, linked in _listing(base):
+            if linked:
+                continue
+            try:
+                with os.scandir(base / domain) as names:
+                    found.update(f"scenarios/{domain}/{name.name}" for name in names)
+            except OSError as error:
+                if error.errno in _ABSENT:
+                    continue
+                raise EnvironmentProblemError(
+                    f"cannot read scenarios/{domain}: {error.strerror}"
+                ) from error
+        return tuple(sorted(found))
+
     def external_ids(self) -> Mapping[str, tuple[str, ...]]:
         """Built once a run from the entries, and shared: never changed by a reader."""
         if self._external_ids is None:

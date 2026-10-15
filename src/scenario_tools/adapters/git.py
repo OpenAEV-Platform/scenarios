@@ -1,5 +1,6 @@
 """Adapter: what git says about a checkout."""
 
+import datetime
 import os
 import re
 import shutil
@@ -77,6 +78,22 @@ def head_commit(root: Path) -> str:
             "cannot read the commit of the repository: no commit checked out"
         )
     return commit
+
+
+def commit_time(root: Path, commit: str) -> datetime.datetime:
+    """The committer time of ``commit``, a full commit ID of the checkout at ``root``, with its
+    offset from UTC: when the commit was made where it was made, never when it is read."""
+    unread = EnvironmentProblemError(f"cannot read the time of the commit {commit!r}")
+    if not _COMMIT.fullmatch(commit):  # never read by git as an option, nor as a name
+        raise unread
+    told = (_git(root, "show", "-s", "--format=%cI", commit) or "").strip()
+    try:
+        moment = datetime.datetime.fromisoformat(told)
+    except ValueError as error:
+        raise unread from error
+    if moment.utcoffset() is None:
+        raise unread
+    return moment
 
 
 def uncommitted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:

@@ -403,3 +403,41 @@ def test_an_entry_a_finding_cannot_name_is_never_read(
         CatalogueEntry(ENTRY, "one", ""),
         CatalogueEntry(taken, "", "", False),  # unknown, so taken: intake waits for a fix
     }
+
+
+def test_every_place_two_levels_under_the_catalogue_is_an_entry_s(tmp_path: Path) -> None:
+    """What a release leaves out must be said: a directory without its metadata, a file or a
+    link where an entry would be is one of the places, as an entry read is."""
+    _entry(tmp_path)
+    (tmp_path / "scenarios" / "ransomware" / "bare").mkdir()
+    (tmp_path / "scenarios" / "ransomware" / "notes.txt").write_text("x")
+    (tmp_path / "scenarios" / "ransomware" / "linked").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "scenarios" / "linked-domain").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "scenarios" / "README.md").write_text("x")  # no domain: never an entry
+
+    places = RepositoryEntries(tmp_path, strict=True).places()
+
+    assert places == (
+        "scenarios/linked-domain",
+        ENTRY,
+        "scenarios/ransomware/bare",
+        "scenarios/ransomware/linked",
+        "scenarios/ransomware/notes.txt",
+    )
+
+
+def test_a_catalogue_without_a_scenarios_directory_has_no_place(tmp_path: Path) -> None:
+    assert RepositoryEntries(tmp_path, strict=True).places() == ()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
+def test_a_domain_that_cannot_be_read_is_the_environment_s_fault(tmp_path: Path) -> None:
+    _entry(tmp_path)
+    domain = tmp_path / "scenarios" / "ransomware"
+    domain.chmod(0o000)
+    try:
+        with pytest.raises(EnvironmentProblemError, match="cannot read"):
+            RepositoryEntries(tmp_path, strict=True).places()
+    finally:
+        domain.chmod(0o755)

@@ -35,6 +35,7 @@ from scenario_tools.adapters.data_files import (
 from scenario_tools.adapters.entry_writer import RepositoryWriter
 from scenario_tools.adapters.git import (
     changed_entries,
+    commit_time,
     converted,
     converting,
     head_commit,
@@ -60,6 +61,12 @@ from scenario_tools.application.assign_payloads import (
     payload_findings,
 )
 from scenario_tools.application.build_archive import build_archive
+from scenario_tools.application.build_release import (
+    ArchivedEntry,
+    EntryResult,
+    build_release,
+    entry_for_release,
+)
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
@@ -72,11 +79,23 @@ from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
+from scenario_tools.domain.catalogue.metadata import (
+    communication_injectors_from_document,
+    is_tabletop,
+)
 from scenario_tools.domain.policy.actions import forbidden_from_document, side_effects_from_document
 from scenario_tools.domain.policy.exceptions import exceptions_from_document
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.policy.vendors import vendors_from_document
+from scenario_tools.domain.release.manifest import (
+    CHANNELS,
+    PreviousRelease,
+    approvals_from_document,
+    archive_name,
+    merged_before_review_from_document,
+    previous_release,
+)
 from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import (
     COUNT_CODE,
@@ -430,6 +449,52 @@ def normalize(
     _emit(ctx, "normalize", produce, root)
 
 
+def _entry_archive(
+    entry: Path, root: Path, loader: YamlDataLoader, out: str | None
+) -> ArchivedEntry:
+    """What the archive's checks find of the entry at ``entry``, of the repository at
+    ``root``, its import archive when they let it be built, meant for ``out`` or, without it,
+    named as a release names it, and what they read."""
+    scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
+    declared = read_yaml_file(metadata)
+    external_id = declared.get("external_id") if isinstance(declared, dict) else None
+    if not isinstance(external_id, str) or not _CANONICAL_UUID.fullmatch(external_id):
+        message = "external_id must be a UUID in lower case with hyphens"
+        where = repository_path(str(metadata), root)
+        refused = Finding("SCH-001", Severity.BLOCKING, where, "/external_id", message)
+        return ArchivedEntry((refused,), None, {}, None)
+    try:
+        builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
+        policy = _policy_data(loader)
+    except ValueError as error:
+        raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+    path = repository_path(str(scenario), root)
+    data, document = read_stored_scenario(scenario)
+    named = out if out is not None else archive_name(external_id, str(declared.get("version")))
+    report, built = build_archive(
+        document,
+        data,
+        read_attachments(entry / "attachments.zip"),
+        path,
+        named,
+        ZipArchiveBuilder(),
+        # Normalised again with itself as the previous version, unless it is another
+        # entry's: then what normalisation writes for this one differs anyway.
+        renormalised=lambda stored: renormaliser(loader)(stored, external_id, path),
+        contract_findings=lambda stored: (
+            export_facts(stored, builtin, path)[1]
+            + copy_findings(stored, builtin, path)
+            + hidden_character_findings(stored, path)
+        ),
+        check=lambda built: check_export_archive(built, named),
+        limit=ARCHIVE_LIMIT,
+        policy=policy,
+        declared=declared,
+        agreed=agreed_ids(loader),
+    )
+    return ArchivedEntry(report.findings, built, declared, document)
+
+
 @main.command(name="archive")
 @click.argument("entry", type=click.Path(path_type=Path))
 @click.option("--out", required=True, type=click.Path(path_type=Path))
@@ -443,7 +508,6 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
         raise click.UsageError("OUT may not be inside the entry")
     if out.is_dir():
         raise click.UsageError("OUT is a directory: give the path of the archive file")
-    scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
     levels: list[Path] = []
     try:
         levels = _policy_levels(entry)
@@ -453,47 +517,131 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
 
     def produce() -> Report:
         loader = YamlDataLoader(root / "policy" / "data")
-        declared = read_yaml_file(metadata)
-        external_id = declared.get("external_id") if isinstance(declared, dict) else None
-        if not isinstance(external_id, str) or not _CANONICAL_UUID.fullmatch(external_id):
-            message = "external_id must be a UUID in lower case with hyphens"
-            where = repository_path(str(metadata), root)
-            return Report(
-                "archive", (Finding("SCH-001", Severity.BLOCKING, where, "/external_id", message),)
-            )
-        try:
-            builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
-            policy = _policy_data(loader)
-        except ValueError as error:
-            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
-        path = repository_path(str(scenario), root)
-        data, document = read_stored_scenario(scenario)
-        report, built = build_archive(
-            document,
-            data,
-            read_attachments(entry / "attachments.zip"),
-            path,
-            str(out),
-            ZipArchiveBuilder(),
-            # Normalised again with itself as the previous version, unless it is another
-            # entry's: then what normalisation writes for this one differs anyway.
-            renormalised=lambda stored: renormaliser(loader)(stored, external_id, path),
-            contract_findings=lambda stored: (
-                export_facts(stored, builtin, path)[1]
-                + copy_findings(stored, builtin, path)
-                + hidden_character_findings(stored, path)
-            ),
-            check=lambda built: check_export_archive(built, str(out)),
-            limit=ARCHIVE_LIMIT,
-            policy=policy,
-            declared=declared,
-            agreed=agreed_ids(loader),
-        )
-        if built is not None:
-            write_output(out, built)
-        return report
+        archived = _entry_archive(entry, root, loader, str(out))
+        if archived.archive is not None:
+            write_output(out, archived.archive)
+        return Report("archive", archived.findings)
 
     _emit(ctx, "archive", produce, root)
+
+
+def _previous(path: Path, schema: JsonSchemaValidator) -> PreviousRelease:
+    """The previous release of a channel, from its manifest at ``path``, once it meets the
+    manifest's schema: what it says is compared, never trusted unread."""
+    document = read_json_file(path)
+    violations = schema.validate("manifest", document)
+    if violations:
+        raise EnvironmentProblemError(
+            "the previous release's manifest does not meet its schema, at "
+            + ", ".join(violation.pointer or "/" for violation in violations[:5])
+        )
+    try:
+        return previous_release(document)
+    except ValueError as error:
+        raise EnvironmentProblemError(str(error)) from error
+
+
+@main.command(name="build")
+@click.option("--repo", "repo", required=True, type=click.Path(path_type=Path, file_okay=False))
+@click.option(
+    "--previous-release",
+    "previous",
+    required=True,
+    help="The channel's previous manifest; none for its first release (./none for a file).",
+)
+@click.option("--channel", required=True, type=click.Choice(CHANNELS))
+@click.option("--approvals", required=True, type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--out", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def build(
+    ctx: click.Context, repo: Path, previous: str, channel: str, approvals: Path, out: Path
+) -> None:
+    """Build the release of the catalogue of the checkout at --repo on --channel: every
+    entry's archive and the manifest, written to --out, a new or empty directory outside the
+    repository, once every entry passes its checks and has its approvals. --previous-release is
+    the channel's previous manifest, or none for its first release."""
+    root = Path(os.path.realpath(repo))
+    out = Path(os.path.normpath(out.absolute()))
+    earlier = None if previous == "none" else Path(previous)
+    for given, place in (
+        ("--out", out),
+        ("--approvals", approvals),
+        ("--previous-release", earlier),
+    ):
+        if place is not None and _inside(place, root):
+            raise click.UsageError(f"{given} may not be inside the repository")
+    if not out.parent.is_dir():
+        raise click.UsageError("--out must be in a directory that exists")
+    if out.is_symlink() or (out.exists() and (not out.is_dir() or any(out.iterdir()))):
+        raise click.UsageError("--out names a place that is taken: give a new or empty directory")
+
+    def produce() -> Report:
+        source = RepositoryEntries(root, strict=True)  # what a cut run left is never ignored
+        with source.locked():  # no intake writes in the catalogue while it is read
+            base = head_commit(root)
+            _refuse_uncommitted(root, release=True)
+            if head_commit(root) != base:
+                raise EnvironmentProblemError(
+                    "the checkout's commit changed while it was checked: run again"
+                )
+            source.check_held()  # git found the checkout by its path: still the one held
+            moment = commit_time(root, base)
+            rules = _rules(source)
+            try:
+                granted = approvals_from_document(read_json_file(approvals))
+                loaded = rules.loader.load("merged-before-review")
+                before = merged_before_review_from_document(loaded)
+                tabletop = rules.loader.load("tabletop-injectors")
+                communication = communication_injectors_from_document(tabletop)
+            except ValueError as error:
+                raise EnvironmentProblemError(str(error)) from error
+            released = None if earlier is None else _previous(earlier, rules.schema)
+
+            def tabletop_of(document: object, entry: str) -> bool:
+                facts = export_facts(document, rules.builtin, f"{entry}/scenario.json")[0]
+                return is_tabletop(facts, communication)
+
+            def validated(entry: str) -> tuple[Finding, ...]:
+                return rules.validate(entry, source)
+
+            def archived(entry: str) -> ArchivedEntry:
+                return _entry_archive(root / entry, root, rules.loader, None)
+
+            def build_entry(entry: str) -> EntryResult:
+                return entry_for_release(
+                    entry, validate=validated, archive=archived, tabletop=tabletop_of
+                )
+
+            report, release = build_release(
+                source.places(),
+                build_entry,
+                approvals=granted,
+                before_review=before,
+                previous=released,
+                channel=channel,
+                moment=moment,
+            )
+            if release is None:
+                return report
+            violations = rules.schema.validate("manifest", json.loads(release.manifest))
+            if violations:  # a defect of the tools: the release goes nowhere
+                raise EnvironmentProblemError(
+                    "the manifest built does not meet its schema, at "
+                    + ", ".join(violation.pointer or "/" for violation in violations[:5])
+                )
+            _refuse_uncommitted(root, release=True)  # nothing changed while it was built
+            if head_commit(root) != base:
+                raise EnvironmentProblemError(
+                    "the checkout's commit changed while the release was built: run again"
+                )
+            source.check_held()
+            out.mkdir(exist_ok=True)
+            for name, data in sorted(release.archives.items()):
+                write_output(out / name, data, create=True)
+            write_output(out / "manifest.json", release.manifest, create=True)  # last
+            return report
+
+    _emit(ctx, "build", produce, root)
 
 
 @main.command(name="payloads")
@@ -849,20 +997,27 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
     _emit(ctx, "intake", produce_shown, root)
 
 
-def _refuse_uncommitted(root: Path) -> None:
+def _refuse_uncommitted(root: Path, *, release: bool = False) -> None:
     """Refuse a checkout whose bytes git converts from its commit, or whose catalogue or rules
-    differ from it: the plan must describe what its base gives. Conversions come first: git
-    status would run a filter the attributes name."""
+    differ from it: the plan, or the ``release``, must describe what its commit gives.
+    Conversions come first: git status would run a filter the attributes name."""
+    made = "the release" if release else "the plan"
     turned = converted(root, _PLANNED)
     if turned:
         more = f" and {len(turned) - 1} more" if len(turned) > 1 else ""
         raise EnvironmentProblemError(
             f"git converts files under {_PLANNED_NAMED} between the commit and the checkout "
-            f"({turned[0]}{more}, by its attributes or its line ends): the plan would not "
-            "describe the commit's "
-            "bytes"
+            f"({turned[0]}{more}, by its attributes or its line ends): {made} would not "
+            "describe the commit's bytes"
         )
     changed = uncommitted(root, _PLANNED)
+    if changed and release:
+        more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
+        raise EnvironmentProblemError(
+            f"the checkout has changes that are not committed under {_PLANNED_NAMED} "
+            f"({changed[0]}{more}): build from a clean checkout of the commit, so that the "
+            "release describes its commit"
+        )
     if changed:
         more = f" and {len(changed) - 1} more" if len(changed) > 1 else ""
         raise EnvironmentProblemError(

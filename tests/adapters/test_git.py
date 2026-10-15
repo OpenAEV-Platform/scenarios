@@ -1,5 +1,6 @@
 """The commit a checkout is at, which a plan names as its base."""
 
+import datetime
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import pytest
 from scenario_tools.adapters import git as git_module
 from scenario_tools.adapters.git import (
     changed_entries,
+    commit_time,
     converted,
     converting,
     head_commit,
@@ -59,6 +61,30 @@ def test_the_commit_of_a_checkout_is_read(tmp_path: Path) -> None:
     )
 
     assert head_commit(tmp_path) == _git(tmp_path, "rev-parse", "HEAD")
+
+
+def test_the_time_of_a_commit_is_its_committer_s_with_its_offset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-10-30T11:15:02+02:00")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2020-01-01T00:00:00+00:00")  # never the author's
+    root = _committed(tmp_path)
+
+    moment = commit_time(root, _git(root, "rev-parse", "HEAD"))
+
+    paris = datetime.timezone(datetime.timedelta(hours=2))
+    assert moment == datetime.datetime(2026, 10, 30, 11, 15, 2, tzinfo=paris)
+    assert moment.utcoffset() == datetime.timedelta(hours=2)
+
+
+@pytest.mark.parametrize("commit", ["0" * 40, "HEAD", "--all"])
+def test_the_time_of_a_commit_the_checkout_does_not_hold_is_the_environment_s_fault(
+    tmp_path: Path, commit: str
+) -> None:
+    root = _committed(tmp_path)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the time of the commit"):
+        commit_time(root, commit)
 
 
 @pytest.mark.parametrize("init", [False, True], ids=["not a repository", "no commit yet"])

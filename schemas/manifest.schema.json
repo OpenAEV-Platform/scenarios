@@ -30,7 +30,7 @@
       ]
     },
     "issued_at": {
-      "description": "When the release was made, in UTC.",
+      "description": "The committer time of the commit the release is built from, in UTC: two builds of one commit give the same manifest.",
       "type": "string",
       "format": "date-time"
     },
@@ -59,7 +59,8 @@
     },
     "semver": {
       "type": "string",
-      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+      "description": "Semantic versioning; nine digits at most for each number.",
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
     },
     "github_login": {
       "type": "string",
@@ -86,7 +87,6 @@
         "requires",
         "archive",
         "payloads",
-        "test_report",
         "approvals"
       ],
       "properties": {
@@ -270,7 +270,7 @@
             "name": {
               "description": "The archive's file name.",
               "type": "string",
-              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.zip$"
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.zip$"
             },
             "sha256": {
               "description": "The SHA-256 of the archive, so that a platform can check it.",
@@ -315,7 +315,7 @@
           }
         },
         "test_report": {
-          "description": "The report of the scenario's test run, by its hash and the release it belongs to.",
+          "description": "The report of the scenario's test run, by its hash and the release it belongs to; absent while releases carry no test report.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -353,10 +353,10 @@
               "minimum": 1
             },
             "approvers": {
-              "description": "The people who approved the pull request.",
+              "description": "The people who approved the pull request: at least one, except for a pull request merged before reviews were required, which the repository lists.",
               "type": "array",
               "maxItems": 10,
-              "minItems": 2,
+              "minItems": 0,
               "uniqueItems": true,
               "items": {
                 "$ref": "#/$defs/github_login"

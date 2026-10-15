@@ -20,6 +20,7 @@ from scenario_tools.domain.catalogue.metadata import (
     ScenarioMetadata,
     bound,
     clean,
+    communication_injectors_from_document,
     cross_check,
     is_tabletop,
     starting_metadata,
@@ -876,3 +877,23 @@ def test_a_paragraph_break_at_the_last_position_in_reach_is_found() -> None:
     head = "a" * (DESCRIPTION_LIMIT - 1)  # the break starts where the last cut may be
 
     assert bound(head + "\n\n" + "b" * 100) == (head + MARK, "paragraph")
+
+
+def test_the_communication_injectors_from_document_are_those_the_maintainers_list() -> None:
+    document = {"injectors": ["openaev_email", "openaev_manual"]}
+
+    assert communication_injectors_from_document(document) == frozenset(
+        {"openaev_email", "openaev_manual"}
+    )
+
+
+@pytest.mark.parametrize(
+    "document",
+    [None, {}, {"injectors": []}, {"injectors": "openaev_email"}, {"injectors": [""]},
+     {"injectors": [1]}, {"injectors": ["a", "a"]}, {"injectors": ["a"], "more": 1}],
+)  # fmt: skip
+def test_a_list_of_communication_injectors_from_document_out_of_its_shape_is_refused(
+    document: Any,
+) -> None:
+    with pytest.raises(ValueError, match="tabletop-injectors"):
+        communication_injectors_from_document(document)
