@@ -100,6 +100,22 @@ class ExportFacts:
     injects: tuple[InjectFacts, ...]
 
 
+def communication_injectors_from_document(document: object) -> frozenset[str]:
+    """The injector types that only communicate with the players, from the maintainers'
+    ``tabletop-injectors`` data: a non-empty list of names, each once."""
+    listed = document.get("injectors") if isinstance(document, Mapping) else None
+    if (
+        not isinstance(document, Mapping)
+        or set(document) != {"injectors"}
+        or not isinstance(listed, list)
+        or not listed
+        or not all(isinstance(name, str) and name for name in listed)
+        or len(set(listed)) != len(listed)
+    ):
+        raise ValueError("tabletop-injectors: must list injector types, each once")
+    return frozenset(listed)
+
+
 def is_tabletop(facts: ExportFacts, communication: frozenset[str]) -> bool:
     """True when every inject uses a communication injector and none needs an executor. A
     scenario without any inject, with an injector outside the list, or with an inject that runs

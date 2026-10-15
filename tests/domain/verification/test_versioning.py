@@ -13,6 +13,7 @@ from scenario_tools.domain.verification.versioning import (
     changelog_findings,
     changes,
     declared_bump,
+    released_version_findings,
     required_bump,
     versioning_findings,
 )
@@ -958,3 +959,59 @@ def test_equal_values_of_the_same_types_are_no_change() -> None:
     stored = changed("scenario_new", value=value)
 
     assert changes(METADATA, stored, METADATA, copy.deepcopy(stored)) == []
+
+
+def test_a_released_version_built_again_with_another_archive_is_refused() -> None:
+    released = {("id", "1.0.0"): "a" * 64}
+
+    (finding,) = released_version_findings("scenarios/x/y", "id", "1.0.0", "b" * 64, released)
+
+    assert (finding.code, finding.severity, finding.path, finding.field) == (
+        "VER-020",
+        Severity.BLOCKING,
+        "scenarios/x/y/scenario.yaml",
+        "/version",
+    )
+    assert finding.message == (
+        "version 1.0.0 was released with another archive, and a released version never "
+        "changes: raise the version"
+    )
+
+
+@pytest.mark.parametrize(
+    ("external_id", "version", "sha256"),
+    [("id", "1.0.0", "a" * 64), ("id", "1.0.1", "b" * 64), ("other", "1.0.0", "b" * 64)],
+)
+def test_the_same_archive_or_a_version_not_released_is_no_finding(
+    external_id: str, version: str, sha256: str
+) -> None:
+    released = {("id", "1.0.0"): "a" * 64}
+
+    assert released_version_findings("scenarios/x/y", external_id, version, sha256, released) == ()
+
+
+@pytest.mark.parametrize("version", ["0.9.9", "1.0.0-x", "x"])
+def test_a_version_lower_than_one_released_is_refused(version: str) -> None:
+    released = {("id", "1.0.0"): "a" * 64, ("id", "0.9.0"): "c" * 64, ("other", "3.0.0"): "d" * 64}
+
+    findings = released_version_findings("scenarios/x/y", "id", version, "b" * 64, released)
+
+    if version == "0.9.9":
+        (finding,) = findings
+        assert (finding.code, finding.severity, finding.path, finding.field) == (
+            "VER-002",
+            Severity.BLOCKING,
+            "scenarios/x/y/scenario.yaml",
+            "/version",
+        )
+        assert finding.message == (
+            "version 0.9.9 is lower than 1.0.0, already released: a version never decreases"
+        )
+    else:  # not a version: the schema says so
+        assert findings == ()
+
+
+def test_a_version_above_every_one_released_is_no_finding() -> None:
+    released = {("id", "1.0.0"): "a" * 64, ("id", "1.2.0"): "c" * 64}
+
+    assert released_version_findings("scenarios/x/y", "id", "1.10.0", "b" * 64, released) == ()

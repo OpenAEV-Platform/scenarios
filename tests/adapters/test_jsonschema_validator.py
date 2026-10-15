@@ -216,12 +216,12 @@ def test_scenario_violations_name_the_offending_value(
     [
         (lambda d: d.update(issued_at="2026-13-45T25:61:00Z"), "/issued_at"),
         (
-            lambda d: d["items"][0]["approvals"].update(approvers=["alice"]),
+            lambda d: d["items"][0]["approvals"].update(approvers=["alice", "alice"]),
             "/items/0/approvals/approvers",
         ),
         (lambda d: d["items"][0]["archive"].update(name="x.zip"), "/items/0/archive/name"),
     ],
-    ids=["issued at", "one approver", "archive name"],
+    ids=["issued at", "an approver twice", "archive name"],
 )
 def test_manifest_violations_name_the_offending_value(
     validator: JsonSchemaValidator, change: Callable[[dict[str, Any]], object], pointer: str
@@ -229,6 +229,23 @@ def test_manifest_violations_name_the_offending_value(
     violations = validator.validate("manifest", _changed(MANIFEST, change))
 
     assert [violation.pointer for violation in violations] == [pointer]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda d: d["items"][0].pop("test_report"),
+        lambda d: d["items"][0]["approvals"].update(approvers=[]),
+        lambda d: d["items"][0]["approvals"].update(approvers=["alice"]),
+    ],
+    ids=["no test report", "no approver", "one approver"],
+)
+def test_a_manifest_may_carry_no_test_report_and_fewer_approvers(
+    validator: JsonSchemaValidator, change: Callable[[dict[str, Any]], object]
+) -> None:
+    """While the releases carry no test report, and while a pull request merged before reviews
+    were required stays in the catalogue: what build checks, not the schema."""
+    assert validator.validate("manifest", _changed(MANIFEST, change)) == ()
 
 
 @pytest.mark.parametrize("constraint", [">=3.261005", "==3.261005.0", "~=3.26", ">3"])

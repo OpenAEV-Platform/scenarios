@@ -652,3 +652,33 @@ def changelog_findings(text: str | None, version: str, path: str) -> tuple[Findi
                 ),
             )
     return ()
+
+
+def released_version_findings(
+    entry: str, external_id: str, version: str, sha256: str, released: Mapping[tuple[str, str], str]
+) -> tuple[Finding, ...]:
+    """What the previous release says against this version of the scenario: ``VER-020`` when
+    it holds the version with another archive than ``sha256``, as a released version never
+    changes; ``VER-002`` when it holds a higher version, as a version never decreases.
+    ``released`` gives each archive hash by external ID and version."""
+    where = f"{entry}/scenario.yaml"
+    before = released.get((external_id, version))
+    if before is not None and before != sha256:
+        message = (
+            f"version {version} was released with another archive, and a released version "
+            "never changes: raise the version"
+        )
+        return (Finding("VER-020", Severity.BLOCKING, where, "/version", message),)
+    current = _version(version)
+    higher = [
+        (found, text)
+        for (other, text) in released
+        if other == external_id and (found := _version(text)) is not None
+    ]
+    if current is None or not higher:
+        return ()
+    top, text = max(higher)
+    if current >= top:
+        return ()
+    message = f"version {version} is lower than {text}, already released: a version never decreases"
+    return (Finding("VER-002", Severity.BLOCKING, where, "/version", message),)
