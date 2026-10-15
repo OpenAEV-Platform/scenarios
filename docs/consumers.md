@@ -41,10 +41,10 @@ A release with any finding below is not used at all.
 2. **Manifest.** Read it as strict JSON, as every JSON document of a release is read: UTF-8, at
    most 20 MiB and 64 levels deep, no key twice in an object, no `NaN` nor infinite number, no
    integer beyond ±(2^53 − 1), no unpaired surrogate. Then check it against the manifest schema,
-   which cannot see a key a parser already dropped. Its `repository` and `channel` are the ones you follow, and it names its
-   `release_approver`: a manifest without one was built, never approved. A scenario listed
-   twice, or an archive named after another scenario or version than its item's, refuses the
-   release.
+   which cannot see a key a parser already dropped. Its `repository` and `channel` are the ones
+   you follow, and it names its `release_approver`: a manifest without one was built, never
+   approved. A scenario listed twice, or an archive named after another scenario or version than
+   its item's, refuses the release.
 3. **Versions.** If a version you already installed comes with another archive hash, or with
    anything else the manifest says of it but its approvals and its test report, the release
    breaks the repository's guarantee: refuse it. So with a version lower than one you installed,
