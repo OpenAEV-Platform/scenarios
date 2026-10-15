@@ -2,7 +2,8 @@
 
 A release of the catalogue is every entry's import archive and a manifest that lists them, with
 the hash of each archive, so that a platform can check what it imports. This page is for the
-maintainers who build releases. Releases are not published yet: the workflow builds one and
+maintainers who build releases; what a platform checks of a release is in
+[`consumers.md`](consumers.md). Releases are not published yet: the workflow builds one and
 checks that it is reproducible.
 
 ## How a release is built
