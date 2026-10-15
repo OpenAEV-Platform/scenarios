@@ -406,3 +406,44 @@ def test_an_output_that_is_a_link_is_refused_before_anything(
 
     assert result.exit_code == 2, result.output
     assert list((tmp_path / "elsewhere").iterdir()) == []
+
+
+def test_a_released_version_whose_status_changed_builds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch)
+    approvals = _approvals(tmp_path)
+    assert _build(root, approvals, tmp_path / "first").exit_code == 0
+    metadata = root / EASM / "scenario.yaml"
+    metadata.write_text(metadata.read_text().replace("status: VERIFIED", "status: DEPRECATED"))
+    assert CliRunner().invoke(main, ["render", str(root / EASM)]).exit_code == 0
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-am", "deprecated")  # fmt: skip
+    out = tmp_path / "release"
+
+    result = _build(root, approvals, out, str(tmp_path / "first" / "manifest.json"))
+
+    assert result.exit_code == 1, result.output
+    codes = [f["code"] for f in json.loads(result.output)["findings"]]
+    assert "VER-020" in codes
+    assert not out.exists()
+
+
+def test_a_previous_release_listing_a_scenario_twice_builds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch)
+    approvals = _approvals(tmp_path)
+    assert _build(root, approvals, tmp_path / "first").exit_code == 0
+    previous = json.loads((tmp_path / "first" / "manifest.json").read_bytes())
+    twice = dict(previous["items"][0], version="0.9.0")
+    twice["archive"] = dict(twice["archive"], name=f"{EASM_ID}-0.9.0.zip")
+    previous["items"].append(twice)
+    (tmp_path / "previous.json").write_bytes(jcs(previous))
+    out = tmp_path / "release"
+
+    result = _build(root, approvals, out, str(tmp_path / "previous.json"))
+
+    assert result.exit_code == 3, result.output
+    assert f"the previous release lists {EASM_ID} twice" in result.output
+    assert not out.exists()

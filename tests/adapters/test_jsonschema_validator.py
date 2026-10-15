@@ -248,6 +248,18 @@ def test_a_manifest_may_carry_no_test_report_and_fewer_approvers(
     assert validator.validate("manifest", _changed(MANIFEST, change)) == ()
 
 
+def test_a_manifest_version_is_bounded_as_a_scenario_version_is(
+    validator: JsonSchemaValidator,
+) -> None:
+    """What the tools compare, nine digits at most for each number, is all a manifest holds."""
+    manifest = json.loads((SCHEMAS / "manifest.schema.json").read_text(encoding="utf-8"))
+    scenario = json.loads((SCHEMAS / "scenario.schema.json").read_text(encoding="utf-8"))
+    beyond = _changed(MANIFEST, lambda d: d["items"][0].update(version="1000000000.0.0"))
+
+    assert manifest["$defs"]["semver"] == scenario["$defs"]["semver"]
+    assert [v.pointer for v in validator.validate("manifest", beyond)] == ["/items/0/version"]
+
+
 @pytest.mark.parametrize("constraint", [">=3.261005", "==3.261005.0", "~=3.26", ">3"])
 def test_well_formed_platform_version_constraints_pass(
     validator: JsonSchemaValidator, constraint: str

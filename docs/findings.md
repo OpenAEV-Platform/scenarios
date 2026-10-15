@@ -94,7 +94,7 @@ written when one of them blocks. See [`intake.md`](intake.md).
 | `VER-012` | (Info) An inject of the previous version is no longer in the export. | Check it was removed on purpose, and say so in the changelog. |
 | `VER-013` | (Info) A change of the entry since the base branch's copy, from `diff`: where it is (the file and the pointer of what changed, the list for an inject or item removed), the version it needs, and the ID of the inject or item it concerns; never a value. The 30 that need the most are listed; `VER-014` says how many more. | Nothing to do; `validate` judges the version. |
 | `VER-014` | (Info) The least version the changes of the entry need, from `diff`, why, and whether the entry's version is enough; or that nothing needs a new version, that the entry is new, or that it cannot be compared. It comes first, on the entry itself. | When it says too low, raise `version` to it at least, as `VER-001` asks. |
-| `VER-020` | From `build`: the previous release holds this version of the scenario with another archive. A released version never changes. A change of how archives are built would change every archive. | Raise the version, as `VER-001` asks of the change. |
+| `VER-020` | From `build`: the previous release holds this version of the scenario with another archive, or said otherwise of it (its status, its facets, its requirements). A released version never changes. A change of how archives are built would change every archive. | Raise the version, as `VER-001` asks of the change. |
 
 ## Releases: `REL`
 

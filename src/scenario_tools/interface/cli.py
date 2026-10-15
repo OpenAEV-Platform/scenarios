@@ -535,7 +535,10 @@ def _previous(path: Path, schema: JsonSchemaValidator) -> PreviousRelease:
             "the previous release's manifest does not meet its schema, at "
             + ", ".join(violation.pointer or "/" for violation in violations[:5])
         )
-    return previous_release(document)
+    try:
+        return previous_release(document)
+    except ValueError as error:
+        raise EnvironmentProblemError(str(error)) from error
 
 
 @main.command(name="build")

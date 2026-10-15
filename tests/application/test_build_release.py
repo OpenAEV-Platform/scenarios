@@ -14,7 +14,12 @@ from scenario_tools.application.build_release import (
     build_release,
     entry_for_release,
 )
-from scenario_tools.domain.release.manifest import Approval, BuiltEntry, PreviousRelease
+from scenario_tools.domain.release.manifest import (
+    Approval,
+    BuiltEntry,
+    PreviousRelease,
+    previous_release,
+)
 from scenario_tools.domain.shared.canonical import jcs
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.ports.errors import EnvironmentProblemError
@@ -276,3 +281,21 @@ def test_an_entry_without_an_archive_and_without_a_reason_is_a_defect() -> None:
             archive=lambda entry: _archived(entry, noted, archive=None),
             tabletop=lambda d, e: False,
         )
+
+
+def test_a_released_version_whose_status_changed_leaves_the_release_unbuilt() -> None:
+    _, first = _build()
+    assert first is not None
+    previous = previous_release(json.loads(first.manifest))
+
+    def deprecated(entry: str) -> EntryResult:
+        metadata = dict(_metadata(entry), status="DEPRECATED")
+        return EntryResult((), BuiltEntry(metadata, entry == SECOND, f"zip of {entry}".encode()))
+
+    report, release = _build(build=deprecated, previous=previous)
+
+    assert release is None
+    assert sorted((f.code, f.path) for f in report.findings) == [
+        ("VER-020", f"{SECOND}/scenario.yaml"),
+        ("VER-020", f"{FIRST}/scenario.yaml"),
+    ]

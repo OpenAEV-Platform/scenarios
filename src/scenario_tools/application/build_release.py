@@ -18,6 +18,7 @@ from scenario_tools.domain.release.manifest import (
     manifest,
     manifest_item,
     release_name,
+    released_item_findings,
     withdrawn_findings,
 )
 from scenario_tools.domain.shared.canonical import jcs
@@ -129,9 +130,12 @@ def build_release(
         if approval is None:  # said above
             continue
         facts = ArchiveFacts(archive_name(external_id, version), sha256, len(found.archive))
-        items.append(
-            manifest_item(found.metadata, tabletop=found.tabletop, archive=facts, approval=approval)
+        item = manifest_item(
+            found.metadata, tabletop=found.tabletop, archive=facts, approval=approval
         )
+        if previous is not None:
+            findings += released_item_findings(entry, item, previous)
+        items.append(item)
         archives[facts.name] = found.archive
     if previous is not None and len(built) == len(entries):  # an entry left out is said above
         present = {str(found.metadata["external_id"]) for found in built.values()}

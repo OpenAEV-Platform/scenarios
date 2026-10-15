@@ -8,7 +8,7 @@ import datetime
 import itertools
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -68,12 +68,22 @@ class Approval:
 
 @dataclass(frozen=True)
 class PreviousRelease:
-    """What a previous release says that this one needs: its channel, its name, and the hash
-    of each archive, by external ID and version."""
+    """What a previous release says that this one needs: its channel, its name, the hash of
+    each archive, by external ID and version, and what it said of each, but who approved it."""
 
     channel: str
     release: str
     archives: Mapping[tuple[str, str], str]
+    items: Mapping[tuple[str, str], Mapping[str, Any]] = field(default_factory=dict)
+
+
+# What may differ between two releases of one version: who approved its last change, and the
+# report of its test run; the archive is compared by its hash.
+_NOT_SAID = frozenset({"archive", "approvals", "test_report"})
+
+
+def _said(item: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in item.items() if key not in _NOT_SAID}
 
 
 def archive_name(external_id: str, version: str) -> str:
@@ -248,9 +258,39 @@ def withdrawn_findings(previous: PreviousRelease, present: Iterable[str]) -> tup
 
 def previous_release(document: Mapping[str, Any]) -> PreviousRelease:
     """What the manifest ``document`` of a previous release, checked against its schema, says
-    that the next one needs."""
-    archives = {
-        (str(item["external_id"]), str(item["version"])): str(item["archive"]["sha256"])
-        for item in document["items"]
-    }
-    return PreviousRelease(str(document["channel"]), str(document["release"]), archives)
+    that the next one needs; one that lists a scenario twice is refused, never read in part."""
+    archives: dict[tuple[str, str], str] = {}
+    items: dict[tuple[str, str], Mapping[str, Any]] = {}
+    seen: set[str] = set()
+    for item in document["items"]:
+        external_id = str(item["external_id"])
+        if external_id in seen:
+            raise ValueError(f"the previous release lists {external_id} twice")
+        seen.add(external_id)
+        key = (external_id, str(item["version"]))
+        archives[key] = str(item["archive"]["sha256"])
+        items[key] = _said(item)
+    return PreviousRelease(str(document["channel"]), str(document["release"]), archives, items)
+
+
+def released_item_findings(
+    entry: str, item: Mapping[str, Any], previous: PreviousRelease
+) -> tuple[Finding, ...]:
+    """``VER-020`` when the previous release holds the version of ``item`` and said otherwise
+    of it, its status or its facets: a released version never changes, its archive no more
+    than what the manifest says of it."""
+    key = (str(item["external_id"]), str(item["version"]))
+    before = previous.items.get(key)
+    if before is None:
+        return ()
+    now = _said(item)
+    changed = sorted(
+        name for name in before.keys() | now.keys() if before.get(name) != now.get(name)
+    )
+    if not changed:
+        return ()
+    message = (
+        f"version {key[1]} was released saying otherwise of {', '.join(changed)}, and a released "
+        "version never changes: raise the version"
+    )
+    return (Finding("VER-020", Severity.BLOCKING, f"{entry}/scenario.yaml", "/version", message),)

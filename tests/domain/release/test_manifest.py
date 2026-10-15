@@ -1,6 +1,8 @@
 """The release manifest: what each item says, and how the release is named and approved."""
 
 import datetime
+import time
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -19,6 +21,7 @@ from scenario_tools.domain.release.manifest import (
     merged_before_review_from_document,
     previous_release,
     release_name,
+    released_item_findings,
     withdrawn_findings,
 )
 from scenario_tools.domain.shared.finding import Severity
@@ -367,3 +370,83 @@ def test_a_moment_without_its_offset_says_so() -> None:
         issued_at_text(datetime.datetime(2026, 10, 30))
 
     assert str(error.value) == "a moment without its offset from UTC is no time of issue"
+
+
+@pytest.fixture
+def far_from_utc(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The machine's zone fourteen hours ahead of UTC, where the day often differs."""
+    monkeypatch.setenv("TZ", "Pacific/Kiritimati")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.usefixtures("far_from_utc")
+def test_the_issue_time_and_the_day_are_utc_s_whatever_the_machine_s_zone() -> None:
+    late = datetime.datetime(2026, 10, 30, 21, 0, tzinfo=datetime.UTC)  # the 31st in Kiritimati
+
+    assert issued_at_text(late) == "2026-10-30T21:00:00Z"
+    assert release_name(late, None) == "2026.10.30.1"
+    assert release_name(late, "2026.10.30.1") == "2026.10.30.2"
+
+
+def _released(item: dict[str, Any]) -> PreviousRelease:
+    return previous_release(manifest(channel="edge", issued_at="x", release="r", items=[item]))
+
+
+def test_a_released_version_that_says_otherwise_of_the_scenario_is_refused() -> None:
+    before = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
+    now = manifest_item(
+        dict(METADATA, status="DEPRECATED", name="EASM again"),
+        tabletop=False,
+        archive=ARCHIVE,
+        approval=APPROVAL,
+    )
+
+    (finding,) = released_item_findings(ENTRY, now, _released(before))
+
+    assert (finding.code, finding.severity, finding.path, finding.field) == (
+        "VER-020",
+        Severity.BLOCKING,
+        f"{ENTRY}/scenario.yaml",
+        "/version",
+    )
+    assert finding.message == (
+        "version 1.2.3 was released saying otherwise of name, status, and a released version "
+        "never changes: raise the version"
+    )
+
+
+def test_a_released_version_built_again_as_it_was_is_no_finding() -> None:
+    before = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
+    approved_again = manifest_item(
+        METADATA, tabletop=False, archive=ARCHIVE, approval=Approval(200, ("carol",))
+    )
+    raised = manifest_item(
+        dict(METADATA, version="1.3.0", status="DEPRECATED"),
+        tabletop=False,
+        archive=ARCHIVE,
+        approval=APPROVAL,
+    )
+
+    assert released_item_findings(ENTRY, approved_again, _released(before)) == ()
+    assert released_item_findings(ENTRY, raised, _released(before)) == ()
+
+
+def test_a_previous_release_listing_a_scenario_twice_is_refused() -> None:
+    item = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
+    document = {"channel": "edge", "release": "r", "items": [item, dict(item, version="2.0.0")]}
+
+    with pytest.raises(ValueError, match=f"the previous release lists {ID} twice"):
+        previous_release(document)
+
+
+def test_what_only_one_release_says_of_a_version_is_a_change() -> None:
+    now = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
+    said = {key: value for key, value in now.items() if key not in {"archive", "approvals"}}
+    previous = PreviousRelease("edge", "r", {}, {(ID, "1.2.3"): dict(said, more=1)})
+
+    (finding,) = released_item_findings(ENTRY, now, previous)
+
+    assert "saying otherwise of more," in finding.message
