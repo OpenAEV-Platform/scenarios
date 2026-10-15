@@ -14,6 +14,7 @@ dist/
 coverage.xml
 htmlcov/
 mutants/
+conformance/releases.new/
 .hypothesis/
 
 # Local configuration and secrets — never committed

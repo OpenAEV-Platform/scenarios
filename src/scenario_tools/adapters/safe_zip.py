@@ -97,15 +97,15 @@ def _crc_table() -> tuple[int, ...]:
 _CRC_TABLE = _crc_table()
 
 
-class _ZipCryptoKeys:
+class ZipCryptoKeys:
     """The key state of traditional PKWARE encryption (APPNOTE 6.1), the `zip -P` convention."""
 
     def __init__(self, password: bytes) -> None:
         self._keys = [0x12345678, 0x23456789, 0x34567890]
         for byte in password:
-            self._update(byte)
+            self.update(byte)
 
-    def _update(self, byte: int) -> None:
+    def update(self, byte: int) -> None:
         keys = self._keys
         keys[0] = (keys[0] >> 8) ^ _CRC_TABLE[(keys[0] ^ byte) & 0xFF]
         keys[1] = ((keys[1] + (keys[0] & 0xFF)) * 134775813 + 1) & 0xFFFFFFFF
@@ -116,15 +116,24 @@ class _ZipCryptoKeys:
         for index, byte in enumerate(data):
             temp = (self._keys[2] | 2) & 0xFFFF
             plain[index] = byte ^ ((temp * (temp ^ 1)) >> 8) & 0xFF
-            self._update(plain[index])
+            self.update(plain[index])
         return bytes(plain)
+
+    def encrypt(self, plain: bytes) -> bytes:
+        """``plain`` encrypted, for archives written by hand; never used to read one."""
+        out = bytearray(len(plain))
+        for index, byte in enumerate(plain):
+            temp = (self._keys[2] | 2) & 0xFFFF
+            out[index] = byte ^ ((temp * (temp ^ 1)) >> 8) & 0xFF
+            self.update(byte)
+        return bytes(out)
 
 
 def _zipcrypto_decrypt(data: bytes, password: bytes, check_byte: int) -> bytes | None:
     """Decrypt an entry, or return ``None`` when the password does not match the check byte of
     its 12-byte header, found before the rest of the entry is decrypted. This is a decoding step,
     not a security control: the conventional password is public."""
-    keys = _ZipCryptoKeys(password)
+    keys = ZipCryptoKeys(password)
     if keys.decrypt(data[:_ZIPCRYPTO_HEADER])[-1] != check_byte:
         return None
     return keys.decrypt(data[_ZIPCRYPTO_HEADER:])

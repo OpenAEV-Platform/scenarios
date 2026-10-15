@@ -2,6 +2,7 @@
 archive it lists, by its bytes, its safe extraction, the parts of its scenario and the payloads it
 embeds, and nothing beside them that the manifest does not list."""
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 
 from scenario_tools.application.assign_payloads import no_attached_files
@@ -16,9 +17,18 @@ from scenario_tools.domain.verification.release_output import (
 )
 from scenario_tools.ports.errors import UnsafeInputError
 
+_CAUSE = re.compile(r"(IO-[0-9]{3}): ")
+
 
 def _unsafe(name: str, error: UnsafeInputError) -> Finding:
     return Finding("VRF-007", Severity.BLOCKING, name, "", f"{error.code}: {error.message}")
+
+
+def unsafe_cause(finding: Finding) -> str | None:
+    """The ``IO`` code an archive refused as unsafe (``VRF-007``) was refused with, which its
+    message starts with; nothing for another finding."""
+    found = _CAUSE.match(finding.message) if finding.code == "VRF-007" else None
+    return found.group(1) if found else None
 
 
 def verify_release(

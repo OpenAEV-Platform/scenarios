@@ -106,6 +106,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `build` | Builds a release of the catalogue from a commit: every entry's archive and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
 | `approvals` | Collects who approved the last change of every entry, for `build` |
 | `verify` | Verifies a release as its consumers will: each archive against the manifest, safe extraction, the parts of its scenario, payload hashes |
+| `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |
 | `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |
