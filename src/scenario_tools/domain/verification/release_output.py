@@ -108,17 +108,17 @@ def payload_content_findings(
     canonical hash listed, and for each payload listed but not embedded; ``files`` gives the hash
     of an attached file, if it can."""
     name = str(item["archive"]["name"])
-    findings = []
+    twice = []
     listed: dict[str, str] = {}
     for payload in item["payloads"]:
         listed_id = str(payload["id"])
         if listed_id in listed:
             message = f"the manifest lists the payload {listed_id} twice"
-            findings.append(_refused("VRF-008", name, "", message))
+            twice.append(_refused("VRF-008", name, "", message))
         listed[listed_id] = str(payload["sha256"])
-    if findings:  # which of the two hashes a consumer reads is not known: none is checked
-        return tuple(findings)
-    findings += [
+    if twice:  # which of the two hashes a consumer reads is not known: none is checked
+        return tuple(twice)
+    findings = [
         _refused("VRF-008", outside.path, outside.field, _OUTSIDE)
         for outside in payloads_outside_contracts(stored, name)
     ]
