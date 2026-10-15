@@ -38,8 +38,10 @@ A release with any finding below is not used at all.
 
 1. **Source.** Download releases over HTTPS, from the repository's release location by default.
    Make changing that location an administrator's action, and log it.
-2. **Manifest.** Read it within limits (20 MiB, nesting depth 64) and check it against the
-   manifest schema. Its `repository` and `channel` are the ones you follow, and it names its
+2. **Manifest.** Read it as strict JSON, as every JSON document of a release is read: UTF-8, at
+   most 20 MiB and 64 levels deep, no key twice in an object, no `NaN` nor infinite number, no
+   integer beyond ±(2^53 − 1), no unpaired surrogate. Then check it against the manifest schema,
+   which cannot see a key a parser already dropped. Its `repository` and `channel` are the ones you follow, and it names its
    `release_approver`: a manifest without one was built, never approved. A scenario listed
    twice, or an archive named after another scenario or version than its item's, refuses the
    release.
@@ -59,7 +61,8 @@ A release with any finding below is not used at all.
    with the central directory, each CRC right.
 6. **Content.** An archive holds `scenario.json`, the entry whose comment is `Scenario`, and
    possibly `attachments.zip`, with no comment: itself an archive, under the same rules, whose
-   entries are encrypted with the shared password `infected`. Nothing else. The scenario is
+   entries open with the shared password `infected` (an entry that is not encrypted is read as
+   it is). Nothing else. `scenario.json` is read as strict JSON, as the manifest is, is
    structured as an export and holds only the parts of a stored scenario.
 7. **Payloads.** Every payload the scenario embeds sits in an inject's contract, carries its ID,
    can be hashed, and is listed once by that ID with the canonical hash of its content; every
