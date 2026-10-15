@@ -26,8 +26,10 @@ in [`intake.md`](intake.md).
 
 - **Whoever can publish a release can publish anything.** A compromised account or token with the
   right to publish, or a bypass of the branch and release protections, could publish content
-  with a matching manifest. Releases are not signed: signing closes this case, and is the first
-  addition if the risk grows.
+  with a matching manifest. Releases are not signed. Signing, with consumers checking the
+  signature against a key the attacker does not hold, would show a release replaced after it
+  was built; it would not stop malicious content merged through bypassed protections, which
+  is signed like any other. It is the first addition if the risk grows.
 - **A compromised mirror or a changed download location could do the same.** This is why
   [`consumers.md`](consumers.md) asks consumers to download from the repository's release
   location by default, and to make changing it an administrator's action.

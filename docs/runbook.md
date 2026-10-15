@@ -25,9 +25,12 @@ verification.
   through a pull request, then run the workflow again.
 - **Comparison.** The two builds differ: the release is not reproducible, or a build job was
   tampered with. Keep both builds, which the run keeps as artifacts for seven days, compare
-  them, and find the cause before anything else runs.
+  them, and find the cause before anything else runs; if tampering cannot be ruled out, report
+  it privately, as [`SECURITY.md`](../SECURITY.md) says.
 - **Verification.** `verify` refuses what was built: a defect of the tools, or a sign of
-  tampering. Open an issue with the findings.
+  tampering. If tampering cannot be ruled out, report it privately, as
+  [`SECURITY.md`](../SECURITY.md) says; open a public issue only for a defect known to be no
+  security problem.
 
 ## A pull request is refused by mistake
 
@@ -37,7 +40,9 @@ pull request: an ignore file or a `gitleaks:allow` comment in it is never read.
 - **The secret scan:** a maintainer adjusts the shared rules, through a reviewed pull request.
 - **A blocking `POL-004`, `POL-005`, `POL-006` or `POL-009`:** a maintainer may add an exception
   for that field of that `scenario.json`, with its hash and a justification, as
-  [`findings.md`](findings.md#other-checks) describes. No other finding can be excepted.
+  [`findings.md`](findings.md#other-checks) describes, and a code owner approves it. The checks
+  take an exception only once the default branch names the code owners of the policy data in
+  `.github/CODEOWNERS`; until then, none can be granted. No other finding can be excepted.
 
 ## A secret reached the default branch
 
@@ -59,8 +64,10 @@ A maintainer's, a reviewer's or an automated account, or a token.
 3. For each merge it made or approved, review the change again. A scenario it touched that may
    be malicious is withdrawn at once, as below.
 4. Once releases are published, check any release published since then against what its commit
-   builds: collect the approvals at that commit (`scenario-tools approvals`), build it again on
-   the same channel, and compare; the archives and the manifest must be the same bytes.
+   builds: build that commit again on the same channel, with the approvals file and the previous
+   manifest the release was built from, never approvals collected again, as reviews may have
+   changed since. The archives must be the same bytes; so must the manifest, but for its
+   `release_approver`, which publication adds, and which is checked on its own.
 5. Report it as [`SECURITY.md`](../SECURITY.md) says, so that an advisory can tell the platforms.
 
 ## A scenario must be withdrawn
