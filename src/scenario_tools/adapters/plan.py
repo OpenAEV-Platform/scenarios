@@ -150,22 +150,37 @@ def _unusable(path: Path, error: OSError) -> EnvironmentProblemError:
 
 def _reserved(path: Path, directory: int, descriptor: int) -> tuple[int, int]:
     """The identity of the empty file just made at ``path``, set to 0644 whatever the umask;
-    one that cannot be is taken back. One whose identity cannot be read cannot be told from
-    another's, and is never removed: it is said."""
+    one that cannot be, or that a stop ends, is taken back. One whose identity cannot be read,
+    or that a stop leaves before it is known to be the run's, cannot be told from another's,
+    and is never removed: it is said."""
     try:
         made = identity(descriptor, str(path))
     except EnvironmentProblemError as error:
         raise untold(str(error), str(path)) from error
+    except BaseException as failure:
+        raise untold(f"cannot write {path}: interrupted", str(path)) from failure
     try:
         os.fchmod(descriptor, 0o644)
-    except OSError as error:
-        failure = EnvironmentProblemError(f"cannot write {path}: {error.strerror}")
-
+    except BaseException as failure:  # a stop too: the place goes, as it is known
+        refusal = (
+            EnvironmentProblemError(f"cannot write {path}: {failure.strerror}")
+            if isinstance(failure, OSError)
+            else None
+        )
         outcome = take_back(
-            directory, path.name, made, removing_file(directory), where=str(path), failure=failure
+            directory,
+            path.name,
+            made,
+            removing_file(directory),
+            where=str(path),
+            failure=refusal or failure,
         )
         said = not_taken_back(outcome, str(path))
+        if refusal is not None:
+            raise (
+                refusal if said is None else EnvironmentProblemError(f"{refusal}; {said}")
+            ) from failure
         if said is not None:
-            raise EnvironmentProblemError(f"{failure}; {said}") from error
-        raise failure from error
+            raise EnvironmentProblemError(f"{said}{described(failure)}") from failure
+        raise
     return made

@@ -660,26 +660,69 @@ def test_a_refused_write_leaves_no_directory_open(
     assert sorted(opened) == sorted(closed)
 
 
-@pytest.mark.parametrize("step", ["identity", "mode"])
+def _stopped(*arguments: Any) -> Any:
+    raise KeyboardInterrupt
+
+
+@pytest.mark.parametrize("step", ["made_directory", "identity"], ids=["opening", "identity"])
 @pytest.mark.parametrize("where", ["akira", "scenarios"], ids=["entry", "above"])
-def test_a_stop_while_a_directory_is_made_leaves_no_directory_open(
+def test_a_stop_before_a_made_directory_is_known_leaves_it_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str, where: str
 ) -> None:
     if where == "akira":  # the entry the only directory the run makes
         (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+    at, doing = (ENTRY, "write") if where == "akira" else ("scenarios", "make")
+    monkeypatch.setattr(f"scenario_tools.adapters.entry_writer.{step}", _stopped)
+    opened, closed = descriptors(monkeypatch)
 
-    def stopped(*arguments: Any) -> None:
-        raise KeyboardInterrupt
+    with pytest.raises(EnvironmentProblemError) as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert str(error.value).startswith(
+        f"cannot {doing} {at}: interrupted; what was made at {at} cannot be told from another's"
+    )
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert (tmp_path / at).is_dir()  # nothing tells it from another's: never removed
+    assert opened
+    assert sorted(opened) == sorted(closed)
 
-    if step == "identity":
-        monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", stopped)
-    else:
-        monkeypatch.setattr(os, "fchmod", stopped)
+
+@pytest.mark.parametrize("where", ["akira", "scenarios"], ids=["entry", "above"])
+def test_a_stop_once_a_made_directory_is_known_takes_it_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str
+) -> None:
+    if where == "akira":
+        (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+    monkeypatch.setattr(os, "fchmod", _stopped)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(KeyboardInterrupt):
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
-    # Only the descriptors: a stop is held while the run writes, so this one is a defect's way.
+    left = tmp_path / "scenarios" / "ransomware" if where == "akira" else tmp_path
+    assert list(left.iterdir()) == []
+    assert opened
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_stop_once_the_entry_is_known_says_what_cannot_be_taken_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+
+    def stopped(descriptor: int, mode: int) -> None:
+        os.close(os.open("notes.txt", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=descriptor))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "fchmod", stopped)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+    assert str(error.value) == (
+        f"cannot take back {ENTRY}: it holds what was not taken back; it stays"
+        " (after an interruption)"
+    )
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert _names(tmp_path / ENTRY) == ["notes.txt"]  # another's file, and the entry with it
     assert opened
     assert sorted(opened) == sorted(closed)
 
@@ -1523,3 +1566,37 @@ def test_a_directory_made_that_cannot_be_opened_is_left_and_said(
     assert sorted(opened) == sorted(closed)
     assert f"what was made at {where} cannot be told" in str(error.value)
     assert (tmp_path / where).is_dir()  # nothing tells it from another's: never removed
+
+
+@pytest.mark.parametrize("at", [1, 2], ids=["before it is made", "once made"])
+def test_a_stop_as_a_directory_is_made_says_what_it_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, at: int
+) -> None:
+    (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
+    umask = os.umask
+    calls: list[int] = []
+
+    def stopped(mask: int) -> int:
+        calls.append(mask)
+        if len(calls) == at:  # as the umask is set before it is made, or put back after
+            raise KeyboardInterrupt
+        return umask(mask)
+
+    before = umask(0o022)
+    umask(before)  # whatever the stop leaves, the umask is put back below
+    monkeypatch.setattr(os, "umask", stopped)
+    try:
+        if at == 1:
+            with pytest.raises(KeyboardInterrupt):
+                _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+            assert not (tmp_path / ENTRY).exists()  # nothing made, nothing to say
+        else:
+            with pytest.raises(EnvironmentProblemError) as error:
+                _write(tmp_path, {"scenario.json": b"{}"}, new=True)
+            assert str(error.value).startswith(
+                f"cannot write {ENTRY}: interrupted; what was made at {ENTRY} cannot be told"
+            )
+            assert isinstance(error.value.__cause__, KeyboardInterrupt)
+            assert (tmp_path / ENTRY).is_dir()
+    finally:
+        umask(before)
