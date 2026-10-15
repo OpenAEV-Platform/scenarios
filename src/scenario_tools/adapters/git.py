@@ -95,20 +95,23 @@ def commit_time(root: Path, commit: str) -> datetime.datetime:
     return moment
 
 
-def last_commit(root: Path, path: str) -> str:
+def last_commit(root: Path, path: str, *, at: str) -> str:
     """The full ID of the last commit that changed ``path``, relative to the checkout at
-    ``root``, in the history of its commit."""
+    ``root``, in the history of ``at``, a full commit ID, whatever the checkout is at."""
     unread = EnvironmentProblemError(f"cannot read the last commit that changed {path!r}")
     parts = path.split("/")
     if not path or path.startswith(("-", "/")) or any(part in ("", ".", "..") for part in parts):
         raise unread  # never read by git as an option, nor as a place outside the checkout
+    if not is_commit_id(at):  # never read as a name, a range nor an option
+        raise unread
     if (_git(root, "rev-parse", "--is-shallow-repository") or "").strip() != "false":
         raise EnvironmentProblemError(
             f"cannot read the last commit that changed {path!r}: the checkout is shallow, or "
             "its history cannot be read; fetch its whole history"
         )
     # Literally: a path is never read as a pattern, which could name another's.
-    told = (_git(root, "--literal-pathspecs", "log", "-1", "--format=%H", "--", path) or "").strip()
+    told = _git(root, "--literal-pathspecs", "log", "-1", "--format=%H", at, "--", path)
+    told = (told or "").strip()
     if not is_commit_id(told):
         raise unread
     return told

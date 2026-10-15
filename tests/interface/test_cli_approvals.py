@@ -155,3 +155,17 @@ def test_the_output_is_a_new_file_outside_the_repository(
     result, _ = _run(monkeypatch, root, out)
 
     assert result.exit_code == 2, result.output
+
+
+def test_more_approvers_than_a_release_lists_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, commit = _repository(tmp_path)
+    reviews = [dict(APPROVAL, user={"login": f"user{n}", "type": "User"}) for n in range(11)]
+    out = tmp_path / "approvals.json"
+
+    result, _ = _run(monkeypatch, root, out, {commit: [_pull(123, commit)]}, {123: reviews})
+
+    assert result.exit_code == 3, result.output
+    assert "at most 10 approvers" in result.output
+    assert not out.exists()

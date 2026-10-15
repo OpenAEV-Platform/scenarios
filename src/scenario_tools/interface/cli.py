@@ -585,15 +585,21 @@ def approvals_command(ctx: click.Context, repo: Path, out: Path) -> None:
             )
         github = HttpGitHub(token, REPOSITORY)
         source = RepositoryEntries(root, strict=True)
+        commit = head_commit(root)
         found = collect_approvals(
             source.places(),
-            commit=head_commit(root),
+            commit=commit,
             repository=REPOSITORY,
-            last_commit=lambda entry: last_commit(root, entry),
+            last_commit=lambda entry: last_commit(root, entry, at=commit),
             pulls_of=github.pulls_of,
             reviews_of=github.reviews_of,
         )
-        write_output(out, jcs(approvals_document(found)), create=True)
+        document = approvals_document(found)
+        try:
+            approvals_from_document(document)  # what build reads, or nothing
+        except ValueError as error:
+            raise EnvironmentProblemError(str(error)) from error
+        write_output(out, jcs(document), create=True)
         return Report("approvals")
 
     _emit(ctx, "approvals", produce, root)

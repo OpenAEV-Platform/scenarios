@@ -613,8 +613,8 @@ def test_the_last_commit_that_changed_a_path_is_read(tmp_path: Path) -> None:
     _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
          "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
 
-    assert last_commit(root, "scenarios/a/b") == first
-    assert last_commit(root, "README.md") == _git(root, "rev-parse", "HEAD")
+    assert last_commit(root, "scenarios/a/b", at=_head(root)) == first
+    assert last_commit(root, "README.md", at=_head(root)) == _git(root, "rev-parse", "HEAD")
 
 
 @pytest.mark.parametrize("path", ["scenarios/none", "-p", "", "../x", "/etc"])
@@ -624,14 +624,14 @@ def test_a_path_no_commit_changed_or_no_path_of_the_checkout_is_the_environment_
     root = _committed(tmp_path)
 
     with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
-        last_commit(root, path)
+        last_commit(root, path, at=_head(root))
 
 
 def test_a_path_is_read_as_it_is_never_as_a_pattern(tmp_path: Path) -> None:
     root = _committed(tmp_path)  # holds scenarios/a/b
 
     with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
-        last_commit(root, "scenarios/a/*")
+        last_commit(root, "scenarios/a/*", at=_head(root))
 
 
 def test_the_last_of_two_commits_that_changed_a_path_is_given(tmp_path: Path) -> None:
@@ -640,7 +640,7 @@ def test_the_last_of_two_commits_that_changed_a_path_is_given(tmp_path: Path) ->
     _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
          "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
 
-    assert last_commit(root, "scenarios/a/b") == _git(root, "rev-parse", "HEAD")
+    assert last_commit(root, "scenarios/a/b", at=_head(root)) == _git(root, "rev-parse", "HEAD")
 
 
 def test_a_shallow_clone_has_no_history_to_read(tmp_path: Path) -> None:
@@ -650,4 +650,21 @@ def test_a_shallow_clone_has_no_history_to_read(tmp_path: Path) -> None:
     _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{root}", str(shallow))
 
     with pytest.raises(EnvironmentProblemError, match="shallow"):
-        last_commit(shallow, "scenarios/a/b")
+        last_commit(shallow, "scenarios/a/b", at=_head(shallow))
+
+
+def test_the_last_commit_is_read_in_the_history_of_the_commit_given(tmp_path: Path) -> None:
+    """Whatever the checkout moves to meanwhile, the history read is the commit's."""
+    root = _committed(tmp_path)
+    first = _git(root, "rev-parse", "HEAD")
+    (root / "scenarios/a/b/scenario.json").write_text("y")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
+
+    assert last_commit(root, "scenarios/a/b", at=first) == first
+    with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
+        last_commit(root, "scenarios/a/b", at="HEAD")
+
+
+def _head(root: Path) -> str:
+    return _git(root, "rev-parse", "HEAD")

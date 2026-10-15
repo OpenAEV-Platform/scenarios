@@ -1,5 +1,6 @@
 """GitHub's API, read with the standard library: what the release workflow asks of it."""
 
+import http.client
 import http.server
 import io
 import json
@@ -78,6 +79,8 @@ def test_a_pull_request_with_too_many_reviews_is_refused() -> None:
         (urllib.error.HTTPError("u", 403, "Forbidden", None, None), "HTTP 403"),  # type: ignore[arg-type]
         (urllib.error.URLError("no route"), "cannot reach GitHub"),
         (TimeoutError(), "cannot reach GitHub"),
+        (http.client.BadStatusLine("secret status line"), "cannot reach GitHub"),
+        (http.client.IncompleteRead(b"partial"), "cannot reach GitHub"),
         (b"not json", "not JSON"),
         (b"[" * 200 + b"]" * 200, "not JSON"),
         (b" " * (ANSWER_LIMIT + 1), f"larger than {ANSWER_LIMIT} bytes"),
@@ -92,6 +95,7 @@ def test_what_github_cannot_give_is_the_environment_s_fault_and_never_shows_the_
     with pytest.raises(EnvironmentProblemError, match=said) as error:
         _api({url: answer}).pulls_of(COMMIT)
     assert TOKEN not in str(error.value)
+    assert "secret status line" not in str(error.value)
 
 
 @pytest.mark.parametrize(

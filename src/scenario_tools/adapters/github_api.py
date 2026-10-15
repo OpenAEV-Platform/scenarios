@@ -6,6 +6,7 @@ followed, as the token would go with it. Answers are read within a limit, each r
 timeout, and an error is named by its kind: never the token, never what GitHub sent.
 """
 
+import http.client
 import re
 import urllib.error
 import urllib.request
@@ -63,8 +64,9 @@ class HttpGitHub:
             raise EnvironmentProblemError(
                 f"cannot read {what} from GitHub: HTTP {error.code}"
             ) from None
-        except (urllib.error.URLError, OSError) as error:
-            raise EnvironmentProblemError(f"cannot reach GitHub to read {what}") from error
+        except (urllib.error.URLError, http.client.HTTPException, OSError):
+            # Named by its kind only: the text of a broken answer is GitHub's, or anyone's.
+            raise EnvironmentProblemError(f"cannot reach GitHub to read {what}") from None
         if len(data) > ANSWER_LIMIT:
             raise EnvironmentProblemError(
                 f"GitHub's answer for {what} is larger than {ANSWER_LIMIT} bytes"
