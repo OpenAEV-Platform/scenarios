@@ -30,6 +30,7 @@ from scenario_tools.adapters.data_files import (
     read_export_archive,
     read_mapping,
     read_stored_scenario,
+    scenario_from_archive,
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
@@ -78,6 +79,7 @@ from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
+from scenario_tools.application.verify_release import verify_release
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import domains_from_document
@@ -703,6 +705,61 @@ def build(
             return report
 
     _emit(ctx, "build", produce, root)
+
+
+@main.command(name="verify")
+@click.argument("manifest", type=click.Path(path_type=Path, dir_okay=False))
+@click.option(
+    "--schemas",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False),
+    help="The repository's schemas directory, which holds manifest.schema.json.",
+)
+@click.option("--archives", type=click.Path(path_type=Path, file_okay=False), default=None)
+@click.option("--approved", is_flag=True, help="The release is approved: it names its approver.")
+@click.pass_context
+def verify(
+    ctx: click.Context, manifest: Path, schemas: Path, archives: Path | None, approved: bool
+) -> None:
+    """Verify the release whose manifest is MANIFEST as its consumers will: the manifest meets
+    its schema, each archive in --archives (the manifest's directory by default) is the one it
+    lists, safe to extract, and embeds the payloads it lists with their canonical hashes; and
+    nothing stands beside them, but the manifest verified, that the manifest does not list. A
+    manifest refused, or listing a payload ID with two versions or hashes, is refused alone: no
+    archive is read."""
+    held = archives if archives is not None else manifest.parent
+
+    def produce() -> Report:
+        if schemas.is_symlink() or not (schemas / "manifest.schema.json").is_file():
+            raise EnvironmentProblemError(
+                f"schemas cannot be used: {schemas} holds no manifest.schema.json"
+            )
+        try:
+            validator = JsonSchemaValidator(schemas)
+            beside = frozenset(path.name for path in held.iterdir())
+            if held.resolve() == manifest.parent.resolve():  # the manifest is not one to list
+                beside -= {manifest.name}
+        except (OSError, ValueError) as error:
+            raise EnvironmentProblemError(f"cannot read the release: {error}") from error
+        document = read_json_file(manifest)
+
+        def archive_of(name: str) -> bytes | None:
+            place = held / name  # the name meets the manifest's schema: a plain file name
+            return read_regular_file(place, ARCHIVE_LIMIT) if os.path.lexists(place) else None
+
+        return verify_release(
+            document,
+            validate=lambda found: tuple(
+                (violation.pointer, violation.message)
+                for violation in validator.validate("manifest", found)
+            ),
+            approved=approved,
+            archive_of=archive_of,
+            scenario_of=scenario_from_archive,
+            present=beside,
+        )
+
+    _emit(ctx, "verify", produce, None)
 
 
 @main.command(name="payloads")

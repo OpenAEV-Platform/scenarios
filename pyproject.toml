@@ -118,6 +118,8 @@ do_not_mutate = [
 # Mutants are judged by the domain tests only; the architecture tests would reject
 # the instrumentation mutmut injects into the copied sources.
 pytest_add_cli_args_test_selection = ["tests/domain/"]
+# The shared test vectors some domain tests read.
+also_copy = ["conformance/"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -398,3 +398,9 @@ def test_a_release_is_built_by_hand_from_the_default_branch_and_from_the_approva
     assert "if" not in first
     assert (jobs["build-one"]["needs"], jobs["build-two"]["needs"]) == ("approvals", "approvals")
     assert jobs["compare"]["needs"] == ["build-one", "build-two"]
+    [*_, compared, verified] = [step["name"] for step in jobs["compare"]["steps"]]
+    assert (compared, verified) == (
+        "Compare them byte for byte",
+        "Verify the release as its consumers will",
+    )
+    assert "scenario-tools verify ../one/manifest.json" in jobs["compare"]["steps"][-1]["run"]
