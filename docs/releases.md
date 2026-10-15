@@ -23,12 +23,12 @@ whose changes were reviewed.
 2. **Two builds.** `scenario-tools build` runs on two runners, each from its own checkout of the
    commit, with those approvals; it refuses approvals collected at another commit.
 3. **Comparison.** The two releases must be the same bytes, file for file.
-4. **Verification.** `scenario-tools verify <manifest> --schemas schemas` checks the release
-   as its consumers will: each archive against the manifest, by its size and its SHA-256; safe
-   extraction, and nothing in an archive but what `build` writes; each payload an archive
-   embeds, inside an inject's contract and listed with the canonical hash its content has; one
-   version and one hash for each payload ID across the release; and nothing beside the archives,
-   but the manifest verified, that the manifest does not list. `--archives` gives another
+4. **Verification.** `scenario-tools verify <manifest> --schemas schemas` checks the release as its
+   consumers will: each archive against the manifest, by its size and its SHA-256; safe extraction,
+   and nothing in an archive, or in its scenario's parts, but what `build` writes; each payload an
+   archive embeds, inside an inject's contract and listed with the canonical hash its content has;
+   one version and one hash for each payload ID across the release; and nothing beside the
+   archives, but the manifest verified, that the manifest does not list. `--archives` gives another
    directory for the archives, and `--approved` also requires the release approver, once the
    release is approved.
 

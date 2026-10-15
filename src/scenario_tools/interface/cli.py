@@ -723,7 +723,8 @@ def verify(
 ) -> None:
     """Verify the release whose manifest is MANIFEST as its consumers will: the manifest meets
     its schema, each archive in --archives (the manifest's directory by default) is the one it
-    lists, safe to extract, and embeds the payloads it lists with their canonical hashes; and
+    lists, safe to extract, holds a scenario with only the parts of a stored scenario, and embeds
+    the payloads it lists with their canonical hashes; and
     nothing stands beside them, but the manifest verified, that the manifest does not list. A
     manifest refused, or listing a payload ID with two versions or hashes, is refused alone: no
     archive is read."""

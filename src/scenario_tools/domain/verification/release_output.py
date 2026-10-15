@@ -1,14 +1,16 @@
 """A release's own output, verified as a consumer would before it is published: the manifest
 meets its schema, each archive is the one the manifest lists, by its size and its SHA-256, and
-each payload an archive embeds sits inside an inject's contract and is listed by its ID with
-the canonical hash its content has; and one payload ID names one version and one hash across the
-release."""
+holds a scenario with only the parts of a stored scenario, each payload of which sits inside an
+inject's contract and is listed by its ID with the canonical hash its content has; and one payload
+ID names one version and one hash across the release. What ``build`` checks on the commit it
+builds, the scenario's facts, its normalised form and the policy, is not checked again here."""
 
 import hashlib
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
+from scenario_tools.domain.catalogue import archive as stored_scenario
+from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_hash import (
     FileHash,
@@ -103,10 +105,11 @@ def archive_findings(item: Mapping[str, Any], data: bytes | None) -> tuple[Findi
 def payload_content_findings(
     item: Mapping[str, Any], stored: object, files: FileHash
 ) -> tuple[Finding, ...]:
-    """``VRF-008`` for each payload the scenario ``stored`` in the archive of ``item`` embeds
-    outside an inject's contract, or without being listed, or with another content than the
-    canonical hash listed, and for each payload listed but not embedded; ``files`` gives the hash
-    of an attached file, if it can."""
+    """``VRF-007`` when the scenario ``stored`` in the archive of ``item`` has a part outside the
+    closed list ``build`` enforces, or is not structured as an export; otherwise
+    ``VRF-008`` for each payload it embeds outside an inject's contract, or without being listed,
+    or with another content than the canonical hash listed, and for each payload listed but not
+    embedded; ``files`` gives the hash of an attached file, if it can."""
     name = str(item["archive"]["name"])
     twice = []
     listed: dict[str, str] = {}
@@ -118,10 +121,11 @@ def payload_content_findings(
         listed[listed_id] = str(payload["sha256"])
     if twice:  # which of the two hashes a consumer reads is not known: none is checked
         return tuple(twice)
-    findings = [
-        _refused("VRF-008", outside.path, outside.field, _OUTSIDE)
-        for outside in payloads_outside_contracts(stored, name)
-    ]
+    try:  # its findings are the payloads outside an inject's contract
+        outside = stored_scenario.archive_findings(stored, name)
+    except ExportStructureError as error:
+        return (_refused("VRF-007", name, "", f"{error.code}: {error}"),)
+    findings = [_refused("VRF-008", found.path, found.field, _OUTSIDE) for found in outside]
     embedded: set[str] = set()
     for found in embedded_payloads(stored):
         payload_id = found.payload.get(_EXTERNAL_ID) if isinstance(found.payload, Mapping) else None
