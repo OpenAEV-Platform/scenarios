@@ -12,6 +12,7 @@ from scenario_tools.domain.verification.release_output import (
     item_findings,
     manifest_findings,
     payload_content_findings,
+    shared_payload_findings,
 )
 from scenario_tools.ports.errors import UnsafeInputError
 
@@ -35,14 +36,15 @@ def verify_release(
     nothing when it is missing; ``scenario_of`` opens an archive, refusing one unsafe to
     extract, and gives the scenario it holds; ``present`` names what stands beside the archives,
     the manifest verified left out by the caller: anything else there, a ``manifest.json``
-    included, is ``VRF-006``. A manifest with a finding of its own (its schema, its approver), or
-    listing a scenario twice, is reported alone: no archive is read."""
+    included, is ``VRF-006``. A manifest with a finding of its own (its schema, its approver),
+    listing a scenario twice, or a payload with two contents, is reported alone: no archive is
+    read."""
     mapping = document if isinstance(document, Mapping) else {}
     manifest = manifest_findings(validate(document), mapping, approved=approved)
     if manifest:
         return Report("verify", manifest)
     items = mapping["items"]
-    listed = item_findings(items)
+    listed = item_findings(items) or shared_payload_findings(items)
     if listed:
         return Report("verify", listed)
     findings: list[Finding] = []

@@ -118,6 +118,17 @@ def test_a_file_beside_the_archives_that_the_manifest_does_not_list_is_refused()
     ]
 
 
+def test_a_payload_two_scenarios_list_with_two_hashes_is_refused_without_reading_archives() -> None:
+    one, two = _item(ONE), _item(TWO)
+    one["payloads"] = [{"id": "shared", "version": "1.0.0", "sha256": "a" * 64}]
+    two["payloads"] = [{"id": "shared", "version": "1.0.0", "sha256": "b" * 64}]
+
+    report, opened = _verify(document={"items": [one, two]}, approved=False)
+
+    assert [(f.code, f.field) for f in report.findings] == [("VRF-008", "/items/1/payloads/0")]
+    assert opened == []
+
+
 def test_a_manifest_listing_a_scenario_twice_is_refused_without_reading_its_archives() -> None:
     report, opened = _verify(document={"items": [_item(ONE), _item(ONE)]}, approved=False)
 

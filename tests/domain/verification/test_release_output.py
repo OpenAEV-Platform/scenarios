@@ -15,6 +15,7 @@ from scenario_tools.domain.verification.release_output import (
     item_findings,
     manifest_findings,
     payload_content_findings,
+    shared_payload_findings,
 )
 
 VECTORS = json.loads(
@@ -309,6 +310,49 @@ def test_a_payload_listed_twice_in_an_item_is_refused() -> None:
     assert _codes(findings) == [
         ("VRF-008", NAME, "", f"the manifest lists the payload {PAYLOAD_ID} twice")
     ]
+
+
+def _using(*payloads: tuple[str, str, str]) -> dict[str, Any]:
+    return {"payloads": [{"id": i, "version": v, "sha256": sha} for i, v, sha in payloads]}
+
+
+def test_a_payload_several_scenarios_share_with_one_version_and_one_hash_is_accepted() -> None:
+    one = ("shared", "1.0.0", "a" * 64)
+
+    assert shared_payload_findings([_using(one), _using(("other", "1.0.0", "b" * 64), one)]) == ()
+
+
+@pytest.mark.parametrize(
+    "other", [("shared", "1.0.0", "b" * 64), ("shared", "1.1.0", "a" * 64)], ids=["hash", "version"]
+)
+def test_a_payload_listed_with_another_version_or_hash_by_another_scenario_is_refused(
+    other: tuple[str, str, str],
+) -> None:
+    items = [
+        _using(("shared", "1.0.0", "a" * 64)),
+        _using(("x", "1.0.0", "c" * 64), other),
+        _using(other),
+    ]
+
+    assert _codes(shared_payload_findings(items)) == [
+        (
+            "VRF-008",
+            "manifest.json",
+            f"/items/{index}/payloads/{position}",
+            "the payload shared is listed with another version or hash than in /items/0: a "
+            "platform holding this payload by its ID would not read the other content",
+        )
+        for index, position in ((1, 1), (2, 0))
+    ]
+
+
+def test_a_payload_one_item_lists_twice_with_two_hashes_is_refused_as_two_contents() -> None:
+    items = [_using(("shared", "1.0.0", "a" * 64), ("shared", "1.0.0", "b" * 64))]
+
+    (finding,) = shared_payload_findings(items)
+
+    assert finding.field == "/items/0/payloads/1"
+    assert finding.message.startswith("the payload shared is listed with another version or hash")
 
 
 def test_the_id_of_a_payload_is_outside_its_hash() -> None:

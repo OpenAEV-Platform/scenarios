@@ -725,7 +725,8 @@ def verify(
     its schema, each archive in --archives (the manifest's directory by default) is the one it
     lists, safe to extract, and embeds the payloads it lists with their canonical hashes; and
     nothing stands beside them, but the manifest verified, that the manifest does not list. A
-    manifest refused is refused alone: no archive is read."""
+    manifest refused, or listing a payload ID with two versions or hashes, is refused alone: no
+    archive is read."""
     held = archives if archives is not None else manifest.parent
 
     def produce() -> Report:

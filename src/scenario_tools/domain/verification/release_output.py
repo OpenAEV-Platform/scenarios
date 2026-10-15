@@ -1,7 +1,8 @@
 """A release's own output, verified as a consumer would before it is published: the manifest
 meets its schema, each archive is the one the manifest lists, by its size and its SHA-256, and
 each payload an archive embeds sits inside an inject's contract and is listed by its ID with
-the canonical hash its content has."""
+the canonical hash its content has; and one payload ID names one version and one hash across the
+release."""
 
 import hashlib
 from collections.abc import Iterable, Mapping
@@ -62,6 +63,28 @@ def item_findings(items: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
+def shared_payload_findings(items: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
+    """``VRF-008`` for each payload an item lists with another version or hash than the first
+    item listing it, that item included: a platform that holds a payload by its ID does not read
+    it again, so one ID names one content across the release."""
+    findings = []
+    first: dict[str, tuple[int, tuple[str, str]]] = {}
+    for index, item in enumerate(items):
+        for position, payload in enumerate(item["payloads"]):
+            payload_id = str(payload["id"])
+            listed = (str(payload["version"]), str(payload["sha256"]))
+            at, known = first.setdefault(payload_id, (index, listed))
+            if known != listed:
+                message = (
+                    f"the payload {payload_id} is listed with another version or hash than in "
+                    f"/items/{at}: a platform holding this payload by its ID would not read the "
+                    "other content"
+                )
+                field = f"/items/{index}/payloads/{position}"
+                findings.append(_refused("VRF-008", MANIFEST, field, message))
+    return tuple(findings)
+
+
 def archive_findings(item: Mapping[str, Any], data: bytes | None) -> tuple[Finding, ...]:
     """``VRF-006`` when the archive of ``item`` is missing, or ``data``, its bytes, are not of
     the size and the SHA-256 the manifest lists."""
@@ -96,7 +119,7 @@ def payload_content_findings(
     if findings:  # which of the two hashes a consumer reads is not known: none is checked
         return tuple(findings)
     findings += [
-        _refused("VRF-008", name, outside.field, _OUTSIDE)
+        _refused("VRF-008", outside.path, outside.field, _OUTSIDE)
         for outside in payloads_outside_contracts(stored, name)
     ]
     embedded: set[str] = set()
