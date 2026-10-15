@@ -1,6 +1,6 @@
 """Verify a release as its consumers will, before it is published: the manifest, then each
-archive it lists, by its bytes, its safe extraction and the payloads it embeds, and nothing
-beside them that the manifest does not list."""
+archive it lists, by its bytes, its safe extraction, the parts of its scenario and the payloads it
+embeds, and nothing beside them that the manifest does not list."""
 
 from collections.abc import Callable, Mapping, Sequence
 

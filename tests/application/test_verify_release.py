@@ -40,7 +40,7 @@ def _verify(
         opened.append(name)
         if name in unsafe:
             raise UnsafeInputError("IO-010", "unsafe entry name '../x'", name)
-        return {"scenario_injects": []}
+        return {"scenario_information": {}, "scenario_injects": []}
 
     report = verify_release(
         document,

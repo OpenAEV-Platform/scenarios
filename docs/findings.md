@@ -115,13 +115,15 @@ the one the previous release holds.
 archive it lists. A release fails on any of these findings. A manifest that fails its own checks
 (its schema, its approver, a scenario listed twice, a payload ID listed with two contents) is
 reported alone: no archive is read. A manifest that cannot be read at all is reported by its `IO`
-finding; an archive refused as unsafe is `VRF-007`, whose message starts with the `IO` code that
-refused it. `VRF-001` to `VRF-005` are kept for signed releases, which do not exist yet.
+finding; an archive refused as unsafe, or whose scenario is not one `build` writes, is `VRF-007`,
+whose message starts with the `IO` code that refused it. `verify` does not check again what `build`
+checks on the commit it builds: the scenario's facts, its normalised form and the policy. `VRF-001`
+to `VRF-005` are kept for signed releases, which do not exist yet.
 
 | Code | What it means | What to do |
 |---|---|---|
 | `VRF-006` | An archive the manifest lists is missing, or its size or its SHA-256 is not the one listed; or a file stands beside the archives that the manifest does not list, and would be published with them, a `manifest.json` other than the one verified included. | Publish the archives `build` wrote, unchanged, beside their manifest, and nothing else. |
-| `VRF-007` | An archive is unsafe to extract, or is not what `build` writes: too large, too many entries, an entry name leaving the extraction directory, a link, a layout the checks refuse; any entry but `scenario.json` and `attachments.zip`, or an `attachments.zip` that does not open with the shared password. | Build the release again with `build`; never edit an archive. |
+| `VRF-007` | An archive is unsafe to extract, or is not what `build` writes: too large, too many entries, an entry name leaving the extraction directory, a link, a layout the checks refuse; any entry but `scenario.json` and `attachments.zip`, an `attachments.zip` that does not open with the shared password, or a `scenario.json` with a part outside the closed list of a stored scenario, or not structured as an export. | Build the release again with `build`; never edit an archive. |
 | `VRF-008` | A payload an archive embeds sits outside an inject's contract, is not listed in the manifest, has another content than the canonical hash listed, has no ID or cannot be hashed; or the manifest lists a payload the archive does not embed, lists one twice, or lists one ID with two versions or hashes across the release: a platform holding a payload by its ID does not read it again. | Build the release again with `build`, from entries that pass `validate`. |
 | `VRF-009` | The manifest does not meet its schema, lists a scenario twice, or names an archive after another scenario or version than the item's; or an approved manifest does not name its release approver. | Build the manifest with `build`; the release job adds the approver. |
 

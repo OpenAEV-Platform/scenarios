@@ -47,10 +47,11 @@ def _stored(*payloads: object, attack_patterns: list[str] = VECTOR["attack_patte
         ]
     }
     return {
+        "scenario_information": {},
         "scenario_injects": [
             {"inject_injector_contract": dict(contract, injector_contract_payload=payload)}
             for payload in payloads
-        ]
+        ],
     }
 
 
@@ -198,7 +199,7 @@ def test_a_payload_refused_leaves_the_next_one_verified(refused: dict[str, Any])
     ("place", "pointer"),
     [
         (("scenario_injects", 0, "inject_content"), "/scenario_injects/0/inject_content"),
-        (("scenario_workflow",), "/scenario_workflow"),
+        (("scenario_information", "extra"), "/scenario_information/extra"),
     ],
 )
 def test_a_payload_outside_an_inject_s_contract_is_refused(
@@ -217,17 +218,50 @@ def test_a_payload_outside_an_inject_s_contract_is_refused(
 
 def test_a_payload_outside_a_contract_is_refused_before_those_the_contracts_embed() -> None:
     stored = _stored(dict(PAYLOAD, command_content="Write-Output changed"))
-    stored["scenario_workflow"] = {"injector_contract_payload": PAYLOAD}
+    stored["scenario_information"]["extra"] = {"injector_contract_payload": PAYLOAD}
 
     findings = payload_content_findings(_item(**{PAYLOAD_ID: VECTOR["sha256"]}), stored, _no_files)
 
     assert [(f.field, f.message) for f in findings] == [
-        ("/scenario_workflow", OUTSIDE),
+        ("/scenario_information/extra", OUTSIDE),
         (
             "/scenario_injects/0/inject_injector_contract/injector_contract_payload",
             f"the payload {PAYLOAD_ID} has another content than the hash the manifest lists",
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    ("change", "what"),
+    [
+        ({"scenario_exercises": []}, "scenario_exercises is not a part of a stored scenario"),
+        (
+            {"scenario_workflow": {"injector_contract_payload": PAYLOAD}},
+            "scenario_workflow is not a part of a stored scenario",
+        ),
+        ({"scenario_information": None}, "scenario_information must be an object"),
+        ({"scenario_injects": {}}, "scenario_injects must be a list"),
+    ],
+    ids=["unknown part", "part left only empty", "no information", "injects not a list"],
+)
+def test_a_scenario_not_stored_as_build_writes_it_is_refused_before_its_payloads(
+    change: dict[str, Any], what: str
+) -> None:
+    stored = dict(_stored(dict(PAYLOAD, payload_external_id="unlisted")), **change)
+
+    findings = payload_content_findings(_item(**{PAYLOAD_ID: VECTOR["sha256"]}), stored, _no_files)
+
+    assert _codes(findings) == [
+        ("VRF-007", NAME, "", f"IO-014: not an OpenAEV scenario export: {what}")
+    ]
+
+
+def test_a_part_normalisation_leaves_empty_is_accepted_empty() -> None:
+    stored = dict(_stored(PAYLOAD), scenario_workflow=[], scenario_objectives=None)
+
+    assert (
+        payload_content_findings(_item(**{PAYLOAD_ID: VECTOR["sha256"]}), stored, _no_files) == ()
+    )
 
 
 def test_a_payload_that_cannot_be_hashed_is_refused() -> None:
@@ -303,7 +337,7 @@ def test_a_payload_listed_twice_in_an_item_is_refused() -> None:
     item["payloads"].append({"id": PAYLOAD_ID, "version": "1.0.0", "sha256": "0" * 64})
 
     stored = _stored(PAYLOAD)
-    stored["scenario_workflow"] = {"injector_contract_payload": PAYLOAD}  # nothing else is checked
+    stored["scenario_exercises"] = [{"name": "x"}]  # nothing else is checked
 
     findings = payload_content_findings(item, stored, _no_files)
 
