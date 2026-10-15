@@ -39,7 +39,7 @@ file the tools read: exports, archives, requests, scenario files.
 | `IO-011` | The archive holds a link. | Export again. |
 | `IO-012` | Two entries of the archive have the same name, ignoring case. | Export again. |
 | `IO-013` | A path is not what it should be: a symbolic link, a device, a directory where a file is expected, or a file where a directory is expected. Links are never followed, in an archive or in the repository. | Replace it with a regular file or directory, as the message says. |
-| `IO-014` | The export is not shaped like an OpenAEV scenario export: a missing or wrong field, an identifier that is not a UUID, a part the tools do not handle yet. | Export again; if it persists, open an issue with the platform version. |
+| `IO-014` | The input is not shaped as the tools expect: an export that is not shaped like an OpenAEV scenario export (a missing or wrong field, an identifier that is not a UUID, a part the tools do not handle yet), a release archive holding what `build` never writes, or an `expected.json` of the release fixtures out of shape. | For an export, export again, and if it persists, open an issue with the platform version; otherwise, build the release or the fixtures again. |
 | `IO-015` | Policy data was found at more than one level above the output: an entry may not carry its own rules. | Remove the extra `policy/` directory. |
 | `IO-016` | The report holds more findings than it shows; this one counts the rest. | Fix the findings shown, then run the command again. |
 | `IO-017` | A text holds an invisible or direction-changing character (such as a right-to-left override), which could make a reviewer read something other than what the platform runs. | Remove the character; the message gives its position. |
@@ -126,6 +126,18 @@ to `VRF-005` are kept for signed releases, which do not exist yet.
 | `VRF-007` | An archive is unsafe to extract, or is not what `build` writes: too large, too many entries, an entry name leaving the extraction directory, a link, a layout the checks refuse; any entry but `scenario.json` and `attachments.zip`, an `attachments.zip` that does not open with the shared password, or a `scenario.json` with a part outside the closed list of a stored scenario, or not structured as an export. | Build the release again with `build`; never edit an archive. |
 | `VRF-008` | A payload an archive embeds sits outside an inject's contract, is not listed in the manifest, has another content than the canonical hash listed, has no ID or cannot be hashed; or the manifest lists a payload the archive does not embed, lists one twice, or lists one ID with two versions or hashes across the release: a platform holding a payload by its ID does not read it again. | Build the release again with `build`, from entries that pass `validate`. |
 | `VRF-009` | The manifest does not meet its schema, lists a scenario twice, or names an archive after another scenario or version than the item's; or an approved manifest does not name its release approver. | Build the manifest with `build`; the release job adds the approver. |
+
+## Release fixtures: `CNF`
+
+`scenario-tools conformance run` runs `verify` on each release fixture of
+[`conformance/releases`](../conformance/README.md) and compares what it gives with what
+`expected.json` says. A run fails on any of these findings; an `expected.json` that is not shaped
+as the fixtures write it is refused input (`IO-014`).
+
+| Code | What it means | What to do |
+|---|---|---|
+| `CNF-001` | Verifying a fixture gives other findings than `expected.json` lists for it, by code, path, field or the `IO` code of an unsafe archive. | If `verify` or the fixtures changed on purpose, run `make fixtures`; otherwise, the change broke a check. |
+| `CNF-002` | A fixture `expected.json` lists has no directory, or a directory beside it is no fixture `expected.json` lists. | Run `make fixtures`; never add or remove a fixture by hand. |
 
 ## Other checks
 

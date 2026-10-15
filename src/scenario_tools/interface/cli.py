@@ -34,6 +34,7 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
+from scenario_tools.adapters.fixture_zip import HandmadeArchives
 from scenario_tools.adapters.git import (
     changed_entries,
     commit_time,
@@ -64,6 +65,7 @@ from scenario_tools.application.assign_payloads import (
     payload_findings,
 )
 from scenario_tools.application.build_archive import build_archive
+from scenario_tools.application.build_fixtures import EXPECTED, fixture_files, release_fixtures
 from scenario_tools.application.build_release import (
     ArchivedEntry,
     EntryResult,
@@ -74,9 +76,14 @@ from scenario_tools.application.check_title import check_title as check_title_us
 from scenario_tools.application.collect_approvals import collect_approvals
 from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
+from scenario_tools.application.fixture_expectations import (
+    Expectation,
+    expectations_from_document,
+)
 from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
+from scenario_tools.application.run_fixtures import run_fixtures
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.application.verify_release import verify_release
@@ -555,6 +562,13 @@ def _output(out: Path, root: Path, *, directory: bool) -> Path:
     out = Path(os.path.normpath(out.absolute()))
     if _inside(out, root):
         raise click.UsageError("--out may not be inside the repository")
+    return _free_place(out, directory=directory)
+
+
+def _free_place(out: Path, *, directory: bool) -> Path:
+    """``out``, absolute, in a directory that exists, where nothing is, or an empty
+    ``directory`` that is no link; a usage error otherwise."""
+    out = Path(os.path.normpath(out.absolute()))
     if not out.parent.is_dir():
         raise click.UsageError("--out must be in a directory that exists")
     empty = directory and not out.is_symlink() and out.is_dir() and not any(out.iterdir())
@@ -707,6 +721,39 @@ def build(
     _emit(ctx, "build", produce, root)
 
 
+def _verified(manifest: Path, schemas: Path, held: Path, *, approved: bool) -> Report:
+    """The report of verify on the release whose manifest is ``manifest`` and whose archives
+    are in ``held``, with the manifest's schema in ``schemas``."""
+    if schemas.is_symlink() or not (schemas / "manifest.schema.json").is_file():
+        raise EnvironmentProblemError(
+            f"schemas cannot be used: {schemas} holds no manifest.schema.json"
+        )
+    try:
+        validator = JsonSchemaValidator(schemas)
+        beside = frozenset(path.name for path in held.iterdir())
+        if held.resolve() == manifest.parent.resolve():  # the manifest is not one to list
+            beside -= {manifest.name}
+    except (OSError, ValueError) as error:
+        raise EnvironmentProblemError(f"cannot read the release: {error}") from error
+    document = read_json_file(manifest)
+
+    def archive_of(name: str) -> bytes | None:
+        place = held / name  # the name meets the manifest's schema: a plain file name
+        return read_regular_file(place, ARCHIVE_LIMIT) if os.path.lexists(place) else None
+
+    return verify_release(
+        document,
+        validate=lambda found: tuple(
+            (violation.pointer, violation.message)
+            for violation in validator.validate("manifest", found)
+        ),
+        approved=approved,
+        archive_of=archive_of,
+        scenario_of=scenario_from_archive,
+        present=beside,
+    )
+
+
 @main.command(name="verify")
 @click.argument("manifest", type=click.Path(path_type=Path, dir_okay=False))
 @click.option(
@@ -724,43 +771,83 @@ def verify(
     """Verify the release whose manifest is MANIFEST as its consumers will: the manifest meets
     its schema, each archive in --archives (the manifest's directory by default) is the one it
     lists, safe to extract, holds a scenario with only the parts of a stored scenario, and embeds
-    the payloads it lists with their canonical hashes; and
-    nothing stands beside them, but the manifest verified, that the manifest does not list. A
-    manifest refused, or listing a payload ID with two versions or hashes, is refused alone: no
-    archive is read."""
+    the payloads it lists with their canonical hashes; and nothing stands beside them, but the
+    manifest verified, that the manifest does not list. A manifest refused, or listing a payload
+    ID with two versions or hashes, is refused alone: no archive is read."""
     held = archives if archives is not None else manifest.parent
 
     def produce() -> Report:
-        if schemas.is_symlink() or not (schemas / "manifest.schema.json").is_file():
-            raise EnvironmentProblemError(
-                f"schemas cannot be used: {schemas} holds no manifest.schema.json"
-            )
-        try:
-            validator = JsonSchemaValidator(schemas)
-            beside = frozenset(path.name for path in held.iterdir())
-            if held.resolve() == manifest.parent.resolve():  # the manifest is not one to list
-                beside -= {manifest.name}
-        except (OSError, ValueError) as error:
-            raise EnvironmentProblemError(f"cannot read the release: {error}") from error
-        document = read_json_file(manifest)
-
-        def archive_of(name: str) -> bytes | None:
-            place = held / name  # the name meets the manifest's schema: a plain file name
-            return read_regular_file(place, ARCHIVE_LIMIT) if os.path.lexists(place) else None
-
-        return verify_release(
-            document,
-            validate=lambda found: tuple(
-                (violation.pointer, violation.message)
-                for violation in validator.validate("manifest", found)
-            ),
-            approved=approved,
-            archive_of=archive_of,
-            scenario_of=scenario_from_archive,
-            present=beside,
-        )
+        return _verified(manifest, schemas, held, approved=approved)
 
     _emit(ctx, "verify", produce, None)
+
+
+@main.group(name="conformance")
+def conformance() -> None:
+    """Build the release fixtures, and run the verifier on them."""
+
+
+@conformance.command(name="build")
+@click.option("--out", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def conformance_build(ctx: click.Context, out: Path) -> None:
+    """Write the release fixtures to --out, a new or empty directory: a release verify
+    accepts, and one for each way it refuses one, each in its directory, with expected.json
+    beside them. They need no secret, and are the same bytes on every build."""
+    out = _free_place(out, directory=True)
+
+    def produce() -> Report:
+        files = fixture_files(release_fixtures(ZipArchiveBuilder(), HandmadeArchives()))
+        out.mkdir(exist_ok=True)
+        for path, data in sorted(files.items()):
+            target = out / path
+            target.parent.mkdir(exist_ok=True)
+            write_output(target, data, create=True)
+        return Report("conformance")
+
+    _emit(ctx, "conformance", produce, None)
+
+
+@conformance.command(name="run")
+@click.argument("fixtures", type=click.Path(path_type=Path, file_okay=False, exists=True))
+@click.option(
+    "--schemas",
+    required=True,
+    type=click.Path(path_type=Path, file_okay=False),
+    help="The repository's schemas directory, which holds manifest.schema.json.",
+)
+@click.pass_context
+def conformance_run(ctx: click.Context, fixtures: Path, schemas: Path) -> None:
+    """Run verify on every release fixture in FIXTURES, and compare what it gives with what
+    FIXTURES/expected.json says: the findings of each, by code, path and field, and the IO code
+    of an archive refused as unsafe."""
+
+    def produce() -> Report:
+        expected = fixtures / EXPECTED
+        try:
+            expectations = expectations_from_document(read_json_file(expected))
+        except ValueError as error:
+            raise UnsafeInputError("IO-014", str(error), str(expected)) from error
+        try:
+            present = frozenset(path.name for path in fixtures.iterdir()) - {EXPECTED}
+        except OSError as error:
+            raise EnvironmentProblemError(f"cannot read the fixtures: {error}") from error
+
+        def outcome_of(expectation: Expectation) -> Report:
+            case = fixtures / expectation.name  # a plain name, as expected.json requires
+            try:
+                if case.is_symlink() or not case.is_dir():
+                    message = "a fixture is a directory, never a link or a file"
+                    raise UnsafeInputError("IO-013", message, str(case))
+                return _verified(
+                    case / "manifest.json", schemas, case, approved=expectation.approved
+                )
+            except UnsafeInputError as error:
+                return Report("verify", (finding_from_unsafe_input(error, fixtures),))
+
+        return run_fixtures(expectations, present=present, outcome_of=outcome_of)
+
+    _emit(ctx, "conformance", produce, None)
 
 
 @main.command(name="payloads")

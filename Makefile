@@ -5,7 +5,7 @@ GITLEAKS_VERSION := 8.30.1
 ACTIONLINT_VERSION := 1.7.12
 MUTATION_PATHS := src/scenario_tools/domain/policy src/scenario_tools/domain/verification
 
-.PHONY: check lint format types imports tests coverage-domain security audit secrets sheets mutation
+.PHONY: check lint format types imports tests coverage-domain security audit secrets sheets mutation fixtures
 
 check: lint format types imports tests coverage-domain security audit secrets sheets workflows mutation
 	@echo "Local pipeline: all checks passed."
@@ -66,3 +66,12 @@ mutation:
 	else \
 		echo "mutation: no policy or verification module yet, skipped"; \
 	fi
+
+# The release fixtures, written again: the tests check that conformance/releases is what the
+# tools build, so a change to the fixtures, the verifier or the archive writer needs this.
+# They are written beside, then put in place: a failed build leaves them as they were.
+fixtures:
+	rm -rf conformance/releases.new
+	uv run scenario-tools conformance build --out conformance/releases.new
+	rm -rf conformance/releases
+	mv conformance/releases.new conformance/releases

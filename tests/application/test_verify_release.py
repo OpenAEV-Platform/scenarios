@@ -134,3 +134,15 @@ def test_a_manifest_listing_a_scenario_twice_is_refused_without_reading_its_arch
 
     assert [(f.code, f.field) for f in report.findings] == [("VRF-009", "/items/1")]
     assert opened == []
+
+
+def test_the_cause_of_an_unsafe_archive_is_the_io_code_its_message_starts_with() -> None:
+    from scenario_tools.application.verify_release import unsafe_cause
+    from scenario_tools.domain.shared.finding import Finding, Severity
+
+    def finding(code: str, message: str) -> Finding:
+        return Finding(code, Severity.BLOCKING, "a.zip", "", message)
+
+    assert unsafe_cause(finding("VRF-007", "IO-010: unsafe entry name")) == "IO-010"
+    assert unsafe_cause(finding("VRF-007", "refused, IO-010: unsafe entry name")) is None
+    assert unsafe_cause(finding("VRF-008", "IO-010: not an unsafe archive")) is None

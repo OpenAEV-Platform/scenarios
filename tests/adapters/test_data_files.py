@@ -536,10 +536,11 @@ def test_bytes_that_are_no_archive_are_refused() -> None:
 def test_attachments_encrypted_with_another_password_are_refused() -> None:
     import zlib
 
-    from tests.adapters.test_safe_zip import VISIBLE, _deflate, _handmade, _zipcrypto
+    from scenario_tools.adapters.fixture_zip import zipcrypto
+    from tests.adapters.test_safe_zip import VISIBLE, _deflate, _handmade
 
     crc = zlib.crc32(VISIBLE)
-    other = _zipcrypto(_deflate(VISIBLE), b"another", crc >> 24)
+    other = zipcrypto(_deflate(VISIBLE), b"another", crc >> 24)
     attachments = _handmade(other, method=8, crc=crc, size=len(VISIBLE), flags=1)
     data = _built([("scenario.json", b"Scenario", SCENARIO), ("attachments.zip", b"", attachments)])
 

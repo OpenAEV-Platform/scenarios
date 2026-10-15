@@ -63,6 +63,14 @@ and the checkout its whole history.
 
 The findings are described in [`findings.md`](findings.md).
 
+## Release fixtures
+
+[`conformance/releases`](../conformance/README.md) holds one release `verify` accepts, and one for
+each way it refuses one, with what verifying each must give. A consumer can run its own verifier
+on them. The tests check that they are what `scenario-tools conformance build` writes, and that
+each gives what it expects; after a change to `verify` or to the fixtures, `make fixtures` writes
+them again.
+
 ## Withdrawing a scenario
 
 A released scenario is never removed from the catalogue: a new version sets its `status` to

@@ -17,6 +17,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import scenario_tools.adapters.safe_zip as safe_zip_module
+from scenario_tools.adapters.fixture_zip import zipcrypto
 from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.adapters.safe_zip import (
     DECOMPRESSED_LIMIT,
@@ -393,7 +394,8 @@ def _handmade(
     name: bytes = b"f",
     local_name: bytes | None = None,
 ) -> bytes:
-    """One-entry archive built byte by byte, so that every field can be set at will."""
+    """One-entry archive built byte by byte, so that every field can be set at will, the local
+    name apart from the central one included, which the fixtures' writer never does."""
     local_name = name if local_name is None else local_name
     date = 0x21  # 1980-01-01
     local = (
@@ -446,38 +448,6 @@ def _deflate(data: bytes) -> bytes:
     return compressor.compress(data) + compressor.flush()
 
 
-def _crc_table() -> list[int]:
-    table = []
-    for byte in range(256):
-        crc = byte
-        for _ in range(8):
-            crc = (crc >> 1) ^ 0xEDB88320 if crc & 1 else crc >> 1
-        table.append(crc)
-    return table
-
-
-CRC_TABLE = _crc_table()
-
-
-def _zipcrypto(plain: bytes, password: bytes, check_byte: int) -> bytes:
-    """Encrypt as `zip -P` does (APPNOTE 6.1), for archives the tests build by hand."""
-    keys = [0x12345678, 0x23456789, 0x34567890]
-
-    def update(byte: int) -> None:
-        keys[0] = (keys[0] >> 8) ^ CRC_TABLE[(keys[0] ^ byte) & 0xFF]
-        keys[1] = ((keys[1] + (keys[0] & 0xFF)) * 134775813 + 1) & 0xFFFFFFFF
-        keys[2] = (keys[2] >> 8) ^ CRC_TABLE[(keys[2] ^ (keys[1] >> 24)) & 0xFF]
-
-    for byte in password:
-        update(byte)
-    out = bytearray()
-    for byte in bytes(11) + bytes([check_byte]) + plain:
-        temp = (keys[2] | 2) & 0xFFFF
-        out.append(byte ^ ((temp * (temp ^ 1)) >> 8) & 0xFF)
-        update(byte)
-    return bytes(out)
-
-
 VISIBLE = b'{"name": "safe"}'
 HIDDEN = b'\n{"name": "never checked"}'
 
@@ -507,7 +477,7 @@ def test_a_stream_going_on_beyond_its_declared_size_is_refused() -> None:
 
 def test_an_encrypted_stream_going_on_beyond_its_declared_size_is_refused() -> None:
     crc = zlib.crc32(VISIBLE)
-    encrypted = _zipcrypto(_deflate(VISIBLE + HIDDEN), b"infected", crc >> 24)
+    encrypted = zipcrypto(_deflate(VISIBLE + HIDDEN), b"infected", crc >> 24)
     data = _handmade(encrypted, method=8, crc=crc, size=len(VISIBLE), flags=1)
 
     with pytest.raises(UnsafeInputError) as error:
@@ -517,7 +487,7 @@ def test_an_encrypted_stream_going_on_beyond_its_declared_size_is_refused() -> N
 
 def test_an_encrypted_entry_made_by_hand_is_read() -> None:
     crc = zlib.crc32(VISIBLE)
-    encrypted = _zipcrypto(_deflate(VISIBLE), b"infected", crc >> 24)
+    encrypted = zipcrypto(_deflate(VISIBLE), b"infected", crc >> 24)
     data = _handmade(encrypted, method=8, crc=crc, size=len(VISIBLE), flags=1)
 
     assert archive_from_bytes(data).read("f", password=b"infected") == VISIBLE
@@ -958,13 +928,13 @@ def test_a_wrong_password_is_found_before_the_entry_is_decrypted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     decrypted: list[int] = []
-    original = safe_zip_module._ZipCryptoKeys.decrypt
+    original = safe_zip_module.ZipCryptoKeys.decrypt
 
     def spy(keys: object, data: bytes) -> bytes:
         decrypted.append(len(data))
         return original(keys, data)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(safe_zip_module._ZipCryptoKeys, "decrypt", spy)
+    monkeypatch.setattr(safe_zip_module.ZipCryptoKeys, "decrypt", spy)
     archive = archive_from_bytes(ENCRYPTED_DEFLATED)
 
     with pytest.raises(UnsafeInputError):

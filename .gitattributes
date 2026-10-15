@@ -1,0 +1,2 @@
+# The release fixtures are compared byte for byte with what the tools write: never convert them.
+conformance/releases/** -text
