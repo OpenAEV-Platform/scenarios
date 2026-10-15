@@ -70,11 +70,11 @@ def test_a_manifest_out_of_its_schema_is_refused_without_reading_its_items() -> 
     assert opened == []
 
 
-def test_an_approved_manifest_without_its_approver_is_refused_and_its_archives_read() -> None:
-    report, opened = _verify(document={"items": MANIFEST["items"]})
+def test_an_approved_manifest_without_its_approver_is_refused_without_reading_its_items() -> None:
+    report, opened = _verify(document={"items": [_item(ONE), _item(ONE)]})
 
     assert [(f.code, f.field) for f in report.findings] == [("VRF-009", "/release_approver")]
-    assert opened == [ONE, TWO]
+    assert opened == []
 
 
 def test_an_archive_missing_is_never_opened_and_the_others_are() -> None:
@@ -111,8 +111,10 @@ def test_an_archive_too_large_to_read_is_unsafe() -> None:
 def test_a_file_beside_the_archives_that_the_manifest_does_not_list_is_refused() -> None:
     report, _ = _verify(present=frozenset({ONE, TWO, "manifest.json", "extra.zip"}))
 
+    message = "the manifest does not list it, and it would be published"
     assert [(f.code, f.path, f.message) for f in report.findings] == [
-        ("VRF-006", "extra.zip", "the manifest does not list it, and it would be published")
+        ("VRF-006", "extra.zip", message),
+        ("VRF-006", "manifest.json", message),  # the manifest verified is not among them
     ]
 
 

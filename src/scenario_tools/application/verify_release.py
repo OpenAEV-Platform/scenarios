@@ -8,7 +8,6 @@ from scenario_tools.application.assign_payloads import no_attached_files
 from scenario_tools.domain.shared.finding import Finding, Report, Severity
 from scenario_tools.domain.verification.payload_hash import FileHash
 from scenario_tools.domain.verification.release_output import (
-    MANIFEST,
     archive_findings,
     item_findings,
     manifest_findings,
@@ -34,19 +33,21 @@ def verify_release(
     """The report on the release whose manifest is ``document``: ``validate`` gives where it
     does not meet its schema, and why. ``archive_of`` gives an archive's bytes by its name, or
     nothing when it is missing; ``scenario_of`` opens an archive, refusing one unsafe to
-    extract, and gives the scenario it holds; ``present`` names what stands beside the archives.
-    A manifest out of its schema, or listing a scenario twice, is refused alone."""
-    violations = validate(document)
+    extract, and gives the scenario it holds; ``present`` names what stands beside the archives,
+    the manifest verified left out by the caller: anything else there, a ``manifest.json``
+    included, is ``VRF-006``. A manifest with a finding of its own (its schema, its approver), or
+    listing a scenario twice, is reported alone: no archive is read."""
     mapping = document if isinstance(document, Mapping) else {}
-    findings = list(manifest_findings(violations, mapping, approved=approved))
-    if violations:
-        return Report("verify", tuple(findings))
+    manifest = manifest_findings(validate(document), mapping, approved=approved)
+    if manifest:
+        return Report("verify", manifest)
     items = mapping["items"]
     listed = item_findings(items)
     if listed:
-        return Report("verify", (*findings, *listed))
+        return Report("verify", listed)
+    findings: list[Finding] = []
     names = {str(item["archive"]["name"]) for item in items}
-    for extra in sorted(present - names - {MANIFEST}):
+    for extra in sorted(present - names):
         message = "the manifest does not list it, and it would be published"
         findings.append(Finding("VRF-006", Severity.BLOCKING, extra, "", message))
     for item in items:

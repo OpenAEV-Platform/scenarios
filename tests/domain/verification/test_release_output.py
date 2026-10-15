@@ -23,6 +23,9 @@ VECTORS = json.loads(
 VECTOR = VECTORS[1]
 PAYLOAD_ID = "starter-pack-command"
 PAYLOAD = dict(VECTOR["payload"], payload_external_id=PAYLOAD_ID)  # its ID is outside its hash
+OUTSIDE = (
+    "the archive embeds a payload outside an inject's contract, where no reference can name it"
+)
 NAME = "0b5c1a6e-4f0e-4b8e-9d2a-1c3e5f7a9b0d-1.0.0.zip"
 DATA = b"the archive's bytes"
 
@@ -190,6 +193,42 @@ def test_a_payload_refused_leaves_the_next_one_verified(refused: dict[str, Any])
     )
 
 
+@pytest.mark.parametrize(
+    ("place", "pointer"),
+    [
+        (("scenario_injects", 0, "inject_content"), "/scenario_injects/0/inject_content"),
+        (("scenario_workflow",), "/scenario_workflow"),
+    ],
+)
+def test_a_payload_outside_an_inject_s_contract_is_refused(
+    place: tuple[str | int, ...], pointer: str
+) -> None:
+    stored = _stored(PAYLOAD)
+    held: Any = stored
+    for key in place[:-1]:
+        held = held[key]
+    held[place[-1]] = {"injector_contract_payload": PAYLOAD}
+
+    findings = payload_content_findings(_item(**{PAYLOAD_ID: VECTOR["sha256"]}), stored, _no_files)
+
+    assert _codes(findings) == [("VRF-008", NAME, pointer, OUTSIDE)]
+
+
+def test_a_payload_outside_a_contract_is_refused_before_those_the_contracts_embed() -> None:
+    stored = _stored(dict(PAYLOAD, command_content="Write-Output changed"))
+    stored["scenario_workflow"] = {"injector_contract_payload": PAYLOAD}
+
+    findings = payload_content_findings(_item(**{PAYLOAD_ID: VECTOR["sha256"]}), stored, _no_files)
+
+    assert [(f.field, f.message) for f in findings] == [
+        ("/scenario_workflow", OUTSIDE),
+        (
+            "/scenario_injects/0/inject_injector_contract/injector_contract_payload",
+            f"the payload {PAYLOAD_ID} has another content than the hash the manifest lists",
+        ),
+    ]
+
+
 def test_a_payload_that_cannot_be_hashed_is_refused() -> None:
     broken = dict(PAYLOAD, payload_platforms="Windows")
 
@@ -262,7 +301,10 @@ def test_a_payload_listed_twice_in_an_item_is_refused() -> None:
     item = _item(**{PAYLOAD_ID: VECTOR["sha256"]})
     item["payloads"].append({"id": PAYLOAD_ID, "version": "1.0.0", "sha256": "0" * 64})
 
-    findings = payload_content_findings(item, _stored(PAYLOAD), _no_files)
+    stored = _stored(PAYLOAD)
+    stored["scenario_workflow"] = {"injector_contract_payload": PAYLOAD}  # nothing else is checked
+
+    findings = payload_content_findings(item, stored, _no_files)
 
     assert _codes(findings) == [
         ("VRF-008", NAME, "", f"the manifest lists the payload {PAYLOAD_ID} twice")

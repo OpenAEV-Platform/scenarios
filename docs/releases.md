@@ -26,9 +26,10 @@ whose changes were reviewed.
 4. **Verification.** `scenario-tools verify <manifest> --schemas schemas` checks the release
    as its consumers will: each archive against the manifest, by its size and its SHA-256; safe
    extraction, and nothing in an archive but what `build` writes; each payload an archive
-   embeds, listed with the canonical hash its content has; and nothing beside the archives that
-   the manifest does not list. `--archives` gives another directory for the archives, and
-   `--approved` also requires the release approver, once the release is approved.
+   embeds, inside an inject's contract and listed with the canonical hash its content has; and
+   nothing beside the archives, but the manifest verified, that the manifest does not list.
+   `--archives` gives another directory for the archives, and `--approved` also requires the
+   release approver, once the release is approved.
 
 A green run means the release builds, is reproducible and passes what its consumers check;
 nothing is published. The two builds are kept as the run's artifacts for seven days.

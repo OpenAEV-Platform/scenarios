@@ -242,6 +242,24 @@ def test_a_manifest_of_another_name_is_not_taken_for_a_file_to_publish(
     assert result.exit_code == 0, result.output
 
 
+@pytest.mark.parametrize("place", ["renamed", "elsewhere"])
+def test_a_file_named_as_a_manifest_but_not_the_one_verified_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, place: str
+) -> None:
+    release = _release(tmp_path, monkeypatch)
+    if place == "renamed":
+        (release / "edge.json").write_bytes((release / "manifest.json").read_bytes())
+        result = _verify(release / "edge.json")
+    else:
+        (tmp_path / "archives").mkdir()
+        (release / ARCHIVE).rename(tmp_path / "archives" / ARCHIVE)
+        (tmp_path / "archives" / "manifest.json").write_text("{}")
+        result = _verify(release / "manifest.json", "--archives", str(tmp_path / "archives"))
+
+    assert result.exit_code == 1, result.output
+    assert _findings(result) == [("VRF-006", "manifest.json")]
+
+
 def test_an_archives_directory_that_is_missing_is_the_environment_s_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

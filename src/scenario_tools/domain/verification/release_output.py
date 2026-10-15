@@ -1,11 +1,13 @@
 """A release's own output, verified as a consumer would before it is published: the manifest
 meets its schema, each archive is the one the manifest lists, by its size and its SHA-256, and
-each payload an archive embeds is listed by its ID with the canonical hash its content has."""
+each payload an archive embeds sits inside an inject's contract and is listed by its ID with
+the canonical hash its content has."""
 
 import hashlib
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_hash import (
     FileHash,
@@ -16,6 +18,9 @@ from scenario_tools.domain.verification.payload_hash import (
 
 MANIFEST = "manifest.json"
 _EXTERNAL_ID = "payload_external_id"
+_OUTSIDE = (
+    "the archive embeds a payload outside an inject's contract, where no reference can name it"
+)
 
 
 def _refused(code: str, path: str, field: str, message: str) -> Finding:
@@ -76,8 +81,9 @@ def payload_content_findings(
     item: Mapping[str, Any], stored: object, files: FileHash
 ) -> tuple[Finding, ...]:
     """``VRF-008`` for each payload the scenario ``stored`` in the archive of ``item`` embeds
-    without being listed, or with another content than the canonical hash listed, and for each
-    payload listed but not embedded; ``files`` gives the hash of an attached file, if it can."""
+    outside an inject's contract, or without being listed, or with another content than the
+    canonical hash listed, and for each payload listed but not embedded; ``files`` gives the hash
+    of an attached file, if it can."""
     name = str(item["archive"]["name"])
     findings = []
     listed: dict[str, str] = {}
@@ -89,6 +95,10 @@ def payload_content_findings(
         listed[listed_id] = str(payload["sha256"])
     if findings:  # which of the two hashes a consumer reads is not known: none is checked
         return tuple(findings)
+    findings += [
+        _refused("VRF-008", name, outside.field, _OUTSIDE)
+        for outside in payloads_outside_contracts(stored, name)
+    ]
     embedded: set[str] = set()
     for found in embedded_payloads(stored):
         payload_id = found.payload.get(_EXTERNAL_ID) if isinstance(found.payload, Mapping) else None
