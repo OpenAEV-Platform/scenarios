@@ -100,13 +100,18 @@ def _new_directory(parent: int, name: str, where: str, doing: str) -> tuple[int,
     """The directory ``name`` made in ``parent`` where nothing is, opened, with its identity;
     ``doing`` (make, write) says what fails. Anything there already raises ``FileExistsError``,
     as the system does. One another removed or replaced once made is said; one whose identity
-    cannot be read is left, and said. The caller sets its mode, then closes it."""
+    cannot be read, or that a stop leaves before it is known to be the run's, is left, and said.
+    The caller sets its mode, then closes it."""
     try:
         make_directory(parent, name)
     except FileExistsError:
         raise
     except OSError as error:
         raise EnvironmentProblemError(f"cannot {doing} {where}: {error.strerror}") from error
+    except BaseException as failure:  # a stop as it was made: what is there, if anything, is said
+        if _present(parent, name):
+            raise untold(f"cannot {doing} {where}: interrupted", where) from failure
+        raise
     try:
         child = made_directory(parent, name, where)  # what is there is not known ours
     except FileNotFoundError as error:
@@ -119,14 +124,28 @@ def _new_directory(parent: int, name: str, where: str, doing: str) -> tuple[int,
         ) from error
     except EnvironmentProblemError as error:
         raise untold(str(error), where) from error
+    except BaseException as failure:  # a stop too: nothing tells it from another's yet
+        raise untold(f"cannot {doing} {where}: interrupted", where) from failure
     try:
         return child, identity(child, where)
     except EnvironmentProblemError as error:
         os.close(child)
         raise untold(str(error), where) from error
-    except BaseException:
+    except BaseException as failure:  # a stop too: it is not yet known to be the run's
         os.close(child)
-        raise
+        raise untold(f"cannot {doing} {where}: interrupted", where) from failure
+
+
+def _present(parent: int, name: str) -> bool:
+    """Whether anything may be at ``name`` in ``parent``, a link included: only a name known
+    to be missing is not."""
+    try:
+        os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True  # it cannot be seen, so it may be there
+    return True
 
 
 def _readable_by_all(directory: int) -> None:
@@ -453,21 +472,24 @@ class RepositoryWriter:
     @staticmethod
     def _make_entry(parent: int, slug: str, entry: str) -> tuple[int, Identity]:
         """The new entry's directory, made where nothing is, opened, with its identity, set to
-        0755; one that cannot be made whole is not left, when it is empty and known to be the
-        one made. One whose identity cannot be read is left, and said."""
+        0755; one that cannot be made whole, or that a stop ends, is not left, when it is empty and
+        known to be the one made. One whose identity cannot be read is left, and said."""
         try:
             directory, entry_identity = _new_directory(parent, slug, entry, "write")
         except FileExistsError as error:
             raise EnvironmentProblemError(f"cannot write {entry}: it already exists") from error
         try:
             _readable_by_all(directory)
-        except OSError as error:
+        except BaseException as failure:  # a stop too: the entry goes, as it is known
             os.close(directory)
             left, _ = _remove_made_directory(parent, slug, entry_identity, entry)
-            more = "" if left is None else f"; {left}"
-            raise EnvironmentProblemError(f"cannot make {entry}: {error.strerror}{more}") from error
-        except BaseException:
-            os.close(directory)
+            if isinstance(failure, OSError):
+                more = "" if left is None else f"; {left}"
+                raise EnvironmentProblemError(
+                    f"cannot make {entry}: {failure.strerror}{more}"
+                ) from failure
+            if left is not None:
+                raise EnvironmentProblemError(f"{left}{described(failure)}") from failure
             raise
         return directory, entry_identity
 

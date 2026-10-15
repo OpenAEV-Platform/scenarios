@@ -211,15 +211,15 @@ before the run, so that a plan left by another run is never taken for this one's
     an update that writes nothing, are still what the run wrote or read, nothing else under
     `scenarios/`, `policy/` or `schemas/` differs from the plan's `base`, which is still the
     checkout's commit, and the plan's own place is still the one reserved.
-- **All or nothing:** the entry is kept only once its plan is published. A run that fails
-  before then takes back what it wrote: a new entry's files, the entry and the directories made
-  for it are removed, an updated `scenario.json` gets its previous bytes back, and the plan's
-  place is freed. Anything another process put or changed there meanwhile is never removed nor
+- **All or nothing:** the entry is kept only once its plan is published. A run that fails before
+  then takes back what it wrote: a new entry's files, the entry and the directories made for it
+  are removed, an updated `scenario.json` gets its previous bytes back, and the plan's place is
+  freed. Anything another process put or changed there meanwhile is never removed nor
   overwritten: a file put or changed in a new entry stays, and the entry with it. A file or
-  directory the run made, but that it cannot open or whose identity it cannot read, cannot be
-  told from another's: it is left, and the run says so; such a directory may be open to its
-  owner alone. A directory made for the entry that another has since filled, moved or
-  replaced is left too, and said.
+  directory the run made, but that it cannot open or whose identity it cannot read, or that a
+  stop leaves before its identity is read, cannot be told from another's: it is left, and the run
+  says so; such a directory may be open to its owner alone. A directory made for the entry that
+  another has since filled, moved or replaced is left too, and said.
 - **Asked to stop:** a request to stop (Ctrl-C, SIGTERM as a CI job is cancelled, SIGHUP as a
   terminal closes, or SIGQUIT) while the run writes waits until the writing is done, then is
   dropped, never acted on later: a run never stops half way, and ends as usual. Asked before it

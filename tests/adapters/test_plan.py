@@ -384,3 +384,53 @@ def test_a_plan_whose_directory_is_gone_meanwhile_is_never_published(tmp_path: P
     with pytest.raises(EnvironmentProblemError, match="taken meanwhile"):
         _failing(out / "plan.json", gone)
     assert list((tmp_path / "moved").iterdir()) == []
+
+
+def _stopped(*arguments: Any) -> Any:
+    raise KeyboardInterrupt
+
+
+def test_a_stop_before_the_place_reserved_is_known_leaves_it_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = tmp_path / "plan.json"
+    monkeypatch.setattr("scenario_tools.adapters.plan.identity", _stopped)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        _reserve(plan)
+    assert str(error.value).startswith(
+        f"cannot write {plan}: interrupted; what was made at {plan} cannot be told"
+    )
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert plan.exists()  # nothing tells it from another's: never removed
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_stop_once_the_place_reserved_is_known_gives_it_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "fchmod", _stopped)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(KeyboardInterrupt):
+        _reserve(tmp_path / "plan.json")
+    assert list(tmp_path.iterdir()) == []
+    assert sorted(opened) == sorted(closed)
+
+
+def test_a_stop_once_the_place_is_known_says_what_cannot_be_given_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = tmp_path / "plan.json"
+    monkeypatch.setattr(os, "fchmod", _stopped)
+    _unremovable(monkeypatch)
+    opened, closed = descriptors(monkeypatch)
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        _reserve(plan)
+    assert str(error.value).startswith(f"cannot take back {plan}: ")
+    assert str(error.value).endswith(" (after an interruption)")
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
+    assert opened
+    assert sorted(opened) == sorted(closed)
