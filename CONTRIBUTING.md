@@ -24,6 +24,9 @@ the template that fits: bug report, feature request, question or technical impro
    `scenario.yaml` and `scenario.json`: never edit the sheet by hand. Then run
    `scenario-tools validate`, and open a pull request with the title and body the plan gives.
 
+An agent that proposes scenarios follows [`docs/agents.md`](docs/agents.md); its rules are in
+[`AGENTS.md`](AGENTS.md).
+
 A scenario holds **public content only**: no customer data, no internal address, no real
 credential, nothing you would not show at a conference. Targets are placeholders that each user
 fills in on their own platform. Reviewers check this, and the automated checks scan every entry
