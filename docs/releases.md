@@ -64,6 +64,18 @@ and the checkout its whole history.
 
 The findings are described in [`findings.md`](findings.md).
 
+## Channels
+
+Every release is published on the `edge` channel; one recommended to everyone is promoted to
+`stable`, with the same archives. Each channel will have a pointer, `edge.json` or `stable.json`,
+which [`schemas/channel.schema.json`](../schemas/channel.schema.json) describes: the channel's
+release, by its name, and the SHA-256 of that release's manifest. A consumer reads the pointer,
+then the manifest of the release it names, and checks that it has that hash, that repository,
+that channel and that name. The releases themselves never change, and a channel moves to a later
+release, never back: publishing the same release again leaves it as it is, and a channel is
+never rolled back, a later release is published instead. The pointers come with the publication
+of releases, on a branch only the release workflow writes; until then, there is none.
+
 ## Release fixtures
 
 [`conformance/releases`](../conformance/README.md) holds one release `verify` accepts, and one for

@@ -32,7 +32,7 @@ _COPIED = (
     "threat",
     "type",
 )
-_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]*)")
+_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]{0,8})")  # a bounded rank
 _LOGIN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _LOGIN_LIMIT = 39
 _APPROVERS_LIMIT = 10
@@ -148,23 +148,30 @@ def issued_at_text(moment: datetime.datetime) -> str:
     return moment.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def release_key(name: object) -> tuple[datetime.date, int]:
+    """The day and the rank that day of the release ``name``, by which releases are ordered;
+    ``ValueError`` for a name that is none, or names a day no calendar has."""
+    found = _RELEASE.fullmatch(name) if isinstance(name, str) else None
+    try:
+        day = datetime.date(*(int(part) for part in found.groups()[:3])) if found else None
+    except ValueError:  # a day no calendar has
+        day = None
+    if found is None or day is None:
+        raise ValueError(f"{name!r} is not a release name")
+    return day, int(found.group(4))
+
+
 def release_name(moment: datetime.datetime, previous: str | None) -> str:
     """The name of a release made at ``moment``: its day in UTC and its rank that day, one
     after ``previous``, the channel's previous release, when it is of the same day."""
     day = moment.astimezone(datetime.UTC).date()
     rank = 1
     if previous is not None:
-        found = _RELEASE.fullmatch(previous)
-        try:
-            before = datetime.date(*(int(part) for part in found.groups()[:3])) if found else None
-        except ValueError:  # a day no calendar has
-            before = None
-        if found is None or before is None:
-            raise ValueError(f"{previous!r} is not a release name")
+        before, before_rank = release_key(previous)
         if before > day:
             raise ValueError(f"the previous release {previous} is dated after this commit")
         if before == day:
-            rank = int(found.group(4)) + 1
+            rank = before_rank + 1
     return f"{day:%Y.%m.%d}.{rank}"
 
 
