@@ -32,7 +32,8 @@ _COPIED = (
     "threat",
     "type",
 )
-_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]{0,8})")  # a bounded rank
+_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]{0,8})")
+_LAST_RANK = 999_999_999  # a rank has nine digits at most
 _LOGIN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _LOGIN_LIMIT = 39
 _APPROVERS_LIMIT = 10
@@ -172,6 +173,11 @@ def release_name(moment: datetime.datetime, previous: str | None) -> str:
             raise ValueError(f"the previous release {previous} is dated after this commit")
         if before == day:
             rank = before_rank + 1
+            if rank > _LAST_RANK:
+                raise ValueError(
+                    f"the previous release {previous} is the day's last: no release can follow "
+                    f"it on {day:%Y.%m.%d}"
+                )
     return f"{day:%Y.%m.%d}.{rank}"
 
 

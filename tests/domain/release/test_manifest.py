@@ -170,6 +170,16 @@ def test_a_previous_release_dated_after_the_commit_is_refused(previous: str) -> 
         release_name(MOMENT, previous)
 
 
+def test_a_day_s_last_rank_is_followed_by_none() -> None:
+    assert release_name(MOMENT, "2026.10.30.999999998") == "2026.10.30.999999999"
+    with pytest.raises(ValueError, match="is the day's last") as error:
+        release_name(MOMENT, "2026.10.30.999999999")
+    assert str(error.value) == (
+        "the previous release 2026.10.30.999999999 is the day's last: no release can follow it "
+        "on 2026.10.30"
+    )
+
+
 @pytest.mark.parametrize("previous", ["2026.10.30", "2026.10.30.0", "2026.13.01.1", "x"])
 def test_a_previous_release_name_that_is_none_is_refused(previous: str) -> None:
     with pytest.raises(ValueError, match="is not a release name"):
