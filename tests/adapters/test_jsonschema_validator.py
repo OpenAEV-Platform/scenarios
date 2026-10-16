@@ -768,7 +768,7 @@ def test_the_array_walk_reaches_lists_of_subschemas() -> None:
     assert [pointer for pointer, _ in _arrays(schema)] == ["/oneOf/0", "/oneOf/1/prefixItems/0"]
 
 
-@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request"])
+@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request", "channel"])
 def test_every_list_has_a_bound(schema: str) -> None:
     document = json.loads((SCHEMAS / f"{schema}.schema.json").read_text(encoding="utf-8"))
 
@@ -828,7 +828,7 @@ def test_the_validator_stops_once_it_has_enough(
     assert len(errors) <= VIOLATION_LIMIT
 
 
-@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request"])
+@pytest.mark.parametrize("schema", ["scenario", "manifest", "intake-request", "channel"])
 def test_every_bound_is_checked_before_the_items(schema: str) -> None:
     # jsonschema checks keywords in their order: the size first, so an oversized list fails
     # before its items are walked.
@@ -924,3 +924,16 @@ def test_a_new_entry_needs_threat_and_sources_and_an_update_takes_none(
 
 def test_a_new_entry_request_cannot_ask_for_a_rewrite(validator: JsonSchemaValidator) -> None:
     assert validator.validate("intake-request", {**INTAKE, "rewrite": True})
+
+
+def test_a_channel_pointer_the_domain_writes_meets_its_schema(
+    validator: JsonSchemaValidator,
+) -> None:
+    from scenario_tools.domain.release.channel import ChannelPointer, pointer_document
+
+    pointer = pointer_document(ChannelPointer("stable", "2026.10.16.1", "a" * 64))
+
+    assert validator.validate("channel", pointer) == ()
+    assert [v.pointer for v in validator.validate("channel", {**pointer, "release": "x"})] == [
+        "/release"
+    ]
