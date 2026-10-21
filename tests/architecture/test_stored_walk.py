@@ -43,6 +43,7 @@ ALLOWED = {
         ("stored[INJECTS]", "stored[INJECTS]"),
         ("found = INJECTS in stored", "INJECTS in stored"),
         ("found = INJECTS not in stored", "INJECTS not in stored"),
+        ("found = key == INJECTS in stored", "key == INJECTS in stored"),
         ("from m import INJECTS as PART\nstored.get(PART)", "stored.get(PART)"),
         ("import m\nstored.get(m.INJECTS)", "stored.get(m.INJECTS)"),
         ("stored.get('scenario_injects')", "'scenario_injects'"),
@@ -66,6 +67,7 @@ def test_direct_reads_are_reported(source: str, read: str) -> None:
         "stored.get(PART)",
         "found = OTHER in stored",
         "found = INJECTS == part",
+        "found = INJECTS == key in stored",
     ],
 )
 def test_naming_a_part_or_walking_it_is_not_a_read(source: str) -> None:

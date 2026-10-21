@@ -33,6 +33,16 @@ def _is_part_constant(node: ast.expr, names: frozenset[str]) -> bool:
     return isinstance(node, ast.Attribute) and node.attr in PART_CONSTANTS
 
 
+def _membership_of_part(node: ast.Compare, names: frozenset[str]) -> bool:
+    """Whether a membership test of ``node`` has a part constant on its left: in a chained
+    comparison, each operator has its own left operand."""
+    operands = (node.left, *node.comparators)
+    return any(
+        isinstance(operator, ast.In | ast.NotIn) and _is_part_constant(operands[index], names)
+        for index, operator in enumerate(node.ops)
+    )
+
+
 def direct_reads(source: str) -> list[str]:
     """Return the direct reads of an inject-holding part in ``source``, in order of appearance."""
     tree = ast.parse(source)
@@ -52,11 +62,7 @@ def direct_reads(source: str) -> list[str]:
                 )
             )
             or (isinstance(node, ast.Subscript) and _is_part_constant(node.slice, names))
-            or (
-                isinstance(node, ast.Compare)
-                and _is_part_constant(node.left, names)
-                and any(isinstance(operator, ast.In | ast.NotIn) for operator in node.ops)
-            )
+            or (isinstance(node, ast.Compare) and _membership_of_part(node, names))
         ):
             reads.append(ast.unparse(node))
     return reads
