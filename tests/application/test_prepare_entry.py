@@ -11,12 +11,14 @@ import scenario_tools.application.prepare_entry as prepare_entry_module
 from scenario_tools.application.prepare_entry import prepare_entry, start_metadata
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from tests.support.workflow import KEYS_DOCUMENT
 
 ROOT = Path(__file__).parents[2]
 EXTERNAL_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 INJECT = "00000000-0000-4000-8000-000000000002"
 BUILT_IN = "2790bd39-37d4-4e39-be7e-53f3ca783f86"  # a contract that ships with the platform
 EXPORT: dict[str, Any] = {
+    "export_version": 1,
     "scenario_information": {"scenario_id": "00000000-0000-4000-8000-000000000001"},
     "scenario_injects": [
         {
@@ -31,6 +33,8 @@ EXPORT: dict[str, Any] = {
 
 class FakeData:
     def load(self, name: str) -> Any:
+        if name == "export-keys":
+            return KEYS_DOCUMENT
         assert name == "volatile-fields"
         return {
             "removed": ["listened"],
@@ -134,6 +138,8 @@ def test_the_limit_of_a_normalised_form_is_that_of_a_json_input() -> None:
 def test_malformed_policy_data_is_an_environment_problem() -> None:
     class BrokenData:
         def load(self, name: str) -> Any:
+            if name == "export-keys":
+                return KEYS_DOCUMENT
             return {
                 "removed": 5,
                 "removed_suffixes": [],
@@ -143,6 +149,27 @@ def test_malformed_policy_data_is_an_environment_problem() -> None:
 
     with pytest.raises(EnvironmentProblemError, match="volatile-fields"):
         prepare_entry(EXPORT, EXTERNAL_ID, BrokenData(), path="e")
+
+
+def test_malformed_closed_lists_of_keys_are_an_environment_problem() -> None:
+    class BrokenKeys(FakeData):
+        def load(self, name: str) -> Any:
+            return {"export_versions": "1"} if name == "export-keys" else super().load(name)
+
+    with pytest.raises(EnvironmentProblemError, match="export-keys"):
+        prepare_entry(EXPORT, EXTERNAL_ID, BrokenKeys(), path="e")
+
+
+def test_a_refusal_carries_the_pointer_of_the_node_at_fault() -> None:
+    export = {**EXPORT, "export_version": 2}
+
+    with pytest.raises(UnsafeInputError) as error:
+        prepare_entry(export, EXTERNAL_ID, FakeData(), path="export.zip")
+    assert (error.value.code, error.value.path, error.value.field) == (
+        "IO-014",
+        "export.zip",
+        "/export_version",
+    )
 
 
 def test_unreadable_policy_data_is_an_environment_problem() -> None:

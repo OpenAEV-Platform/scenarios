@@ -325,6 +325,7 @@ def _entry(tmp_path: Path, name: str = "entry") -> Path:
     if not data.exists():
         data.mkdir(parents=True)
         for policy in (
+            "export-keys.yaml",
             "volatile-fields.yaml",
             "builtin-contracts.yaml",
             "allowed-targets.yaml",
@@ -758,6 +759,22 @@ def test_a_refused_export_given_by_a_relative_path_is_reported_from_the_root(
 
     assert result.exit_code == 1
     assert "IO-014 scenarios/entry/bad.json" in result.stdout
+
+
+def test_a_refusal_of_normalize_names_the_node_at_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _entry(tmp_path)
+    export = {"export_version": 2, "scenario_information": {"scenario_id": ENTRY_ID}}
+    (entry / "newer.json").write_text(json.dumps(export), encoding="utf-8")
+    monkeypatch.chdir(entry)
+
+    result = CliRunner().invoke(
+        main, ["normalize", "newer.json", "--out", ".", "--external-id", ENTRY_ID]
+    )
+
+    assert result.exit_code == 1
+    assert "IO-014 scenarios/entry/newer.json /export_version" in result.stdout
 
 
 def test_a_scenario_yaml_that_appears_meanwhile_leaves_the_entry_as_it_was(

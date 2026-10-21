@@ -20,6 +20,12 @@ from scenario_tools.domain.catalogue.normalisation import (
     NormalisationRules,
     normalise,
 )
+from scenario_tools.domain.shared.workflow import (
+    EXPORT_VERSION_UNKNOWN,
+    INJECTS_AND_WORKFLOW,
+    WORKFLOW_NOT_YET,
+)
+from tests.support.workflow import KEYS
 
 EXTERNAL_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 NS = scenario_namespace(EXTERNAL_ID)
@@ -56,6 +62,7 @@ RULES = NormalisationRules(
     removed_suffixes=("_created_at", "_updated_at"),
     sorted_lists=frozenset({"injector_contract_domains", "inject_teams", "inject_tags"}),
     emptied_in_builtin_contracts=frozenset({"injector_contract_attack_patterns"}),
+    export_keys=KEYS,
 )
 
 EXPORT: dict[str, Any] = {
@@ -247,13 +254,49 @@ def test_an_identifier_in_capitals_inside_text_is_rewritten() -> None:
     assert document["scenario_information"]["scenario_description"] == f"see {pattern}"
 
 
-def test_a_chained_scenario_is_refused() -> None:
+def test_injects_and_a_workflow_together_are_refused_at_the_workflow() -> None:
     export = copy.deepcopy(EXPORT)
     export["scenario_workflow"] = {"workflow_steps": [{"step_id": USER}]}
 
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
-    assert error.value.code == "IO-014"
+    assert (error.value.code, error.value.what, error.value.pointer) == (
+        "IO-014",
+        INJECTS_AND_WORKFLOW,
+        "/scenario_workflow",
+    )
+
+
+def test_an_export_version_these_tools_do_not_read_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["export_version"] = 2
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert (error.value.what, error.value.pointer) == (EXPORT_VERSION_UNKNOWN, "/export_version")
+
+
+def test_a_well_shaped_workflow_is_refused_until_steps_are_normalised() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_injects"] = []
+    export["scenario_workflow"] = {"workflow_steps": [{"step_id": USER}]}
+
+    with pytest.raises(ExportStructureError) as error:
+        normalise(export, EXTERNAL_ID, RULES)
+    assert (error.value.what, error.value.pointer) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+
+
+def test_an_empty_workflow_part_is_left_in_place() -> None:
+    export = copy.deepcopy(EXPORT)
+    export["scenario_workflow"] = None
+
+    assert normalise(export, EXTERNAL_ID, RULES).document["scenario_workflow"] is None
+
+
+def test_a_refusal_of_the_whole_export_has_no_pointer() -> None:
+    with pytest.raises(ExportStructureError) as error:
+        normalise([], EXTERNAL_ID, RULES)
+    assert error.value.pointer == ""
 
 
 def _many_injects(count: int) -> dict[str, Any]:
@@ -694,9 +737,12 @@ def test_the_result_does_not_depend_on_the_order_of_the_export(random: Any) -> N
     ],
 )
 def test_an_export_without_the_expected_structure_is_refused(export: Any) -> None:
+    if isinstance(export, dict):  # a known version, so that the case reaches its own check
+        export = {"export_version": 1, **export}
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
     assert error.value.code == "IO-014"
+    assert error.value.what != EXPORT_VERSION_UNKNOWN
 
 
 # Rules read as data
@@ -710,11 +756,12 @@ def test_rules_are_read_from_their_data_document() -> None:
         "emptied_in_builtin_contracts": ["injector_contract_attack_patterns"],
     }
 
-    assert NormalisationRules.from_document(document) == NormalisationRules(
+    assert NormalisationRules.from_document(document, KEYS) == NormalisationRules(
         removed=frozenset({"listened"}),
         removed_suffixes=("_created_at",),
         sorted_lists=frozenset({"inject_tags"}),
         emptied_in_builtin_contracts=frozenset({"injector_contract_attack_patterns"}),
+        export_keys=KEYS,
     )
 
 
@@ -730,7 +777,7 @@ def test_rules_are_read_from_their_data_document() -> None:
 )
 def test_rules_that_are_not_lists_of_names_are_refused(document: Any) -> None:
     with pytest.raises(ValueError, match="volatile-fields"):
-        NormalisationRules.from_document(document)
+        NormalisationRules.from_document(document, KEYS)
 
 
 def test_an_inject_running_the_same_payload_is_matched_by_payload_and_title() -> None:
@@ -759,6 +806,7 @@ def test_twins_are_told_apart_by_their_parents_on_another_instance() -> None:
     def export(prefix: str) -> dict[str, Any]:
         ids = [f"00000000-0000-4000-8000-0000000{prefix}{n:03d}" for n in range(4)]
         return {
+            "export_version": 1,
             "scenario_information": {"scenario_id": SCENARIO},
             "scenario_injects": [
                 inject(ids[0], "Parent one", None),

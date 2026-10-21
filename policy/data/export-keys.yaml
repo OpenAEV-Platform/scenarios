@@ -1,0 +1,60 @@
+# The keys and versions a scenario export may hold, as the platform's exporter writes them. A key
+# outside these lists may carry a behaviour no reviewer saw, so the export is refused rather than
+# the key dropped. A new export version, or a key the exporter adds, is a change to this file.
+export_versions: [1]
+workflow:
+  keys:
+    - workflow_version
+    - workflow_steps
+    - workflow_rate_limit_enabled
+    - workflow_max_attempts
+    - workflow_max_temporal_rate_seconds
+    - workflow_timeout_enabled
+    - workflow_timeout_seconds
+    - workflow_safe_mode_enabled
+    - workflow_scope_rules
+    - workflow_scope_variables
+    - workflow_standalone_conditions
+    # Added by the exporter next to the scope rules, outside its list of workflow keys; the
+    # scope checks refuse it unless it is empty.
+    - workflow_scope_rule_team_members
+step:
+  keys:
+    - step_id
+    - step_action_class
+    - step_output
+    - step_output_parser
+    - step_input
+    - step_data
+    - step_limit_execution
+    - step_condition_executed
+    - step_conditions
+condition:
+  keys:
+    - condition_id
+    - condition_key
+    - condition_key_types
+    - condition_type
+    - condition_mapping_type
+    - condition_value
+    - condition_name
+    - condition_description
+    - condition_parent_id
+    - condition_step_from_id
+    - condition_is_root
+  # Written by older exports; read no longer, so refused by name.
+  legacy:
+    - condition_key_type
+scope_rule:
+  keys:
+    - workflow_scope_rule_selected_mode
+    - workflow_scope_rule_source
+    - workflow_scope_rule_value
+    - workflow_scope_rule_value_type
+    - workflow_scope_rule_value_label
+scope_variable:
+  keys:
+    - scope_variable_key
+    - scope_variable_type
+    - scope_variable_value
+    - scope_variable_description

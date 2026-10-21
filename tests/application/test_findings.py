@@ -22,6 +22,12 @@ def test_an_unsafe_input_becomes_a_blocking_io_finding() -> None:
     )
 
 
+def test_an_unsafe_input_keeps_the_pointer_of_the_node_at_fault() -> None:
+    error = UnsafeInputError("IO-014", "a refusal", "export.json", "/export_version")
+
+    assert finding_from_unsafe_input(error, ROOT).field == "/export_version"
+
+
 def test_an_unsafe_input_without_a_file_has_an_empty_path() -> None:
     assert finding_from_unsafe_input(UnsafeInputError("IO-002", "not valid JSON"), ROOT).path == ""
 

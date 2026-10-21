@@ -9,8 +9,8 @@ attribute. Naming the part in a set, or building a pointer from it, is not a rea
 
 import ast
 
-PART_NAMES = frozenset({"scenario_injects", "scenario_workflow"})
-PART_CONSTANTS = frozenset({"INJECTS"})
+PART_NAMES = frozenset({"scenario_injects", "scenario_workflow", "workflow_steps", "step_data"})
+PART_CONSTANTS = frozenset({"INJECTS", "WORKFLOW", "STEPS"})
 _LOOKUPS = frozenset({"get", "pop", "setdefault"})
 
 

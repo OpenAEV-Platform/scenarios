@@ -5,11 +5,12 @@ class UnsafeInputError(Exception):
     """Input refused, with its code: ``IO-*`` for unsafe or malformed input, ``VER-*`` for a
     versioning refusal such as an invalid inject mapping."""
 
-    def __init__(self, code: str, message: str, path: str = "<input>") -> None:
+    def __init__(self, code: str, message: str, path: str = "<input>", field: str = "") -> None:
         super().__init__(f"{code} {path}: {message}")
         self.code = code
         self.message = message
         self.path = path
+        self.field = field  # the JSON pointer of the node at fault; empty is the whole file
 
 
 class EnvironmentProblemError(Exception):

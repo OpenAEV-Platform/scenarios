@@ -39,8 +39,8 @@ _TEXTS = ("README.md", "CHANGELOG.md")  # written by a person or a tool, checked
 
 def _refused(error: UnsafeInputError | ExportStructureError, path: str) -> Finding:
     if isinstance(error, UnsafeInputError):
-        return Finding(error.code, Severity.BLOCKING, error.path, "", error.message)
-    return Finding(error.code, Severity.BLOCKING, path, "", str(error))
+        return Finding(error.code, Severity.BLOCKING, error.path, error.field, error.message)
+    return Finding(error.code, Severity.BLOCKING, path, error.pointer, str(error))
 
 
 def _metadata_findings(

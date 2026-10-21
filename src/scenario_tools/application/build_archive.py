@@ -48,7 +48,7 @@ def build_archive(
         findings += contract_findings(document)
         findings += payload_findings(declared, document, path.rpartition("/")[0], agreed)
     except ExportStructureError as error:
-        raise UnsafeInputError(error.code, str(error), path) from error
+        raise UnsafeInputError(error.code, str(error), path, error.pointer) from error
     if renormalised(document) != scenario:
         findings += (not_normalised(path),)
     if findings:
