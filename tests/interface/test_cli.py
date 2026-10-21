@@ -1,5 +1,6 @@
 """The command-line entry point: version, help, output formats, exit codes and the title check."""
 
+import copy
 import json
 import shutil
 import zipfile
@@ -541,6 +542,38 @@ def test_normalize_without_a_usable_external_id_is_a_usage_error(
 
     assert result.exit_code == 2
     assert not (entry / "scenario.json").exists()
+
+
+CHAINING = REPOSITORY / "tests" / "golden" / "chaining" / "two-steps.json"
+
+
+def test_normalize_reports_the_steps_removed_since_the_previous_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry, previous = _entry(tmp_path), _entry(tmp_path, "previous")
+    _normalize(monkeypatch, previous, "--external-id", ENTRY_ID, export=CHAINING)
+    document = json.loads((previous / "scenario.json").read_text(encoding="utf-8"))
+    steps = document["scenario_workflow"]["workflow_steps"]
+    first = next(step for step in steps if not step["step_conditions"])
+    extra = copy.deepcopy(first)
+    extra["step_id"] = "00000000-0000-4000-8000-0000000000aa"
+    extra["step_data"]["inject_title"] = "A step the export no longer has"
+    steps.append(extra)
+    (previous / "scenario.json").write_text(json.dumps(document), encoding="utf-8")
+
+    result = _normalize(
+        monkeypatch,
+        entry,
+        "--external-id",
+        ENTRY_ID,
+        "--previous",
+        str(previous),
+        export=CHAINING,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "INFO VER-012" in result.stdout
+    assert "step 00000000-0000-4000-8000-0000000000aa of the previous version" in result.stdout
 
 
 def test_a_contradicting_external_id_is_quoted_within_bounds(

@@ -34,8 +34,8 @@ MAX_STORED_SIZE = 20 * 1024 * 1024
 
 @dataclass(frozen=True)
 class PreparedEntry:
-    """The stored form, the injects the previous version had and the export lost, and, on a
-    first preparation, the starting ``scenario.yaml`` and what is left to complete in it."""
+    """The stored form, the injects and steps the previous version had and the export lost, and,
+    on a first preparation, the starting ``scenario.yaml`` and what is left to complete in it."""
 
     scenario_json: bytes
     removed_injects: tuple[str, ...]
@@ -43,6 +43,7 @@ class PreparedEntry:
     to_complete: tuple[Finding, ...] = ()
     # Hidden characters in the normalised form: when there is one, nothing is to be written.
     refusals: tuple[Finding, ...] = ()
+    removed_steps: tuple[str, ...] = ()
 
 
 def prepare_entry(
@@ -83,13 +84,20 @@ def prepare_entry(
     refusals = hidden_character_findings(normalised.document, path)
     if start_at is None or refusals:
         return PreparedEntry(
-            stored_form(normalised.document), normalised.removed_injects, refusals=refusals
+            stored_form(normalised.document),
+            normalised.removed_injects,
+            refusals=refusals,
+            removed_steps=normalised.removed_steps,
         )
     metadata, to_complete = start_metadata(
         normalised.document, external_id, data, path=start_at, source=path
     )
     return PreparedEntry(
-        stored_form(normalised.document), normalised.removed_injects, metadata, to_complete
+        stored_form(normalised.document),
+        normalised.removed_injects,
+        metadata,
+        to_complete,
+        removed_steps=normalised.removed_steps,
     )
 
 

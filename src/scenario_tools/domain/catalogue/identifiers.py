@@ -6,7 +6,10 @@ a key. A new version keeps the IDs of the previous one, so that installed scenar
 inject by inject. Injects are matched in this order: the explicit mapping; an ID that is already
 one of the previous version, for a document normalised again; the same authoring instance; the
 same contract and title, when one candidate is left; and among several candidates, the one whose
-parent injects already match. What remains ambiguous is refused.
+parent injects already match. What remains ambiguous is refused. The steps of a workflow are
+matched the same way, a step's source identifier being its signature digest: the caller matches
+unchanged content first, there is no authoring instance to match, and a new step whose derived
+identifier another step kept, or the previous version holds, takes the next free one.
 """
 
 import uuid
@@ -74,10 +77,12 @@ class AmbiguousInjectError(InjectMatchingError):
 
     code = "VER-010"
 
-    def __init__(self, source_id: str, candidates: Sequence[str]) -> None:
+    def __init__(
+        self, source_id: str, candidates: Sequence[str], object_type: str = "inject"
+    ) -> None:
         super().__init__(
-            f"inject {source_id!r} cannot be matched unambiguously with the previous version; "
-            f"candidates: {', '.join(candidates)}"
+            f"{object_type} {source_id!r} cannot be matched unambiguously with the previous "
+            f"version; candidates: {', '.join(candidates)}"
         )
         self.source_id = source_id
         self.candidates = tuple(candidates)
@@ -102,8 +107,12 @@ class _Matcher:
         namespace: uuid.UUID,
         new: dict[str, InjectSignature],
         previous: dict[str, InjectSignature],
+        object_type: str,
+        content_sources: bool,
     ) -> None:
         self.namespace = namespace
+        self.object_type = object_type
+        self.content_sources = content_sources
         self.new = new
         self.previous = previous
         # Sorted once: comparing parents must not cost a sort for every candidate at every pass.
@@ -120,7 +129,7 @@ class _Matcher:
     def apply_mapping(self, mapping: Mapping[str, str]) -> None:
         for source, target in sorted(mapping.items()):
             if source not in self.new:
-                raise InvalidInjectMappingError(f"unknown source inject {source!r}")
+                raise InvalidInjectMappingError(f"unknown source {self.object_type} {source!r}")
             if target not in self.previous:
                 raise InvalidInjectMappingError(
                     f"stable ID {target!r} is not in the previous version"
@@ -135,8 +144,10 @@ class _Matcher:
                 self.assign(source, source)
 
     def match_same_instance(self) -> None:
+        if self.content_sources:  # a source is content, not an instance's identifier
+            return
         for source in sorted(self.new):
-            derived = stable_id(self.namespace, "inject", source)
+            derived = stable_id(self.namespace, self.object_type, source)
             if source not in self.ids and derived in self.previous and derived not in self.taken:
                 self.assign(source, derived)
 
@@ -165,7 +176,7 @@ class _Matcher:
                     progress |= self.match_by_parents(sources, candidates)
         for sources, candidates in sorted(self.groups().values()):
             if sources and candidates:
-                raise AmbiguousInjectError(sources[0], candidates)
+                raise AmbiguousInjectError(sources[0], candidates, self.object_type)
 
     def match_by_parents(self, sources: list[str], candidates: list[str]) -> bool:
         by_parents: dict[tuple[str, ...], list[str]] = {}
@@ -190,10 +201,17 @@ class _Matcher:
         for source in sorted(self.new):
             if source in self.ids:
                 continue
-            derived = stable_id(self.namespace, "inject", source)
+            derived = stable_id(self.namespace, self.object_type, source)
+            retry = 0
+            # A step's fresh identifier is none of the previous version's either: one left
+            # unmatched is reported as removed, never silently given to another step.
+            while self.content_sources and (derived in self.taken or derived in self.previous):
+                retry += 1
+                derived = stable_id(self.namespace, self.object_type, f"{source}:{retry}")
             if derived in self.taken:
                 raise InvalidInjectMappingError(
-                    f"inject {source!r} would get {derived!r}, already given to another inject"
+                    f"{self.object_type} {source!r} would get {derived!r}, already given to "
+                    f"another {self.object_type}"
                 )
             self.assign(source, derived)
             fresh.append(source)
@@ -205,9 +223,16 @@ def match_injects(
     new: Sequence[InjectSignature],
     previous: Sequence[InjectSignature],
     mapping: Mapping[str, str] | None = None,
+    object_type: str = "inject",
+    *,
+    content_sources: bool = False,
 ) -> InjectMatching:
-    """Give every inject of ``new`` a stable ID, reusing those of ``previous``."""
-    matcher = _Matcher(namespace, _index(new, "new"), _index(previous, "previous"))
+    """Give every inject (or step) of ``new`` a stable ID, reusing those of ``previous``.
+    ``content_sources`` says that a source identifier is derived from content, as a step's
+    signature digest is, rather than given by an instance."""
+    matcher = _Matcher(
+        namespace, _index(new, "new"), _index(previous, "previous"), object_type, content_sources
+    )
     matcher.apply_mapping(mapping or {})
     matcher.match_already_normalised()
     matcher.match_same_instance()

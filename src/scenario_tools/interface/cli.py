@@ -454,9 +454,13 @@ def normalize(
                 Severity.INFO,
                 where,
                 "",
-                f"inject {inject} of the previous version is no longer in the export",
+                f"{kind} {identifier} of the previous version is no longer in the export",
             )
-            for inject in prepared.removed_injects
+            for kind, identifiers in (
+                ("inject", prepared.removed_injects),
+                ("step", prepared.removed_steps),
+            )
+            for identifier in identifiers
         )
         return Report("normalize", findings + prepared.to_complete)
 

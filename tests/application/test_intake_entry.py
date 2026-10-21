@@ -794,3 +794,17 @@ def test_a_sheet_over_what_a_readme_may_hold_is_not_written() -> None:
     assert result.refusals == ()
     assert result.sheet is None
     assert "README.md" not in intake_files(result, _render)
+
+
+CHAINING = json.loads((ROOT / "tests" / "golden" / "chaining" / "two-steps.json").read_text())
+
+
+def test_steps_the_update_no_longer_has_are_reported() -> None:
+    smaller = copy.deepcopy(CHAINING)
+    steps = smaller["scenario_workflow"]["workflow_steps"]
+    steps[:] = [step for step in steps if not step["step_conditions"]]
+
+    result = _intake(UPDATE, _stored(CHAINING), export=smaller)
+
+    assert ("VER-012", f"{ENTRY}/scenario.json", "") in _codes(result.to_complete)
+    assert any(f.message.startswith("step ") for f in result.to_complete)
