@@ -68,6 +68,18 @@ KEY_LEGACY = (
     "this node holds a legacy key that is no longer read: export the scenario again from a "
     "current platform"
 )
+KEY_RUNTIME = "this key is read by the platform when a step runs, never written by its export"
+STEP_ACTION = "a step runs an inject: its action is INJECT_EXECUTION"
+STEP_FIELD = "a stored step holds no run state: no output, no condition executed, no limit"
+STEP_INPUT = 'a step\'s input and output parser are empty: "{}" or {"input": []} as JSON text'
+STEP_DATA_UNREADABLE = "a step's inject must be a JSON object, or JSON text holding one"
+STEP_VALUE = "this key of a step's inject holds a value only a running instance gives it"
+STEP_TARGETS = (
+    "a step names no target, asset, team or document: they are set where the scenario is "
+    "installed; empty this key in the export"
+)
+STEP_INJECTOR = "a step runs on the platform's implant, as its contract and inject type say"
+STEP_PAYLOAD = "a step's contract embeds a payload that runs a command"
 TOO_MANY_STEPS = f"a workflow holds at most {MAX_STEPS} steps"
 TOO_MANY_CONDITIONS = f"a step holds at most {MAX_CONDITIONS} conditions"
 TOO_MANY_ENTRIES = f"this list of the workflow holds at most {MAX_SCOPE} entries"
@@ -97,6 +109,60 @@ class Refusal:
 
 
 @dataclass(frozen=True)
+class StepDataKeys:
+    """How each key of a step's inject is treated: removed when stored, held to one of a few
+    values (an absent key counting as the first), or kept; and the injectors a step may use."""
+
+    removed: frozenset[str]
+    must_equal: Mapping[str, tuple[object, ...]]
+    kept: frozenset[str]
+    refused: frozenset[str]
+    injectors: Mapping[str, str]  # identifier to type
+    content_target_keys: frozenset[str]
+
+    @property
+    def known(self) -> frozenset[str]:
+        return self.removed | self.kept | frozenset(self.must_equal)
+
+    @classmethod
+    def from_document(cls, document: object) -> "StepDataKeys":
+        if not isinstance(document, Mapping):
+            raise ValueError("export-keys: step_data must be an object")
+
+        def names(key: str) -> frozenset[str]:
+            value = document.get(key)
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) and item for item in value
+            ):
+                raise ValueError(f"export-keys: step_data.{key} must be a list of names")
+            return frozenset(value)
+
+        must_equal = document.get("must_equal")
+        if not isinstance(must_equal, Mapping) or not all(
+            isinstance(values, list) and values for values in must_equal.values()
+        ):
+            raise ValueError("export-keys: step_data.must_equal must map names to value lists")
+        injectors = document.get("injectors")
+        if not isinstance(injectors, list) or not all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("id"), str)
+            and isinstance(item.get("type"), str)
+            for item in injectors
+        ):
+            raise ValueError("export-keys: step_data.injectors must list an id and a type each")
+        return cls(
+            removed=names("removed"),
+            must_equal=MappingProxyType(
+                {str(key): tuple(values) for key, values in must_equal.items()}
+            ),
+            kept=names("kept"),
+            refused=names("refused_by_name"),
+            injectors=MappingProxyType({item["id"]: item["type"] for item in injectors}),
+            content_target_keys=names("content_target_keys"),
+        )
+
+
+@dataclass(frozen=True)
 class ExportKeys:
     """The closed lists of keys and versions of an export, kept as data."""
 
@@ -107,6 +173,7 @@ class ExportKeys:
     condition_legacy: frozenset[str]
     scope_rule: frozenset[str]
     scope_variable: frozenset[str]
+    step_data: StepDataKeys
 
     @classmethod
     def from_document(cls, document: object) -> "ExportKeys":
@@ -134,6 +201,7 @@ class ExportKeys:
             condition_legacy=names("condition", "legacy", required=False),
             scope_rule=names("scope_rule"),
             scope_variable=names("scope_variable"),
+            step_data=StepDataKeys.from_document(document.get("step_data")),
         )
 
 
@@ -155,15 +223,19 @@ def _escaped(key: str) -> str:
     return key.replace("~", "~0").replace("/", "~1")
 
 
+def key_pointer(pointer: str, key: str) -> str:
+    """The pointer of ``key`` inside the node at ``pointer`` when the key is a plain name, and of
+    the node otherwise, so that a pointer never repeats what an export wrote."""
+    return f"{pointer}/{_escaped(key)}" if _PLAIN_KEY.fullmatch(key) else pointer
+
+
 def _keys(
     node: Mapping[str, Any], pointer: str, known: frozenset[str], legacy: frozenset[str]
 ) -> Iterator[Refusal]:
-    """A refusal for each key outside ``known``, at the key when it is a plain name and at the
-    node otherwise, so that the pointer never repeats what the export wrote."""
+    """A refusal for each key outside ``known``."""
     for key in node:
         if key not in known or key in legacy:
-            at = f"{pointer}/{_escaped(key)}" if _PLAIN_KEY.fullmatch(key) else pointer
-            yield Refusal(KEY_LEGACY if key in legacy else KEY_UNKNOWN, at)
+            yield Refusal(KEY_LEGACY if key in legacy else KEY_UNKNOWN, key_pointer(pointer, key))
 
 
 def _listed(

@@ -643,3 +643,21 @@ def test_settings_scope_and_conditions_linked_to_no_step_come_in_order() -> None
         "/scenario_workflow/workflow_scope_rules",
         "/scenario_workflow/workflow_standalone_conditions",
     ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda d: d.update(step_data=[]),
+        lambda d: d["step_data"].update(removed="x"),
+        lambda d: d["step_data"].update(must_equal=[]),
+        lambda d: d["step_data"].update(must_equal={"inject_id": []}),
+        lambda d: d["step_data"].update(injectors=[{"id": "x"}]),
+        lambda d: d["step_data"].update(injectors={}),
+    ],
+)
+def test_a_malformed_step_classification_is_refused(change: Any) -> None:
+    document = copy.deepcopy(KEYS_DOCUMENT)
+    change(document)
+    with pytest.raises(ValueError, match=r"^export-keys: step_data"):
+        ExportKeys.from_document(document)

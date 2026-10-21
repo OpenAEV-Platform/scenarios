@@ -23,7 +23,7 @@ from scenario_tools.domain.catalogue.normalisation import (
 from scenario_tools.domain.shared.workflow import (
     EXPORT_VERSION_UNKNOWN,
     INJECTS_AND_WORKFLOW,
-    WORKFLOW_NOT_YET,
+    STEP_ACTION,
 )
 from tests.support.workflow import KEYS
 
@@ -276,14 +276,17 @@ def test_an_export_version_these_tools_do_not_read_is_refused() -> None:
     assert (error.value.what, error.value.pointer) == (EXPORT_VERSION_UNKNOWN, "/export_version")
 
 
-def test_a_well_shaped_workflow_is_refused_until_steps_are_normalised() -> None:
+def test_the_steps_of_a_workflow_are_checked_before_anything_is_normalised() -> None:
     export = copy.deepcopy(EXPORT)
     export["scenario_injects"] = []
     export["scenario_workflow"] = {"workflow_steps": [{"step_id": USER}]}
 
     with pytest.raises(ExportStructureError) as error:
         normalise(export, EXTERNAL_ID, RULES)
-    assert (error.value.what, error.value.pointer) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert (error.value.what, error.value.pointer) == (
+        STEP_ACTION,
+        "/scenario_workflow/workflow_steps/0/step_action_class",
+    )
 
 
 def test_an_empty_workflow_part_is_left_in_place() -> None:

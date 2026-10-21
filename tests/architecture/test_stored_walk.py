@@ -17,6 +17,7 @@ PACKAGE = Path(__file__).resolve().parents[2] / "src" / "scenario_tools"
 EXEMPT = {
     "domain/shared/stored.py": "defines the walk",
     "domain/shared/workflow.py": "reads the workflow's shape and keys before any other check",
+    "domain/policy/step_rules.py": "checks a step and the inject it runs, before it is stored",
     "domain/catalogue/structure.py": (
         "refuses a part that is not a list, or an item that is not an object"
     ),

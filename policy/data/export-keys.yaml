@@ -58,3 +58,68 @@ scope_variable:
     - scope_variable_type
     - scope_variable_value
     - scope_variable_description
+# The inject a step runs, as the exporter writes it in step_data: every key is classified
+# (checked against the platform's exporter of October 2026).
+step_data:
+  # Execution state, authorship and export times: removed when the step is stored.
+  removed:
+    - inject_date
+    - inject_created_at
+    - inject_updated_at
+    - inject_sent_at
+    - inject_status
+    - inject_collect_status
+    - inject_trigger_now_date
+    - inject_testable
+    - inject_users_number
+    - inject_communications
+    - inject_communications_number
+    - inject_communications_not_ack_number
+    - inject_expectations_drift_dismissed
+    - inject_authorisation
+    - inject_user
+    - inject_launched_by
+    - inject_scheduled_by
+    - listened
+    # Rebuilt by the platform's importer from the contract the step runs.
+    - inject_attack_patterns
+    - inject_kill_chain_phases
+  # Keys whose value must be one of these; an absent key counts as the first one. Targets,
+  # teams, documents and assets belong to where the scenario is installed.
+  must_equal:
+    inject_id: [null]
+    inject_scenario: [null]
+    inject_exercise: [null]
+    inject_depends_on: [[]]
+    inject_depends_duration: [null, 0]
+    inject_recurrence: [null]
+    inject_recurrence_start: [null]
+    inject_recurrence_end: [null]
+    inject_enabled: [true]
+    inject_expectations: [[]]
+    inject_secret_references: [[]]
+    inject_teams: [[]]
+    inject_documents: [[]]
+    inject_all_teams: [false]
+    inject_assets: [[]]
+    inject_asset_groups: [[]]
+  kept:
+    - inject_title
+    - inject_description
+    - inject_country
+    - inject_city
+    - inject_tags
+    - inject_content
+    - inject_injector_contract
+    - inject_contract_domains
+    - inject_injector
+    - inject_type
+  # Read by the platform when a step runs, never written by its exporter.
+  refused_by_name:
+    - _chaining_target
+  # The injectors a step may use: an endpoint implant that runs a command payload.
+  injectors:
+    - {type: openaev_implant, id: 49229430-b5b5-431f-ba5b-f36f599b0144}
+  # Keys of a step's inject content that name targets: they must be empty.
+  # Fields typed as assets in the contract are targets too; a target selector set to manual is.
+  content_target_keys: [targets, targets_assets, assets, asset_groups]
