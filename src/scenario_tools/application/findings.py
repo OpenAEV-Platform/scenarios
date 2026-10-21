@@ -32,7 +32,7 @@ def repository_path(raw: str, root: PurePath) -> str:
 def finding_from_unsafe_input(error: UnsafeInputError, root: PurePath) -> Finding:
     """A refused input is a blocking ``IO-*`` finding on its file."""
     return Finding(
-        error.code, Severity.BLOCKING, repository_path(error.path, root), "", error.message
+        error.code, Severity.BLOCKING, repository_path(error.path, root), error.field, error.message
     )
 
 

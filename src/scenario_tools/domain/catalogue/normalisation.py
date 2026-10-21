@@ -36,6 +36,13 @@ from scenario_tools.domain.catalogue.identifiers import (
     stable_id,
 )
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER
+from scenario_tools.domain.shared.workflow import (
+    WORKFLOW,
+    WORKFLOW_NOT_YET,
+    ExportKeys,
+    export_refusals,
+    has_workflow,
+)
 
 PLACEHOLDER_SENDER = "simulation@example.org"
 
@@ -49,7 +56,6 @@ _INFORMATION, _INJECTS = "scenario_information", "scenario_injects"
 _ARTICLES = "scenario_articles"
 # Parts of an export whose identifiers have no agreed rule yet: refused when not empty.
 NOT_SUPPORTED = (
-    ("scenario_workflow", "chained scenarios"),
     ("scenario_objectives", "objectives"),
     ("scenario_lessons_categories", "lessons"),
     ("scenario_lessons_questions", "lessons"),
@@ -86,10 +92,11 @@ class ExportStructureError(ValueError):
 
     code = "IO-014"
 
-    def __init__(self, message: str, origin: str = "export") -> None:
+    def __init__(self, message: str, origin: str = "export", pointer: str = "") -> None:
         super().__init__(message)
         self.origin = origin
         self.what = message
+        self.pointer = pointer  # the JSON pointer of the node at fault; empty is the whole input
 
 
 @dataclass(frozen=True)
@@ -100,10 +107,12 @@ class NormalisationRules:
     removed_suffixes: tuple[str, ...]
     sorted_lists: frozenset[str]
     emptied_in_builtin_contracts: frozenset[str]
+    export_keys: ExportKeys
 
     @classmethod
-    def from_document(cls, document: object) -> "NormalisationRules":
-        """Read the rules from the volatile-fields data document."""
+    def from_document(cls, document: object, export_keys: ExportKeys) -> "NormalisationRules":
+        """Read the rules from the volatile-fields data document, with the closed lists of keys
+        an export may hold."""
 
         def names(key: str) -> tuple[str, ...]:
             value = document.get(key) if isinstance(document, Mapping) else None
@@ -118,6 +127,7 @@ class NormalisationRules:
             removed_suffixes=names("removed_suffixes"),
             sorted_lists=frozenset(names("sorted")),
             emptied_in_builtin_contracts=frozenset(names("emptied_in_builtin_contracts")),
+            export_keys=export_keys,
         )
 
 
@@ -135,8 +145,8 @@ _FAULTS = {
 }
 
 
-def _refuse(what: str, origin: str = "export") -> ExportStructureError:
-    error = ExportStructureError(f"{_FAULTS[origin]}: {what}", origin)
+def _refuse(what: str, origin: str = "export", pointer: str = "") -> ExportStructureError:
+    error = ExportStructureError(f"{_FAULTS[origin]}: {what}", origin, pointer)
     error.what = what
     return error
 
@@ -551,6 +561,11 @@ def normalise(
             text = item.get(field)
             if isinstance(text, str) and _ESCAPED_ID_CHARACTER.search(text):
                 raise _refuse(f"{field} writes an identifier character as an escape")
+    refusal = next(export_refusals(export, rules.export_keys), None)
+    if refusal is not None:
+        raise _refuse(refusal.what, pointer=refusal.pointer)
+    if has_workflow(export):  # its steps are read, but not normalised yet
+        raise _refuse(WORKFLOW_NOT_YET, pointer=f"/{WORKFLOW}")
     for key, what in NOT_SUPPORTED:
         if export.get(key):
             raise _refuse(f"{what} are not supported yet")

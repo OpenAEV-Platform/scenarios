@@ -16,6 +16,7 @@ PACKAGE = Path(__file__).resolve().parents[2] / "src" / "scenario_tools"
 # Where the parts are defined, produced or refused when misshapen.
 EXEMPT = {
     "domain/shared/stored.py": "defines the walk",
+    "domain/shared/workflow.py": "reads the workflow's shape and keys before any other check",
     "domain/catalogue/structure.py": (
         "refuses a part that is not a list, or an item that is not an object"
     ),
@@ -48,6 +49,11 @@ ALLOWED = {
         ("import m\nstored.get(m.INJECTS)", "stored.get(m.INJECTS)"),
         ("stored.get('scenario_injects')", "'scenario_injects'"),
         ("stored['scenario_workflow']", "'scenario_workflow'"),
+        ("stored.get(WORKFLOW)", "stored.get(WORKFLOW)"),
+        ("workflow[STEPS]", "workflow[STEPS]"),
+        ("found = STEPS in workflow", "STEPS in workflow"),
+        ("workflow.get('workflow_steps')", "'workflow_steps'"),
+        ("step['step_data']", "'step_data'"),
     ],
 )
 def test_direct_reads_are_reported(source: str, read: str) -> None:
@@ -60,6 +66,7 @@ def test_direct_reads_are_reported(source: str, read: str) -> None:
         "for found in injects(stored):\n    pass",
         "from scenario_tools.domain.shared.stored import INJECTS\nPARTS = {INJECTS}",
         "pointer = f'/{INJECTS}/0'",
+        "pointer = f'/{WORKFLOW}/{STEPS}'",
         "from m import INJECTS as PART\npointer = f'/{PART}/0'",
         "'''Reads scenario_injects through the walk.'''",
         "stored.get(OTHER)",

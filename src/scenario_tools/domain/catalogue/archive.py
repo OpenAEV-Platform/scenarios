@@ -23,6 +23,7 @@ from scenario_tools.domain.catalogue.structure import (
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.stored import INJECTS, injects
+from scenario_tools.domain.shared.workflow import WORKFLOW
 
 # The parts of a normalised scenario, which are all an archive may carry.
 STORED_PARTS = frozenset(
@@ -41,8 +42,9 @@ STORED_PARTS = frozenset(
         "scenario_variables",
     }
 )
-# Parts normalisation refuses unless empty, and then leaves in place.
-_LEFT_EMPTY = frozenset(part for part, _ in NOT_SUPPORTED)
+# Parts normalisation refuses unless empty, and then leaves in place; a workflow is carried once
+# its steps are checked here too.
+_LEFT_EMPTY = frozenset(part for part, _ in NOT_SUPPORTED) | {WORKFLOW}
 
 
 def _objects(value: Any, pointer: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
@@ -62,7 +64,7 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
     export = require_object(document, "the export")
     for part in sorted(set(export) - STORED_PARTS):
         if part in _LEFT_EMPTY and export[part] in (None, [], {}):
-            continue  # normalisation leaves these parts in place, empty; a scalar stays as it is
+            continue  # normalisation leaves these parts in place when empty; others are refused
         raise not_an_export(f"{part} is not a part of a stored scenario")
     require_object(export.get(INFORMATION), INFORMATION)
     for found in checked_injects(export):

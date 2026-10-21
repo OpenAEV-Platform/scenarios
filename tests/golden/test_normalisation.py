@@ -12,6 +12,7 @@ import pytest
 from scenario_tools.adapters.data_files import YamlDataLoader, read_export
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.domain.catalogue.normalisation import NormalisationRules
+from scenario_tools.domain.shared.workflow import ExportKeys
 
 ROOT = Path(__file__).parents[2]
 EXPORTS = ROOT / "tests" / "golden" / "exports"
@@ -33,8 +34,9 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 
 def _rules() -> NormalisationRules:
+    data = YamlDataLoader(ROOT / "policy" / "data")
     return NormalisationRules.from_document(
-        YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
+        data.load("volatile-fields"), ExportKeys.from_document(data.load("export-keys"))
     )
 
 
@@ -160,9 +162,7 @@ def _volatile_keys(value: Any, rules: NormalisationRules) -> set[str]:
 
 @pytest.mark.parametrize("export", sorted(EXPORTS.glob("*.zip")), ids=lambda path: path.stem)
 def test_no_volatile_field_is_left_even_inside_contract_copies(export: Path) -> None:
-    rules = NormalisationRules.from_document(
-        YamlDataLoader(ROOT / "policy" / "data").load("volatile-fields")
-    )
+    rules = _rules()
 
     assert _volatile_keys(read_export(export), rules)
     assert _volatile_keys(json.loads(_prepare(export)), rules) == set()

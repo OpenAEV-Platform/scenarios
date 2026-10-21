@@ -245,6 +245,23 @@ def test_a_renormalisation_the_stored_scenario_breaks_keeps_its_other_findings(
     assert _codes(findings) == [("IO-017", JSON, "/scenario_tags/0"), ("IO-014", JSON, "")]
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        UnsafeInputError("IO-014", "a refusal", JSON, "/scenario_workflow/workflow_steps"),
+        ExportStructureError("a refusal", pointer="/scenario_workflow/workflow_steps"),
+    ],
+    ids=["refused input", "not an export"],
+)
+def test_a_refusal_points_at_the_node_at_fault(error: Exception) -> None:
+    def broken(document: object, external_id: str, path: str) -> bytes:
+        raise error
+
+    findings = _validate({YAML: METADATA, JSON: SCENARIO}, renormalised=broken)
+
+    assert _codes(findings) == [("IO-014", JSON, "/scenario_workflow/workflow_steps")]
+
+
 def test_the_metadata_is_cross_checked_against_the_stored_scenario() -> None:
     findings = _validate({YAML: _changed(name="Other"), JSON: SCENARIO})
 

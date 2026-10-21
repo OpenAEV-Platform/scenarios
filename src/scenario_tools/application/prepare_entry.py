@@ -20,10 +20,12 @@ from scenario_tools.domain.catalogue.normalisation import (
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import stored_form, stored_size
 from scenario_tools.domain.shared.finding import Finding
+from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 VOLATILE_FIELDS = "volatile-fields"
+EXPORT_KEYS = "export-keys"
 BUILTIN_CONTRACTS = "builtin-contracts"
 # The stored form indents by depth, so a small export can give a much larger file: it is bounded
 # like a JSON input.
@@ -60,14 +62,16 @@ def prepare_entry(
     before anything is written. A refusal names its code and the file at fault, like any
     refused input: the export, the previous version or the mapping."""
     try:
-        rules = NormalisationRules.from_document(data.load(VOLATILE_FIELDS))
+        rules = NormalisationRules.from_document(
+            data.load(VOLATILE_FIELDS), ExportKeys.from_document(data.load(EXPORT_KEYS))
+        )
     except (ValueError, UnsafeInputError) as error:  # the maintainers' data, not the input
         raise EnvironmentProblemError(f"policy data {error}") from error
     try:
         normalised = normalise(export, external_id, rules, previous=previous, mapping=mapping)
     except ExportStructureError as error:
         where = (previous_path or path) if error.origin == "previous" else path
-        raise UnsafeInputError(error.code, str(error), where) from error
+        raise UnsafeInputError(error.code, str(error), where, error.pointer) from error
     except InvalidInjectMappingError as error:
         raise UnsafeInputError(error.code, str(error), mapping_path or path) from error
     except InjectMatchingError as error:
@@ -103,7 +107,7 @@ def start_metadata(
     try:
         facts, unknown = export_facts(document, builtin, path)
     except ExportStructureError as error:
-        raise UnsafeInputError(error.code, str(error), source) from error
+        raise UnsafeInputError(error.code, str(error), source, error.pointer) from error
     description = document[INFORMATION].get("scenario_description")
     return starting_metadata(
         facts,

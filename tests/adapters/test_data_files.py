@@ -23,6 +23,7 @@ from scenario_tools.adapters.data_files import (
     scenario_from_archive,
     write_output,
 )
+from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from tests.adapters.test_safe_zip import ENCRYPTED
 
@@ -42,6 +43,14 @@ def test_policy_data_is_read_by_name() -> None:
 
     assert set(rules) == {"removed", "removed_suffixes", "sorted", "emptied_in_builtin_contracts"}
     assert rules["emptied_in_builtin_contracts"] == ["injector_contract_attack_patterns"]
+
+
+def test_the_closed_lists_of_an_export_are_read_by_name() -> None:
+    keys = ExportKeys.from_document(YamlDataLoader(ROOT / "policy" / "data").load("export-keys"))
+
+    assert keys.export_versions == frozenset({1})
+    assert (len(keys.workflow), len(keys.step), len(keys.condition)) == (12, 9, 11)
+    assert keys.condition_legacy == frozenset({"condition_key_type"})
 
 
 @pytest.mark.parametrize("name", ["../secrets", "a/b", "", "Volatile"])
