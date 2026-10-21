@@ -35,11 +35,15 @@ from scenario_tools.domain.catalogue.identifiers import (
     scenario_namespace,
     stable_id,
 )
+from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER
 from scenario_tools.domain.shared.workflow import (
+    STEPS,
     WORKFLOW,
     WORKFLOW_NOT_YET,
     ExportKeys,
+    Refusal,
+    StepDataKeys,
     export_refusals,
     has_workflow,
 )
@@ -51,7 +55,13 @@ _UUID_IN_TEXT = re.compile(_UUID.pattern, re.IGNORECASE)
 # A hexadecimal digit or a hyphen written as an escape in JSON text, not preceded by an escaped
 # backslash: an identifier written that way would escape rewriting.
 _ESCAPED_ID_CHARACTER = re.compile(r"(?<!\\)(?:\\\\)*\\u00(?:3[0-9]|4[1-6]|6[1-6]|2[dD])")
-_JSON_TEXT_FIELDS = ("inject_content", "injector_contract_content")
+_JSON_TEXT_FIELDS = (
+    "inject_content",
+    "injector_contract_content",
+    "step_data",
+    "step_input",
+    "step_output_parser",
+)
 _INFORMATION, _INJECTS = "scenario_information", "scenario_injects"
 _ARTICLES = "scenario_articles"
 # Parts of an export whose identifiers have no agreed rule yet: refused when not empty.
@@ -395,20 +405,22 @@ def _not_a_number(text: str) -> None:
     raise _refuse(f"{_CONTENT} holds {text}")
 
 
-def _check_decoded(value: Any) -> None:
+def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0) -> None:
     """What the readers would refuse in a file: nesting deeper than they allow, an unpaired
     surrogate in a string or a key, an integer the canonical form cannot hold exactly; and a
-    contract copy inside the copy, which bounds the work
-    on nested text."""
+    contract copy inside the copy, which bounds the work on nested text: ``copies`` contract
+    copies are allowed, the inject of a step holding one."""
     stack: list[tuple[Any, int]] = [(value, 0)]
     while stack:
         item, depth = stack.pop()
         if isinstance(item, dict | list):
             if depth == _MAX_DEPTH:
-                raise _refuse(f"{_CONTENT} is nested deeper than {_MAX_DEPTH} levels")
+                raise _refuse(f"{field} is nested deeper than {_MAX_DEPTH} levels")
             if isinstance(item, dict):
                 if _CONTENT in item:
-                    raise _refuse(f"{_CONTENT} holds another contract copy")
+                    if not copies:
+                        raise _refuse(f"{field} holds another contract copy")
+                    copies -= 1
                 stack.extend((key, depth) for key in item)
             children = item.values() if isinstance(item, dict) else item
             stack.extend((child, depth + 1) for child in children)
@@ -416,21 +428,60 @@ def _check_decoded(value: Any) -> None:
             try:
                 item.encode("utf-8")
             except UnicodeEncodeError as error:
-                raise _refuse(f"{_CONTENT} holds an unpaired surrogate") from error
+                raise _refuse(f"{field} holds an unpaired surrogate") from error
         elif isinstance(item, int) and abs(item) > SAFE_INTEGER:  # a boolean is 0 or 1
-            raise _refuse(f"{_CONTENT} holds an integer beyond the exact range of 2^53 - 1")
+            raise _refuse(f"{field} holds an integer beyond the exact range of 2^53 - 1")
 
 
-def _decode(text: str) -> Any:
-    """The JSON text of a contract copy, decoded within the bounds the readers apply."""
+def _decode(text: str, field: str = _CONTENT, copies: int = 0) -> Any:
+    """The JSON text of ``field``, a contract copy by default, decoded within the bounds the
+    readers apply; ``copies`` contract copies may be nested in it."""
     try:
         decoded = json.loads(
             text, object_pairs_hook=_unique, parse_float=_finite, parse_constant=_not_a_number
         )
     except (ValueError, RecursionError) as error:  # too many digits, as well as invalid JSON
-        raise _refuse(f"{_CONTENT} must be JSON text") from error
-    _check_decoded(decoded)
+        raise _refuse(f"{field} must be JSON text") from error
+    _check_decoded(decoded, field, copies)
     return decoded
+
+
+# The steps of a workflow
+
+
+def _decoded_or_none(text: str, field: str) -> Any:
+    """The JSON text of a step's field decoded within the readers' bounds, or ``None``: a step's
+    inject may hold one contract copy."""
+    try:
+        return _decode(text, field, copies=1 if field == "step_data" else 0)
+    except ExportStructureError:
+        return None
+
+
+def canonical_step_text(value: object) -> str:
+    """A step's empty input or output parser in one form, compact JSON text. Only for a step that
+    passed its checks, whose input is empty JSON text or absent."""
+    decoded = {} if value is None else json.loads(str(value))
+    return json.dumps(decoded, separators=(",", ":"), sort_keys=True)
+
+
+def _step_refusals(export: Mapping[str, Any], keys: StepDataKeys) -> Iterator[Refusal]:
+    """The refusals of the steps of ``export``, whose workflow has passed ``export_refusals``."""
+    tags = export.get("scenario_tags")
+    tag_ids = frozenset(
+        tag["tag_id"]
+        for tag in (tags if isinstance(tags, list) else [])
+        if isinstance(tag, Mapping) and isinstance(tag.get("tag_id"), str)
+    )
+    for index, step in enumerate(export[WORKFLOW][STEPS]):
+        yield from step_refusals(
+            step, f"/{WORKFLOW}/{STEPS}/{index}", keys, tag_ids, _decoded_or_none
+        )
+
+
+def stored_step_data(data: Mapping[str, Any], keys: StepDataKeys) -> dict[str, Any]:
+    """A step's inject as it is stored: without the keys a running instance writes."""
+    return {key: value for key, value in data.items() if key not in keys.removed}
 
 
 def _strip_text(text: object, rules: NormalisationRules) -> object:
@@ -564,7 +615,10 @@ def normalise(
     refusal = next(export_refusals(export, rules.export_keys), None)
     if refusal is not None:
         raise _refuse(refusal.what, pointer=refusal.pointer)
-    if has_workflow(export):  # its steps are read, but not normalised yet
+    if has_workflow(export):  # its steps are checked, but not normalised yet
+        refusal = next(_step_refusals(export, rules.export_keys.step_data), None)
+        if refusal is not None:
+            raise _refuse(refusal.what, pointer=refusal.pointer)
         raise _refuse(WORKFLOW_NOT_YET, pointer=f"/{WORKFLOW}")
     for key, what in NOT_SUPPORTED:
         if export.get(key):
