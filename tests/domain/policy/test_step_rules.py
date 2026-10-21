@@ -172,3 +172,12 @@ def test_an_injector_the_contract_does_not_list_is_refused_even_of_its_type() ->
     assert list(step_refusals({**STEP, "step_data": data}, AT, keys, frozenset(), _decode)) == [
         Refusal(STEP_INJECTOR, f"{AT}/step_data/inject_injector")
     ]
+
+
+@pytest.mark.parametrize("injector", [[], {}, 5])
+def test_an_injector_that_is_not_text_is_refused(injector: object) -> None:
+    data = json.loads(STEP["step_data"])
+    data["inject_injector"] = injector
+    assert _all({**STEP, "step_data": data}) == [
+        Refusal(STEP_INJECTOR, f"{AT}/step_data/inject_injector")
+    ]

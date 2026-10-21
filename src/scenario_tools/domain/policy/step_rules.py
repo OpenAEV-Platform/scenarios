@@ -159,7 +159,7 @@ def _injector(
             return
         allowed = set(listed)
     injector = data.get("inject_injector")
-    if injector is not None and injector not in allowed:
+    if injector is not None and (not isinstance(injector, str) or injector not in allowed):
         yield refusal
 
 

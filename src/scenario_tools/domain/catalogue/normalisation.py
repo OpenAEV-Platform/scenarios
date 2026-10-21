@@ -558,6 +558,17 @@ def _by_identifier(step: Step) -> dict[str, Condition]:
     return {str(condition.identifier): condition for condition in reversed(step.conditions)}
 
 
+def _masked(value: Any) -> Any:
+    """``value`` with every identifier quoted in its text replaced by one placeholder: what a
+    signature hashes must not depend on the identifiers of the instance, nor on whether they were
+    rewritten already."""
+    if isinstance(value, list):
+        return [_masked(child) for child in value]
+    if isinstance(value, str):
+        return _UUID_IN_TEXT.sub("<identifier>", value)
+    return value
+
+
 def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -> dict[str, str]:
     """The signature digest of each step, by source identifier: the SHA-256 of the canonical
     form of the payload it runs, its title and the digests of the steps it waits for. The graph
@@ -576,7 +587,7 @@ def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -
             )
             signature = [
                 stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
-                _text(inject, "inject_title", "step_data"),
+                _masked(_text(inject, "inject_title", "step_data")),
                 awaited,
             ]
             digests[identifier] = hashlib.sha256(jcs(signature)).hexdigest()
@@ -605,12 +616,14 @@ def _condition_identifiers(
 ) -> dict[str, str]:
     """The stable identifier of each condition of a step: the step, the content keys of the
     condition's ancestors and its own, so that a child is known by what it is and where it sits,
-    never by its place in a list. The content is read with the ``known`` identifiers rewritten,
-    the steps' included, so that it holds nothing of the instance they name."""
+    never by its place in a list. The identifiers its content quotes are masked, except the step a
+    dependency waits for, which is named by its stable identifier, one of the ``known`` ones."""
     conditions = _by_identifier(step)
 
     def content(condition: Condition) -> str:
-        values = _rewrite([condition.fields.get(key) for key in _CONDITION_CONTENT], known)
+        values = _masked([condition.fields.get(key) for key in _CONDITION_CONTENT])
+        if condition.kind == "DEPEND_ON":
+            values[_CONDITION_CONTENT.index("condition_value")] = known[str(condition.value)]
         return json.dumps(values, ensure_ascii=False, sort_keys=True)
 
     def path(condition: Condition) -> list[str]:

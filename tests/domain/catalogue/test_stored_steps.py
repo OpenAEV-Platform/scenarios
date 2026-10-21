@@ -65,7 +65,7 @@ def _edit(export: dict[str, Any], index: int, change: Any) -> dict[str, Any]:
 # user, the attack pattern, phase and domain, the payload and its contract, the steps and the
 # condition. Others, such as those of the payload's output parsers, stay as they are, as they do
 # for the injects of a time-based scenario.
-_REWRITTEN = (0x02, 0x03, 0x04, 0x06, 0x08, 0x09, 0x0A, 0x0B, 0x16, 0x17, 0x18)
+_REWRITTEN = (0x02, 0x03, 0x04, 0x06, 0x08, 0x09, 0x0A, 0x0B, 0x16, 0x17, 0x18, 0xF0)
 
 
 def _renumbered(export: dict[str, Any], prefix: str) -> dict[str, Any]:
@@ -237,3 +237,40 @@ def test_a_condition_that_names_a_step_in_its_value_is_known_by_the_stored_step(
     condition = _steps(export)[1]["step_conditions"][0]
     condition.update(condition_type="EQ", condition_name=f"Like {FIRST}")
     assert _stored(_renumbered(export, "11111111")) == _stored(export)
+
+
+TAG = "00000000-0000-4000-8000-000000000002"
+
+
+def _normalised_again(document: dict[str, Any]) -> dict[str, Any]:
+    return normalise(copy.deepcopy(document), ENTRY_ID, RULES, previous=document).document
+
+
+def test_a_title_that_quotes_an_identifier_keeps_the_identifiers_stable() -> None:
+    export = _edit(EXPORT, 0, lambda data: data.update(inject_title=f"Step 1 - see {TAG}"))
+    stored = _stored(export)
+    assert _stored(_renumbered(export, "11111111")) == stored
+    assert _normalised_again(stored) == stored
+
+
+def test_a_condition_that_quotes_another_one_keeps_the_identifiers_stable() -> None:
+    export = copy.deepcopy(EXPORT)
+    root = {
+        **_steps(export)[1]["step_conditions"][0],
+        "condition_id": "00000000-0000-4000-8000-0000000000f0",
+        "condition_type": "AND",
+        "condition_value": None,
+    }
+    leaf = {
+        **root,
+        "condition_id": "00000000-0000-4000-8000-000000000017",
+        "condition_parent_id": root["condition_id"],
+        "condition_is_root": False,
+        "condition_type": "EQ",
+        "condition_value": "x",
+        "condition_name": f"Under {root['condition_id']}",
+    }
+    _steps(export)[1]["step_conditions"] = [root, leaf]
+    stored = _stored(export)
+    assert _stored(_renumbered(export, "11111111")) == stored
+    assert _normalised_again(stored) == stored
