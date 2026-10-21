@@ -9,7 +9,7 @@ same contract and title, when one candidate is left; and among several candidate
 parent injects already match. What remains ambiguous is refused. The steps of a workflow are
 matched the same way, a step's source identifier being its signature digest: the caller matches
 unchanged content first, there is no authoring instance to match, and a new step whose derived
-identifier another step kept takes the next free one.
+identifier another step kept, or the previous version holds, takes the next free one.
 """
 
 import uuid
@@ -203,7 +203,9 @@ class _Matcher:
                 continue
             derived = stable_id(self.namespace, self.object_type, source)
             retry = 0
-            while derived in self.taken and self.content_sources:
+            # A step's fresh identifier is none of the previous version's either: one left
+            # unmatched is reported as removed, never silently given to another step.
+            while self.content_sources and (derived in self.taken or derived in self.previous):
                 retry += 1
                 derived = stable_id(self.namespace, self.object_type, f"{source}:{retry}")
             if derived in self.taken:

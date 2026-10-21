@@ -380,7 +380,11 @@ def _identifiers(
     previous_steps = _previous_steps(previous, namespace)
     removed_steps = tuple(sorted(step.id for step in previous_steps))
     if has_workflow(export):
-        sources = {step.get("step_id") for step in export[WORKFLOW][STEPS]}
+        sources = {
+            step.get("step_id")
+            for step in export[WORKFLOW][STEPS]
+            if isinstance(step.get("step_id"), str)  # others are refused with their pointer
+        }
         step_mapping = {key: mapping.pop(key) for key in sorted(mapping) if key in sources}
         pairs, removed_steps = _step_identifiers(
             export[WORKFLOW],

@@ -223,3 +223,21 @@ def test_a_previous_version_of_another_shape_is_refused(change: Any, what: str) 
         _normalised(EXPORT, previous)
     assert error.value.origin == "previous"
     assert what in error.value.what
+
+
+def test_a_step_retitled_back_without_a_mapping_never_takes_an_identifier_of_the_previous() -> None:
+    kept = _ids(PREVIOUS)[STEP_1]
+    second = _normalised(_retitled(EXPORT, FIRST, "Renamed"), PREVIOUS, {FIRST: kept})
+    assert _ids(second.document)["Renamed"] == kept
+    third = _normalised(EXPORT, second.document)
+    assert _ids(third.document)[STEP_1] != kept
+    assert third.removed_steps == (kept,)
+
+
+@pytest.mark.parametrize("identifier", [[], {}])
+def test_a_step_identifier_of_another_shape_is_refused_not_a_crash(identifier: object) -> None:
+    export = copy.deepcopy(EXPORT)
+    _steps(export)[:] = [next(step for step in _steps(export) if not step["step_conditions"])]
+    _steps(export)[0]["step_id"] = identifier
+    with pytest.raises(ExportStructureError):
+        _normalised(export, PREVIOUS, {FIRST: _ids(PREVIOUS)[STEP_1]})
