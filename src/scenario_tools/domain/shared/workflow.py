@@ -98,6 +98,18 @@ TOO_DEEP = (
     f"a step's conditions are nested at most {MAX_DEPTH} levels below their root, "
     "and no condition is its own ancestor"
 )
+STEP_ID_TWICE = "each step of a workflow has its own identifier"
+CONDITION_ID_TWICE = "the copies of a condition in a step are the same condition"
+CONDITION_SHARED = "a condition belongs to one step"
+CONDITION_PARENT_ELSEWHERE = "a condition's parent is a condition of the same step"
+CONDITION_ROOT = (
+    "a step's conditions form one tree: one root, with no parent, and every other condition "
+    "under a parent of the step"
+)
+CONDITION_STEP_FROM = "a condition reads the output of no step: its step_from is empty"
+DEPEND_ON_NULL = "a dependency names the step it waits for"
+DEPEND_ON_DANGLING = "a dependency waits for a step of the scenario"
+CYCLE = "a step never waits for itself, directly or through other steps"
 
 
 @dataclass(frozen=True)
@@ -407,3 +419,70 @@ def settled_workflow(workflow: Mapping[str, Any]) -> dict[str, Any]:
         settled[part] = settled.get(part) or []
     settled.pop(_TEAM_MEMBERS, None)  # written by the exporter only when not empty
     return settled
+
+
+@dataclass(frozen=True, slots=True)
+class Condition:
+    """A condition of a step as the export wrote it, with the pointer it is reported at.
+    Identifiers that are not text read as ``None``."""
+
+    pointer: str
+    fields: Mapping[str, Any]
+
+    @property
+    def identifier(self) -> str | None:
+        return _text(self.fields.get(_ID))
+
+    @property
+    def parent(self) -> object:
+        return self.fields.get(_PARENT)
+
+    @property
+    def is_root(self) -> object:
+        return self.fields.get("condition_is_root")
+
+    @property
+    def kind(self) -> object:
+        return self.fields.get("condition_type")
+
+    @property
+    def value(self) -> object:
+        return self.fields.get("condition_value")
+
+    @property
+    def step_from(self) -> object:
+        return self.fields.get("condition_step_from_id")
+
+
+@dataclass(frozen=True, slots=True)
+class Step:
+    """A step of a workflow, with the pointer it is reported at and its conditions in the
+    export's order, copies included."""
+
+    pointer: str
+    identifier: str | None
+    conditions: tuple[Condition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Workflow:
+    steps: tuple[Step, ...]
+
+
+def parsed_workflow(workflow: Mapping[str, Any]) -> Workflow:
+    """``workflow`` as value objects, once ``export_refusals`` has found nothing to refuse, so
+    that its steps and their conditions are lists of objects."""
+    pointer = f"/{WORKFLOW}/{STEPS}"
+    return Workflow(
+        tuple(
+            Step(
+                f"{pointer}/{index}",
+                _text(step.get("step_id")),
+                tuple(
+                    Condition(f"{pointer}/{index}/{CONDITIONS}/{position}", condition)
+                    for position, condition in enumerate(step.get(CONDITIONS) or [])
+                ),
+            )
+            for index, step in enumerate(workflow.get(STEPS) or [])
+        )
+    )
