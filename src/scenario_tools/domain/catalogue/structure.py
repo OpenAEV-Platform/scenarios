@@ -5,8 +5,15 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.shared.stored import (
+    INJECTS,
+    Origin,
+    StoredInject,
+    inject_pointer,
+    injects,
+)
 
-INFORMATION, INJECTS = "scenario_information", "scenario_injects"
+INFORMATION = "scenario_information"
 CONTRACT, PAYLOAD = "inject_injector_contract", "injector_contract_payload"
 
 
@@ -29,6 +36,16 @@ def require_text(item: Mapping[str, Any], key: str, where: str) -> str:
     return value
 
 
+def checked_injects(export: Mapping[str, Any]) -> Iterator[StoredInject]:
+    """The injects of ``export``, as the walk gives them, refusing a part that is not a list and,
+    when it is reached, an item that is not an object."""
+    part = export.get(INJECTS)
+    if not isinstance(part, list):
+        raise not_an_export(f"{INJECTS} must be a list")
+    for index, inject in enumerate(part):
+        yield StoredInject(inject_pointer(index), require_object(inject, INJECTS), Origin.INJECT)
+
+
 def contracts_with_payloads(
     stored: object,
 ) -> Iterator[tuple[str, Mapping[str, Any], Mapping[str, Any]]]:
@@ -36,10 +53,7 @@ def contracts_with_payloads(
     contract, which holds the payload under ``PAYLOAD``. A payload that is null or an empty object
     is none, as the archive reads it; any other value is one, for its check to refuse when it is
     not shaped as a payload."""
-    injects = stored.get(INJECTS) if isinstance(stored, Mapping) else None
-    if not isinstance(injects, list):
-        return
-    for index, inject in enumerate(injects):
-        contract = inject.get(CONTRACT) if isinstance(inject, Mapping) else None
+    for found in injects(stored):
+        contract = found.inject.get(CONTRACT)
         if isinstance(contract, Mapping) and contract.get(PAYLOAD) not in (None, {}):
-            yield f"/{INJECTS}/{index}", inject, contract
+            yield found.pointer, found.inject, contract

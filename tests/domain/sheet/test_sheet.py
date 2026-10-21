@@ -507,3 +507,10 @@ def test_an_empty_payload_is_no_payload() -> None:
 
 def test_the_sheet_limit_is_the_one_a_readme_is_read_with() -> None:
     assert SHEET_LIMIT == TEXT_LIMIT
+
+
+def test_an_item_that_is_not_an_object_is_left_out_of_the_chain() -> None:
+    rows = _rows({"scenario_injects": ["x", inject("a", "Alpha", 0)]})
+
+    assert len(rows) == 1
+    assert "Alpha" in rows[0]

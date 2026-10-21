@@ -423,3 +423,16 @@ def test_a_long_value_is_read_in_linear_time(unit: str) -> None:
     small, large = _seconds(unit * 5_000), _seconds(unit * 20_000)
 
     assert large < 8 * small + 0.05
+
+
+def test_an_inject_after_one_that_is_not_an_object_is_reported_at_its_own_index() -> None:
+    stored = {
+        "scenario_information": {"scenario_name": "EASM"},
+        "scenario_injects": ["x", {"inject_content": {"url": "http://evil.com/"}}],
+    }
+
+    findings = policy_findings(DATA, content(stored=stored))
+
+    assert [f.field for f in findings if f.code == "POL-003"] == [
+        "/scenario_injects/1/inject_content/url"
+    ]

@@ -16,12 +16,13 @@ from scenario_tools.domain.catalogue.normalisation import NOT_SUPPORTED
 from scenario_tools.domain.catalogue.structure import (
     CONTRACT,
     INFORMATION,
-    INJECTS,
     PAYLOAD,
+    checked_injects,
     not_an_export,
     require_object,
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.stored import INJECTS, injects
 
 # The parts of a normalised scenario, which are all an archive may carry.
 STORED_PARTS = frozenset(
@@ -64,11 +65,8 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
             continue  # normalisation leaves these parts in place, empty; a scalar stays as it is
         raise not_an_export(f"{part} is not a part of a stored scenario")
     require_object(export.get(INFORMATION), INFORMATION)
-    injects = export.get(INJECTS)
-    if not isinstance(injects, list):
-        raise not_an_export(f"{INJECTS} must be a list")
-    for inject in injects:
-        contract = require_object(inject, INJECTS).get(CONTRACT)
+    for found in checked_injects(export):
+        contract = found.inject.get(CONTRACT)
         if contract is not None:
             require_object(contract, CONTRACT)
     return payloads_outside_contracts(export, path)
@@ -77,9 +75,7 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
 def payloads_outside_contracts(document: object, path: str) -> tuple[Finding, ...]:
     """The payloads of ``document``, at ``path``, that sit outside an inject's contract: no
     payload reference can name them, and the importer may read them still."""
-    injects = document.get(INJECTS) if isinstance(document, dict) else None
-    count = len(injects) if isinstance(injects, list) else 0
-    contracts = {f"/{INJECTS}/{index}/{CONTRACT}" for index in range(count)}
+    contracts = {f"{found.pointer}/{CONTRACT}" for found in injects(document)}
     return tuple(
         Finding(
             "PAY-004",

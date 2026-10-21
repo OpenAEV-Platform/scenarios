@@ -97,6 +97,18 @@ type = "forbidden"
 source_modules = ["scenario_tools.adapters"]
 forbidden_modules = ["scenario_tools.application", "scenario_tools.interface"]
 
+[[tool.importlinter.contracts]]
+name = "The shared kernel depends on no other part of the domain"
+type = "forbidden"
+source_modules = ["scenario_tools.domain.shared"]
+forbidden_modules = [
+    "scenario_tools.domain.catalogue",
+    "scenario_tools.domain.policy",
+    "scenario_tools.domain.release",
+    "scenario_tools.domain.sheet",
+    "scenario_tools.domain.verification",
+]
+
 [tool.bandit]
 exclude_dirs = ["tests"]
 

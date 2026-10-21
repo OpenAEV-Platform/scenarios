@@ -14,11 +14,11 @@ from typing import Any
 
 from scenario_tools.domain.catalogue.structure import (
     CONTRACT,
-    INJECTS,
     PAYLOAD,
     contracts_with_payloads,
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.stored import INJECTS
 
 
 class Bump(IntEnum):

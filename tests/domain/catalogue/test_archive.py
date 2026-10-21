@@ -191,6 +191,15 @@ def test_a_document_that_is_not_an_object_is_refused() -> None:
             },
             [],
         ),
+        (  # an item that is not an object keeps the index of the next one
+            {
+                "scenario_injects": [
+                    "x",
+                    {"inject_injector_contract": {"injector_contract_payload": PAYLOAD}},
+                ]
+            },
+            [],
+        ),
     ],
 )
 def test_a_payload_outside_a_contract_is_found_in_any_document(
