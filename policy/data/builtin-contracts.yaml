@@ -6,7 +6,7 @@
 # in identifier order. copy_sha256 is the SHA-256 of the canonical form (RFC 8785) of the
 # contract's normalised copy, as the platform exports it: an instance that lacks the contract
 # builds it from the copy, so a scenario must carry this one.
-platform_version: 3.261005.0
+platform_version: 3.261016.0
 contracts:
   - id: 2790bd39-37d4-4e39-be7e-53f3ca783f86
     name: Send multi-recipients mail
@@ -19,19 +19,19 @@ contracts:
     injector_type: openaev_nuclei
     needs_executor: false
     platforms: []
-    copy_sha256: 7604fabfa5bff33bf2bc07c9b65fc175cb3b19fffd83d4a178a6c4894ea573d2
+    copy_sha256: ef232d9730ceed3d799c6d25f0da9aca5df6a05bd55fe7dcbfb2c51ea4bdfc13
   - id: 2e7fc079-4531-4444-4444-928fe4a2fc0b
     name: Nuclei - TEMPLATES Scan
     injector_type: openaev_nuclei
     needs_executor: false
     platforms: []
-    copy_sha256: 84c9c7300c63b6b2644602aa014abcb4ccb0f79e26e13dbcd3e252e5908557bc
+    copy_sha256: b43dbeb65d512b2bbf9eea3d5b93e99c00e432c71cec104a695c0ce790ae0ac3
   - id: 3cf1b7a6-39d2-4531-8c8e-2b7c67470d1e
     name: Nuclei - Panel Scan
     injector_type: openaev_nuclei
     needs_executor: false
     platforms: []
-    copy_sha256: dd2b53c7b4bb6b35f937d5655dc2564a178c6cd07a252f156ebc064259b1ae8b
+    copy_sha256: 9ef8a99cc1085100e5989f2e857b81652659f455d6d3b63998b2d015a9f16c48
   - id: 93d27459-68d0-43b1-ad65-eacc3cfa5cf7
     name: Nmap - TCP Connect Scan
     injector_type: openaev_nmap
@@ -43,10 +43,10 @@ contracts:
     injector_type: openaev_nuclei
     needs_executor: false
     platforms: []
-    copy_sha256: bd061e9752b1d2825944250a861c83545785697987ac07b7d0d59847c79bde82
+    copy_sha256: 529fa4663afb81cf76532d54b5cebfd95ab2e0722074f0ab022d49428935125e
   - id: a4eb02bd-3c9f-4a97-b9a1-54a9b7a7f21e
     name: Nuclei - Misconfigurations
     injector_type: openaev_nuclei
     needs_executor: false
     platforms: []
-    copy_sha256: ad3686564ee2f9fd4c308bd15da80cbdab22f19a3b005f25c061b76a4c9ba243
+    copy_sha256: 6dc0d7741d219891665ad2ec6d3f15edc8a1ff5e7f0530cfc1376863760471d7
