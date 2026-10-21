@@ -27,12 +27,13 @@ import json
 import math
 import re
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from scenario_tools.domain.catalogue.identifiers import (
     NS_OPENAEV_SCENARIOS,
+    AmbiguousInjectError,
     InjectSignature,
     match_injects,
     scenario_namespace,
@@ -155,10 +156,12 @@ class NormalisationRules:
 
 @dataclass(frozen=True)
 class Normalised:
-    """The normalised document, and the injects of the previous version it no longer has."""
+    """The normalised document, and the injects and steps of the previous version it no longer
+    has."""
 
     document: dict[str, Any]
     removed_injects: tuple[str, ...]
+    removed_steps: tuple[str, ...] = ()
 
 
 _FAULTS = {
@@ -312,7 +315,7 @@ def _identifiers(
     external_id: str,
     previous: Mapping[str, Any] | None,
     mapping: Mapping[str, str] | None,
-) -> tuple[_Identifiers, tuple[str, ...]]:
+) -> tuple[_Identifiers, tuple[str, ...], tuple[str, ...]]:
     namespace = scenario_namespace(external_id)
     identifiers = _Identifiers()
     scenario_id = stable_id(namespace, "scenario", external_id)
@@ -372,17 +375,28 @@ def _identifiers(
                     raise _refuse(f"{key} needs a non-empty {external_key}")
                 target = stable_id(NS_OPENAEV_SCENARIOS, object_type, item[external_key])
                 identifiers.add(item[key], target)
+    old = _previous_signatures(previous, namespace, scenario_id)  # also checks the entry
+    mapping = dict(mapping or {})
+    previous_steps = _previous_steps(previous, namespace)
+    removed_steps = tuple(sorted(step.id for step in previous_steps))
     if has_workflow(export):
-        known = identifiers.targets
-        for source, target in _step_identifiers(export[WORKFLOW], namespace, known):
+        sources = {step.get("step_id") for step in export[WORKFLOW][STEPS]}
+        step_mapping = {key: mapping.pop(key) for key in sorted(mapping) if key in sources}
+        pairs, removed_steps = _step_identifiers(
+            export[WORKFLOW],
+            namespace,
+            identifiers.targets,
+            previous_steps,
+            step_mapping,
+        )
+        for source, target in pairs:
             identifiers.add(source, target)
     new = [_signature(inject, namespace) for inject in _objects(export, _INJECTS)]
     _check_injects(new)
-    old = _previous_signatures(previous, namespace, scenario_id)
     matching = match_injects(namespace, new, old, mapping)
     for source, target in matching.ids.items():
         identifiers.add(source, target)
-    return identifiers, matching.removed
+    return identifiers, matching.removed, removed_steps
 
 
 def _rewrite(value: Any, targets: Mapping[str, str]) -> Any:
@@ -577,6 +591,77 @@ def _masked(value: Any) -> Any:
     return value
 
 
+def _runs(inject: Mapping[str, Any], namespace: uuid.UUID) -> tuple[str, str]:
+    """What a step runs, as its signature reads it: the stable identifier of its payload, from
+    the payload's name, and its title, with the identifiers it quotes masked."""
+    payload = _payload(inject) or {}
+    return (
+        stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
+        _masked(_text(inject, "inject_title", "step_data")),
+    )
+
+
+def _previous_steps(
+    previous: Mapping[str, Any] | None, namespace: uuid.UUID
+) -> list[InjectSignature]:
+    """The steps of the previous version, a stored file of the same entry, as the matcher reads
+    them: stable identifier, what each runs and the steps it waits for. A refusal names the
+    previous version as the input at fault."""
+    if previous is None or not has_workflow(previous):
+        return []
+    try:
+        workflow = previous[WORKFLOW]
+        if not isinstance(workflow, dict):
+            raise _refuse(f"{WORKFLOW} must be an object")
+        signatures = []
+        seen: set[str] = set()
+        for step in _objects(workflow, STEPS):
+            identifier = _text(step, "step_id", STEPS)
+            if not _UUID.fullmatch(identifier):
+                raise _refuse(f"step identifier {identifier!r} is not a canonical UUID")
+            if identifier in seen:
+                raise _refuse(f"step identifier {identifier!r} appears twice")
+            seen.add(identifier)
+            inject = step.get("step_data")
+            if not isinstance(inject, dict):
+                raise _refuse("step_data must be an object")
+            awaited = {
+                _text(condition, "condition_value", CONDITIONS)
+                for condition in _objects(step, CONDITIONS)
+                if condition.get("condition_type") == "DEPEND_ON"
+            }
+            signatures.append(
+                InjectSignature(identifier, *_runs(inject, namespace), tuple(sorted(awaited)))
+            )
+        _previous_digests(signatures)  # refuses a dependency on no step, or a loop
+    except ExportStructureError as error:
+        raise _refuse(error.what, "previous") from error
+    return signatures
+
+
+def _previous_digests(signatures: list[InjectSignature]) -> dict[str, str]:
+    """The signature digest of each step of the previous version, by stable identifier: what it
+    runs and the digests of the steps it waits for, as for the steps of the export."""
+    by_id = {signature.id: signature for signature in signatures}
+    digests: dict[str, str] = {}
+
+    def digest(identifier: str, path: tuple[str, ...]) -> str:
+        if identifier not in by_id:
+            raise _refuse(f"a step waits for {identifier!r}, which is no step of it")
+        if identifier in path:
+            raise _refuse(f"step {identifier!r} waits for itself")
+        if identifier not in digests:
+            signature = by_id[identifier]
+            awaited = sorted({digest(parent, (*path, identifier)) for parent in signature.parents})
+            parts = [signature.contract, signature.title, awaited]
+            digests[identifier] = hashlib.sha256(jcs(parts)).hexdigest()
+        return digests[identifier]
+
+    for signature in signatures:
+        digest(signature.id, ())
+    return digests
+
+
 def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -> dict[str, str]:
     """The signature digest of each step, by source identifier: the SHA-256 of the canonical
     form of the payload it runs, its title and the digests of the steps it waits for. The graph
@@ -587,7 +672,6 @@ def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -
     def digest(identifier: str) -> str:
         if identifier not in digests:
             step, inject = by_id[identifier], data[identifier]
-            payload = _payload(inject) or {}
             awaited = sorted(  # a step named twice is waited for once
                 {
                     digest(str(condition.value))
@@ -595,11 +679,7 @@ def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -
                     if condition.kind == "DEPEND_ON"
                 }
             )
-            signature = [
-                stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
-                _masked(_text(inject, "inject_title", "step_data")),
-                awaited,
-            ]
+            signature = [*_runs(inject, namespace), awaited]
             digests[identifier] = hashlib.sha256(jcs(signature)).hexdigest()
         return digests[identifier]
 
@@ -654,11 +734,18 @@ def _condition_identifiers(
 
 
 def _step_identifiers(
-    workflow: Mapping[str, Any], namespace: uuid.UUID, known: Mapping[str, str]
-) -> list[tuple[str, str]]:
-    """The source and stable identifier of each step, then of each condition; ``known`` holds
-    the identifiers already derived for the rest of the scenario. A source identifier given to a
-    step and to a condition is listed twice, so that registering both refuses it."""
+    workflow: Mapping[str, Any],
+    namespace: uuid.UUID,
+    known: Mapping[str, str],
+    previous: list[InjectSignature],
+    mapping: Mapping[str, str],
+) -> tuple[list[tuple[str, str]], tuple[str, ...]]:
+    """The source and stable identifier of each step, then of each condition, and the steps of
+    the ``previous`` version left out. Each step keeps the identifier of the step of the previous
+    version the matcher finds, or the explicit ``mapping`` names, by its source identifier;
+    ``known`` holds the identifiers already derived for the rest of the scenario. A source
+    identifier given to a step and to a condition is listed twice, so that registering both
+    refuses it."""
     parsed = parsed_workflow(workflow)
     for step in parsed.steps:
         _named_identifiers(step)
@@ -672,14 +759,63 @@ def _step_identifiers(
         if digests[str(step.identifier)] in seen:
             raise _refuse(STEPS_SAME_SIGNATURE, pointer=step.pointer)
         seen.add(digests[str(step.identifier)])
-    step_ids = {source: stable_id(namespace, "step", digest) for source, digest in digests.items()}
+    step_ids, removed = _matched_steps(parsed.steps, data, digests, namespace, previous, mapping)
     pairs = list(step_ids.items())
     for step in parsed.steps:
         conditions = _condition_identifiers(
             step, step_ids[str(step.identifier)], {**known, **step_ids}, namespace
         )
         pairs.extend(conditions.items())
-    return pairs
+    return pairs, removed
+
+
+def _matched_steps(
+    steps: Sequence[Step],
+    data: Mapping[str, Any],
+    digests: Mapping[str, str],
+    namespace: uuid.UUID,
+    previous: list[InjectSignature],
+    mapping: Mapping[str, str],
+) -> tuple[dict[str, str], tuple[str, ...]]:
+    """The stable identifier of each step by source identifier, the matcher reading each step by
+    its digest, and the steps of the previous version left out."""
+    new = [
+        InjectSignature(
+            digests[str(step.identifier)],
+            *_runs(data[str(step.identifier)], namespace),
+            tuple(
+                sorted(
+                    {
+                        digests[str(condition.value)]
+                        for condition in _by_identifier(step).values()
+                        if condition.kind == "DEPEND_ON"
+                    }
+                )
+            ),
+        )
+        for step in steps
+    ]
+    sources = {digest: source for source, digest in digests.items()}
+    explicit = {digests[source]: target for source, target in mapping.items()}
+    # A step whose content is unchanged keeps its identifier, whatever happened to the others.
+    unchanged = {
+        digest: target
+        for target, digest in _previous_digests(previous).items()
+        if digest in sources and digest not in explicit and target not in explicit.values()
+    }
+    try:
+        matching = match_injects(
+            namespace,
+            new,
+            previous,
+            {**explicit, **unchanged},
+            object_type="step",
+            content_sources=True,
+        )
+    except AmbiguousInjectError as error:  # named by the export's identifier, not the digest
+        raise AmbiguousInjectError(sources[error.source_id], error.candidates, "step") from error
+    ids = {sources[digest]: target for digest, target in matching.ids.items()}
+    return ids, matching.removed
 
 
 def _stored_workflow(workflow: Mapping[str, Any], keys: StepDataKeys) -> dict[str, Any]:
@@ -846,7 +982,9 @@ def normalise(
             raise _refuse(f"{what} are not supported yet")
     if previous is not None and not isinstance(previous, dict):
         raise _refuse("the previous version must be a JSON object", "previous")
-    identifiers, removed_injects = _identifiers(export, external_id, previous, mapping)
+    identifiers, removed_injects, removed_steps = _identifiers(
+        export, external_id, previous, mapping
+    )
     document = _rewrite(export, identifiers.targets)  # new objects, export untouched
     _name_domains(document)
     document = _strip(document, rules)
@@ -858,4 +996,4 @@ def normalise(
     for collection, key, *_ in (*_OBJECTS, (_ARTICLES, "article_id"), (_INJECTS, "inject_id")):
         if collection in document and isinstance(document[collection], list):
             document[collection] = sorted(document[collection], key=lambda item: item[key])
-    return Normalised(document, removed_injects)
+    return Normalised(document, removed_injects, removed_steps)

@@ -340,8 +340,12 @@ def _update(
             Severity.INFO,
             stored_path,
             "",
-            f"inject {inject} of the previous version is no longer in the export",
+            f"{kind} {identifier} of the previous version is no longer in the export",
         )
-        for inject in prepared.removed_injects
+        for kind, identifiers in (
+            ("inject", prepared.removed_injects),
+            ("step", prepared.removed_steps),
+        )
+        for identifier in identifiers
     )
     return IntakeResult(request, (), scenario_json, metadata, left, changed, previous_files)
