@@ -154,19 +154,27 @@ def _text(value: object) -> str | None:
 
 def _too_deep(conditions: Sequence[Mapping[str, Any]]) -> bool:
     """Whether a condition sits more than ``MAX_DEPTH`` levels below its root, or is its own
-    ancestor. Identifiers that are not text are left to the later checks."""
-    parents = {
-        identifier: _text(item.get(_PARENT))
+    ancestor. Every parent a condition is given counts, so that a copy of a condition under
+    another parent cannot hide a level. Identifiers that are not text are left to the later
+    checks."""
+    edges = {
+        (identifier, parent)
         for item in conditions
         if (identifier := _text(item.get(_ID))) is not None
+        and (parent := _text(item.get(_PARENT))) is not None
     }
-    for start in parents:
-        current, levels = parents[start], 0
-        while current is not None:
-            levels += 1
-            if levels > MAX_DEPTH:
+    # Each round that changes a level raises one, and no level goes past MAX_DEPTH without a
+    # refusal, so the rounds end; a loop keeps raising its levels until it is refused.
+    levels: dict[str, int] = {}
+    grown = True
+    while grown:
+        grown = False
+        for identifier, parent in edges:
+            level = levels.get(parent, 0) + 1
+            if level > MAX_DEPTH:
                 return True
-            current = parents.get(current)
+            if level > levels.get(identifier, 0):
+                levels[identifier], grown = level, True
     return False
 
 

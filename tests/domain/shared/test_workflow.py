@@ -298,6 +298,18 @@ def test_the_depth_bound_is_inclusive() -> None:
     )
 
 
+@pytest.mark.parametrize("before", [True, False])
+def test_a_copy_of_a_condition_under_another_parent_does_not_hide_the_depth(before: bool) -> None:
+    export = _export()
+    chain = _chain(MAX_DEPTH + 2)
+    copied = _condition(f"c{MAX_DEPTH}")  # the condition above the last one, with no parent
+    conditions = [copied, *chain] if before else [*chain, copied]
+    export["scenario_workflow"]["workflow_steps"][1]["step_conditions"] = conditions
+    assert _first(export) == Refusal(
+        TOO_DEEP, "/scenario_workflow/workflow_steps/1/step_conditions"
+    )
+
+
 def test_parents_that_form_a_loop_are_refused_as_too_deep() -> None:
     export = _export()
     export["scenario_workflow"]["workflow_steps"][1]["step_conditions"] = [
