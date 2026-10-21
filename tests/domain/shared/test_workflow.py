@@ -31,6 +31,7 @@ from scenario_tools.domain.shared.workflow import (
     Refusal,
     export_refusals,
     has_workflow,
+    parsed_workflow,
     settled_workflow,
 )
 from tests.support.workflow import KEYS, KEYS_DOCUMENT
@@ -661,3 +662,21 @@ def test_a_malformed_step_classification_is_refused(change: Any) -> None:
     change(document)
     with pytest.raises(ValueError, match=r"^export-keys: step_data"):
         ExportKeys.from_document(document)
+
+
+def test_a_parsed_workflow_reads_steps_and_conditions_with_their_pointers() -> None:
+    condition = {"condition_id": "c1", "condition_parent_id": None, "condition_type": "DEPEND_ON"}
+    parsed = parsed_workflow(
+        {"workflow_steps": [{"step_id": 7}, {"step_id": "s2", "step_conditions": [condition]}]}
+    )
+    first, second = parsed.steps
+    assert (first.pointer, first.identifier, first.conditions) == (
+        "/scenario_workflow/workflow_steps/0",
+        None,
+        (),
+    )
+    assert second.identifier == "s2"
+    (only,) = second.conditions
+    assert only.pointer == "/scenario_workflow/workflow_steps/1/step_conditions/0"
+    assert (only.identifier, only.parent, only.kind) == ("c1", None, "DEPEND_ON")
+    assert parsed_workflow({}).steps == ()

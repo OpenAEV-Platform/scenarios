@@ -15,6 +15,7 @@ from scenario_tools.domain.catalogue.normalisation import (
     stored_step_data,
 )
 from scenario_tools.domain.shared.workflow import (
+    DEPEND_ON_DANGLING,
     KEY_RUNTIME,
     KEY_UNKNOWN,
     STEP_ACTION,
@@ -335,3 +336,15 @@ def test_an_identifier_written_as_an_escape_in_a_step_text_is_refused(field: str
     step[field] = step[field].replace("{", '{"ref": "\\u0041", ', 1)
     what, _ = _refusal(export)
     assert what == f"{field} writes an identifier character as an escape"
+
+
+def test_the_graph_of_the_workflow_is_checked_after_its_steps() -> None:
+    export = copy.deepcopy(EXPORT)
+    condition = export["scenario_workflow"]["workflow_steps"][1]["step_conditions"][0]
+    condition["condition_value"] = "00000000-0000-4000-8000-000000000099"
+    assert _refusal(export) == (
+        DEPEND_ON_DANGLING,
+        f"{STEP}/step_conditions/0/condition_value",
+    )
+    export["scenario_workflow"]["workflow_steps"][1]["step_action_class"] = "OTHER"
+    assert _refusal(export) == (STEP_ACTION, f"{STEP}/step_action_class")

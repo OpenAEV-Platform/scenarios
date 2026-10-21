@@ -36,6 +36,7 @@ from scenario_tools.domain.catalogue.identifiers import (
     stable_id,
 )
 from scenario_tools.domain.policy.step_rules import step_refusals
+from scenario_tools.domain.policy.workflow_rules import graph_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER
 from scenario_tools.domain.shared.workflow import (
     STEPS,
@@ -46,6 +47,7 @@ from scenario_tools.domain.shared.workflow import (
     StepDataKeys,
     export_refusals,
     has_workflow,
+    parsed_workflow,
 )
 
 PLACEHOLDER_SENDER = "simulation@example.org"
@@ -615,8 +617,10 @@ def normalise(
     refusal = next(export_refusals(export, rules.export_keys), None)
     if refusal is not None:
         raise _refuse(refusal.what, pointer=refusal.pointer)
-    if has_workflow(export):  # its steps are checked, but not normalised yet
-        refusal = next(_step_refusals(export, rules.export_keys.step_data), None)
+    if has_workflow(export):  # its steps and graph are checked, but not normalised yet
+        refusal = next(_step_refusals(export, rules.export_keys.step_data), None) or next(
+            graph_refusals(parsed_workflow(export[WORKFLOW])), None
+        )
         if refusal is not None:
             raise _refuse(refusal.what, pointer=refusal.pointer)
         raise _refuse(WORKFLOW_NOT_YET, pointer=f"/{WORKFLOW}")
