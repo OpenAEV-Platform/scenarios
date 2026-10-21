@@ -5,6 +5,8 @@ import copy
 from typing import Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from scenario_tools.domain.shared.workflow import (
     EXPORT_VERSION_UNKNOWN,
@@ -17,6 +19,9 @@ from scenario_tools.domain.shared.workflow import (
     MAX_STEPS,
     NOT_A_LIST,
     NOT_AN_OBJECT,
+    SCOPE_NOT_EMPTY,
+    SETTINGS_BOUNDS,
+    STANDALONE_NOT_EMPTY,
     TOO_DEEP,
     TOO_MANY_CONDITIONS,
     TOO_MANY_ENTRIES,
@@ -26,6 +31,7 @@ from scenario_tools.domain.shared.workflow import (
     Refusal,
     export_refusals,
     has_workflow,
+    settled_workflow,
 )
 from tests.support.workflow import KEYS, KEYS_DOCUMENT
 
@@ -238,7 +244,9 @@ def test_every_key_of_the_closed_lists_passes() -> None:
     workflow["workflow_scope_rules"] = [dict.fromkeys(KEYS.scope_rule)]
     workflow["workflow_scope_variables"] = [dict.fromkeys(KEYS.scope_variable)]
     step["step_conditions"][0]["condition_parent_id"] = None
-    assert _first(export) is None
+    refused = [refusal.what for refusal in export_refusals(export, KEYS)]
+    # the example fills every key, so only its values are refused: settings and scope
+    assert set(refused) <= {SETTINGS_BOUNDS, SCOPE_NOT_EMPTY}
 
 
 def test_a_missing_list_counts_as_empty() -> None:
@@ -377,6 +385,7 @@ def test_the_refusals_come_in_their_documented_order() -> None:
         Refusal(INJECTS_AND_WORKFLOW, "/scenario_workflow"),
         Refusal(KEY_UNKNOWN, "/scenario_workflow/workflow_owner"),
         Refusal(KEY_UNKNOWN, "/scenario_workflow/workflow_scope_rules/0/x"),
+        Refusal(SCOPE_NOT_EMPTY, "/scenario_workflow/workflow_scope_rules"),
         Refusal(TOO_MANY_STEPS, "/scenario_workflow/workflow_steps"),
     ]
 
@@ -387,7 +396,8 @@ def test_the_refusals_come_in_their_documented_order() -> None:
 def test_the_scope_lists_are_bounded_inclusively(part: str) -> None:
     export = _export()
     export["scenario_workflow"][part] = [{} for _ in range(MAX_SCOPE)]
-    assert _first(export) is None
+    within = STANDALONE_NOT_EMPTY if part == "workflow_standalone_conditions" else SCOPE_NOT_EMPTY
+    assert _first(export) == Refusal(within, f"/scenario_workflow/{part}")
     export["scenario_workflow"][part].append({})
     assert _first(export) == Refusal(TOO_MANY_ENTRIES, f"/scenario_workflow/{part}")
 
@@ -399,10 +409,12 @@ def test_a_scope_list_of_another_shape_is_refused(part: str) -> None:
     assert _first(export) == Refusal(NOT_A_LIST, f"/scenario_workflow/{part}")
 
 
-def test_conditions_linked_to_no_step_are_bounded_in_depth_too() -> None:
+def test_conditions_linked_to_no_step_are_refused_without_reading_their_tree() -> None:
     export = _export()
     export["scenario_workflow"]["workflow_standalone_conditions"] = _chain(MAX_DEPTH + 2)
-    assert _first(export) == Refusal(TOO_DEEP, "/scenario_workflow/workflow_standalone_conditions")
+    assert list(export_refusals(export, KEYS)) == [
+        Refusal(STANDALONE_NOT_EMPTY, "/scenario_workflow/workflow_standalone_conditions")
+    ]
 
 
 def test_the_entries_bound_of_a_step_is_inclusive() -> None:
@@ -436,4 +448,198 @@ def test_steps_of_another_shape_end_the_reading() -> None:
 def test_a_workflow_that_is_not_an_object_ends_the_reading() -> None:
     assert list(export_refusals(_export(scenario_workflow="text"), KEYS)) == [
         Refusal(NOT_AN_OBJECT, "/scenario_workflow")
+    ]
+
+
+# Settings and scope
+
+
+def _with(**settings: object) -> dict[str, Any]:
+    export = _export()
+    export["scenario_workflow"].update(settings)
+    return export
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"workflow_timeout_enabled": True, "workflow_timeout_seconds": 60},
+        {"workflow_timeout_seconds": 3600},
+        {"workflow_safe_mode_enabled": True},
+        {"workflow_rate_limit_enabled": False, "workflow_max_attempts": None},
+        {
+            "workflow_rate_limit_enabled": True,
+            "workflow_max_attempts": 1,
+            "workflow_max_temporal_rate_seconds": 1,
+        },
+        {
+            "workflow_rate_limit_enabled": True,
+            "workflow_max_attempts": 99,
+            "workflow_max_temporal_rate_seconds": 5940,
+        },
+        {"workflow_scope_rule_team_members": []},
+        {"workflow_timeout_seconds": None, "workflow_safe_mode_enabled": None},
+        {"workflow_rate_limit_enabled": None, "workflow_timeout_enabled": None},
+    ],
+)
+def test_settings_within_their_bounds_pass(settings: dict[str, object]) -> None:
+    assert _first(_with(**settings)) is None
+
+
+@pytest.mark.parametrize(
+    ("settings", "key"),
+    [
+        ({"workflow_timeout_enabled": False}, "workflow_timeout_enabled"),
+        ({"workflow_timeout_seconds": 59}, "workflow_timeout_seconds"),
+        ({"workflow_timeout_seconds": 3601}, "workflow_timeout_seconds"),
+        ({"workflow_timeout_seconds": True}, "workflow_timeout_seconds"),
+        ({"workflow_safe_mode_enabled": False}, "workflow_safe_mode_enabled"),
+        ({"workflow_rate_limit_enabled": "yes"}, "workflow_rate_limit_enabled"),
+        ({"workflow_max_attempts": 3}, "workflow_max_attempts"),
+        ({"workflow_max_temporal_rate_seconds": 10}, "workflow_max_temporal_rate_seconds"),
+        (
+            {"workflow_rate_limit_enabled": True, "workflow_max_temporal_rate_seconds": 10},
+            "workflow_max_attempts",
+        ),
+        (
+            {
+                "workflow_rate_limit_enabled": True,
+                "workflow_max_attempts": 100,
+                "workflow_max_temporal_rate_seconds": 10,
+            },
+            "workflow_max_attempts",
+        ),
+        (
+            {
+                "workflow_rate_limit_enabled": True,
+                "workflow_max_attempts": 1,
+                "workflow_max_temporal_rate_seconds": 5941,
+            },
+            "workflow_max_temporal_rate_seconds",
+        ),
+        (
+            {
+                "workflow_rate_limit_enabled": True,
+                "workflow_max_attempts": 1,
+                "workflow_max_temporal_rate_seconds": 0,
+            },
+            "workflow_max_temporal_rate_seconds",
+        ),
+        (
+            {
+                "workflow_rate_limit_enabled": True,
+                "workflow_max_attempts": 0,
+                "workflow_max_temporal_rate_seconds": 10,
+            },
+            "workflow_max_attempts",
+        ),
+    ],
+)
+def test_a_setting_outside_its_bounds_is_refused_at_its_key(
+    settings: dict[str, object], key: str
+) -> None:
+    assert _first(_with(**settings)) == Refusal(SETTINGS_BOUNDS, f"/scenario_workflow/{key}")
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        "workflow_scope_rules",
+        "workflow_scope_variables",
+        "workflow_scope_rule_team_members",
+        "workflow_standalone_conditions",
+    ],
+)
+def test_a_scope_or_a_condition_linked_to_no_step_is_refused_never_removed(part: str) -> None:
+    refused = STANDALONE_NOT_EMPTY if part == "workflow_standalone_conditions" else SCOPE_NOT_EMPTY
+    assert _first(_with(**{part: [{}]})) == Refusal(refused, f"/scenario_workflow/{part}")
+
+
+def test_settings_are_written_as_the_import_applies_them_when_missing() -> None:
+    settled = settled_workflow({"workflow_version": 3, "workflow_steps": []})
+    assert settled == {
+        "workflow_steps": [],
+        "workflow_rate_limit_enabled": False,
+        "workflow_max_attempts": None,
+        "workflow_max_temporal_rate_seconds": None,
+        "workflow_timeout_enabled": True,
+        "workflow_timeout_seconds": 3600,
+        "workflow_safe_mode_enabled": True,
+        "workflow_scope_rules": [],
+        "workflow_scope_variables": [],
+        "workflow_standalone_conditions": [],
+    }
+
+
+def test_null_lists_and_settings_are_written_as_when_absent() -> None:
+    settled = settled_workflow(
+        {
+            "workflow_steps": [],
+            "workflow_scope_rules": None,
+            "workflow_timeout_seconds": None,
+            "workflow_scope_rule_team_members": [],
+            "workflow_other": 1,
+        }
+    )
+    assert settled["workflow_scope_rules"] == []
+    assert settled["workflow_timeout_seconds"] == 3600
+    assert "workflow_scope_rule_team_members" not in settled
+    assert settled["workflow_other"] == 1
+
+
+def test_settings_given_are_kept_and_the_version_removed() -> None:
+    workflow = {"workflow_version": 2, "workflow_timeout_seconds": 600}
+    settled = settled_workflow(workflow)
+    assert settled["workflow_timeout_seconds"] == 600
+    assert "workflow_version" not in settled
+    assert workflow == {"workflow_version": 2, "workflow_timeout_seconds": 600}  # untouched
+
+
+@given(st.integers(min_value=-10_000, max_value=10_000))
+def test_the_delay_is_bounded_at_every_value(seconds: int) -> None:
+    refusal = _first(_with(workflow_timeout_seconds=seconds))
+    assert (refusal is None) == (60 <= seconds <= 3600)
+
+
+_NOT_WHOLE: st.SearchStrategy[object] = st.one_of(
+    st.booleans(), st.floats(), st.text(), st.just([])
+)
+
+
+@given(_NOT_WHOLE)
+def test_a_value_that_is_not_a_whole_number_is_refused_for_every_number(value: object) -> None:
+    for key in ("workflow_timeout_seconds", "workflow_max_attempts"):
+        settings: dict[str, object] = {
+            "workflow_rate_limit_enabled": True,
+            "workflow_max_attempts": 1,
+        }
+        settings |= {"workflow_max_temporal_rate_seconds": 1, key: value}
+        assert _first(_with(**settings)) == Refusal(SETTINGS_BOUNDS, f"/scenario_workflow/{key}")
+
+
+@given(st.integers(min_value=-200, max_value=6000), st.integers(min_value=-200, max_value=6000))
+def test_the_pace_is_bounded_at_every_value(attempts: int, period: int) -> None:
+    refusal = _first(
+        _with(
+            workflow_rate_limit_enabled=True,
+            workflow_max_attempts=attempts,
+            workflow_max_temporal_rate_seconds=period,
+        )
+    )
+    assert (refusal is None) == (1 <= attempts <= 99 and 1 <= period <= 5940)
+
+
+def test_settings_scope_and_conditions_linked_to_no_step_come_in_order() -> None:
+    export = _with(
+        workflow_safe_mode_enabled=False,
+        workflow_scope_rule_team_members=[{}],
+        workflow_scope_rules=[{}],
+        workflow_standalone_conditions=[{}],
+    )
+    assert [refusal.pointer for refusal in export_refusals(export, KEYS)] == [
+        "/scenario_workflow/workflow_safe_mode_enabled",
+        "/scenario_workflow/workflow_scope_rule_team_members",
+        "/scenario_workflow/workflow_scope_rules",
+        "/scenario_workflow/workflow_standalone_conditions",
     ]

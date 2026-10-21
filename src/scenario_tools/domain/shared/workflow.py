@@ -11,7 +11,8 @@ and the JSON pointer of the node at fault, which names a key only when the key i
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from types import MappingProxyType
+from typing import Any, TypeGuard
 
 from scenario_tools.domain.shared.stored import INJECTS
 
@@ -22,7 +23,13 @@ _EXPORT_VERSION = "export_version"
 _SCOPE_RULES = "workflow_scope_rules"
 _SCOPE_VARIABLES = "workflow_scope_variables"
 _STANDALONE = "workflow_standalone_conditions"
+_TEAM_MEMBERS = "workflow_scope_rule_team_members"
 _ID, _PARENT = "condition_id", "condition_parent_id"
+_VERSION = "workflow_version"
+_TIMEOUT_ON, _TIMEOUT = "workflow_timeout_enabled", "workflow_timeout_seconds"
+_SAFE_MODE = "workflow_safe_mode_enabled"
+_PACE_ON = "workflow_rate_limit_enabled"
+_ATTEMPTS, _PERIOD = "workflow_max_attempts", "workflow_max_temporal_rate_seconds"
 _PLAIN_KEY = re.compile(r"[A-Za-z0-9_]{1,64}")
 
 MAX_STEPS = 50
@@ -32,6 +39,23 @@ MAX_SCOPE = 50  # scope rules, scope variables, or conditions linked to no step
 # A step's list may hold one condition more than once (once for each way the exporter reaches
 # it); this bounds the list itself, whatever the repetitions.
 MAX_ENTRIES = MAX_CONDITIONS * (MAX_DEPTH + 1)
+
+# The bounds of the settings: the delay is always on and at most an hour; the pace, when on,
+# keeps within what the platform accepts.
+TIMEOUT_RANGE = (60, 3600)
+ATTEMPTS_RANGE = (1, 99)
+PERIOD_RANGE = (1, 5940)
+# What the platform's importer applies to a setting the export does not hold.
+SETTINGS_WHEN_ABSENT: Mapping[str, object] = MappingProxyType(
+    {
+        _PACE_ON: False,
+        _ATTEMPTS: None,
+        _PERIOD: None,
+        _TIMEOUT_ON: True,
+        _TIMEOUT: 3600,
+        _SAFE_MODE: True,
+    }
+)
 
 EXPORT_VERSION_UNKNOWN = "the export's version is not one these tools read"
 INJECTS_AND_WORKFLOW = "a scenario holds injects or a workflow, never both"
@@ -47,6 +71,17 @@ KEY_LEGACY = (
 TOO_MANY_STEPS = f"a workflow holds at most {MAX_STEPS} steps"
 TOO_MANY_CONDITIONS = f"a step holds at most {MAX_CONDITIONS} conditions"
 TOO_MANY_ENTRIES = f"this list of the workflow holds at most {MAX_SCOPE} entries"
+SETTINGS_BOUNDS = (
+    "this setting is outside its bounds: the delay is on and between "
+    f"{TIMEOUT_RANGE[0]} and {TIMEOUT_RANGE[1]} seconds, safe mode is on, and the pace is off "
+    f"with no values, or on with {ATTEMPTS_RANGE[0]} to {ATTEMPTS_RANGE[1]} attempts per "
+    f"{PERIOD_RANGE[0]} to {PERIOD_RANGE[1]} seconds"
+)
+SCOPE_NOT_EMPTY = (
+    "a scenario of the catalogue has no scope: its targets are set where it is installed; empty "
+    "this list in the export"
+)
+STANDALONE_NOT_EMPTY = "every condition belongs to a step: this list must be empty"
 TOO_DEEP = (
     f"a step's conditions are nested at most {MAX_DEPTH} levels below their root, "
     "and no condition is its own ancestor"
@@ -102,7 +137,7 @@ class ExportKeys:
         )
 
 
-def _whole(value: object) -> bool:
+def _whole(value: object) -> TypeGuard[int]:
     """A whole number, not a boolean, which Python counts as one."""
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -190,9 +225,42 @@ def _conditions(
         yield Refusal(TOO_DEEP, pointer)
 
 
+def _within(value: object, bounds: tuple[int, int]) -> bool:
+    return _whole(value) and bounds[0] <= value <= bounds[1]
+
+
+def _settings(workflow: Mapping[str, Any]) -> Iterator[str]:
+    """The settings of ``workflow`` outside their bounds, a setting it does not hold, or holds as
+    null, taking the value the import applies."""
+    settings = {
+        key: default if workflow.get(key) is None else workflow[key]
+        for key, default in SETTINGS_WHEN_ABSENT.items()
+    }
+    if settings[_TIMEOUT_ON] is not True:
+        yield _TIMEOUT_ON
+    if not _within(settings[_TIMEOUT], TIMEOUT_RANGE):
+        yield _TIMEOUT
+    if settings[_SAFE_MODE] is not True:
+        yield _SAFE_MODE
+    pace = settings[_PACE_ON]
+    if pace is False:
+        yield from (key for key in (_ATTEMPTS, _PERIOD) if settings[key] is not None)
+    elif pace is True:
+        if not _within(settings[_ATTEMPTS], ATTEMPTS_RANGE):
+            yield _ATTEMPTS
+        if not _within(settings[_PERIOD], PERIOD_RANGE):
+            yield _PERIOD
+    else:
+        yield _PACE_ON
+
+
 def _workflow(workflow: Mapping[str, Any], keys: ExportKeys) -> Iterator[Refusal]:
     pointer = f"/{WORKFLOW}"
     yield from _keys(workflow, pointer, keys.workflow, frozenset())
+    for setting in _settings(workflow):
+        yield Refusal(SETTINGS_BOUNDS, f"{pointer}/{setting}")
+    if workflow.get(_TEAM_MEMBERS) not in (None, []):
+        yield Refusal(SCOPE_NOT_EMPTY, f"{pointer}/{_TEAM_MEMBERS}")
     for part, known in ((_SCOPE_RULES, keys.scope_rule), (_SCOPE_VARIABLES, keys.scope_variable)):
         found, refusal = _listed(workflow, part, pointer)
         if refusal is not None:
@@ -202,13 +270,18 @@ def _workflow(workflow: Mapping[str, Any], keys: ExportKeys) -> Iterator[Refusal
             continue
         for at, item in found:
             yield from _keys(item, at, known, frozenset())
+        if found:
+            yield Refusal(SCOPE_NOT_EMPTY, f"{pointer}/{part}")
     standalone, refusal = _listed(workflow, _STANDALONE, pointer)
     if refusal is not None:
         yield refusal
     if len(standalone) > MAX_SCOPE:
         yield Refusal(TOO_MANY_ENTRIES, f"{pointer}/{_STANDALONE}")
     else:
-        yield from _conditions(standalone, f"{pointer}/{_STANDALONE}", keys)
+        for at, condition in standalone:
+            yield from _keys(condition, at, keys.condition, keys.condition_legacy)
+        if standalone:  # refused whatever it holds, so its tree is not read
+            yield Refusal(STANDALONE_NOT_EMPTY, f"{pointer}/{_STANDALONE}")
     steps, refusal = _listed(workflow, STEPS, pointer)
     if refusal is not None:
         yield refusal
@@ -246,3 +319,19 @@ def export_refusals(export: object, keys: ExportKeys) -> Iterator[Refusal]:
     if export.get(INJECTS) not in (None, []):
         yield Refusal(INJECTS_AND_WORKFLOW, f"/{WORKFLOW}")
     yield from _workflow(workflow, keys)
+
+
+def settled_workflow(workflow: Mapping[str, Any]) -> dict[str, Any]:
+    """``workflow`` as it is stored, once ``export_refusals`` has found nothing to refuse: every
+    setting written, with the value the import applies when the export does not hold it or holds
+    it as null; the lists of scope and of conditions linked to no step written empty; and without
+    the version, which changes each time an edited workflow is launched. The result is a new
+    object; the values it shares with ``workflow`` are not changed."""
+    settled = {key: value for key, value in workflow.items() if key != _VERSION}
+    for key, value in SETTINGS_WHEN_ABSENT.items():
+        if settled.get(key) is None:
+            settled[key] = value
+    for part in (_SCOPE_RULES, _SCOPE_VARIABLES, _STANDALONE):
+        settled[part] = settled.get(part) or []
+    settled.pop(_TEAM_MEMBERS, None)  # written by the exporter only when not empty
+    return settled
