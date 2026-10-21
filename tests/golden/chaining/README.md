@@ -15,3 +15,6 @@ of a test instance, with these edits, so that it holds nothing of that instance:
 
 Everything else is as the exporter wrote it, including `step_data`, which the exporter writes as
 JSON text.
+
+`two-steps.normalised.json` is its reviewed stored form, as `normalize` writes it. It changes
+only with a reviewed change to normalisation.

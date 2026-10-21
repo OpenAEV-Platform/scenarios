@@ -1,5 +1,6 @@
 """The rules of a step, read in full: every refusal of a step, in order."""
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -124,3 +125,50 @@ def test_a_contract_content_without_a_list_of_fields_names_no_target(content: st
         contract["injector_contract_content"] = content
 
     assert _all(_contract(without_fields)) == []
+
+
+def test_a_contract_without_its_list_of_injectors_relies_on_its_type() -> None:
+    def unlisted(contract: dict[str, Any]) -> None:
+        contract.pop("injector_contract_injectors")
+
+    assert _all(_contract(unlisted)) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "injector"),
+    [
+        (lambda contract: contract.update(injector_contract_injectors=[]), IMPLANT),
+        (lambda contract: contract.update(injector_contract_injectors=None), IMPLANT),
+        (lambda contract: contract.pop("injector_contract_injectors"), "unknown-injector"),
+        (
+            lambda contract: (
+                contract.pop("injector_contract_injectors"),
+                contract.update(injector_contract_injector_type="other"),
+            ),
+            None,
+        ),
+    ],
+    ids=["empty-list", "null-list", "unknown-injector-unlisted", "unknown-type-unlisted"],
+)
+def test_an_injector_the_contract_does_not_vouch_for_is_refused(
+    change: Any, injector: object
+) -> None:
+    data = json.loads(STEP["step_data"])
+    change(data["inject_injector_contract"])
+    data["inject_injector"] = injector
+    if injector is None:
+        data["inject_type"] = "other"
+    assert _all({**STEP, "step_data": data}) == [
+        Refusal(STEP_INJECTOR, f"{AT}/step_data/inject_injector")
+    ]
+
+
+def test_an_injector_the_contract_does_not_list_is_refused_even_of_its_type() -> None:
+    keys = dataclasses.replace(
+        KEYS.step_data, injectors={**KEYS.step_data.injectors, "another-implant": "openaev_implant"}
+    )
+    data = json.loads(STEP["step_data"])
+    data["inject_injector"] = "another-implant"
+    assert list(step_refusals({**STEP, "step_data": data}, AT, keys, frozenset(), _decode)) == [
+        Refusal(STEP_INJECTOR, f"{AT}/step_data/inject_injector")
+    ]
