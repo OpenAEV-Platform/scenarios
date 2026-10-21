@@ -31,6 +31,7 @@ Decoder = Callable[[str, str], Any]
 
 _CONTRACT, _PAYLOAD = "inject_injector_contract", "injector_contract_payload"
 _CONTENT = "inject_content"
+_CONTRACT_CONTENT = "injector_contract_content"
 _EMPTY_TEXTS: tuple[object, ...] = ({}, {"input": []})
 _RUN_STATE: tuple[tuple[str, tuple[object, ...]], ...] = (
     ("step_output", (None,)),
@@ -85,16 +86,22 @@ def _tags(data: Mapping[str, Any], at: str, tag_ids: frozenset[str]) -> Iterator
         yield Refusal(STEP_VALUE, f"{at}/inject_tags")
 
 
-def _target_fields(contract: Mapping[str, Any], decode: Decoder) -> frozenset[str]:
-    """The keys of the contract's fields whose declared type names targets."""
-    field_name = "injector_contract_content"
-    content = _object(contract.get(field_name), field_name, decode)
-    fields = content.get("fields") if isinstance(content, Mapping) else None
+def _target_fields(contract: Mapping[str, Any], decode: Decoder) -> frozenset[str] | None:
+    """The keys of the contract's fields whose declared type names targets, or ``None`` when
+    the contract's content cannot be read as an object."""
+    raw = contract.get(_CONTRACT_CONTENT)
+    if raw is None:
+        return frozenset()
+    content = _object(raw, _CONTRACT_CONTENT, decode)
+    if not isinstance(content, Mapping):
+        return None
+    fields = content.get("fields")
     return frozenset(
         field["key"]
         for field in (fields if isinstance(fields, list) else [])
         if isinstance(field, Mapping)
-        and field.get("type") in _TARGET_FIELD_TYPES
+        and isinstance(field.get("type"), str)
+        and field["type"] in _TARGET_FIELD_TYPES
         and isinstance(field.get("key"), str)
     )
 
@@ -106,6 +113,10 @@ def _targets(
     contract: Mapping[str, Any],
     decode: Decoder,
 ) -> Iterator[Refusal]:
+    fields = _target_fields(contract, decode)
+    if fields is None:
+        yield Refusal(STEP_DATA_UNREADABLE, f"{at}/{_CONTRACT}/{_CONTRACT_CONTENT}")
+        fields = frozenset()
     raw = data.get(_CONTENT)
     if raw is None:
         return
@@ -113,7 +124,7 @@ def _targets(
     if not isinstance(content, Mapping):
         yield Refusal(STEP_DATA_UNREADABLE, f"{at}/{_CONTENT}")
         return
-    for key in sorted(keys.content_target_keys | _target_fields(contract, decode)):
+    for key in sorted(keys.content_target_keys | fields):
         if content.get(key) not in _NO_TARGET:
             yield Refusal(STEP_TARGETS, key_pointer(f"{at}/{_CONTENT}", key))
     if content.get("target_selector") == "manual":  # targets typed by hand, not chosen assets
@@ -131,6 +142,7 @@ def _injector(
     if not (
         isinstance(listed, list)
         and listed
+        and isinstance(kind, str)
         and all(isinstance(item, str) and keys.injectors.get(item) == kind for item in listed)
         and _same(data.get("inject_type"), kind)
         and (injector is None or injector in listed)
