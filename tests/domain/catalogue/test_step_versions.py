@@ -17,6 +17,7 @@ from scenario_tools.domain.catalogue.identifiers import (
     stable_id,
 )
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError, normalise
+from scenario_tools.domain.shared.workflow import MAX_STEPS, TOO_MANY_STEPS
 from tests.domain.catalogue.test_normalisation import RULES
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -241,3 +242,15 @@ def test_a_step_identifier_of_another_shape_is_refused_not_a_crash(identifier: o
     _steps(export)[0]["step_id"] = identifier
     with pytest.raises(ExportStructureError):
         _normalised(export, PREVIOUS, {FIRST: _ids(PREVIOUS)[STEP_1]})
+
+
+def test_a_previous_version_with_too_many_steps_is_refused() -> None:
+    previous = copy.deepcopy(PREVIOUS)
+    first = _steps(previous)[0]
+    _steps(previous)[:] = [
+        {**copy.deepcopy(first), "step_id": f"00000000-0000-4000-8000-{index:012x}"}
+        for index in range(1, MAX_STEPS + 2)
+    ]
+    with pytest.raises(ExportStructureError) as error:
+        _normalised(EXPORT, previous)
+    assert (error.value.origin, error.value.what) == ("previous", TOO_MANY_STEPS)

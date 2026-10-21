@@ -46,9 +46,11 @@ from scenario_tools.domain.shared.workflow import (
     CONDITION_SIBLINGS_SAME,
     CONDITIONS,
     ID_NOT_KNOWN,
+    MAX_STEPS,
     STEP_DATA_UNREADABLE,
     STEPS,
     STEPS_SAME_SIGNATURE,
+    TOO_MANY_STEPS,
     WORKFLOW,
     Condition,
     ExportKeys,
@@ -617,9 +619,12 @@ def _previous_steps(
         workflow = previous[WORKFLOW]
         if not isinstance(workflow, dict):
             raise _refuse(f"{WORKFLOW} must be an object")
+        steps = _objects(workflow, STEPS)
+        if len(steps) > MAX_STEPS:  # the bound of an export, which the digests' depth relies on
+            raise _refuse(TOO_MANY_STEPS)
         signatures = []
         seen: set[str] = set()
-        for step in _objects(workflow, STEPS):
+        for step in steps:
             identifier = _text(step, "step_id", STEPS)
             if not _UUID.fullmatch(identifier):
                 raise _refuse(f"step identifier {identifier!r} is not a canonical UUID")
