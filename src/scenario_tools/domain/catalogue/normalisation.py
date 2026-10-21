@@ -5,7 +5,9 @@ normalised, it holds:
 
 - identifiers derived from the entry's external ID: for the scenario itself, for its named
   objects from their name or key, which every instance exports the same way, and for its
-  injects, which keep the identifiers of the previous version;
+  injects, which keep the identifiers of the previous version; for the steps of a workflow,
+  from what each step runs and the steps it waits for, and for their conditions, from their
+  content and place in the step's tree;
 - the platform's own identifiers for its built-in contracts, which the importer looks up as
   they are, and identifiers derived from a shared key for the catalogue objects each instance
   creates: attack patterns and kill chain phases from their external identifier, domains from
@@ -20,6 +22,7 @@ The same export, external ID and previous version always give the same document,
 normalised document normalised again with itself as the previous version is unchanged.
 """
 
+import hashlib
 import json
 import math
 import re
@@ -37,17 +40,24 @@ from scenario_tools.domain.catalogue.identifiers import (
 )
 from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.policy.workflow_rules import graph_refusals
-from scenario_tools.domain.shared.canonical import SAFE_INTEGER
+from scenario_tools.domain.shared.canonical import SAFE_INTEGER, jcs
 from scenario_tools.domain.shared.workflow import (
+    CONDITION_SIBLINGS_SAME,
+    CONDITIONS,
+    ID_NOT_KNOWN,
+    STEP_DATA_UNREADABLE,
     STEPS,
+    STEPS_SAME_SIGNATURE,
     WORKFLOW,
-    WORKFLOW_NOT_YET,
+    Condition,
     ExportKeys,
     Refusal,
+    Step,
     StepDataKeys,
     export_refusals,
     has_workflow,
     parsed_workflow,
+    settled_workflow,
 )
 
 PLACEHOLDER_SENDER = "simulation@example.org"
@@ -331,7 +341,7 @@ def _identifiers(
         articles.add(article_key)
         identifiers.add(source, stable_id(namespace, "article", article_key))
     payloads: dict[str, str] = {}
-    for inject in _objects(export, _INJECTS):
+    for inject in [*_objects(export, _INJECTS), *_step_injects(export)]:
         payload = _payload(inject)
         contract_copy = inject.get(_CONTRACT)
         if payload is None and isinstance(contract_copy, dict):
@@ -362,6 +372,10 @@ def _identifiers(
                     raise _refuse(f"{key} needs a non-empty {external_key}")
                 target = stable_id(NS_OPENAEV_SCENARIOS, object_type, item[external_key])
                 identifiers.add(item[key], target)
+    if has_workflow(export):
+        known = identifiers.targets
+        for source, target in _step_identifiers(export[WORKFLOW], namespace, known):
+            identifiers.add(source, target)
     new = [_signature(inject, namespace) for inject in _objects(export, _INJECTS)]
     _check_injects(new)
     old = _previous_signatures(previous, namespace, scenario_id)
@@ -407,12 +421,13 @@ def _not_a_number(text: str) -> None:
     raise _refuse(f"{_CONTENT} holds {text}")
 
 
-def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0) -> None:
+def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0, depth: int = 0) -> None:
     """What the readers would refuse in a file: nesting deeper than they allow, an unpaired
     surrogate in a string or a key, an integer the canonical form cannot hold exactly; and a
     contract copy inside the copy, which bounds the work on nested text: ``copies`` contract
-    copies are allowed, the inject of a step holding one."""
-    stack: list[tuple[Any, int]] = [(value, 0)]
+    copies are allowed, the inject of a step holding one. ``value`` sits ``depth`` levels down in
+    the file where it is stored."""
+    stack: list[tuple[Any, int]] = [(value, depth)]
     while stack:
         item, depth = stack.pop()
         if isinstance(item, dict | list):
@@ -435,27 +450,34 @@ def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0) -> None:
             raise _refuse(f"{field} holds an integer beyond the exact range of 2^53 - 1")
 
 
-def _decode(text: str, field: str = _CONTENT, copies: int = 0) -> Any:
+def _decode(text: str, field: str = _CONTENT, copies: int = 0, depth: int = 0) -> Any:
     """The JSON text of ``field``, a contract copy by default, decoded within the bounds the
-    readers apply; ``copies`` contract copies may be nested in it."""
+    readers apply, once stored ``depth`` levels down; ``copies`` contract copies may be nested in
+    it."""
     try:
         decoded = json.loads(
             text, object_pairs_hook=_unique, parse_float=_finite, parse_constant=_not_a_number
         )
     except (ValueError, RecursionError) as error:  # too many digits, as well as invalid JSON
         raise _refuse(f"{field} must be JSON text") from error
-    _check_decoded(decoded, field, copies)
+    _check_decoded(decoded, field, copies, depth)
     return decoded
 
 
 # The steps of a workflow
+
+# A step's inject is stored as an object four levels down: in the workflow, in its list of steps,
+# in its step.
+_STEP_DATA_DEPTH = 4
 
 
 def _decoded_or_none(text: str, field: str) -> Any:
     """The JSON text of a step's field decoded within the readers' bounds, or ``None``: a step's
     inject may hold one contract copy."""
     try:
-        return _decode(text, field, copies=1 if field == "step_data" else 0)
+        if field == "step_data":
+            return _decode(text, field, copies=1, depth=_STEP_DATA_DEPTH)
+        return _decode(text, field)
     except ExportStructureError:
         return None
 
@@ -476,14 +498,209 @@ def _step_refusals(export: Mapping[str, Any], keys: StepDataKeys) -> Iterator[Re
         if isinstance(tag, Mapping) and isinstance(tag.get("tag_id"), str)
     )
     for index, step in enumerate(export[WORKFLOW][STEPS]):
-        yield from step_refusals(
-            step, f"/{WORKFLOW}/{STEPS}/{index}", keys, tag_ids, _decoded_or_none
-        )
+        at = f"/{WORKFLOW}/{STEPS}/{index}"
+        data = step.get("step_data")
+        # An inject given as an object gets the checks its text form gets when decoded.
+        if isinstance(data, Mapping) and not _readable(data):
+            yield Refusal(STEP_DATA_UNREADABLE, f"{at}/step_data")
+        else:
+            yield from step_refusals(step, at, keys, tag_ids, _decoded_or_none)
+
+
+def _readable(data: Mapping[str, Any]) -> bool:
+    """Whether a step's inject, given as an object, is within the readers' bounds."""
+    try:
+        _check_decoded(data, "step_data", copies=1, depth=_STEP_DATA_DEPTH)
+    except ExportStructureError:
+        return False
+    return True
 
 
 def stored_step_data(data: Mapping[str, Any], keys: StepDataKeys) -> dict[str, Any]:
     """A step's inject as it is stored: without the keys a running instance writes."""
     return {key: value for key, value in data.items() if key not in keys.removed}
+
+
+def _with_decoded_steps(export: dict[str, Any]) -> dict[str, Any]:
+    """``export`` with the inject of each step as an object, in new objects for the parts that
+    change; the escape guard reads the text that decoding uncovers."""
+    steps = []
+    for index, step in enumerate(export[WORKFLOW][STEPS]):
+        data = step["step_data"]
+        if isinstance(data, str):
+            data = _decode(data, "step_data", copies=1, depth=_STEP_DATA_DEPTH)
+        for item in _dicts(data):
+            for field in _JSON_TEXT_FIELDS:
+                text = item.get(field)
+                if isinstance(text, str) and _ESCAPED_ID_CHARACTER.search(text):
+                    raise _refuse(
+                        f"{field} writes an identifier character as an escape",
+                        pointer=f"/{WORKFLOW}/{STEPS}/{index}/step_data",
+                    )
+        steps.append({**step, "step_data": data})
+    return {**export, WORKFLOW: {**export[WORKFLOW], STEPS: steps}}
+
+
+def _step_injects(export: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The inject of each step, once decoded."""
+    return [step["step_data"] for step in export[WORKFLOW][STEPS]] if has_workflow(export) else []
+
+
+def _known(value: object, pointer: str) -> str:
+    if not isinstance(value, str) or not _UUID.fullmatch(value):
+        raise _refuse(ID_NOT_KNOWN, pointer=pointer)
+    return value
+
+
+def _named_identifiers(step: Step) -> None:
+    """The identifiers of a step and of its conditions that rewriting must find."""
+    _known(step.identifier, f"{step.pointer}/step_id")
+    for condition in step.conditions:
+        _known(condition.identifier, f"{condition.pointer}/condition_id")
+        if condition.parent is not None:
+            _known(condition.parent, f"{condition.pointer}/condition_parent_id")
+
+
+def _by_identifier(step: Step) -> dict[str, Condition]:
+    """The conditions of a step by identifier; the graph checks made its copies identical."""
+    return {str(condition.identifier): condition for condition in reversed(step.conditions)}
+
+
+def _masked(value: Any) -> Any:
+    """``value`` with every identifier quoted in its text replaced by one placeholder: what a
+    signature hashes must not depend on the identifiers of the instance, nor on whether they were
+    rewritten already."""
+    if isinstance(value, list):
+        return [_masked(child) for child in value]
+    if isinstance(value, str):
+        return _UUID_IN_TEXT.sub("<identifier>", value)
+    return value
+
+
+def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -> dict[str, str]:
+    """The signature digest of each step, by source identifier: the SHA-256 of the canonical
+    form of the payload it runs, its title and the digests of the steps it waits for. The graph
+    has no loop, so the digests of the steps waited for come first."""
+    by_id = {str(step.identifier): step for step in steps}
+    digests: dict[str, str] = {}
+
+    def digest(identifier: str) -> str:
+        if identifier not in digests:
+            step, inject = by_id[identifier], data[identifier]
+            payload = _payload(inject) or {}
+            awaited = sorted(  # a step named twice is waited for once
+                {
+                    digest(str(condition.value))
+                    for condition in _by_identifier(step).values()
+                    if condition.kind == "DEPEND_ON"
+                }
+            )
+            signature = [
+                stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
+                _masked(_text(inject, "inject_title", "step_data")),
+                awaited,
+            ]
+            digests[identifier] = hashlib.sha256(jcs(signature)).hexdigest()
+        return digests[identifier]
+
+    for step in steps:
+        digest(str(step.identifier))
+    return digests
+
+
+_CONDITION_CONTENT = (
+    "condition_type",
+    "condition_key",
+    "condition_key_types",
+    "condition_mapping_type",
+    "condition_value",
+    "condition_name",
+    "condition_description",
+    "condition_is_root",
+    "condition_step_from_id",
+)
+
+
+def _condition_identifiers(
+    step: Step, step_id: str, known: Mapping[str, str], namespace: uuid.UUID
+) -> dict[str, str]:
+    """The stable identifier of each condition of a step: the step, the content keys of the
+    condition's ancestors and its own, so that a child is known by what it is and where it sits,
+    never by its place in a list. The identifiers its content quotes are masked, except the step a
+    dependency waits for, which is named by its stable identifier, one of the ``known`` ones."""
+    conditions = _by_identifier(step)
+
+    def content(condition: Condition) -> str:
+        values = _masked([condition.fields.get(key) for key in _CONDITION_CONTENT])
+        if condition.kind == "DEPEND_ON":
+            values[_CONDITION_CONTENT.index("condition_value")] = known[str(condition.value)]
+        return json.dumps(values, ensure_ascii=False, sort_keys=True)
+
+    def path(condition: Condition) -> list[str]:
+        parent = conditions.get(str(condition.parent)) if condition.parent is not None else None
+        return [*(path(parent) if parent is not None else []), content(condition)]
+
+    targets: dict[str, str] = {}
+    sources: dict[str, str] = {}
+    for condition in step.conditions:
+        source = str(condition.identifier)
+        if source in targets:
+            continue  # a copy
+        target = stable_id(namespace, "condition", json.dumps([step_id, *path(condition)]))
+        if target in sources:
+            raise _refuse(CONDITION_SIBLINGS_SAME, pointer=condition.pointer)
+        targets[source], sources[target] = target, source
+    return targets
+
+
+def _step_identifiers(
+    workflow: Mapping[str, Any], namespace: uuid.UUID, known: Mapping[str, str]
+) -> list[tuple[str, str]]:
+    """The source and stable identifier of each step, then of each condition; ``known`` holds
+    the identifiers already derived for the rest of the scenario. A source identifier given to a
+    step and to a condition is listed twice, so that registering both refuses it."""
+    parsed = parsed_workflow(workflow)
+    for step in parsed.steps:
+        _named_identifiers(step)
+    data = {
+        str(step.identifier): inject
+        for step, inject in zip(parsed.steps, _step_injects({WORKFLOW: workflow}), strict=True)
+    }
+    digests = _digests(list(parsed.steps), data, namespace)
+    seen: set[str] = set()
+    for step in parsed.steps:
+        if digests[str(step.identifier)] in seen:
+            raise _refuse(STEPS_SAME_SIGNATURE, pointer=step.pointer)
+        seen.add(digests[str(step.identifier)])
+    step_ids = {source: stable_id(namespace, "step", digest) for source, digest in digests.items()}
+    pairs = list(step_ids.items())
+    for step in parsed.steps:
+        conditions = _condition_identifiers(
+            step, step_ids[str(step.identifier)], {**known, **step_ids}, namespace
+        )
+        pairs.extend(conditions.items())
+    return pairs
+
+
+def _stored_workflow(workflow: Mapping[str, Any], keys: StepDataKeys) -> dict[str, Any]:
+    """The workflow as it is stored: every setting written, each step's inject without the keys
+    a running instance writes, its empty input in one form, each condition once, and the steps
+    and conditions in the order of their identifiers."""
+    steps = []
+    for step in workflow[STEPS]:
+        conditions = {
+            condition["condition_id"]: condition for condition in step.get(CONDITIONS) or []
+        }
+        steps.append(
+            {
+                **step,
+                "step_data": stored_step_data(step["step_data"], keys),
+                "step_input": canonical_step_text(step.get("step_input")),
+                "step_output_parser": canonical_step_text(step.get("step_output_parser")),
+                CONDITIONS: [conditions[key] for key in sorted(conditions)],
+            }
+        )
+    return {**settled_workflow(workflow), STEPS: sorted(steps, key=lambda step: step["step_id"])}
 
 
 def _strip_text(text: object, rules: NormalisationRules) -> object:
@@ -617,13 +834,13 @@ def normalise(
     refusal = next(export_refusals(export, rules.export_keys), None)
     if refusal is not None:
         raise _refuse(refusal.what, pointer=refusal.pointer)
-    if has_workflow(export):  # its steps and graph are checked, but not normalised yet
+    if has_workflow(export):
         refusal = next(_step_refusals(export, rules.export_keys.step_data), None) or next(
             graph_refusals(parsed_workflow(export[WORKFLOW])), None
         )
         if refusal is not None:
             raise _refuse(refusal.what, pointer=refusal.pointer)
-        raise _refuse(WORKFLOW_NOT_YET, pointer=f"/{WORKFLOW}")
+        export = _with_decoded_steps(export)
     for key, what in NOT_SUPPORTED:
         if export.get(key):
             raise _refuse(f"{what} are not supported yet")
@@ -636,6 +853,8 @@ def normalise(
     _unlink(document, rules)
     _neutralise(document)
     document = _sort(document, rules)
+    if has_workflow(document):
+        document[WORKFLOW] = _stored_workflow(document[WORKFLOW], rules.export_keys.step_data)
     for collection, key, *_ in (*_OBJECTS, (_ARTICLES, "article_id"), (_INJECTS, "inject_id")):
         if collection in document and isinstance(document[collection], list):
             document[collection] = sorted(document[collection], key=lambda item: item[key])

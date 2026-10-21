@@ -134,20 +134,33 @@ def _targets(
 def _injector(
     data: Mapping[str, Any], at: str, keys: StepDataKeys, contract: Mapping[str, Any]
 ) -> Iterator[Refusal]:
-    """The contract names the known injectors of one type, the inject has that type, and names
-    one of them or none: the platform then takes the contract's."""
+    """The contract states a known injector type, the inject has that type, and names one known
+    injector of it or none: the platform then takes the contract's. A contract that lists its
+    injectors lists known ones of that type; a stored contract no longer lists them, as
+    normalisation removes the list."""
+    refusal = Refusal(STEP_INJECTOR, f"{at}/inject_injector")
     kind = contract.get("injector_contract_injector_type")
-    listed = contract.get("injector_contract_injectors")
-    injector = data.get("inject_injector")
     if not (
-        isinstance(listed, list)
-        and listed
-        and isinstance(kind, str)
-        and all(isinstance(item, str) and keys.injectors.get(item) == kind for item in listed)
+        isinstance(kind, str)
+        and kind in keys.injectors.values()
         and _same(data.get("inject_type"), kind)
-        and (injector is None or injector in listed)
     ):
-        yield Refusal(STEP_INJECTOR, f"{at}/inject_injector")
+        yield refusal
+        return
+    allowed = {item for item, item_kind in keys.injectors.items() if item_kind == kind}
+    if "injector_contract_injectors" in contract:
+        listed = contract["injector_contract_injectors"]
+        if not (
+            isinstance(listed, list)
+            and listed
+            and all(isinstance(item, str) and item in allowed for item in listed)
+        ):
+            yield refusal
+            return
+        allowed = set(listed)
+    injector = data.get("inject_injector")
+    if injector is not None and (not isinstance(injector, str) or injector not in allowed):
+        yield refusal
 
 
 def _payload(contract: Mapping[str, Any], at: str) -> Iterator[Refusal]:

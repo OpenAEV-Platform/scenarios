@@ -26,7 +26,6 @@ from scenario_tools.domain.shared.workflow import (
     STEP_PAYLOAD,
     STEP_TARGETS,
     STEP_VALUE,
-    WORKFLOW_NOT_YET,
 )
 from tests.domain.catalogue.test_normalisation import RULES
 from tests.support.workflow import KEYS
@@ -40,10 +39,16 @@ STEP = "/scenario_workflow/workflow_steps/1"
 DATA = f"{STEP}/step_data"
 
 
-def _refusal(export: dict[str, Any]) -> tuple[str, str]:
-    with pytest.raises(ExportStructureError) as error:
+PASSED = None  # normalisation gives a stored form
+
+
+def _refusal(export: dict[str, Any]) -> tuple[str, str] | None:
+    """What normalisation refuses in ``export`` and where, or ``PASSED``."""
+    try:
         normalise(export, ENTRY_ID, RULES)
-    return error.value.what, error.value.pointer
+    except ExportStructureError as error:
+        return error.what, error.pointer
+    return PASSED
 
 
 def _with_step(**fields: object) -> dict[str, Any]:
@@ -62,14 +67,14 @@ def _with_data(change: Any) -> dict[str, Any]:
 
 
 def test_well_shaped_steps_pass_every_step_check() -> None:
-    assert _refusal(copy.deepcopy(EXPORT)) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(copy.deepcopy(EXPORT)) == PASSED
 
 
 def test_a_step_data_given_as_an_object_is_read_as_its_text() -> None:
     export = copy.deepcopy(EXPORT)
     step = export["scenario_workflow"]["workflow_steps"][1]
     step["step_data"] = json.loads(step["step_data"])
-    assert _refusal(export) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(export) == PASSED
 
 
 @pytest.mark.parametrize("action", ["OTHER", None, 1])
@@ -98,7 +103,7 @@ def test_absent_run_state_passes() -> None:
     step = export["scenario_workflow"]["workflow_steps"][1]
     for key in ("step_output", "step_condition_executed", "step_limit_execution"):
         step.pop(key, None)
-    assert _refusal(export) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(export) == PASSED
 
 
 @pytest.mark.parametrize(
@@ -118,7 +123,7 @@ def test_a_step_input_or_parser_other_than_empty_is_refused(value: object, key: 
 
 @pytest.mark.parametrize("value", ["{}", '{ "input" : [] }', None])
 def test_an_empty_step_input_passes(value: object) -> None:
-    assert _refusal(_with_step(step_input=value)) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(_with_step(step_input=value)) == PASSED
 
 
 @pytest.mark.parametrize("data", ["not json", "[]", "1", 1, None, '{"a": NaN}'])
@@ -199,7 +204,7 @@ def test_a_contract_field_typed_as_a_target_is_a_target_whatever_its_key() -> No
 @pytest.mark.parametrize("selector", ["assets", None])
 def test_a_target_selector_that_chooses_assets_passes(selector: object) -> None:
     export = _with_data(lambda data: data["inject_content"].update(target_selector=selector))
-    assert _refusal(export) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(export) == PASSED
 
 
 def test_targets_typed_by_hand_are_refused() -> None:
@@ -222,7 +227,7 @@ def test_an_inject_content_that_is_not_an_object_is_refused(content: object) -> 
 
 def test_an_absent_inject_content_names_no_target() -> None:
     export = _with_data(lambda data: data.pop("inject_content"))
-    assert _refusal(export) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(export) == PASSED
 
 
 def test_empty_targets_and_an_absent_held_key_pass() -> None:
@@ -230,7 +235,7 @@ def test_empty_targets_and_an_absent_held_key_pass() -> None:
         data["inject_content"]["targets"] = []
         del data["inject_enabled"]
 
-    assert _refusal(_with_data(change)) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(_with_data(change)) == PASSED
 
 
 @pytest.mark.parametrize(
@@ -276,20 +281,20 @@ def test_a_step_that_leaves_its_injector_to_its_contract_passes(injector: object
         else:
             data["inject_injector"] = injector
 
-    assert _refusal(_with_data(change)) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(_with_data(change)) == PASSED
 
 
 @pytest.mark.parametrize(
     ("tags", "expected"),
     [
-        (["00000000-0000-4000-8000-000000000002"], (WORKFLOW_NOT_YET, "/scenario_workflow")),
+        (["00000000-0000-4000-8000-000000000002"], PASSED),
         (["00000000-0000-4000-8000-0000000000aa"], (STEP_VALUE, f"{DATA}/inject_tags")),
         ("x", (STEP_VALUE, f"{DATA}/inject_tags")),
-        (None, (WORKFLOW_NOT_YET, "/scenario_workflow")),
+        (None, PASSED),
     ],
 )
 def test_the_tags_of_a_step_are_tags_of_the_scenario(
-    tags: object, expected: tuple[str, str]
+    tags: object, expected: tuple[str, str] | None
 ) -> None:
     assert _refusal(_with_data(lambda data: data.update(inject_tags=tags))) == expected
 
@@ -297,7 +302,7 @@ def test_the_tags_of_a_step_are_tags_of_the_scenario(
 @pytest.mark.parametrize("key", ["inject_launched_by", "inject_scheduled_by"])
 def test_keys_of_newer_platforms_are_classified(key: str) -> None:
     export = _with_data(lambda data: data.update({key: None}))
-    assert _refusal(export) == (WORKFLOW_NOT_YET, "/scenario_workflow")
+    assert _refusal(export) == PASSED
 
 
 def test_the_first_step_is_checked_and_the_first_refusal_reported() -> None:
@@ -334,8 +339,9 @@ def test_an_identifier_written_as_an_escape_in_a_step_text_is_refused(field: str
     export = copy.deepcopy(EXPORT)
     step = export["scenario_workflow"]["workflow_steps"][1]
     step[field] = step[field].replace("{", '{"ref": "\\u0041", ', 1)
-    what, _ = _refusal(export)
-    assert what == f"{field} writes an identifier character as an escape"
+    refusal = _refusal(export)
+    assert refusal is not None
+    assert refusal[0] == f"{field} writes an identifier character as an escape"
 
 
 def test_the_graph_of_the_workflow_is_checked_after_its_steps() -> None:

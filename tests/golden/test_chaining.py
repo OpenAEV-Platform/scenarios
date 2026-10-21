@@ -11,18 +11,18 @@ from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.domain.shared.workflow import (
     KEY_UNKNOWN,
-    WORKFLOW_NOT_YET,
     ExportKeys,
     Refusal,
     export_refusals,
 )
-from scenario_tools.ports.errors import UnsafeInputError
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 EXPORT = json.loads((ROOT / "tests" / "golden" / "chaining" / "two-steps.json").read_text())
 KEYS = ExportKeys.from_document(YamlDataLoader(ROOT / "policy" / "data").load("export-keys"))
 WORKFLOW = "/scenario_workflow"
+NORMALISED = ROOT / "tests" / "golden" / "chaining" / "two-steps.normalised.json"
+DATA = YamlDataLoader(ROOT / "policy" / "data")
 
 
 def test_the_export_holds_two_steps_one_after_the_other() -> None:
@@ -60,9 +60,26 @@ def test_a_key_added_at_each_level_is_refused(place: Any, pointer: str) -> None:
     assert next(export_refusals(export, KEYS)) == Refusal(KEY_UNKNOWN, pointer)
 
 
-def test_normalisation_refuses_it_until_steps_are_normalised() -> None:
-    data = YamlDataLoader(ROOT / "policy" / "data")
-    with pytest.raises(UnsafeInputError) as error:
-        prepare_entry(EXPORT, ENTRY_ID, data, path="two-steps.json")
-    assert (error.value.code, error.value.field) == ("IO-014", "/scenario_workflow")
-    assert error.value.message.endswith(WORKFLOW_NOT_YET)
+def _prepare(export: Any, previous: Any = None) -> bytes:
+    prepared = prepare_entry(export, ENTRY_ID, DATA, path="two-steps.json", previous=previous)
+    return prepared.scenario_json
+
+
+def test_it_normalises_to_its_reviewed_form() -> None:
+    assert _prepare(copy.deepcopy(EXPORT)) == NORMALISED.read_bytes()
+
+
+def test_its_stored_form_normalised_with_itself_gives_the_same_bytes() -> None:
+    stored = json.loads(NORMALISED.read_bytes())
+    assert _prepare(copy.deepcopy(stored), previous=stored) == NORMALISED.read_bytes()
+
+
+def test_no_identifier_of_its_steps_is_left() -> None:
+    text = NORMALISED.read_text(encoding="utf-8")
+    sources = [step["step_id"] for step in EXPORT["scenario_workflow"]["workflow_steps"]]
+    sources += [
+        condition["condition_id"]
+        for step in EXPORT["scenario_workflow"]["workflow_steps"]
+        for condition in step["step_conditions"]
+    ]
+    assert [source for source in sources if source in text] == []

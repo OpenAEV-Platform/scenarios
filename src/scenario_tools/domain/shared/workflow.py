@@ -60,7 +60,6 @@ SETTINGS_WHEN_ABSENT: Mapping[str, object] = MappingProxyType(
 EXPORT_VERSION_UNKNOWN = "the export's version is not one these tools read"
 INJECTS_AND_WORKFLOW = "a scenario holds injects or a workflow, never both"
 WORKFLOW_NO_STEP = "a workflow holds at least one step"
-WORKFLOW_NOT_YET = "scenarios in chaining are checked but not normalised yet"
 NOT_AN_OBJECT = "this node must be an object"
 NOT_A_LIST = "this node must be a list"
 KEY_UNKNOWN = "this node holds a key the platform does not export here"
@@ -110,6 +109,12 @@ CONDITION_STEP_FROM = "a condition reads the output of no step: its step_from is
 DEPEND_ON_NULL = "a dependency names the step it waits for"
 DEPEND_ON_DANGLING = "a dependency waits for a step of the scenario"
 CYCLE = "a step never waits for itself, directly or through other steps"
+ID_NOT_KNOWN = "this identifier must be a canonical UUID, which normalisation rewrites"
+STEPS_SAME_SIGNATURE = (
+    "two steps run the same payload under the same title after the same steps: give them "
+    "different titles"
+)
+CONDITION_SIBLINGS_SAME = "two conditions under one parent are the same: keep one"
 
 
 @dataclass(frozen=True)
