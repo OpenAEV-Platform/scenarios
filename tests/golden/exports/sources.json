@@ -1,5 +1,5 @@
 {
-  "openaev_version": "3.261005.0",
+  "openaev_version": "3.261016.0",
   "origin": "Starter-pack scenarios shipped in https://github.com/OpenAEV-Platform/openaev under openaev-api/src/main/resources/starterpack/scenarios/, exported through the platform API",
   "export_options": {
     "isWithTeams": true,
@@ -11,12 +11,12 @@
     {
       "name": "easm-scenario.zip",
       "scenario_name": "EASM Scenario",
-      "sha256": "3fe2d1e88978d09962f311202457562e40ff58b509a34b0f4d994399defe3f17"
+      "sha256": "de3ccc78344e25266f691d0dfa790ebab8bd23000b84256315175655d9599c01"
     },
     {
       "name": "salt-typhoon-cve-ttps-validation.zip",
       "scenario_name": "[SALT TYPHOON] CVE & TTPs validation",
-      "sha256": "36587c06f3054726bd28bac264e8b79c4376893aa2003b77e8a3c335843290e6"
+      "sha256": "5b67b6eeee598d3de1e41c82182a10dbe8128c90dfb5b2c2a6b70d221b56d6da"
     },
     {
       "name": "tabletop-exercise-akira-ransomware-crisis.zip",

@@ -73,7 +73,7 @@ def test_the_reference_scenarios_start_with_their_injectors_and_platforms() -> N
 
     assert easm["platforms"] == ["Generic"]  # Nmap and Nuclei run from the platform
     assert easm["requires"] == {
-        "openaev": ">=3.261005.0",
+        "openaev": ">=3.261016.0",
         "edition": "CE",
         "injectors": ["openaev_nmap", "openaev_nuclei"],
         "executors": [],
