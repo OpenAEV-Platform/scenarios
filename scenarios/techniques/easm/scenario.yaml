@@ -1,6 +1,6 @@
 schema_version: 1
 external_id: 3e2aa79f-9d73-48fd-839e-ccf1525b42e7
-version: 1.0.0
+version: 2.0.0
 status: VERIFIED
 name: EASM Scenario
 description: |-
@@ -42,7 +42,7 @@ targets:
 - placeholder: internet-facing-assets
   description: The asset group of the internet-facing hosts to scan, each by IP address or FQDN; none ships with the scenario.
 requires:
-  openaev: '>=3.261005.0'
+  openaev: '>=3.261016.0'
   edition: CE
   injectors:
   - openaev_nmap

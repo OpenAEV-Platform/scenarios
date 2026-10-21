@@ -21,7 +21,7 @@ from tests.support.chaining import CHAINED, CHAINED_METADATA
 ROOT = Path(__file__).parents[2]
 EASM = "scenarios/techniques/easm"
 EASM_ID = "3e2aa79f-9d73-48fd-839e-ccf1525b42e7"
-ARCHIVE = f"{EASM_ID}-1.0.0.zip"
+ARCHIVE = f"{EASM_ID}-2.0.0.zip"
 WHEN = "2026-10-30T11:15:02+02:00"
 
 
