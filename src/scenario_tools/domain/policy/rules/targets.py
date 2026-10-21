@@ -2,7 +2,8 @@
 loopback and test addresses, the test environment's ranges and authorised external targets, so
 that a shared scenario never points at someone's system.
 
-The content of every inject and the exercise texts (articles, channels, challenges) are read;
+The content of every inject, the exercise texts (articles, channels, challenges) and the name,
+description and key of the conditions of a workflow's steps are read;
 descriptions, which hold references, recorded contract copies, which their own check compares,
 and e-mail addresses, which a rule of their own reads, are not. A text is first read as a tool
 would: compatibility forms folded, invisible characters dropped, and every variable the platform
@@ -26,8 +27,11 @@ from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Vi
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.shared.stored import injects
+from scenario_tools.domain.shared.workflow import conditions
 
 _CONTENT = "inject_content"
+# What a person reads of a condition of a step: its name, its description and the key it reads.
+_CONDITION_TEXTS = ("condition_name", "condition_description", "condition_key")
 _EXERCISE_TEXTS = ("scenario_articles", "scenario_channels", "scenario_challenges")
 _DOTS = str.maketrans(dict.fromkeys((chr(0x3002), chr(0xFF61), chr(0xFF0E)), "."))  # full stops
 _VARIABLE = re.compile(r"#\{[^}]{0,200}\}|\$\{[^}]{0,200}\}|\{\{[^}]{0,200}\}\}")
@@ -274,6 +278,9 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
         yield f"{found.pointer}/{_CONTENT}", found.inject.get(_CONTENT)
     for part in _EXERCISE_TEXTS:
         yield f"/{part}", stored.get(part)
+    for pointer, condition in conditions(stored):
+        for key in _CONDITION_TEXTS:
+            yield f"{pointer}/{key}", condition.get(key)
     for payload in payloads(stored):
         for field, command, _ in commands(payload):
             resolved = effective(payload, command, COMMAND_LIMIT)  # what the payload runs
@@ -294,7 +301,7 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
 RULE = Rule(
     "POL-003",
     Severity.BLOCKING,
-    "Injects and exercise texts name only example names, loopback and test addresses, the test "
-    "environment's ranges and authorised external targets.",
+    "Injects, exercise texts and the texts of a workflow's conditions name only example names, "
+    "loopback and test addresses, the test environment's ranges and authorised external targets.",
     _check,
 )

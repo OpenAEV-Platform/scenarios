@@ -45,6 +45,11 @@ condition:
   # Written by older exports; read no longer, so refused by name.
   legacy:
     - condition_key_type
+  # The types of condition a step may hold: a step waits for one step, or for none. Filters and
+  # their AND / OR groups keep their keys above and join this list once they are checked; a
+  # MAPPER is refused whatever this list says.
+  supported_types:
+    - DEPEND_ON
 scope_rule:
   keys:
     - workflow_scope_rule_selected_mode

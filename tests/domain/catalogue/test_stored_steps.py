@@ -3,6 +3,7 @@ it waits for, dependencies rewritten to them, and nothing of the instance or of 
 order left."""
 
 import copy
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -11,8 +12,15 @@ import pytest
 
 from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError, normalise
+from scenario_tools.domain.catalogue.normalisation import (
+    ExportStructureError,
+    NormalisationRules,
+    normalise,
+)
 from scenario_tools.domain.shared.workflow import (
+    CONDITION_DEPEND_NESTED,
+    CONDITION_MAPPER,
+    CONDITION_NOT_YET,
     CONDITION_SIBLINGS_SAME,
     ID_NOT_KNOWN,
     STEP_DATA_UNREADABLE,
@@ -29,13 +37,23 @@ FIRST, SECOND = "00000000-0000-4000-8000-000000000016", "00000000-0000-4000-8000
 AT = "/scenario_workflow/workflow_steps"
 
 
-def _stored(export: dict[str, Any]) -> dict[str, Any]:
-    return normalise(copy.deepcopy(export), ENTRY_ID, RULES).document
+# Rules that accept filters and their groups, which the subset refuses for now: the identifiers
+# of a tree of conditions are derived already.
+TREES = dataclasses.replace(
+    RULES,
+    export_keys=dataclasses.replace(
+        RULES.export_keys, condition_types=frozenset({"DEPEND_ON", "EQ", "AND"})
+    ),
+)
 
 
-def _refusal(export: dict[str, Any]) -> tuple[str, str]:
+def _stored(export: dict[str, Any], rules: NormalisationRules = RULES) -> dict[str, Any]:
+    return normalise(copy.deepcopy(export), ENTRY_ID, rules).document
+
+
+def _refusal(export: dict[str, Any], rules: NormalisationRules = RULES) -> tuple[str, str]:
     with pytest.raises(ExportStructureError) as error:
-        normalise(export, ENTRY_ID, RULES)
+        normalise(export, ENTRY_ID, rules)
     return error.value.what, error.value.pointer
 
 
@@ -203,7 +221,7 @@ def test_identical_siblings_are_refused() -> None:
     }
     twin = {**leaf, "condition_id": "00000000-0000-4000-8000-0000000000f2"}
     _steps(export)[1]["step_conditions"] = [root, leaf, twin]
-    assert _refusal(export) == (CONDITION_SIBLINGS_SAME, f"{AT}/1/step_conditions/2")
+    assert _refusal(export, TREES) == (CONDITION_SIBLINGS_SAME, f"{AT}/1/step_conditions/2")
 
 
 def test_an_escaped_identifier_inside_the_text_of_a_step_is_refused() -> None:
@@ -237,14 +255,16 @@ def test_a_condition_that_names_a_step_in_its_value_is_known_by_the_stored_step(
     export = copy.deepcopy(EXPORT)
     condition = _steps(export)[1]["step_conditions"][0]
     condition.update(condition_type="EQ", condition_name=f"Like {FIRST}")
-    assert _stored(_renumbered(export, "11111111")) == _stored(export)
+    assert _stored(_renumbered(export, "11111111"), TREES) == _stored(export, TREES)
 
 
 TAG = "00000000-0000-4000-8000-000000000002"
 
 
-def _normalised_again(document: dict[str, Any]) -> dict[str, Any]:
-    return normalise(copy.deepcopy(document), ENTRY_ID, RULES, previous=document).document
+def _normalised_again(
+    document: dict[str, Any], rules: NormalisationRules = RULES
+) -> dict[str, Any]:
+    return normalise(copy.deepcopy(document), ENTRY_ID, rules, previous=document).document
 
 
 def test_a_title_that_quotes_an_identifier_keeps_the_identifiers_stable() -> None:
@@ -272,9 +292,9 @@ def test_a_condition_that_quotes_another_one_keeps_the_identifiers_stable() -> N
         "condition_name": f"Under {root['condition_id']}",
     }
     _steps(export)[1]["step_conditions"] = [root, leaf]
-    stored = _stored(export)
-    assert _stored(_renumbered(export, "11111111")) == stored
-    assert _normalised_again(stored) == stored
+    stored = _stored(export, TREES)
+    assert _stored(_renumbered(export, "11111111"), TREES) == stored
+    assert _normalised_again(stored, TREES) == stored
 
 
 def _nested(levels: int) -> dict[str, Any]:
@@ -301,7 +321,7 @@ def test_a_condition_that_takes_the_identifier_of_a_step_is_refused() -> None:
     assert what == f"identifier {SECOND!r} names two different objects"
 
 
-def test_a_step_named_twice_by_one_step_is_waited_for_once() -> None:
+def test_a_dependency_under_a_group_is_refused_even_once_filters_are_accepted() -> None:
     export = copy.deepcopy(EXPORT)
     dependency = _steps(export)[1]["step_conditions"][0]
     root = {
@@ -321,5 +341,32 @@ def test_a_step_named_twice_by_one_step_is_waited_for_once() -> None:
         for number in (1, 2)
     ]
     _steps(export)[1]["step_conditions"] = [root, *twice]
-    once = _by_title(_stored(EXPORT))["Step 2 - list processes again"]["step_id"]
-    assert _by_title(_stored(export))["Step 2 - list processes again"]["step_id"] == once
+    assert _refusal(export, TREES) == (CONDITION_DEPEND_NESTED, f"{AT}/1/step_conditions/1")
+
+
+@pytest.mark.parametrize(
+    ("kind", "what"), [("MAPPER", CONDITION_MAPPER), ("EQ", CONDITION_NOT_YET)]
+)
+def test_a_condition_out_of_the_subset_is_refused_by_normalisation(kind: str, what: str) -> None:
+    export = copy.deepcopy(EXPORT)
+    _steps(export)[1]["step_conditions"][0].update(condition_type=kind, condition_value="x")
+    assert _refusal(export) == (what, f"{AT}/1/step_conditions/0")
+
+
+def test_a_dependency_with_a_child_is_refused_by_normalisation() -> None:
+    export = copy.deepcopy(EXPORT)
+    dependency = _steps(export)[1]["step_conditions"][0]
+    child = {
+        **dependency,
+        "condition_id": "00000000-0000-4000-8000-0000000000f1",
+        "condition_parent_id": dependency["condition_id"],
+        "condition_is_root": False,
+    }
+    _steps(export)[1]["step_conditions"].append(child)
+    assert _refusal(export) == (CONDITION_DEPEND_NESTED, f"{AT}/1/step_conditions/0")
+
+
+def test_a_dependency_whose_parent_is_not_an_identifier_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    _steps(export)[1]["step_conditions"][0].update(condition_parent_id=5, condition_is_root=False)
+    assert _refusal(export) == (ID_NOT_KNOWN, f"{AT}/1/step_conditions/0/condition_parent_id")

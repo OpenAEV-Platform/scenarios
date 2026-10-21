@@ -5,9 +5,12 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.domain.policy.workflow_rules import graph_refusals
+from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.workflow import (
+    CONDITION_DEPEND_NESTED,
     CONDITION_ID_TWICE,
+    CONDITION_MAPPER,
+    CONDITION_NOT_YET,
     CONDITION_PARENT_ELSEWHERE,
     CONDITION_ROOT,
     CONDITION_SHARED,
@@ -276,3 +279,77 @@ def test_a_loop_through_every_step_is_found_at_each_of_them() -> None:
     count = 50
     steps = [_step(f"s{i}", _condition(f"c{i}", value=f"s{(i + 1) % count}")) for i in range(count)]
     assert _refusals(*steps) == [Refusal(CYCLE, _at(i)) for i in range(count)]
+
+
+# The subset of the conditions a step may hold
+
+
+DEPENDENCY_ONLY = frozenset({"DEPEND_ON"})
+
+
+def _subset(*steps: dict[str, Any], supported: frozenset[str] = DEPENDENCY_ONLY) -> list[Refusal]:
+    return list(subset_refusals(parsed_workflow({"workflow_steps": list(steps)}), supported))
+
+
+def test_a_step_that_waits_for_one_step_or_none_is_in_the_subset() -> None:
+    assert _subset(_step("s1"), _step("s2", _condition("c1"))) == []
+
+
+@pytest.mark.parametrize("kind", ["EQ", "IN", "AND", "OR", "UNKNOWN", None])
+def test_a_condition_of_a_type_not_supported_yet_is_refused(kind: object) -> None:
+    assert _subset(_step("s1"), _step("s2", _condition("c1", kind=kind, value="x"))) == [
+        Refusal(CONDITION_NOT_YET, _at(1, 0))
+    ]
+
+
+def test_a_mapper_is_refused_for_good_at_any_depth() -> None:
+    group = _condition("c1", kind="AND", value=None)
+    mapper = _condition("c2", "c1", kind="MAPPER", value="x")
+    supported = frozenset({"DEPEND_ON", "AND", "MAPPER"})
+    assert _subset(_step("s1"), _step("s2", group, mapper), supported=supported) == [
+        Refusal(CONDITION_MAPPER, _at(1, 1))
+    ]
+
+
+def test_a_dependency_is_alone_at_the_root_of_its_step() -> None:
+    group = _condition("c1", kind="AND", value=None)
+    nested = _condition("c2", "c1")
+    supported = frozenset({"DEPEND_ON", "AND"})
+    assert _subset(_step("s1"), _step("s2", group, nested), supported=supported) == [
+        Refusal(CONDITION_DEPEND_NESTED, _at(1, 1))
+    ]
+    with_filter = _condition("c3", "c2", kind="EQ", value="x")
+    supported = frozenset({"DEPEND_ON", "EQ"})
+    assert _subset(
+        _step("s1"), _step("s2", _condition("c2"), with_filter), supported=supported
+    ) == [Refusal(CONDITION_DEPEND_NESTED, _at(1, 0))]
+
+
+def test_copies_of_a_dependency_count_once() -> None:
+    dependency = _condition("c1")
+    assert _subset(_step("s1"), _step("s2", dependency, dict(dependency))) == []
+
+
+def test_every_condition_out_of_the_subset_is_reported_in_order() -> None:
+    supported = frozenset({"DEPEND_ON", "AND"})
+    group = _condition("c1", kind="AND", value=None)
+    assert _subset(
+        _step("s1"),
+        _step(
+            "s2", group, _condition("c2", "c1", kind="MAPPER"), _condition("c3", "c1", kind="EQ")
+        ),
+        supported=supported,
+    ) == [Refusal(CONDITION_MAPPER, _at(1, 1)), Refusal(CONDITION_NOT_YET, _at(1, 2))]
+
+
+@pytest.mark.parametrize("kind", [[], {}, 5])
+def test_a_condition_type_that_is_not_text_is_not_supported(kind: object) -> None:
+    assert _subset(_step("s1"), _step("s2", _condition("c1", kind=kind))) == [
+        Refusal(CONDITION_NOT_YET, _at(1, 0))
+    ]
+
+
+def test_a_mapper_is_refused_for_good_with_the_list_of_the_cut() -> None:
+    assert _subset(_step("s1"), _step("s2", _condition("c1", kind="MAPPER"))) == [
+        Refusal(CONDITION_MAPPER, _at(1, 0))
+    ]

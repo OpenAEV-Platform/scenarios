@@ -114,6 +114,12 @@ STEPS_SAME_SIGNATURE = (
     "two steps run the same payload under the same title after the same steps: give them "
     "different titles"
 )
+CONDITION_MAPPER = (
+    "a condition never maps the output of a step into another: the data passed between steps "
+    "is not reviewed"
+)
+CONDITION_NOT_YET = "this type of condition is not supported yet: a step waits for one step or none"
+CONDITION_DEPEND_NESTED = "a dependency is the only condition of its step"
 CONDITION_SIBLINGS_SAME = "two conditions under one parent are the same: keep one"
 
 
@@ -188,6 +194,7 @@ class ExportKeys:
     step: frozenset[str]
     condition: frozenset[str]
     condition_legacy: frozenset[str]
+    condition_types: frozenset[str]  # the types of condition a step may hold
     scope_rule: frozenset[str]
     scope_variable: frozenset[str]
     step_data: StepDataKeys
@@ -216,6 +223,7 @@ class ExportKeys:
             step=names("step"),
             condition=names("condition"),
             condition_legacy=names("condition", "legacy", required=False),
+            condition_types=names("condition", "supported_types"),
             scope_rule=names("scope_rule"),
             scope_variable=names("scope_variable"),
             step_data=StepDataKeys.from_document(document.get("step_data")),
@@ -491,3 +499,15 @@ def parsed_workflow(workflow: Mapping[str, Any]) -> Workflow:
             for index, step in enumerate(workflow.get(STEPS) or [])
         )
     )
+
+
+def conditions(stored: object) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    """Every condition of the steps of a stored scenario, with the pointer it is reported at.
+    Lenient, as the walk over injects is: a part of another shape gives nothing."""
+    workflow = stored.get(WORKFLOW) if isinstance(stored, Mapping) else None
+    steps = workflow.get(STEPS) if isinstance(workflow, Mapping) else None
+    for index, step in enumerate(steps if isinstance(steps, list) else []):
+        found = step.get(CONDITIONS) if isinstance(step, Mapping) else None
+        for position, condition in enumerate(found if isinstance(found, list) else []):
+            if isinstance(condition, Mapping):
+                yield f"/{WORKFLOW}/{STEPS}/{index}/{CONDITIONS}/{position}", condition
