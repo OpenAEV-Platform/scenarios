@@ -21,11 +21,11 @@ import unicodedata
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.catalogue.structure import INJECTS
 from scenario_tools.domain.policy.payloads import COMMAND_LIMIT, commands, effective, payloads
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
+from scenario_tools.domain.shared.stored import injects
 
 _CONTENT = "inject_content"
 _EXERCISE_TEXTS = ("scenario_articles", "scenario_channels", "scenario_challenges")
@@ -270,11 +270,8 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
     """The parts of the stored scenario the rule reads, with their pointers."""
     if not isinstance(stored, Mapping):
         return
-    injects = stored.get(INJECTS)
-    if isinstance(injects, list):
-        for index, inject in enumerate(injects):
-            if isinstance(inject, Mapping):
-                yield f"/{INJECTS}/{index}/{_CONTENT}", inject.get(_CONTENT)
+    for found in injects(stored):
+        yield f"{found.pointer}/{_CONTENT}", found.inject.get(_CONTENT)
     for part in _EXERCISE_TEXTS:
         yield f"/{part}", stored.get(part)
     for payload in payloads(stored):

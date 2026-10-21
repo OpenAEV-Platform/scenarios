@@ -8,9 +8,10 @@ import itertools
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.catalogue.structure import CONTRACT, INJECTS, PAYLOAD
+from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
+from scenario_tools.domain.shared.stored import injects
 
 _OFFSET = "inject_depends_duration"
 _HEAVY_TYPES = frozenset({"Executable", "FileDrop"})
@@ -33,14 +34,10 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     if not isinstance(declared, Mapping) or declared.get("type") != "time-based":
         return
     stored = content.stored
-    injects = stored.get(INJECTS) if isinstance(stored, Mapping) else None
-    if not isinstance(injects, list):
-        return
     path = f"{content.directory}/scenario.json"
-    running: list[tuple[int, int, Mapping[str, Any]]] = []
-    for index, inject in enumerate(injects):
-        if not isinstance(inject, Mapping):
-            continue
+    running: list[tuple[str, int, Mapping[str, Any]]] = []
+    for found in injects(stored):
+        inject = found.inject
         payload = _payload(inject)
         if payload is None:  # an inject that runs on the platform, not on an endpoint
             continue
@@ -48,26 +45,26 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             yield Violation(
                 path,
-                f"/{INJECTS}/{index}/{_OFFSET}",
+                f"{found.pointer}/{_OFFSET}",
                 "this inject runs on the endpoint but its start is not a whole number of "
                 "seconds: give a non-negative integer",
             )
             continue
-        running.append((index, offset, payload))
+        running.append((found.pointer, offset, payload))
     running.sort(key=lambda item: item[1])
-    for (_, previous, _), (index, offset, payload) in itertools.pairwise(running):
+    for (_, previous, _), (pointer, offset, payload) in itertools.pairwise(running):
         gap = offset - previous
         if gap < _MINIMUM:
             yield Violation(
                 path,
-                f"/{INJECTS}/{index}/{_OFFSET}",
+                f"{pointer}/{_OFFSET}",
                 f"this inject starts {gap} seconds after the previous one that runs on the "
                 f"endpoint: space them by at least {_MINIMUM} seconds",
             )
         elif gap < _HEAVY_MINIMUM and _heavy(payload):
             yield Violation(
                 path,
-                f"/{INJECTS}/{index}/{_OFFSET}",
+                f"{pointer}/{_OFFSET}",
                 f"this inject starts {gap} seconds after the previous one that runs on the "
                 f"endpoint: space them by at least {_HEAVY_MINIMUM} seconds",
                 Severity.INFO,

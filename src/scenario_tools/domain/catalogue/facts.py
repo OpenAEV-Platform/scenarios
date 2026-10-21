@@ -17,8 +17,8 @@ from scenario_tools.domain.catalogue.metadata import ExportFacts, InjectFacts
 from scenario_tools.domain.catalogue.structure import (
     CONTRACT,
     INFORMATION,
-    INJECTS,
     PAYLOAD,
+    checked_injects,
     not_an_export,
     require_object,
     require_text,
@@ -116,8 +116,8 @@ def _payload_facts(payload: object) -> InjectFacts:
     return InjectFacts(_IMPLANT, True, frozenset(platforms))
 
 
-def _inject_facts(inject: object, builtin: BuiltinContracts) -> InjectFacts | None:
-    value = require_object(inject, INJECTS).get(CONTRACT)
+def _inject_facts(inject: Mapping[str, Any], builtin: BuiltinContracts) -> InjectFacts | None:
+    value = inject.get(CONTRACT)
     if value is None:
         return None
     contract = require_object(value, CONTRACT)
@@ -137,20 +137,17 @@ def export_facts(
     name, severity, category, main_focus = (
         require_text(information, facet, INFORMATION) for facet in _FACETS
     )
-    injects = export.get(INJECTS)
-    if not isinstance(injects, list):
-        raise not_an_export(f"{INJECTS} must be a list")
     known: list[InjectFacts] = []
     findings: list[Finding] = []
-    for index, inject in enumerate(injects):
-        facts = _inject_facts(inject, builtin)
+    for found in checked_injects(export):
+        facts = _inject_facts(found.inject, builtin)
         if facts is None:
             findings.append(
                 Finding(
                     "SCH-005",
                     Severity.BLOCKING,
                     path,
-                    f"/{INJECTS}/{index}",
+                    found.pointer,
                     "the inject's contract is neither a recorded built-in contract nor created "
                     "from a payload: its injector type, executor need and platforms cannot be "
                     "established",
@@ -165,12 +162,9 @@ def copy_findings(document: object, builtin: BuiltinContracts, path: str) -> tup
     """An ``SCH-006`` finding for each inject whose recorded built-in contract carries a copy
     other than the recorded one: an instance that lacks the contract would build it from the
     copy, its domains and attack patterns included."""
-    injects = require_object(document, "the export").get(INJECTS)
-    if not isinstance(injects, list):
-        raise not_an_export(f"{INJECTS} must be a list")
     findings = []
-    for index, inject in enumerate(injects):
-        contract = require_object(inject, INJECTS).get(CONTRACT)
+    for found in checked_injects(require_object(document, "the export")):
+        contract = found.inject.get(CONTRACT)
         if contract is None:
             continue
         contract_copy = require_object(contract, CONTRACT)
@@ -181,7 +175,7 @@ def copy_findings(document: object, builtin: BuiltinContracts, path: str) -> tup
                     "SCH-006",
                     Severity.BLOCKING,
                     path,
-                    f"/{INJECTS}/{index}",
+                    found.pointer,
                     "the copy of this built-in contract is not the recorded one: an instance "
                     "that lacks the contract would build it from this copy; normalise a fresh "
                     "export, or update its recorded digest if the platform changed the contract",
