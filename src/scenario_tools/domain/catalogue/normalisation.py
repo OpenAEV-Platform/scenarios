@@ -374,7 +374,7 @@ def _identifiers(
                 identifiers.add(item[key], target)
     if has_workflow(export):
         known = identifiers.targets
-        for source, target in _step_identifiers(export[WORKFLOW], namespace, known).items():
+        for source, target in _step_identifiers(export[WORKFLOW], namespace, known):
             identifiers.add(source, target)
     new = [_signature(inject, namespace) for inject in _objects(export, _INJECTS)]
     _check_injects(new)
@@ -421,12 +421,13 @@ def _not_a_number(text: str) -> None:
     raise _refuse(f"{_CONTENT} holds {text}")
 
 
-def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0) -> None:
+def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0, depth: int = 0) -> None:
     """What the readers would refuse in a file: nesting deeper than they allow, an unpaired
     surrogate in a string or a key, an integer the canonical form cannot hold exactly; and a
     contract copy inside the copy, which bounds the work on nested text: ``copies`` contract
-    copies are allowed, the inject of a step holding one."""
-    stack: list[tuple[Any, int]] = [(value, 0)]
+    copies are allowed, the inject of a step holding one. ``value`` sits ``depth`` levels down in
+    the file where it is stored."""
+    stack: list[tuple[Any, int]] = [(value, depth)]
     while stack:
         item, depth = stack.pop()
         if isinstance(item, dict | list):
@@ -449,27 +450,34 @@ def _check_decoded(value: Any, field: str = _CONTENT, copies: int = 0) -> None:
             raise _refuse(f"{field} holds an integer beyond the exact range of 2^53 - 1")
 
 
-def _decode(text: str, field: str = _CONTENT, copies: int = 0) -> Any:
+def _decode(text: str, field: str = _CONTENT, copies: int = 0, depth: int = 0) -> Any:
     """The JSON text of ``field``, a contract copy by default, decoded within the bounds the
-    readers apply; ``copies`` contract copies may be nested in it."""
+    readers apply, once stored ``depth`` levels down; ``copies`` contract copies may be nested in
+    it."""
     try:
         decoded = json.loads(
             text, object_pairs_hook=_unique, parse_float=_finite, parse_constant=_not_a_number
         )
     except (ValueError, RecursionError) as error:  # too many digits, as well as invalid JSON
         raise _refuse(f"{field} must be JSON text") from error
-    _check_decoded(decoded, field, copies)
+    _check_decoded(decoded, field, copies, depth)
     return decoded
 
 
 # The steps of a workflow
+
+# A step's inject is stored as an object four levels down: in the workflow, in its list of steps,
+# in its step.
+_STEP_DATA_DEPTH = 4
 
 
 def _decoded_or_none(text: str, field: str) -> Any:
     """The JSON text of a step's field decoded within the readers' bounds, or ``None``: a step's
     inject may hold one contract copy."""
     try:
-        return _decode(text, field, copies=1 if field == "step_data" else 0)
+        if field == "step_data":
+            return _decode(text, field, copies=1, depth=_STEP_DATA_DEPTH)
+        return _decode(text, field)
     except ExportStructureError:
         return None
 
@@ -502,7 +510,7 @@ def _step_refusals(export: Mapping[str, Any], keys: StepDataKeys) -> Iterator[Re
 def _readable(data: Mapping[str, Any]) -> bool:
     """Whether a step's inject, given as an object, is within the readers' bounds."""
     try:
-        _check_decoded(data, "step_data", copies=1)
+        _check_decoded(data, "step_data", copies=1, depth=_STEP_DATA_DEPTH)
     except ExportStructureError:
         return False
     return True
@@ -520,7 +528,7 @@ def _with_decoded_steps(export: dict[str, Any]) -> dict[str, Any]:
     for index, step in enumerate(export[WORKFLOW][STEPS]):
         data = step["step_data"]
         if isinstance(data, str):
-            data = _decode(data, "step_data", copies=1)
+            data = _decode(data, "step_data", copies=1, depth=_STEP_DATA_DEPTH)
         for item in _dicts(data):
             for field in _JSON_TEXT_FIELDS:
                 text = item.get(field)
@@ -580,10 +588,12 @@ def _digests(steps: list[Step], data: Mapping[str, Any], namespace: uuid.UUID) -
         if identifier not in digests:
             step, inject = by_id[identifier], data[identifier]
             payload = _payload(inject) or {}
-            awaited = sorted(
-                digest(str(condition.value))
-                for condition in _by_identifier(step).values()
-                if condition.kind == "DEPEND_ON"
+            awaited = sorted(  # a step named twice is waited for once
+                {
+                    digest(str(condition.value))
+                    for condition in _by_identifier(step).values()
+                    if condition.kind == "DEPEND_ON"
+                }
             )
             signature = [
                 stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
@@ -645,9 +655,10 @@ def _condition_identifiers(
 
 def _step_identifiers(
     workflow: Mapping[str, Any], namespace: uuid.UUID, known: Mapping[str, str]
-) -> dict[str, str]:
-    """The stable identifier of each step and of each condition, by source identifier; ``known``
-    holds the identifiers already derived for the rest of the scenario."""
+) -> list[tuple[str, str]]:
+    """The source and stable identifier of each step, then of each condition; ``known`` holds
+    the identifiers already derived for the rest of the scenario. A source identifier given to a
+    step and to a condition is listed twice, so that registering both refuses it."""
     parsed = parsed_workflow(workflow)
     for step in parsed.steps:
         _named_identifiers(step)
@@ -662,12 +673,13 @@ def _step_identifiers(
             raise _refuse(STEPS_SAME_SIGNATURE, pointer=step.pointer)
         seen.add(digests[str(step.identifier)])
     step_ids = {source: stable_id(namespace, "step", digest) for source, digest in digests.items()}
-    targets = dict(step_ids)
+    pairs = list(step_ids.items())
     for step in parsed.steps:
-        targets |= _condition_identifiers(
+        conditions = _condition_identifiers(
             step, step_ids[str(step.identifier)], {**known, **step_ids}, namespace
         )
-    return targets
+        pairs.extend(conditions.items())
+    return pairs
 
 
 def _stored_workflow(workflow: Mapping[str, Any], keys: StepDataKeys) -> dict[str, Any]:

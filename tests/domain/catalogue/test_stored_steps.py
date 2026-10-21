@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError, normalise
 from scenario_tools.domain.shared.workflow import (
@@ -274,3 +275,51 @@ def test_a_condition_that_quotes_another_one_keeps_the_identifiers_stable() -> N
     stored = _stored(export)
     assert _stored(_renumbered(export, "11111111")) == stored
     assert _normalised_again(stored) == stored
+
+
+def _nested(levels: int) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for _ in range(levels - 1):
+        value = {"down": value}
+    return value
+
+
+def test_a_stored_step_is_never_deeper_than_the_readers_allow() -> None:
+    # A step's inject sits four levels down in the stored file: the deepest it may nest is 59
+    # levels below it, for the file to be read back within the readers' 64.
+    deepest = _edit(EXPORT, 0, lambda data: data.update(inject_content=_nested(59)))
+    stored = _stored(deepest)
+    assert parse_json(json.dumps(stored).encode()) == stored
+    too_deep = _edit(EXPORT, 0, lambda data: data.update(inject_content=_nested(60)))
+    assert _refusal(too_deep) == (STEP_DATA_UNREADABLE, f"{AT}/0/step_data")
+
+
+def test_a_condition_that_takes_the_identifier_of_a_step_is_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    _steps(export)[1]["step_conditions"][0]["condition_id"] = SECOND
+    what, _ = _refusal(export)
+    assert what == f"identifier {SECOND!r} names two different objects"
+
+
+def test_a_step_named_twice_by_one_step_is_waited_for_once() -> None:
+    export = copy.deepcopy(EXPORT)
+    dependency = _steps(export)[1]["step_conditions"][0]
+    root = {
+        **dependency,
+        "condition_id": "00000000-0000-4000-8000-0000000000f0",
+        "condition_type": "AND",
+        "condition_value": None,
+    }
+    twice = [
+        {
+            **dependency,
+            "condition_id": f"00000000-0000-4000-8000-0000000000f{number}",
+            "condition_parent_id": root["condition_id"],
+            "condition_is_root": False,
+            "condition_name": f"After step 1, {number}",
+        }
+        for number in (1, 2)
+    ]
+    _steps(export)[1]["step_conditions"] = [root, *twice]
+    once = _by_title(_stored(EXPORT))["Step 2 - list processes again"]["step_id"]
+    assert _by_title(_stored(export))["Step 2 - list processes again"]["step_id"] == once
