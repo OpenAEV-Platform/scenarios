@@ -683,9 +683,23 @@ def step_condition_trees(step: Mapping[str, Any]) -> tuple[ConditionNode, ...]:
 
     trees = [tree(index, frozenset({index})) for index in roots if not plain_dependency(index)]
     reached.update(index for index in roots if plain_dependency(index))
+
+    def parent_of(index: int) -> int | None:
+        parent = nodes[index].get("condition_parent_id")
+        return first.get(parent) if isinstance(parent, str) else None
+
     for index in range(len(nodes)):
-        if index not in reached:  # on a loop of parents, with no root above it
-            trees.append(tree(index, frozenset({index})))
+        if index in reached:
+            continue
+        # No root is above it, so its parents lead to a loop: the tree starts on the loop, and
+        # the condition is said once, below it.
+        path = [index]
+        following = parent_of(index)
+        while following is not None and following not in path:
+            path.append(following)
+            following = parent_of(following)
+        start = following if following is not None else path[-1]  # always on the loop
+        trees.append(tree(start, frozenset({start})))
     return tuple(trees)
 
 

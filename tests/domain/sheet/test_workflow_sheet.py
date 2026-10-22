@@ -642,3 +642,11 @@ def test_a_dependency_with_a_parent_is_said_not_taken_for_a_plain_one(parent: st
 def test_a_line_break_in_a_key_or_a_value_is_shown_not_flattened(text: str, shown: str) -> None:
     sheet = _sheet(_filtered_step(_filter("c1", "EQ", condition_key=text, condition_value=text)))
     assert f"- Runs only if:\n  - {shown} is {shown}." in sheet
+
+
+def test_a_condition_below_a_loop_of_parents_is_said_once_whatever_its_place() -> None:
+    leaf = _filter("c0", "EQ", "c1", condition_key="k", condition_value="a")
+    loop = [_filter("c1", "AND", "c2"), _filter("c2", "OR", "c1")]
+    for order in ([leaf, *loop], [*loop, leaf]):
+        sheet = _sheet(_filtered_step(*order))
+        assert sheet.count("`k` is `a`.") == 1
