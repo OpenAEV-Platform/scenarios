@@ -81,7 +81,7 @@ FACTS = ExportFacts(
         _inject("openaev_email", platforms=frozenset({"Service"})),
         _inject("openaev_implant", needs_executor=True, platforms=frozenset({"Windows"})),
     ),
-    has_workflow=False,
+    holds_workflow=False,
 )
 
 
@@ -907,7 +907,7 @@ def test_a_list_of_communication_injectors_from_document_out_of_its_shape_is_ref
 # A scenario in chaining
 
 
-CHAINED = replace(FACTS, has_workflow=True)
+CHAINED = replace(FACTS, holds_workflow=True)
 
 
 def _sch_013(metadata: ScenarioMetadata, facts: ExportFacts) -> list[tuple[str, str]]:

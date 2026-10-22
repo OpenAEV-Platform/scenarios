@@ -98,7 +98,7 @@ class ExportFacts:
     category: str
     main_focus: str
     injects: tuple[InjectFacts, ...]
-    has_workflow: bool  # the stored scenario holds a workflow, whose steps run its injects
+    holds_workflow: bool  # the stored scenario holds a workflow, whose steps run its injects
 
 
 def communication_injectors_from_document(document: object) -> frozenset[str]:
@@ -123,7 +123,7 @@ def is_tabletop(facts: ExportFacts, communication: frozenset[str]) -> bool:
     through an executor is technical. Both conditions are checked, so neither fact decides
     alone. A scenario in chaining is never tabletop: its steps run on endpoints."""
     return (
-        not facts.has_workflow
+        not facts.holds_workflow
         and bool(facts.injects)
         and all(
             inject.injector_type in communication and not inject.needs_executor
@@ -156,11 +156,11 @@ WORKFLOW_NEEDS_EE = (
 def _chaining(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> Iterator[Finding]:
     """``SCH-013``: the type and the edition agree with whether the stored scenario has a
     workflow, one finding per case."""
-    if facts.has_workflow and metadata.type != "chained":
+    if facts.holds_workflow and metadata.type != "chained":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/type", WORKFLOW_NOT_CHAINED)
-    elif not facts.has_workflow and metadata.type == "chained":
+    elif not facts.holds_workflow and metadata.type == "chained":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/type", TYPE_WITHOUT_WORKFLOW)
-    if facts.has_workflow and metadata.requires.edition != "EE":
+    if facts.holds_workflow and metadata.requires.edition != "EE":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/requires/edition", WORKFLOW_NEEDS_EE)
 
 
@@ -447,7 +447,7 @@ def starting_metadata(
     todo["/threat"] = _THREAT
     todo["/sources"] = _SOURCES
     todo.update(_REQUIRES_DEFAULTS)
-    if facts.has_workflow:  # said, and nothing to choose
+    if facts.holds_workflow:  # said, and nothing to choose
         todo["/requires/edition"] = STARTING_EDITION_OF_A_WORKFLOW
         asking_nothing.add("/requires/edition")
     injectors = sorted({inject.injector_type for inject in facts.injects})
@@ -492,13 +492,13 @@ def starting_metadata(
         "severity": severity,
         "category": category,
         "main_focus": main_focus,
-        "type": "chained" if facts.has_workflow else "time-based",
+        "type": "chained" if facts.holds_workflow else "time-based",
         "platforms": platforms or ["Generic"],
         "threat": {},
         "sources": [],
         "requires": {
             "openaev": f">={platform_version}",
-            "edition": "EE" if facts.has_workflow else "CE",
+            "edition": "EE" if facts.holds_workflow else "CE",
             "injectors": injectors,
             "executors": [],
         },

@@ -236,7 +236,8 @@ def _whole(value: object) -> TypeGuard[int]:
 def has_workflow(stored: object) -> bool:
     """Whether ``stored`` has a workflow: any value of the part but null or an empty object. The
     platform's importer also reads an empty list or a scalar as no workflow; here they count as
-    one, and are refused as not being an object."""
+    one, and are refused as not being an object. For an export; a stored file, which
+    normalisation wrote, is read with ``holds_workflow``."""
     if not isinstance(stored, Mapping):
         return False
     return stored.get(WORKFLOW) not in (None, {})
