@@ -118,8 +118,20 @@ CONDITION_MAPPER = (
     "a condition never maps the output of a step into another: the data passed between steps "
     "is not reviewed"
 )
-CONDITION_NOT_YET = "this type of condition is not supported yet: a step waits for one step or none"
+CONDITION_NOT_YET = (
+    "this type of condition is not supported: a condition is a dependency, a filter, AND or OR"
+)
 CONDITION_DEPEND_NESTED = "a dependency is the only condition of its step"
+CONDITION_LEAF_CHILD = "a filter holds no condition of its own: only AND and OR hold conditions"
+CONDITION_GROUP_EMPTY = "AND and OR hold at least one condition"
+CONDITION_LIST_EMPTY = (
+    "an IN or NIN list names at least one value: this one is blank or commas only"
+)
+CONDITION_VALUE_SHAPE = "a filter compares with a text or with nothing, and AND or OR with nothing"
+CONDITION_VALUE_IDENTIFIER = (
+    "a filter compares with a value, never with a step or a condition: this value holds the "
+    "identifier of one"
+)
 CONDITION_SIBLINGS_SAME = "two conditions under one parent are the same: keep one"
 
 

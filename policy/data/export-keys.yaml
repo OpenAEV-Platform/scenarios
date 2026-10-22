@@ -50,6 +50,18 @@ condition:
   # MAPPER is refused whatever this list says.
   supported_types:
     - DEPEND_ON
+    - AND
+    - OR
+    - EQ
+    - NEQ
+    - GT
+    - GTE
+    - LT
+    - LTE
+    - IN
+    - NIN
+    - IS_NULL
+    - IS_NOT_NULL
 scope_rule:
   keys:
     - workflow_scope_rule_selected_mode

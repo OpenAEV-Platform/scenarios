@@ -357,7 +357,7 @@ def _waits(step: Mapping[str, Any], numbers: Mapping[str, int]) -> list[str]:
             named.append("a step the scenario does not have")
         lines.append(f"- Waits for: {', '.join(named)}.")
     lines += [
-        f"- Holds a condition of type {inline(kind)}, which the checks refuse for now."
+        f"- Holds a condition of type {inline(kind)}, which this sheet does not describe yet."
         for kind in others
     ]
     return lines

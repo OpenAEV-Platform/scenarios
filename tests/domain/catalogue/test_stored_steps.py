@@ -251,10 +251,10 @@ def test_two_payloads_of_one_name_are_refused_across_steps() -> None:
     assert what == "two payloads are named 'Process Discovery - ps'"
 
 
-def test_a_condition_that_names_a_step_in_its_value_is_known_by_the_stored_step() -> None:
+def test_a_filter_that_quotes_a_step_in_its_name_keeps_the_identifiers_stable() -> None:
     export = copy.deepcopy(EXPORT)
     condition = _steps(export)[1]["step_conditions"][0]
-    condition.update(condition_type="EQ", condition_name=f"Like {FIRST}")
+    condition.update(condition_type="EQ", condition_value="x", condition_name=f"Like {FIRST}")
     assert _stored(_renumbered(export, "11111111"), TREES) == _stored(export, TREES)
 
 
@@ -345,7 +345,7 @@ def test_a_dependency_under_a_group_is_refused_even_once_filters_are_accepted() 
 
 
 @pytest.mark.parametrize(
-    ("kind", "what"), [("MAPPER", CONDITION_MAPPER), ("EQ", CONDITION_NOT_YET)]
+    ("kind", "what"), [("MAPPER", CONDITION_MAPPER), ("UNKNOWN", CONDITION_NOT_YET)]
 )
 def test_a_condition_out_of_the_subset_is_refused_by_normalisation(kind: str, what: str) -> None:
     export = copy.deepcopy(EXPORT)

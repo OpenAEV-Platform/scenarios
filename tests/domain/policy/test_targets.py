@@ -449,3 +449,19 @@ def test_the_texts_of_a_condition_are_checked(key: str) -> None:
     assert _pol_003(policy_findings(DATA, content(stored=stored))) == [
         f"/scenario_workflow/workflow_steps/0/step_conditions/1/{key}"
     ]
+
+
+@pytest.mark.parametrize(("kind", "flagged"), [("EQ", True), ("IN", True), ("DEPEND_ON", False)])
+def test_the_value_of_a_filter_is_checked_not_the_step_a_dependency_names(
+    kind: str, flagged: bool
+) -> None:
+    condition = {"condition_type": kind, "condition_value": "http://10.0.0.5/"}
+    stored = {
+        "scenario_information": {},
+        "scenario_workflow": {"workflow_steps": [{"step_conditions": [condition]}]},
+    }
+
+    found = _pol_003(policy_findings(DATA, content(stored=stored)))
+
+    pointer = "/scenario_workflow/workflow_steps/0/step_conditions/0/condition_value"
+    assert found == ([pointer] if flagged else [])

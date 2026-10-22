@@ -18,3 +18,17 @@ JSON text.
 
 `two-steps.normalised.json` is its reviewed stored form, as `normalize` writes it. It changes
 only with a reviewed change to normalisation.
+
+`filters.json` is `two-steps.json` with its second step filtered instead of waiting for the
+first: an `AND` holding an `EQ` and an `OR` of an `IN` list and an `IS_NOT_NULL`, as an export
+of a test instance holds them. It was written by hand from that export, with these edits:
+
+- the scenario's name and the second step's title are replaced;
+- the conditions' identifiers, keys, values and names are made up;
+- as the exporter writes them, the conditions are listed with each one's subtree in turn, so
+  that the five conditions take eleven entries, every copy identical; filters and groups carry
+  `condition_key_types: ["text"]` and a null `condition_step_from_id`, and groups a null key and
+  value.
+
+`filters.normalised.json` is its reviewed stored form: each condition once, sorted by its stable
+identifier.

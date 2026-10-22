@@ -176,7 +176,9 @@ def test_a_condition_the_sheet_cannot_read_is_said_so() -> None:
     stored = copy.deepcopy(STORED)
     waiting = next(step for step in _steps(stored) if step["step_conditions"])
     waiting["step_conditions"][0]["condition_type"] = "EQ"
-    assert "- Holds a condition of type EQ, which the checks refuse for now." in _sheet(stored)
+    assert "- Holds a condition of type EQ, which this sheet does not describe yet." in _sheet(
+        stored
+    )
 
 
 def test_each_caveat_has_its_own_line() -> None:

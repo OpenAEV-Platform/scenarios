@@ -12,13 +12,18 @@ from collections.abc import Iterator
 from scenario_tools.domain.shared.canonical import jcs
 from scenario_tools.domain.shared.workflow import (
     CONDITION_DEPEND_NESTED,
+    CONDITION_GROUP_EMPTY,
     CONDITION_ID_TWICE,
+    CONDITION_LEAF_CHILD,
+    CONDITION_LIST_EMPTY,
     CONDITION_MAPPER,
     CONDITION_NOT_YET,
     CONDITION_PARENT_ELSEWHERE,
     CONDITION_ROOT,
     CONDITION_SHARED,
     CONDITION_STEP_FROM,
+    CONDITION_VALUE_IDENTIFIER,
+    CONDITION_VALUE_SHAPE,
     CYCLE,
     DEPEND_ON_DANGLING,
     DEPEND_ON_NULL,
@@ -31,6 +36,8 @@ from scenario_tools.domain.shared.workflow import (
 
 _DEPEND_ON = "DEPEND_ON"
 _MAPPER = "MAPPER"
+_GROUPS = frozenset({"AND", "OR"})
+_LISTS = frozenset({"IN", "NIN"})
 
 
 def _distinct(step: Step) -> list[Condition]:
@@ -146,16 +153,55 @@ def graph_refusals(workflow: Workflow) -> Iterator[Refusal]:
     yield from _cycles(workflow)
 
 
+def _identifiers(workflow: Workflow) -> list[str]:
+    """The identifiers of the steps and conditions of ``workflow``, as a filter value could quote
+    them."""
+    found = [step.identifier for step in workflow.steps]
+    found += [condition.identifier for step in workflow.steps for condition in step.conditions]
+    return sorted({name.casefold() for name in found if isinstance(name, str) and name})
+
+
+def _value_refusal(condition: Condition, identifiers: list[str]) -> Refusal | None:
+    """Why a filter's value is refused: neither a text nor nothing, an IN or NIN list with no
+    value, or a value that quotes a step or a condition, whose identifiers are rewritten and so
+    never what a filter compares."""
+    value = condition.value
+    if value is not None and not isinstance(value, str):
+        return Refusal(CONDITION_VALUE_SHAPE, f"{condition.pointer}/condition_value")
+    if condition.kind in _LISTS and (
+        not isinstance(value, str) or not value.replace(",", "").strip()
+    ):
+        return Refusal(CONDITION_LIST_EMPTY, f"{condition.pointer}/condition_value")
+    if isinstance(value, str) and any(name in value.casefold() for name in identifiers):
+        return Refusal(CONDITION_VALUE_IDENTIFIER, f"{condition.pointer}/condition_value")
+    return None
+
+
 def subset_refusals(workflow: Workflow, supported: frozenset[str]) -> Iterator[Refusal]:
     """The conditions of ``workflow`` outside the subset: a mapper, refused for good; a type not
-    ``supported`` yet; and a dependency that is not the only condition of its step, at its root.
-    The graph rules have made each step's conditions one tree."""
+    ``supported``; a dependency that is not the only condition of its step, at its root; a filter
+    that holds a condition, AND or OR holding none; and a filter's value that is an empty list or
+    quotes a step or a condition. The graph rules have made each step's conditions one tree."""
+    identifiers = _identifiers(workflow)
     for step in workflow.steps:
         conditions = _distinct(step)
+        parents = {
+            condition.parent for condition in conditions if isinstance(condition.parent, str)
+        }
         for condition in conditions:
             if condition.kind == _MAPPER:
                 yield Refusal(CONDITION_MAPPER, condition.pointer)
             elif not isinstance(condition.kind, str) or condition.kind not in supported:
                 yield Refusal(CONDITION_NOT_YET, condition.pointer)
-            elif condition.kind == _DEPEND_ON and len(conditions) > 1:
-                yield Refusal(CONDITION_DEPEND_NESTED, condition.pointer)
+            elif condition.kind == _DEPEND_ON:
+                if len(conditions) > 1:
+                    yield Refusal(CONDITION_DEPEND_NESTED, condition.pointer)
+            elif condition.kind in _GROUPS:
+                if condition.identifier not in parents:
+                    yield Refusal(CONDITION_GROUP_EMPTY, condition.pointer)
+                elif condition.value is not None:
+                    yield Refusal(CONDITION_VALUE_SHAPE, f"{condition.pointer}/condition_value")
+            elif condition.identifier in parents:
+                yield Refusal(CONDITION_LEAF_CHILD, condition.pointer)
+            elif (refused := _value_refusal(condition, identifiers)) is not None:
+                yield refused

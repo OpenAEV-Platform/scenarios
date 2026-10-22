@@ -36,7 +36,8 @@ from scenario_tools.domain.shared.stored import injects
 from scenario_tools.domain.shared.workflow import conditions
 
 _CONTENT = "inject_content"
-# What a person reads of a condition of a step: its name, its description and the key it reads.
+# What a person reads of a condition of a step: its name, its description and the key it reads;
+# a filter's value too, below.
 _CONDITION_TEXTS = ("condition_name", "condition_description", "condition_key")
 _EXERCISE_TEXTS = ("scenario_articles", "scenario_channels", "scenario_challenges")
 _DOTS = str.maketrans(dict.fromkeys((chr(0x3002), chr(0xFF61), chr(0xFF0E)), "."))  # full stops
@@ -287,6 +288,8 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
     for pointer, condition in conditions(stored):
         for key in _CONDITION_TEXTS:
             yield f"{pointer}/{key}", condition.get(key)
+        if condition.get("condition_type") != "DEPEND_ON":  # its value names a step, not a text
+            yield f"{pointer}/condition_value", condition.get("condition_value")
     for payload in payloads(stored):
         values = argument_values(payload)
         for field, command, _ in commands(payload):
