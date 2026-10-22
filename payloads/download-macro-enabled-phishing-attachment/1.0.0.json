@@ -1,0 +1,39 @@
+{
+  "command_content": "$url = 'https://github.com/OpenAEV-Platform/payloads/raw/refs/heads/main/attack/01-enterprise/02-initial-access/windows/Download%20Macro-Enabled%20Phishing%20Attachment/bin/PhishingAttachment.xlsm'\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12\nInvoke-WebRequest -Uri $url -OutFile $env:TEMP\\PhishingAttachment.xlsm\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1566.001"
+  ],
+  "payload_cleanup_command": "Remove-Item $env:TEMP\\PhishingAttachment.xlsm -ErrorAction Ignore\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "This test downloads a macro enabled document, simulating an end user clicking a phishing link to download the file.\nThe file \"PhishingAttachment.xlsm\" is downloaded to the %temp% directory.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "eade458c-938e-4b32-b6db-7ce9cec57e4a",
+  "payload_name": "Download Macro-Enabled Phishing Attachment",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}
