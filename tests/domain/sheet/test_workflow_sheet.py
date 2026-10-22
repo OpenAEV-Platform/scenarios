@@ -378,3 +378,34 @@ def test_values_repeated_across_commands_never_build_a_sheet_far_past_its_limit(
         )
     )
     assert SHEET_LIMIT < len(sheet) < SHEET_LIMIT + 2 * COMMAND_LIMIT
+
+
+@pytest.mark.parametrize("key", ["value}suffix", "k" * 201])
+@pytest.mark.parametrize(
+    ("default", "shown"),
+    [
+        ("actual value", "`actual value`"),
+        ("", "empty."),
+        ("x" * (COMMAND_LIMIT + 1), f"too long to show, more than {COMMAND_LIMIT} characters."),
+    ],
+)
+def test_an_argument_no_command_can_name_still_shows_its_value(
+    key: str, default: str, shown: str
+) -> None:
+    sheet = _sheet(
+        _with_payload(payload_arguments=[{"key": key, "type": "text", "default_value": default}])
+    )
+    assert f"- Argument {code(key)}: {shown}" in sheet
+
+
+def test_an_argument_without_a_value_shows_its_placeholder() -> None:
+    sheet = _sheet(_with_payload(payload_arguments=[{"key": "k", "type": "text"}]))
+    assert "- Argument `k`: `#{k}`" in sheet
+
+
+def test_a_value_as_long_as_the_limit_is_shown() -> None:
+    value = "x" * COMMAND_LIMIT
+    sheet = _sheet(
+        _with_payload(payload_arguments=[{"key": "k", "type": "text", "default_value": value}])
+    )
+    assert f"- Argument `k`: `{value}`" in sheet

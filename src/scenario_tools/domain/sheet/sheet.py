@@ -332,9 +332,9 @@ def _commands(payload: Payload) -> Iterator[str]:
 
 
 def _argument(values: Mapping[str, str], key: str) -> Iterator[str]:
-    value = substituted("#{" + key + "}", values, COMMAND_LIMIT)
+    value = values.get(key, "#{" + key + "}")  # without a value, the placeholder is what runs
     label = f"- Argument {code(key)}"
-    if value is None:
+    if len(value) > COMMAND_LIMIT:
         yield f"{label}: too long to show, more than {COMMAND_LIMIT} characters."
     elif not value:
         yield f"{label}: empty."
