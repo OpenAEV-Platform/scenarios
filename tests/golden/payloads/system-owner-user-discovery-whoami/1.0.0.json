@@ -1,0 +1,25 @@
+{
+  "command_content": "whoami",
+  "command_executor": "sh",
+  "payload_attack_patterns": [
+    "T1033"
+  ],
+  "payload_description": "Utilize whoami to identify the current user.",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    },
+    {
+      "domain_color": "#FF5733",
+      "domain_name": "Network"
+    }
+  ],
+  "payload_external_id": "7d0c69e2-501e-5ca0-946a-ab67aa5f5ec2",
+  "payload_name": "System Owner/User Discovery - whoami",
+  "payload_platforms": [
+    "Linux",
+    "MacOS"
+  ],
+  "payload_type": "Command"
+}

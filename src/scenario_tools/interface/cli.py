@@ -20,6 +20,7 @@ from typing import NoReturn
 import click
 
 from scenario_tools import __version__
+from scenario_tools.adapters.catalogue_files import CatalogueDirectory
 from scenario_tools.adapters.data_files import (
     DOCUMENTS_NOT_SUPPORTED,
     DocumentsNotSupportedError,
@@ -86,6 +87,7 @@ from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_e
 from scenario_tools.application.run_fixtures import run_fixtures
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
+from scenario_tools.application.validate_payloads import validate_payloads
 from scenario_tools.application.verify_release import verify_release
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -982,6 +984,41 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@main.command(name="validate-payloads")
+@click.argument("directory", type=click.Path(path_type=Path, file_okay=False, exists=True))
+@click.pass_context
+def validate_payloads_command(ctx: click.Context, directory: Path) -> None:
+    """Check DIRECTORY, the payload catalogue of a repository (its payloads/ or a copy): one
+    folder per payload, named by its slug, one file per version, named by its version, and nothing
+    else; each file against schemas/payload.schema.json, in the stored form, its name carrying
+    its version, its ID the one its content has (PAY-003); and no slug, base name, ID or hash
+    used twice (PAY-009). Exit with 1 if anything blocks.
+
+    The policy data and the schemas are the repository's, above DIRECTORY. No symbolic link is
+    followed, and git is not read. No policy rule runs on the version files yet."""
+    directory = Path(os.path.normpath(directory.absolute()))
+    levels: list[Path] = []
+    try:
+        levels = _policy_levels(directory.parent)
+        root = _repository_root(levels, directory.parent)
+    except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
+        _emit(ctx, "validate-payloads", _refused(error), levels[-1] if levels else None)
+
+    def produce() -> Report:
+        agreed = agreed_ids(YamlDataLoader(root / "policy" / "data"))
+        schemas = root / "schemas"
+        if not (schemas / "payload.schema.json").is_file():
+            raise EnvironmentProblemError("schemas cannot be used: payload.schema.json is missing")
+        try:
+            schema = JsonSchemaValidator(schemas)
+        except (OSError, ValueError, UnsafeInputError) as error:
+            raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
+        where = repository_path(str(directory), root)
+        return validate_payloads(CatalogueDirectory(directory), schema, agreed, where)
+
+    _emit(ctx, "validate-payloads", produce, root)
 
 
 @main.command(name="render")
