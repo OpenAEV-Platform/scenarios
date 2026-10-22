@@ -8,7 +8,7 @@ MUTATION_PATHS := src/scenario_tools/domain/policy src/scenario_tools/domain/ver
 # alone, so that a bound on a running time is never measured under another pipeline's load.
 # The path is fixed, never a job's own temporary directory, so that every checkout shares it.
 # Without flock (macOS), the steps run as they are.
-PIPELINE_LOCK := /tmp/scenarios-pipeline.lock
+PIPELINE_LOCK ?= /tmp/scenarios-pipeline.lock
 FLOCK := $(shell command -v flock 2>/dev/null)
 SHARED := $(if $(FLOCK),flock -s $(PIPELINE_LOCK))
 ALONE := $(if $(FLOCK),flock -x $(PIPELINE_LOCK))

@@ -526,6 +526,7 @@ LOOPBACK = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9))
 ELSEWHERE = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", 8080))
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("addresses", [[ELSEWHERE], [LOOPBACK, ELSEWHERE]], ids=["one", "mixed"])
 def test_localhost_must_resolve_to_the_local_machine(
     monkeypatch: pytest.MonkeyPatch, addresses: list[object]
@@ -895,6 +896,7 @@ SHORT = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}"
 CHUNK_CUT = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nab"
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize(
     ("setup", "call", "may_have_acted"),
     [
