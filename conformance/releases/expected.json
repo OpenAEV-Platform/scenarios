@@ -303,6 +303,103 @@
       ]
     },
     {
+      "name": "chaining-accepted",
+      "description": "A release of a scenario in chaining, two steps one after the other, sharing its payload with a time-based scenario.",
+      "approved": false,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "chaining-payload-not-listed",
+      "description": "A scenario in chaining whose steps embed a payload the manifest does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        },
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-payload-content",
+      "description": "A step whose payload is not the one the hash listed for its ID describes.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-payload-outside-contract",
+      "description": "A step that carries a payload outside its contract, which no reference names.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_content/carried",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-workflow-shape",
+      "description": "A scenario in chaining whose steps are not a list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "chaining-step-data-text",
+      "description": "A scenario in chaining whose steps keep their data as text, as an export writes it, which would hide their payloads from a reader of objects.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "chaining-scenario-part",
+      "description": "A scenario in chaining that also holds a part outside the closed list of a stored scenario: the workflow does not open the list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
       "name": "manifest-schema",
       "description": "A manifest that does not meet its schema: an unknown channel.",
       "approved": false,

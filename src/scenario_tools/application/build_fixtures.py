@@ -19,6 +19,7 @@ from scenario_tools.application.fixture_expectations import (
     expectations_document,
 )
 from scenario_tools.domain.shared.canonical import jcs
+from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import derived_id
 from scenario_tools.ports.archive import ArchiveBuilder, FixtureArchives
@@ -30,6 +31,11 @@ BOMB_SIZE = 101 * 1024 * 1024  # beyond the 100 MiB a verifier extracts
 UNDECLARED_SIZE = 2 * 1024 * 1024  # what a bomb inflates to beyond the 1 KiB it declares
 CROWD = 1001  # entries, beyond the 1,000 a verifier reads
 FIRST, SECOND = "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f", "6a1d8b4f-2c3e-4d9f-8a71-1b2c3d4e5f60"
+CHAINED = "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071"  # a scenario in chaining
+_FIRST_STEP, _SECOND_STEP = (
+    "00000000-0000-4000-8000-0000000000a1",
+    "00000000-0000-4000-8000-0000000000b1",
+)
 _TECHNIQUE = "T1059"
 _CONTRACT = "/scenario_injects/0/inject_injector_contract/injector_contract_payload"
 
@@ -91,6 +97,49 @@ def _scenario(external_id: str, *payloads: Mapping[str, Any], **parts: Any) -> d
     ]
     information = {"scenario_name": f"Fixture {external_id[:8]}", "scenario_severity": "low"}
     return {"scenario_information": information, "scenario_injects": injects, **parts}
+
+
+def _step(identifier: str, payload: Mapping[str, Any], *awaited: str) -> dict[str, Any]:
+    """A step running ``payload``, after the steps ``awaited``: only what ``verify`` reads, not
+    every field an export carries."""
+    condition = f"{identifier[:-1]}c"  # the step's ID, its last digit changed
+    return {
+        "step_id": identifier,
+        "step_action_class": "INJECT_EXECUTION",
+        "step_conditions": [
+            {
+                "condition_id": condition,
+                "condition_type": "DEPEND_ON",
+                "condition_value": step,
+                "condition_is_root": True,
+                "condition_parent_id": None,
+                "condition_step_from_id": None,
+            }
+            for step in awaited
+        ],
+        STEP_DATA: {
+            "inject_title": f"Run {payload['payload_name']}",
+            "inject_injector_contract": {
+                "injector_contract_attack_patterns": [{"attack_pattern_external_id": _TECHNIQUE}],
+                "injector_contract_payload": dict(payload),
+            },
+        },
+    }
+
+
+def _chained(first: Mapping[str, Any], second: Mapping[str, Any], **parts: Any) -> dict[str, Any]:
+    """A stored scenario in chaining: two steps, the second waiting for the first."""
+    information = {"scenario_name": f"Fixture {CHAINED[:8]}", "scenario_severity": "low"}
+    workflow = {
+        "workflow_safe_mode_enabled": True,
+        STEPS: [_step(_FIRST_STEP, first), _step(_SECOND_STEP, second, _FIRST_STEP)],
+    }
+    return {
+        "scenario_information": information,
+        "scenario_injects": [],
+        WORKFLOW: workflow,
+        **parts,
+    }
 
 
 def _item(
@@ -161,6 +210,7 @@ class FixtureBuilder:
             *self._archives_listed(),
             *self._archives_unsafe(),
             *self._payloads(),
+            *self._chaining(),
             *self._manifests(),
         )
 
@@ -367,6 +417,86 @@ class FixtureBuilder:
                     ]
                 ),
                 ExpectedFinding("VRF-008", MANIFEST, "/items/1/payloads/0"),
+            ),
+        ]
+
+    def _chained_entry(
+        self,
+        scenario: Mapping[str, Any] | None = None,
+        payloads: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], bytes]:
+        """The item and archive of the scenario in chaining: by default, both steps running the
+        fixture payload, listed once."""
+        held = scenario if scenario is not None else _chained(self._payload, self._payload)
+        archive = self._built(held)
+        listed = payloads if payloads is not None else [self._payload]
+        item = _item(CHAINED, archive, listed)
+        item["type"] = "chained"
+        item["requires"] = {**item["requires"], "edition": "EE"}
+        return item, archive
+
+    def _chaining(self) -> list[Fixture]:
+        payload, changed = self._payload, self._changed
+        name = f"{CHAINED}-1.0.0.zip"
+        steps = f"/{WORKFLOW}/{STEPS}"
+        first = f"{steps}/0/{STEP_DATA}/inject_injector_contract/injector_contract_payload"
+        second = f"{steps}/1/{STEP_DATA}/inject_injector_contract/injector_contract_payload"
+        hidden = copy.deepcopy(_chained(payload, payload))
+        hidden[WORKFLOW][STEPS][0][STEP_DATA]["inject_content"] = {
+            "carried": {"injector_contract_payload": payload}
+        }
+        as_text = copy.deepcopy(_chained(payload, payload))
+        for step in as_text[WORKFLOW][STEPS]:
+            step[STEP_DATA] = json.dumps(step[STEP_DATA])
+        return [
+            _fixture(
+                "chaining-accepted",
+                "A release of a scenario in chaining, two steps one after the other, sharing its "
+                "payload with a time-based scenario.",
+                _release([(self._item, self._archive), self._chained_entry()]),
+            ),
+            _fixture(
+                "chaining-payload-not-listed",
+                "A scenario in chaining whose steps embed a payload the manifest does not list.",
+                _release([self._chained_entry(payloads=[])]),
+                ExpectedFinding("VRF-008", name, first),
+                ExpectedFinding("VRF-008", name, second),
+            ),
+            _fixture(
+                "chaining-payload-content",
+                "A step whose payload is not the one the hash listed for its ID describes.",
+                _release([self._chained_entry(_chained(changed, payload))]),
+                ExpectedFinding("VRF-008", name, first),
+            ),
+            _fixture(
+                "chaining-payload-outside-contract",
+                "A step that carries a payload outside its contract, which no reference names.",
+                _release([self._chained_entry(hidden)]),
+                ExpectedFinding("VRF-008", name, f"{steps}/0/{STEP_DATA}/inject_content/carried"),
+            ),
+            _fixture(
+                "chaining-workflow-shape",
+                "A scenario in chaining whose steps are not a list.",
+                _release(
+                    [self._chained_entry({**_chained(payload, payload), WORKFLOW: {STEPS: ""}})]
+                ),
+                ExpectedFinding("VRF-007", name, "", "IO-014"),
+            ),
+            _fixture(
+                "chaining-step-data-text",
+                "A scenario in chaining whose steps keep their data as text, as an export writes "
+                "it, which would hide their payloads from a reader of objects.",
+                _release([self._chained_entry(as_text)]),
+                ExpectedFinding("VRF-007", name, "", "IO-014"),
+            ),
+            _fixture(
+                "chaining-scenario-part",
+                "A scenario in chaining that also holds a part outside the closed list of a stored "
+                "scenario: the workflow does not open the list.",
+                _release(
+                    [self._chained_entry(_chained(payload, payload, scenario_exercises=[{}]))]
+                ),
+                ExpectedFinding("VRF-007", name, "", "IO-014"),
             ),
         ]
 

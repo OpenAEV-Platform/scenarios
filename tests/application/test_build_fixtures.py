@@ -13,10 +13,10 @@ from tests.interface.test_cli_build import ROOT
 FIXTURES = release_fixtures(ZipArchiveBuilder(), HandmadeArchives())
 
 
-def test_one_fixture_is_accepted_and_every_other_is_refused_for_its_own_reason() -> None:
+def test_two_fixtures_are_accepted_and_every_other_is_refused_for_its_own_reason() -> None:
     accepted = [fixture.name for fixture in FIXTURES if not fixture.expectation.findings]
 
-    assert accepted == ["accepted"]
+    assert accepted == ["accepted", "chaining-accepted"]
     assert len({fixture.name for fixture in FIXTURES}) == len(FIXTURES)
     assert all(fixture.expectation.description for fixture in FIXTURES)
 
