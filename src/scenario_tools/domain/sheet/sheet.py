@@ -21,8 +21,10 @@ from scenario_tools.domain.policy.payloads import (
 from scenario_tools.domain.shared.stored import STEP_DATA, Origin, step_pointer
 from scenario_tools.domain.shared.stored import injects as stored_injects
 from scenario_tools.domain.shared.workflow import (
+    ConditionNode,
     StoredSettings,
     holds_workflow,
+    step_condition_trees,
     step_identifier,
     step_waits,
     stored_settings,
@@ -345,9 +347,82 @@ def _argument(values: Mapping[str, str], key: str) -> Iterator[str]:
         yield f"{label}: {code(value)}"
 
 
+_GROUPS = {"AND": "All of:", "OR": "Any of:"}
+_COMPARED = {
+    "EQ": "is",
+    "NEQ": "is not",
+    "GT": "is greater than",
+    "GTE": "is at least",
+    "LT": "is less than",
+    "LTE": "is at most",
+}
+_LISTED = {"IN": "contains one of", "NIN": "contains none of"}
+_PRESENCE = {"IS_NULL": "has no value", "IS_NOT_NULL": "has a value"}
+_FILTERS = {**_COMPARED, **_LISTED, **_PRESENCE}
+_COMPARISON_CAVEATS = (
+    "- Comparisons are case-sensitive: the export does not carry the setting, and an imported "
+    "condition compares with case.",
+    "- `IN` and `NIN` compare by substring, not by whole value; the sheet lists their items as "
+    "split at commas.",
+)
+_TOO_LONG = "a text too long to show"
+
+
+def _operand(value: object) -> str:
+    """What a filter reads or compares with, as code, exact; said in words when there is none."""
+    if value is None:
+        return "no value"
+    text = str(value)
+    if not text:
+        return "an empty text"
+    return _TOO_LONG if len(text) > COMMAND_LIMIT else code(text)
+
+
+def _listed(value: object) -> str:
+    if not isinstance(value, str):
+        return "a value that is not a list of text"
+    items = [item.strip() for item in value.split(",")]
+    return ", ".join(_operand(item) for item in items if item) or "no value"
+
+
+def _phrase(table: Mapping[str, str], node: ConditionNode) -> str | None:
+    """The words ``table`` gives the type of ``node``; a type of another shape has none."""
+    return table.get(node.kind) if isinstance(node.kind, str) else None
+
+
+def _said(node: ConditionNode) -> str:
+    key = "a value with no key" if node.key in (None, "") else _operand(node.key)
+    if (presence := _phrase(_PRESENCE, node)) is not None:
+        return f"{key} {presence}."
+    if (listed := _phrase(_LISTED, node)) is not None:
+        return f"{key} {listed}: {_listed(node.value)}."
+    if (compared := _phrase(_COMPARED, node)) is not None:
+        return f"{key} {compared} {_operand(node.value)}."
+    return f"A condition of type {_operand(node.kind)}, which this sheet does not describe."
+
+
+def _condition_lines(node: ConditionNode, depth: int) -> list[str]:
+    """The lines of ``node`` and of every condition under it, whatever its type, so that none
+    is hidden; a cut tree says so."""
+    indent = "  " * depth
+    said = _phrase(_GROUPS, node) or _said(node)
+    lines = [f"{indent}- {said}"]
+    for child in node.children:
+        lines += _condition_lines(child, depth + 1)
+    if node.cut:
+        lines.append(f"{indent}  - More conditions below, not shown.")
+    return lines
+
+
+def _filters(nodes: Iterable[ConditionNode]) -> bool:
+    """Whether a filter is among ``nodes`` or under them."""
+    return any(_phrase(_FILTERS, node) or _filters(node.children) for node in nodes)
+
+
 def _waits(step: Mapping[str, Any], numbers: Mapping[str, int]) -> list[str]:
-    awaited, others = step_waits(step)
-    if not awaited and not others:
+    awaited, _ = step_waits(step)
+    trees = step_condition_trees(step)
+    if not awaited and not trees:
         return ["- Starts when the scenario is launched."]
     lines = []
     if awaited:
@@ -356,10 +431,10 @@ def _waits(step: Mapping[str, Any], numbers: Mapping[str, int]) -> list[str]:
         if len(known) < len(set(awaited)):
             named.append("a step the scenario does not have")
         lines.append(f"- Waits for: {', '.join(named)}.")
-    lines += [
-        f"- Holds a condition of type {inline(kind)}, which this sheet does not describe yet."
-        for kind in others
-    ]
+    if trees:
+        lines.append("- Runs only if:")
+        for tree in trees:
+            lines += _condition_lines(tree, 1)
     return lines
 
 
@@ -399,7 +474,8 @@ def _workflow(stored: Mapping[str, Any]) -> Iterator[str]:
     for number, (index, step) in enumerate(ordered, 1):
         yield from _step(number, step, numbers, found, step_pointer(index))
     yield "## Caveats"
-    yield "\n".join(_CAVEATS)
+    filtered = _filters(tree for _, step in ordered for tree in step_condition_trees(step))
+    yield "\n".join((*_CAVEATS, *(_COMPARISON_CAVEATS if filtered else ())))
 
 
 def _targets(targets: object, *, workflow: bool) -> str:
