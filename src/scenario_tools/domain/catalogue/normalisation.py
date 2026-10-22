@@ -423,6 +423,20 @@ def _rewrite(value: Any, targets: Mapping[str, str]) -> Any:
     return value
 
 
+def _keep_filter_values(export: Mapping[str, Any], document: dict[str, Any]) -> None:
+    """Each filter's value as the export gives it, once the identifiers are rewritten: it is what
+    the filter compares with, never an identifier of the instance, which the checks keep out of
+    it; a dependency's value names the step it waits for and stays rewritten."""
+    if not has_workflow(export):
+        return
+    given_steps, written_steps = export[WORKFLOW][STEPS], document[WORKFLOW][STEPS]
+    for given, written in zip(given_steps, written_steps, strict=True):
+        pairs = zip(given.get(CONDITIONS) or [], written.get(CONDITIONS) or [], strict=True)
+        for before, after in pairs:  # the checks made both lists of objects, in one order
+            if before.get("condition_type") != "DEPEND_ON":
+                after["condition_value"] = before.get("condition_value")
+
+
 def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     if len({key for key, _ in pairs}) != len(pairs):
         raise _refuse(f"{_CONTENT} repeats a key")
@@ -735,7 +749,10 @@ def _condition_identifiers(
                 values[value] = known[str(condition.value)]
             else:
                 values[value] = condition.value
-            below = sorted(content(child) for child in under.get(source, []))
+            below = sorted(  # a digest each, so that a deep tree's contents stay small
+                hashlib.sha256(content(child).encode()).hexdigest()
+                for child in under.get(source, [])
+            )
             held = [values, below] if below else values  # a leaf's, as before groups were read
             contents[source] = json.dumps(held, ensure_ascii=False, sort_keys=True)
         return contents[source]
@@ -1013,6 +1030,7 @@ def normalise(
         export, external_id, previous, mapping
     )
     document = _rewrite(export, identifiers.targets)  # new objects, export untouched
+    _keep_filter_values(export, document)
     _name_domains(document)
     document = _strip(document, rules)
     _unlink(document, rules)

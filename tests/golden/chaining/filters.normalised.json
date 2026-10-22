@@ -54,37 +54,7 @@
         "step_conditions": [
           {
             "condition_description": null,
-            "condition_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
-            "condition_is_root": false,
-            "condition_key": null,
-            "condition_key_types": [
-              "text"
-            ],
-            "condition_mapping_type": null,
-            "condition_name": "A user or a process ID",
-            "condition_parent_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
-            "condition_step_from_id": null,
-            "condition_type": "OR",
-            "condition_value": null
-          },
-          {
-            "condition_description": null,
-            "condition_id": "5f9bd554-d1d3-5d47-9e17-6b2124dfcb54",
-            "condition_is_root": false,
-            "condition_key": "pid",
-            "condition_key_types": [
-              "text"
-            ],
-            "condition_mapping_type": null,
-            "condition_name": "A process ID is known",
-            "condition_parent_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
-            "condition_step_from_id": null,
-            "condition_type": "IS_NOT_NULL",
-            "condition_value": null
-          },
-          {
-            "condition_description": null,
-            "condition_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
+            "condition_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
             "condition_is_root": true,
             "condition_key": null,
             "condition_key_types": [
@@ -99,22 +69,37 @@
           },
           {
             "condition_description": null,
-            "condition_id": "c1274892-d474-5781-8eba-0a81c29772f0",
+            "condition_id": "69ba4e6f-44eb-5240-be31-3239c728ce06",
             "condition_is_root": false,
-            "condition_key": "process",
+            "condition_key": "pid",
             "condition_key_types": [
               "text"
             ],
             "condition_mapping_type": null,
-            "condition_name": "The process is sshd",
-            "condition_parent_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
+            "condition_name": "A process ID is known",
+            "condition_parent_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
             "condition_step_from_id": null,
-            "condition_type": "EQ",
-            "condition_value": "sshd"
+            "condition_type": "IS_NOT_NULL",
+            "condition_value": null
           },
           {
             "condition_description": null,
-            "condition_id": "db16dc98-d50b-5b12-aa49-0fe4db6849cd",
+            "condition_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
+            "condition_is_root": false,
+            "condition_key": null,
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "A user or a process ID",
+            "condition_parent_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
+            "condition_step_from_id": null,
+            "condition_type": "OR",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "d2674cba-c37e-5275-847e-99e5e4e2f04d",
             "condition_is_root": false,
             "condition_key": "user",
             "condition_key_types": [
@@ -122,10 +107,25 @@
             ],
             "condition_mapping_type": null,
             "condition_name": "The user is root or admin",
-            "condition_parent_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
+            "condition_parent_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
             "condition_step_from_id": null,
             "condition_type": "IN",
             "condition_value": "root,admin"
+          },
+          {
+            "condition_description": null,
+            "condition_id": "e5070295-23d1-52c5-8422-48e842abd479",
+            "condition_is_root": false,
+            "condition_key": "process",
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "The process is sshd",
+            "condition_parent_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
+            "condition_step_from_id": null,
+            "condition_type": "EQ",
+            "condition_value": "sshd"
           }
         ],
         "step_data": {

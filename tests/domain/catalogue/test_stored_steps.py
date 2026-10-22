@@ -445,3 +445,31 @@ def test_the_identifier_of_a_group_does_not_depend_on_the_order_of_what_it_holds
     ]
     first = _identifiers(_stored(_filtered(*conditions)))
     assert _identifiers(_stored(_filtered(*reversed(conditions)))) == first
+
+
+SCENARIO_ID = "00000000-0000-4000-8000-000000000001"  # the export's own scenario
+
+
+def test_a_filter_value_that_quotes_an_identifier_of_the_instance_is_stored_as_given() -> None:
+    export = _filtered(
+        _condition(1, "EQ", condition_key="k", condition_value=f"see {SCENARIO_ID}"),
+    )
+    stored = _stored(export)
+    (filtered,) = [s for s in _steps(stored) if s["step_conditions"]]
+    assert filtered["step_conditions"][0]["condition_value"] == f"see {SCENARIO_ID}"
+    assert normalise(copy.deepcopy(stored), ENTRY_ID, RULES, previous=stored).document == stored
+
+
+def test_a_dependency_is_still_rewritten_to_its_stable_step() -> None:
+    stored = _stored(EXPORT)
+    (waiting,) = [s for s in _steps(stored) if s["step_conditions"]]
+    assert waiting["step_conditions"][0]["condition_value"] in {
+        s["step_id"] for s in _steps(stored)
+    }
+
+
+def test_a_tree_at_its_deepest_takes_identifiers_of_a_bounded_size() -> None:
+    chain = [_condition(1, "OR")] + [_condition(n, "OR", n - 1) for n in range(2, 17)]
+    chain.append(_condition(17, "EQ", 16, condition_key="k", condition_value="v"))
+    stored = _stored(_filtered(*chain))  # 16 levels below the root, the most allowed
+    assert len(_identifiers(stored)) == 17
