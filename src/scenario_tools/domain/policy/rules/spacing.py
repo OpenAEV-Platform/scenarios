@@ -2,7 +2,8 @@
 injects that embed a payload, ordered by their offset, are at least 60 seconds apart; less than
 120 seconds before a heavy payload (an executable, a dropped file or one with prerequisites) is
 pointed out to the reviewer. An inject that runs on the platform, with no payload, is not
-counted, and the scenario's kind is read from its metadata, never from the export."""
+counted, and the scenario's kind is read from its metadata, never from the export. The steps of a
+workflow are exempt: each waits for the steps before it, never for a time."""
 
 import itertools
 from collections.abc import Iterator, Mapping
@@ -11,7 +12,7 @@ from typing import Any
 from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.domain.shared.stored import injects
+from scenario_tools.domain.shared.stored import Origin, injects
 
 _OFFSET = "inject_depends_duration"
 _HEAVY_TYPES = frozenset({"Executable", "FileDrop"})
@@ -36,7 +37,8 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     stored = content.stored
     path = f"{content.directory}/scenario.json"
     running: list[tuple[str, int, Mapping[str, Any]]] = []
-    for found in injects(stored):
+    # The steps of a workflow wait for each other, never for a time: only injects are spaced.
+    for found in (found for found in injects(stored) if found.origin is Origin.INJECT):
         inject = found.inject
         payload = _payload(inject)
         if payload is None:  # an inject that runs on the platform, not on an endpoint
@@ -74,6 +76,7 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
 RULE = Rule(
     "POL-009",
     Severity.BLOCKING,
-    "Injects that run on an endpoint are at least 60 seconds apart in a time-based scenario.",
+    "Injects that run on an endpoint are at least 60 seconds apart in a time-based scenario; "
+    "the steps of a workflow are exempt.",
     _check,
 )
