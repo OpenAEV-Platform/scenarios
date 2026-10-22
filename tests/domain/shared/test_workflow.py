@@ -29,6 +29,7 @@ from scenario_tools.domain.shared.workflow import (
     WORKFLOW_NO_STEP,
     ExportKeys,
     Refusal,
+    conditions,
     export_refusals,
     has_workflow,
     parsed_workflow,
@@ -680,3 +681,23 @@ def test_a_parsed_workflow_reads_steps_and_conditions_with_their_pointers() -> N
     assert only.pointer == "/scenario_workflow/workflow_steps/1/step_conditions/0"
     assert (only.identifier, only.parent, only.kind) == ("c1", None, "DEPEND_ON")
     assert parsed_workflow({}).steps == ()
+
+
+def test_the_conditions_of_a_stored_workflow_are_walked_leniently() -> None:
+    condition = {"condition_id": "c1"}
+    stored = {
+        "scenario_workflow": {
+            "workflow_steps": [
+                {"step_conditions": [condition, "not an object"]},
+                {"step_conditions": "not a list"},
+                "not a step",
+                {},
+            ]
+        }
+    }
+    assert list(conditions(stored)) == [
+        ("/scenario_workflow/workflow_steps/0/step_conditions/0", condition)
+    ]
+    assert list(conditions({"scenario_workflow": {"workflow_steps": "x"}})) == []
+    assert list(conditions({"scenario_workflow": "x"})) == []
+    assert list(conditions("not a scenario")) == []

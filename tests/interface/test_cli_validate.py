@@ -433,3 +433,35 @@ def test_without_a_previous_root_the_run_says_versions_are_not_compared(
         "validate: without --previous-root, each entry is checked as a new one: its version is "
         "not compared with the base branch's\n"
     )
+
+
+CHAINING = REPOSITORY / "tests" / "golden" / "chaining" / "two-steps.json"
+
+
+@pytest.mark.parametrize("kind", ["MAPPER", []], ids=["mapper", "not-text"])
+def test_a_stored_condition_out_of_the_subset_is_a_finding_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: object
+) -> None:
+    entry = _repository(tmp_path) / "scenarios" / "techniques" / "chained"
+    entry.mkdir(parents=True)
+    prepared = _invoke(
+        monkeypatch, "normalize", str(CHAINING), "--out", str(entry), "--external-id", ENTRY_ID
+    )
+    assert prepared.exit_code == 0, prepared.output
+    metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
+    metadata["threat"] = {"ttps": ["T1057"]}
+    metadata["sources"] = [
+        {"url": "https://attack.mitre.org/techniques/T1057/", "tlp": "TLP:CLEAR"}
+    ]
+    (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+    document = json.loads((entry / "scenario.json").read_text(encoding="utf-8"))
+    steps = document["scenario_workflow"]["workflow_steps"]
+    index = next(i for i, step in enumerate(steps) if step["step_conditions"])
+    steps[index]["step_conditions"][0]["condition_type"] = kind
+    (entry / "scenario.json").write_text(json.dumps(document), encoding="utf-8")
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 1, result.output
+    pointer = f"/scenario_workflow/workflow_steps/{index}/step_conditions/0"
+    assert ("IO-014", "scenarios/techniques/chained/scenario.json", pointer) in _findings(result)

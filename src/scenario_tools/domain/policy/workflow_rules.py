@@ -11,7 +11,10 @@ from collections.abc import Iterator
 
 from scenario_tools.domain.shared.canonical import jcs
 from scenario_tools.domain.shared.workflow import (
+    CONDITION_DEPEND_NESTED,
     CONDITION_ID_TWICE,
+    CONDITION_MAPPER,
+    CONDITION_NOT_YET,
     CONDITION_PARENT_ELSEWHERE,
     CONDITION_ROOT,
     CONDITION_SHARED,
@@ -27,6 +30,7 @@ from scenario_tools.domain.shared.workflow import (
 )
 
 _DEPEND_ON = "DEPEND_ON"
+_MAPPER = "MAPPER"
 
 
 def _distinct(step: Step) -> list[Condition]:
@@ -140,3 +144,18 @@ def graph_refusals(workflow: Workflow) -> Iterator[Refusal]:
     yield from _trees(workflow)
     yield from _dependencies(workflow)
     yield from _cycles(workflow)
+
+
+def subset_refusals(workflow: Workflow, supported: frozenset[str]) -> Iterator[Refusal]:
+    """The conditions of ``workflow`` outside the subset: a mapper, refused for good; a type not
+    ``supported`` yet; and a dependency that is not the only condition of its step, at its root.
+    The graph rules have made each step's conditions one tree."""
+    for step in workflow.steps:
+        conditions = _distinct(step)
+        for condition in conditions:
+            if condition.kind == _MAPPER:
+                yield Refusal(CONDITION_MAPPER, condition.pointer)
+            elif not isinstance(condition.kind, str) or condition.kind not in supported:
+                yield Refusal(CONDITION_NOT_YET, condition.pointer)
+            elif condition.kind == _DEPEND_ON and len(conditions) > 1:
+                yield Refusal(CONDITION_DEPEND_NESTED, condition.pointer)

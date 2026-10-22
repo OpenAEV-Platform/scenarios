@@ -436,3 +436,16 @@ def test_an_inject_after_one_that_is_not_an_object_is_reported_at_its_own_index(
     assert [f.field for f in findings if f.code == "POL-003"] == [
         "/scenario_injects/1/inject_content/url"
     ]
+
+
+@pytest.mark.parametrize("key", ["condition_name", "condition_description", "condition_key"])
+def test_the_texts_of_a_condition_are_checked(key: str) -> None:
+    condition = {"condition_id": "c1", key: "see http://10.0.0.5/"}
+    stored = {
+        "scenario_information": {},
+        "scenario_workflow": {"workflow_steps": [{"step_conditions": [{}, condition]}]},
+    }
+
+    assert _pol_003(policy_findings(DATA, content(stored=stored))) == [
+        f"/scenario_workflow/workflow_steps/0/step_conditions/1/{key}"
+    ]
