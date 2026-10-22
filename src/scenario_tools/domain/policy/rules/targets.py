@@ -3,7 +3,8 @@ loopback and test addresses, the test environment's ranges and authorised extern
 that a shared scenario never points at someone's system.
 
 The content of every inject, the exercise texts (articles, channels, challenges) and the name,
-description and key of the conditions of a workflow's steps are read;
+description, key and value of the conditions of a workflow's steps (each item of a list on its own,
+never the step a dependency names) are read;
 descriptions, which hold references, recorded contract copies, which their own check compares,
 and e-mail addresses, which a rule of their own reads, are not. A text is first read as a tool
 would: compatibility forms folded, invisible characters dropped, and every variable the platform
