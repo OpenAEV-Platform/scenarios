@@ -223,6 +223,7 @@ def test_any_of_them_is_found_wherever_it_sits(before: str, character: str, afte
     assert f"U+{ord(character):04X}" in " ".join(hidden_in(before + character + after))
 
 
+@pytest.mark.timing
 def test_many_keycap_candidates_are_checked_in_linear_time() -> None:
     started = time.monotonic()
 

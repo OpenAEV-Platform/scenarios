@@ -103,8 +103,10 @@ make check
 
 `make check` runs everything the continuous integration runs: linting, types, architecture
 contracts, tests with full coverage of the domain, security checks, the audit of the dependencies
-and of the workflows, the secret scan, the check that every entry's sheet is up to date, and
-mutation testing. It needs [gitleaks](https://github.com/gitleaks/gitleaks)
+and of the workflows, the secret scan, the check that every entry's sheet is up to date,
+mutation testing, and last the tests that bound a running time, marked `timing`, run alone: where
+`flock` exists, they wait until no other checkout's tests or mutation run, and those wait for them.
+It needs [gitleaks](https://github.com/gitleaks/gitleaks)
 and [actionlint](https://github.com/rhysd/actionlint) at the versions set in the `Makefile`.
 
 New behaviour comes with its tests, written first. The code keeps its layers apart: the domain

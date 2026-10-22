@@ -4,10 +4,17 @@
 GITLEAKS_VERSION := 8.30.1
 ACTIONLINT_VERSION := 1.7.12
 MUTATION_PATHS := src/scenario_tools/domain/policy src/scenario_tools/domain/verification
+# One lock for the machine: the heavy steps of every checkout hold it shared, the timing tests
+# alone, so that a bound on a running time is never measured under another pipeline's load.
+# Without flock (macOS), the steps run as they are.
+PIPELINE_LOCK := $(or $(TMPDIR),/tmp)/scenarios-pipeline.lock
+FLOCK := $(shell command -v flock 2>/dev/null)
+SHARED := $(if $(FLOCK),flock -s $(PIPELINE_LOCK))
+ALONE := $(if $(FLOCK),flock -x $(PIPELINE_LOCK))
 
-.PHONY: check lint format types imports tests coverage-domain security audit secrets sheets mutation fixtures
+.PHONY: check lint format types imports tests coverage-domain security audit secrets sheets mutation timing fixtures
 
-check: lint format types imports tests coverage-domain security audit secrets sheets workflows mutation
+check: lint format types imports tests coverage-domain security audit secrets sheets workflows mutation timing
 	@echo "Local pipeline: all checks passed."
 
 lint:
@@ -23,7 +30,7 @@ imports:
 	uv run lint-imports
 
 tests:
-	uv run pytest --cov --cov-report=term-missing
+	$(SHARED) uv run pytest -m "not timing" --cov --cov-report=term-missing
 
 # The domain layer must be fully covered (branches included), measured on the run above.
 coverage-domain: tests
@@ -60,12 +67,16 @@ workflows:
 # `mutmut results` lists every mutant that was not killed; any line fails the build.
 mutation:
 	@if find $(MUTATION_PATHS) -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -q .; then \
-		uv run mutmut run && \
+		$(SHARED) uv run mutmut run && \
 		survivors=$$(uv run mutmut results) && \
 		if [ -n "$$survivors" ]; then echo "$$survivors"; echo "mutation: surviving mutants"; exit 1; fi; \
 	else \
 		echo "mutation: no policy or verification module yet, skipped"; \
 	fi
+
+# The tests that bound a running time, last and alone.
+timing:
+	$(ALONE) uv run pytest -m timing -p no:cacheprovider
 
 # The release fixtures, written again: the tests check that conformance/releases is what the
 # tools build, so a change to the fixtures, the verifier or the archive writer needs this.

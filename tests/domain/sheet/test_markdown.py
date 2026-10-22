@@ -110,6 +110,7 @@ def test_a_cell_stays_one_cell_of_plain_text(text: str) -> None:
             assert child.type in {"text", "code_inline"}, (child.type, text)
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("word", ["a" * 200_000, "a@" + "b" * 200_000, "x:" * 100_000])
 def test_a_long_word_takes_linear_time(word: str) -> None:
     """A title of any length is read in linear time: a run never hangs on what a contributor

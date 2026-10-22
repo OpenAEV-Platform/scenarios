@@ -793,6 +793,7 @@ def test_the_violations_reported_are_capped(validator: JsonSchemaValidator) -> N
     assert len(validator.validate("manifest", items)) == VIOLATION_LIMIT
 
 
+@pytest.mark.timing
 def test_a_manifest_of_a_million_items_is_refused_quickly(validator: JsonSchemaValidator) -> None:
     items = _changed(MANIFEST, lambda d: d.__setitem__("items", [{}] * 1_000_000))
 
@@ -839,6 +840,7 @@ def test_every_bound_is_checked_before_the_items(schema: str) -> None:
         assert keys[0] == "maxItems", pointer
 
 
+@pytest.mark.timing
 def test_an_oversized_list_of_valid_items_is_refused_quickly(
     validator: JsonSchemaValidator,
 ) -> None:
@@ -853,6 +855,7 @@ def test_an_oversized_list_of_valid_items_is_refused_quickly(
     assert time.monotonic() - started < 0.2
 
 
+@pytest.mark.timing
 def test_unexpected_properties_are_counted_within_the_cap(
     validator: JsonSchemaValidator,
 ) -> None:

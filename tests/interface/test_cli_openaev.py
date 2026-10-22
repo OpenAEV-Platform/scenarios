@@ -531,6 +531,7 @@ def test_a_message_cut_after_one_character_of_the_token_is_withheld() -> None:
     assert output.splitlines()[0] == "BLOCKING OAV-001: withheld: it would show a secret"
 
 
+@pytest.mark.timing
 def test_a_long_token_keeps_the_guard_quick() -> None:
     token = "t" * 1_000_000  # no maximum length: the guard must not grow with it
 
