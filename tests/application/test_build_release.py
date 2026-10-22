@@ -17,7 +17,9 @@ from scenario_tools.application.build_release import (
 from scenario_tools.domain.release.manifest import (
     Approval,
     BuiltEntry,
+    PayloadFile,
     PreviousRelease,
+    payload_entry,
     previous_release,
 )
 from scenario_tools.domain.shared.canonical import jcs
@@ -74,6 +76,8 @@ def _build(**changes: Any) -> Any:
         "previous": None,
         "channel": "edge",
         "moment": MOMENT,
+        "payloads": (),
+        "catalogue": (),
     }
     arguments.update(changes)
     build = arguments.pop("build", _built())
@@ -211,6 +215,8 @@ def test_a_catalogue_without_an_entry_has_no_release() -> None:
             previous=None,
             channel="edge",
             moment=MOMENT,
+            payloads=(),
+            catalogue=(),
         )
 
 
@@ -299,3 +305,59 @@ def test_a_released_version_whose_status_changed_leaves_the_release_unbuilt() ->
         ("VER-020", f"{SECOND}/scenario.yaml"),
         ("VER-020", f"{FIRST}/scenario.yaml"),
     ]
+
+
+UNUSED = PayloadFile("unused-payload", "1.0.0", "c" * 64, "unused-id", b'{"unused": true}\n')
+USED = PayloadFile("ps", "1.10.0", "d" * 64, "ps-id", b'{"ps": true}\n')
+EARLIER = PayloadFile("ps", "1.9.0", "e" * 64, "ps-earlier-id", b'{"ps": 1}\n')
+
+
+def test_a_release_lists_every_payload_version_and_carries_its_file() -> None:
+    report, release = _build(payloads=(USED, UNUSED, EARLIER))
+
+    assert report.ok
+    assert release is not None
+    document = json.loads(release.manifest)
+    assert document["payloads"] == [payload_entry(v) for v in (EARLIER, USED, UNUSED)]
+    assert release.payload_files == {
+        "ps-1.9.0.json": EARLIER.data,
+        "ps-1.10.0.json": USED.data,
+        "unused-payload-1.0.0.json": UNUSED.data,
+    }
+
+
+def test_a_release_of_an_empty_catalogue_lists_no_payload() -> None:
+    _, release = _build()
+
+    assert release is not None
+    assert json.loads(release.manifest)["payloads"] == []
+    assert release.payload_files == {}
+
+
+def test_a_catalogue_finding_that_blocks_leaves_the_release_unbuilt() -> None:
+    refused = Finding("PAY-009", Severity.BLOCKING, "payloads/ps/1.10.0.json", "", "not sorted")
+    told = Finding("PAY-010", Severity.INFO, "payloads", "", "information")
+
+    report, release = _build(payloads=(USED,), catalogue=(refused,))
+    _, built = _build(payloads=(USED,), catalogue=(told,))
+
+    assert release is None
+    assert report.findings == (refused,)
+    assert built is not None
+
+
+def test_a_released_payload_version_whose_file_changed_leaves_the_release_unbuilt() -> None:
+    changed = PayloadFile(USED.payload, USED.version, USED.sha256, USED.openaev_id, b"{}\n")
+    previous = PreviousRelease(
+        "edge",
+        "2026.10.29.1",
+        {},
+        payloads={("ps", "1.10.0"): (USED.sha256, hashlib.sha256(USED.data).hexdigest())},
+    )
+
+    report, release = _build(payloads=(changed,), previous=previous)
+    _, kept = _build(payloads=(USED,), previous=previous)
+
+    assert release is None
+    assert [(f.code, f.path) for f in report.findings] == [("VER-021", "payloads/ps/1.10.0.json")]
+    assert kept is not None

@@ -1,6 +1,7 @@
 """Verify a release as its consumers will, before it is published: the manifest, then each
 archive it lists, by its bytes, its safe extraction, the parts of its scenario and the payloads it
-embeds, and nothing beside them that the manifest does not list."""
+embeds, then each payload file it lists, by its bytes and its content, and nothing beside them
+that the manifest does not list."""
 
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -13,6 +14,9 @@ from scenario_tools.domain.verification.release_output import (
     item_findings,
     manifest_findings,
     payload_content_findings,
+    payload_file_findings,
+    payload_list_findings,
+    payload_reference_findings,
     shared_payload_findings,
 )
 from scenario_tools.ports.errors import UnsafeInputError
@@ -39,6 +43,8 @@ def verify_release(
     archive_of: Callable[[str], bytes | None],
     scenario_of: Callable[[bytes, str], object],
     present: frozenset[str],
+    payload_of: Callable[[str], bytes | None],
+    read_payload: Callable[[bytes], object],
     files: FileHash = no_attached_files,
 ) -> Report:
     """The report on the release whose manifest is ``document``: ``validate`` gives where it
@@ -46,19 +52,27 @@ def verify_release(
     nothing when it is missing; ``scenario_of`` opens an archive, refusing one unsafe to
     extract, and gives the scenario it holds; ``present`` names what stands beside the archives,
     the manifest verified left out by the caller: anything else there, a ``manifest.json``
-    included, is ``VRF-006``. A manifest with a finding of its own (its schema, its approver),
-    listing a scenario twice, or a payload with two contents, is reported alone: no archive is
-    read."""
+    included, is ``VRF-006``. ``payload_of`` gives a payload file's bytes by its name, or nothing
+    when it is missing, and ``read_payload`` reads them as JSON, ``ValueError`` when it cannot. A
+    manifest with a finding of its own (its schema, its approver), listing a scenario twice, a
+    payload with two contents, a payload version twice, or a reference to a version it does not
+    list, is reported alone: no archive or payload file is read."""
     mapping = document if isinstance(document, Mapping) else {}
     manifest = manifest_findings(validate(document), mapping, approved=approved)
     if manifest:
         return Report("verify", manifest)
-    items = mapping["items"]
-    listed = item_findings(items) or shared_payload_findings(items)
+    items, payloads = mapping["items"], mapping["payloads"]
+    listed = (
+        item_findings(items)
+        or shared_payload_findings(items)
+        or payload_list_findings(payloads)
+        or payload_reference_findings(items, payloads)
+    )
     if listed:
         return Report("verify", listed)
     findings: list[Finding] = []
     names = {str(item["archive"]["name"]) for item in items}
+    names |= {str(entry["file"]["name"]) for entry in payloads}
     for extra in sorted(present - names):
         message = "the manifest does not list it, and it would be published"
         findings.append(Finding("VRF-006", Severity.BLOCKING, extra, "", message))
@@ -79,4 +93,12 @@ def verify_release(
             findings.append(_unsafe(name, error))
             continue
         findings += payload_content_findings(item, stored, files)
+    for entry in payloads:
+        name = str(entry["file"]["name"])
+        try:
+            data = payload_of(name)
+        except UnsafeInputError as error:
+            findings.append(_unsafe(name, error))
+            continue
+        findings += payload_file_findings(entry, data, read_payload)
     return Report("verify", tuple(findings))

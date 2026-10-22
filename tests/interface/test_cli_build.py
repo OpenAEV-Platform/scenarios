@@ -532,3 +532,79 @@ def test_a_release_of_a_scenario_in_chaining_lists_its_steps_payloads_and_verifi
         main, ["verify", str(out / "manifest.json"), "--schemas", str(ROOT / "schemas")]
     )
     assert verified.exit_code == 0, verified.output
+
+
+def test_a_release_lists_every_payload_version_and_carries_its_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch, "payloads")
+    out = tmp_path / "release"
+
+    result = _build(root, _approvals(tmp_path), out)
+
+    assert result.exit_code == 0, result.output
+    held = sorted(root.glob("payloads/*/*.json"))
+    document = json.loads((out / "manifest.json").read_bytes())
+    listed = {(entry["payload"], entry["version"]): entry for entry in document["payloads"]}
+    assert sorted(listed) == sorted((path.parent.name, path.stem) for path in held)  # none used
+    for path in held:
+        entry = listed[(path.parent.name, path.stem)]
+        assert (out / entry["file"]["name"]).read_bytes() == path.read_bytes()
+    verified = CliRunner().invoke(
+        main, ["verify", str(out / "manifest.json"), "--schemas", str(root / "schemas")]
+    )
+    assert verified.exit_code == 0, verified.output
+
+
+def test_a_released_payload_version_whose_file_changed_builds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch, "payloads")
+    approvals = _approvals(tmp_path)
+    assert _build(root, approvals, tmp_path / "first").exit_code == 0
+    previous = json.loads((tmp_path / "first" / "manifest.json").read_bytes())
+    released = previous["payloads"][0]
+    released["file"]["sha256"] = "0" * 64
+    previous["release"] = "2026.10.29.2"
+    (tmp_path / "previous.json").write_bytes(jcs(previous))
+    out = tmp_path / "release"
+
+    result = _build(root, approvals, out, str(tmp_path / "previous.json"))
+
+    assert result.exit_code == 1, result.output
+    [finding] = json.loads(result.output)["findings"]
+    path = f"payloads/{released['payload']}/{released['version']}.json"
+    assert (finding["code"], finding["path"]) == ("VER-021", path)
+    assert not out.exists()
+
+
+def test_a_payload_catalogue_its_checks_refuse_builds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch, "payloads")
+    (root / "payloads" / "README.md").write_text("Not a payload.\n")
+    _git(root, "add", ".")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", "stray")  # fmt: skip
+    out = tmp_path / "release"
+
+    result = _build(root, _approvals(tmp_path), out)
+
+    assert result.exit_code == 1, result.output
+    found = [(f["code"], f["path"]) for f in json.loads(result.output)["findings"]]
+    assert found == [("PAY-009", "payloads/README.md")]
+    assert not out.exists()
+
+
+def test_two_builds_with_a_payload_catalogue_give_the_same_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch, "payloads")
+    approvals = _approvals(tmp_path)
+
+    for out in ("one", "two"):
+        assert _build(root, approvals, tmp_path / out).exit_code == 0
+
+    one = {path.name: path.read_bytes() for path in (tmp_path / "one").iterdir()}
+    assert {path.name: path.read_bytes() for path in (tmp_path / "two").iterdir()} == one
+    assert any(name.endswith(".json") and name != "manifest.json" for name in one)

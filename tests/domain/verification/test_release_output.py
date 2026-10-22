@@ -10,11 +10,16 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.shared.finding import Severity
+from scenario_tools.domain.verification.payload_version import PayloadVersion
 from scenario_tools.domain.verification.release_output import (
+    MANIFEST,
     archive_findings,
     item_findings,
     manifest_findings,
     payload_content_findings,
+    payload_file_findings,
+    payload_list_findings,
+    payload_reference_findings,
     shared_payload_findings,
 )
 
@@ -394,3 +399,157 @@ def test_the_id_of_a_payload_is_outside_its_hash() -> None:
     from scenario_tools.domain.verification.payload_hash import payload_hash
 
     assert payload_hash(PAYLOAD, VECTOR["attack_patterns"], _no_files).hex == VECTOR["sha256"]
+
+
+TREE = Path(__file__).parents[3] / "tests" / "golden" / "payloads"
+PS_DATA = (TREE / "process-discovery-ps" / "1.0.0.json").read_bytes()
+PS_DOCUMENT = json.loads(PS_DATA)
+PS = PayloadVersion("process-discovery-ps", "1.0.0", "", PS_DOCUMENT)
+PS_FILE = "process-discovery-ps-1.0.0.json"
+
+
+def _entry(**changes: Any) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "payload": "process-discovery-ps",
+        "version": "1.0.0",
+        "sha256": PS.digest(),
+        "openaev_id": PS.identifier,
+        "file": {
+            "name": PS_FILE,
+            "sha256": hashlib.sha256(PS_DATA).hexdigest(),
+            "size": len(PS_DATA),
+        },
+    }
+    file = {**entry["file"], **changes.pop("file", {})}
+    return {**entry, **changes, "file": file}
+
+
+def _read(data: bytes) -> object:
+    return json.loads(data)
+
+
+def test_a_payload_file_as_the_manifest_lists_it_is_accepted() -> None:
+    assert payload_file_findings(_entry(), PS_DATA, _read) == ()
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        (None, "the payload file the manifest lists is missing"),
+        (PS_DATA + b" ", f"{len(PS_DATA) + 1} bytes, where the manifest lists {len(PS_DATA)}"),
+        (PS_DATA[:-2] + b"X\n", "its SHA-256 is not the one the manifest lists"),
+    ],
+    ids=["missing", "size", "bytes"],
+)
+def test_a_payload_file_missing_or_other_than_listed_is_refused(
+    data: bytes | None, message: str
+) -> None:
+    assert _codes(payload_file_findings(_entry(), data, _read)) == [
+        ("VRF-006", PS_FILE, "", message)
+    ]
+
+
+def _listed_as(data: bytes) -> dict[str, Any]:
+    return _entry(file={"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        (
+            {**PS_DOCUMENT, "command_content": "ps -ef"},
+            "its content has another hash than the one the manifest lists",
+        ),
+        (
+            {**PS_DOCUMENT, "payload_external_id": "another-id"},
+            "it holds another ID than the openaev_id the manifest lists",
+        ),
+        ({**PS_DOCUMENT, "payload_attack_patterns": "T1057"}, "its content cannot be hashed"),
+        ({**PS_DOCUMENT, "payload_unknown": 1}, "its content cannot be hashed"),
+        (["not", "a", "payload"], "its content cannot be hashed"),
+    ],
+    ids=["content", "id", "techniques", "unknown field", "no object"],
+)
+def test_a_payload_file_whose_content_is_not_the_one_listed_is_refused(
+    document: object, message: str
+) -> None:
+    data = json.dumps(document).encode()
+
+    assert _codes(payload_file_findings(_listed_as(data), data, _read)) == [
+        ("VRF-008", PS_FILE, "", message)
+    ]
+
+
+def test_a_payload_file_that_is_no_json_is_refused() -> None:
+    def refuse(data: bytes) -> object:
+        raise ValueError("a key twice")
+
+    assert _codes(payload_file_findings(_entry(), PS_DATA, refuse)) == [
+        ("VRF-008", PS_FILE, "", "its content cannot be read: a key twice")
+    ]
+
+
+def test_a_payload_version_or_an_id_listed_twice_and_a_misnamed_file_are_refused() -> None:
+    later = _entry(version="1.1.0", file={"name": "process-discovery-ps-1.1.0.json"})
+    renamed = _entry(
+        payload="other", openaev_id="other-id", sha256="c" * 64, file={"name": PS_FILE}
+    )
+
+    assert _codes(payload_list_findings([_entry(), later, _entry(), renamed])) == [
+        (
+            "VRF-008",
+            MANIFEST,
+            "/payloads/1",
+            f"the payload ID {PS.identifier} is listed with another version, hash or file "
+            "than in /payloads/0",
+        ),
+        ("VRF-008", MANIFEST, "/payloads/2", "process-discovery-ps 1.0.0 is listed twice"),
+        (
+            "VRF-006",
+            MANIFEST,
+            "/payloads/3/file/name",
+            "the file of other 1.0.0 is named process-discovery-ps-1.0.0.json",
+        ),
+    ]
+
+
+def test_an_item_referencing_a_version_the_release_does_not_list_is_refused() -> None:
+    listed = _entry()
+    item = {
+        "payloads": [
+            {"id": PS.identifier, "version": "1.0.0", "sha256": PS.digest()},
+            {"id": PS.identifier, "version": "1.1.0", "sha256": PS.digest()},
+            {"id": "unlisted", "version": "1.0.0", "sha256": "f" * 64},
+        ]
+    }
+
+    assert _codes(payload_reference_findings([item], [listed])) == [
+        (
+            "VRF-008",
+            MANIFEST,
+            f"/items/0/payloads/{index}",
+            "the release lists no payload version with this ID, version and hash",
+        )
+        for index in (1, 2)
+    ]
+
+
+def test_one_content_under_two_ids_or_one_id_with_two_files_is_refused() -> None:
+    other_id = _entry(payload="copy", openaev_id="copy-id", file={"name": "copy-1.0.0.json"})
+    other_file = _entry(payload="again", file={"name": "again-1.0.0.json", "sha256": "e" * 64})
+
+    assert _codes(payload_list_findings([_entry(), other_id, other_file])) == [
+        (
+            "VRF-008",
+            MANIFEST,
+            "/payloads/1",
+            "this content is listed under another ID in /payloads/0",
+        ),
+        (
+            "VRF-008",
+            MANIFEST,
+            "/payloads/2",
+            f"the payload ID {PS.identifier} is listed with another version, hash or file "
+            "than in /payloads/0",
+        ),
+    ]

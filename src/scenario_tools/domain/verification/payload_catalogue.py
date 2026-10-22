@@ -14,7 +14,7 @@ from enum import Enum, auto
 
 from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.payload_names import SEMVER
+from scenario_tools.domain.shared.payload_names import SEMVER, version_key
 from scenario_tools.domain.verification.payload_hash import UnhashablePayloadError
 from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.domain.verification.payload_version import (
@@ -119,9 +119,7 @@ def layout(
         for folder in folders
         if folder not in held
     ]
-    ordered_places = sorted(
-        places, key=lambda p: (p.slug, tuple(int(part) for part in p.version.split(".")))
-    )
+    ordered_places = sorted(places, key=lambda p: (p.slug, version_key(p.version)))
     return tuple(findings), tuple(ordered_places)
 
 

@@ -11,14 +11,18 @@ from scenario_tools.domain.release.manifest import (
     Approval,
     ArchiveFacts,
     BuiltEntry,
+    PayloadFile,
     PreviousRelease,
     approval_findings,
     archive_name,
     issued_at_text,
     manifest,
     manifest_item,
+    payload_entry,
+    payload_file_name,
     release_name,
     released_item_findings,
+    released_payload_findings,
     withdrawn_findings,
 )
 from scenario_tools.domain.shared.canonical import jcs
@@ -50,10 +54,12 @@ class EntryResult:
 
 @dataclass(frozen=True)
 class Release:
-    """The manifest, in its canonical form, and the archives it lists, by file name."""
+    """The manifest, in its canonical form, and the archives and payload files it lists, by
+    file name."""
 
     manifest: bytes
     archives: Mapping[str, bytes]
+    payload_files: Mapping[str, bytes]
 
 
 def _blocks(findings: Sequence[Finding]) -> bool:
@@ -94,11 +100,15 @@ def build_release(
     previous: PreviousRelease | None,
     channel: str,
     moment: datetime.datetime,
+    payloads: Sequence[PayloadFile],
+    catalogue: Sequence[Finding],
 ) -> tuple[Report, Release | None]:
     """The report, and the release of ``entries`` on ``channel`` when the report is ok.
     ``build_entry`` checks an entry and builds its archive; ``moment`` is the time of the
     commit the release comes from, never of the run, so that two builds give the same bytes.
-    ``previous`` is the channel's previous release, if it has one."""
+    ``previous`` is the channel's previous release, if it has one. Every version of the payload
+    catalogue, ``payloads``, is listed and carried, used or not; ``catalogue`` holds what the
+    catalogue's checks found of it."""
     if not entries:
         raise EnvironmentProblemError("the catalogue has no entry: nothing to release")
     if previous is not None and previous.channel != channel:
@@ -110,7 +120,7 @@ def build_release(
         name = release_name(moment, previous.release if previous else None)
     except ValueError as error:
         raise EnvironmentProblemError(f"cannot name the release: {error}") from error
-    findings = list(approval_findings(entries, approvals, before_review))
+    findings = [*catalogue, *approval_findings(entries, approvals, before_review)]
     built: dict[str, BuiltEntry] = {}
     for entry in entries:
         result = build_entry(entry)
@@ -140,10 +150,18 @@ def build_release(
     if previous is not None and len(built) == len(entries):  # an entry left out is said above
         present = {str(found.metadata["external_id"]) for found in built.values()}
         findings += withdrawn_findings(previous, present)
+    listed = [payload_entry(version) for version in payloads]
+    if previous is not None:
+        findings += released_payload_findings(previous, listed)
     report = Report("build", tuple(findings))
     if not report.ok:
         return report, None
     document = manifest(
-        channel=channel, issued_at=issued_at_text(moment), release=name, items=items
+        channel=channel,
+        issued_at=issued_at_text(moment),
+        release=name,
+        items=items,
+        payloads=listed,
     )
-    return report, Release(jcs(document), archives)
+    files = {payload_file_name(v.payload, v.version): v.data for v in payloads}
+    return report, Release(jcs(document), archives, files)

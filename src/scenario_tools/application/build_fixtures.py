@@ -18,7 +18,8 @@ from scenario_tools.application.fixture_expectations import (
     ExpectedFinding,
     expectations_document,
 )
-from scenario_tools.domain.shared.canonical import jcs
+from scenario_tools.domain.release.manifest import PayloadFile, payload_entry
+from scenario_tools.domain.shared.canonical import jcs, stored_form
 from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import derived_id
@@ -81,6 +82,24 @@ def _payload(command: str = "echo fixture") -> dict[str, Any]:
 
 def _hash(payload: Mapping[str, Any]) -> str:
     return payload_hash(payload, [_TECHNIQUE], no_attached_files).hex
+
+
+_SLUG = "fixture-command"
+
+
+def _version(
+    payload: Mapping[str, Any], version: str = "1.0.0", slug: str = _SLUG
+) -> tuple[dict[str, Any], bytes]:
+    """The manifest entry of ``payload`` as the version ``version`` of the payload ``slug``, and
+    its file's bytes, as the catalogue stores it."""
+    document = {**payload, "payload_attack_patterns": [_TECHNIQUE]}
+    data = stored_form(document)
+    found = PayloadFile(slug, version, _hash(payload), str(payload["payload_external_id"]), data)
+    return payload_entry(found), data
+
+
+Catalogue = Sequence[tuple[Mapping[str, Any], bytes]]
+_CATALOGUE: Catalogue = (_version(_payload()),)  # the fixture payload, the one version
 
 
 def _scenario(external_id: str, *payloads: Mapping[str, Any], **parts: Any) -> dict[str, Any]:
@@ -173,7 +192,9 @@ def _item(
     }
 
 
-def _manifest(items: Sequence[Mapping[str, Any]], **fields: Any) -> bytes:
+def _manifest(
+    items: Sequence[Mapping[str, Any]], catalogue: Catalogue = _CATALOGUE, **fields: Any
+) -> bytes:
     document = {
         "schema_version": 1,
         "repository": "OpenAEV-Platform/scenarios",
@@ -181,15 +202,27 @@ def _manifest(items: Sequence[Mapping[str, Any]], **fields: Any) -> bytes:
         "issued_at": "2026-01-01T00:00:00Z",
         "release": "2026.01.01.1",
         "items": sorted(items, key=lambda item: str(item["external_id"])),
+        "payloads": [entry for entry, _ in catalogue],
         **fields,
     }
     return jcs(document)
 
 
-def _release(items: Sequence[tuple[Mapping[str, Any], bytes]], **beside: bytes) -> dict[str, bytes]:
-    """The files of a release whose items are listed with their archives."""
+def _carried(catalogue: Catalogue = _CATALOGUE) -> dict[str, bytes]:
+    """The payload files of ``catalogue``, by their names."""
+    return {str(entry["file"]["name"]): data for entry, data in catalogue}
+
+
+def _release(
+    items: Sequence[tuple[Mapping[str, Any], bytes]],
+    catalogue: Catalogue = _CATALOGUE,
+    beside: Mapping[str, bytes] | None = None,
+) -> dict[str, bytes]:
+    """The files of a release whose items are listed with their archives, and the versions of
+    ``catalogue`` with their files, and the files ``beside`` them that nothing lists."""
     files = {str(item["archive"]["name"]): archive for item, archive in items}
-    return {MANIFEST: _manifest([item for item, _ in items]), **files, **beside}
+    manifest = _manifest([item for item, _ in items], catalogue)
+    return {MANIFEST: manifest, **files, **_carried(catalogue), **(beside or {})}
 
 
 class FixtureBuilder:
@@ -210,6 +243,7 @@ class FixtureBuilder:
             *self._archives_listed(),
             *self._archives_unsafe(),
             *self._payloads(),
+            *self._payload_files(),
             *self._chaining(),
             *self._manifests(),
         )
@@ -250,6 +284,7 @@ class FixtureBuilder:
                 [item for item, _ in items], release_approver="fixture-release-approver"
             ),
             **{str(item["archive"]["name"]): archive for item, archive in items},
+            **_carried(),
         }
         return _fixture(
             "accepted",
@@ -282,13 +317,13 @@ class FixtureBuilder:
             _fixture(
                 "archive-missing",
                 "An archive the manifest lists, missing.",
-                {MANIFEST: _manifest([self._item])},
+                {MANIFEST: _manifest([self._item]), **_carried()},
                 refused,
             ),
             _fixture(
                 "file-not-listed",
                 "A file beside the archives that the manifest does not list.",
-                _release([(self._item, self._archive)], **{"notes.txt": b"Not listed.\n"}),
+                _release([(self._item, self._archive)], beside={"notes.txt": b"Not listed.\n"}),
                 ExpectedFinding("VRF-006", "notes.txt"),
             ),
         ]
@@ -420,6 +455,104 @@ class FixtureBuilder:
             ),
         ]
 
+    def _payload_files(self) -> list[Fixture]:
+        payload, changed = self._payload, self._changed
+        entry, data = _version(payload)
+        name = str(entry["file"]["name"])
+        other_bytes = data.replace(b"Prints a word", b"Prints a verb")
+        relisted = copy.deepcopy(entry)
+        relisted["file"].update(sha256=hashlib.sha256(other_bytes).hexdigest())
+        relisted["file"].update(size=len(other_bytes))
+        other_id = stored_form({**json.loads(data), "payload_external_id": "another-id"})
+        listed_id = copy.deepcopy(entry)
+        listed_id["file"].update(sha256=hashlib.sha256(other_id).hexdigest(), size=len(other_id))
+        misnamed = copy.deepcopy(entry)
+        misnamed["file"]["name"] = "fixture-command-2.0.0.json"
+        later, later_data = _version(payload, "1.1.0")
+        copied, copied_data = _version({**payload, "payload_external_id": "copied"}, slug="copied")
+        domains = {**payload, "payload_domains": [{"domain_name": "Endpoint"}]}
+        again, again_data = _version(domains, slug="again")
+        unused_payload = {**changed, "payload_name": "Unused", "payload_external_id": "unused"}
+        unused, unused_data = _version(unused_payload, slug="unused")
+        listed = [(self._item, self._archive)]
+        return [
+            _fixture(
+                "catalogue-accepted",
+                "A release whose payload catalogue lists a version used by a time-based scenario "
+                "and a step of a scenario in chaining, and a version no scenario uses.",
+                _release(
+                    [(self._item, self._archive), self._chained_entry()],
+                    [(entry, data), (unused, unused_data)],
+                ),
+            ),
+            _fixture(
+                "payload-file-missing",
+                "A payload file the manifest lists, missing.",
+                {key: value for key, value in _release(listed).items() if key != name},
+                ExpectedFinding("VRF-006", name),
+            ),
+            _fixture(
+                "payload-file-sha256",
+                "A payload file whose bytes are not the ones the manifest lists.",
+                _release(listed, [(entry, other_bytes)]),
+                ExpectedFinding("VRF-006", name),
+            ),
+            _fixture(
+                "payload-file-content",
+                "A payload file listed by its bytes whose content has another hash than listed.",
+                _release(listed, [(relisted, other_bytes)]),
+                ExpectedFinding("VRF-008", name),
+            ),
+            _fixture(
+                "payload-file-id",
+                "A payload file listed by its bytes that holds another ID than listed.",
+                _release(listed, [(listed_id, other_id)]),
+                ExpectedFinding("VRF-008", name),
+            ),
+            _fixture(
+                "payload-file-name",
+                "A payload file named after another version than its own.",
+                _release(listed, [(misnamed, data)]),
+                ExpectedFinding("VRF-006", MANIFEST, "/payloads/0/file/name"),
+            ),
+            _fixture(
+                "payload-version-twice",
+                "A payload version the manifest lists twice.",
+                _release(listed, [(entry, data), (entry, data)]),
+                ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
+            ),
+            _fixture(
+                "payload-id-two-versions",
+                "One payload ID listed with two versions.",
+                _release(listed, [(entry, data), (later, later_data)]),
+                ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
+            ),
+            _fixture(
+                "payload-content-two-ids",
+                "One payload content listed under two IDs.",
+                _release(listed, [(entry, data), (copied, copied_data)]),
+                ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
+            ),
+            _fixture(
+                "payload-id-two-files",
+                "One payload ID listed at one version and hash with two files.",
+                _release(listed, [(again, again_data), (entry, data)]),
+                ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
+            ),
+            _fixture(
+                "payload-version-not-listed",
+                "An item that references a payload version the release does not list.",
+                _release(listed, [(unused, unused_data)]),
+                ExpectedFinding("VRF-008", MANIFEST, "/items/0/payloads/0"),
+            ),
+            _fixture(
+                "payload-file-not-listed",
+                "A payload file beside the archives that the manifest lists nowhere.",
+                _release(listed, beside={"unused-1.0.0.json": unused_data}),
+                ExpectedFinding("VRF-006", "unused-1.0.0.json"),
+            ),
+        ]
+
     def _chained_entry(
         self,
         scenario: Mapping[str, Any] | None = None,
@@ -508,7 +641,7 @@ class FixtureBuilder:
             _fixture(
                 "manifest-schema",
                 "A manifest that does not meet its schema: an unknown channel.",
-                {MANIFEST: _manifest([item], channel="nightly"), name: archive},
+                {MANIFEST: _manifest([item], channel="nightly"), name: archive, **_carried()},
                 ExpectedFinding("VRF-009", MANIFEST, "/channel"),
             ),
             _fixture(
@@ -521,13 +654,13 @@ class FixtureBuilder:
             _fixture(
                 "scenario-twice",
                 "A manifest listing one scenario twice.",
-                {MANIFEST: _manifest([item, item]), name: archive},
+                {MANIFEST: _manifest([item, item]), name: archive, **_carried()},
                 ExpectedFinding("VRF-009", MANIFEST, "/items/1"),
             ),
             _fixture(
                 "archive-name",
                 "An archive named after another version than its item's.",
-                {MANIFEST: _manifest([renamed]), f"{FIRST}-2.0.0.zip": archive},
+                {MANIFEST: _manifest([renamed]), f"{FIRST}-2.0.0.zip": archive, **_carried()},
                 ExpectedFinding("VRF-009", MANIFEST, "/items/0/archive/name"),
             ),
         ]

@@ -303,6 +303,167 @@
       ]
     },
     {
+      "name": "catalogue-accepted",
+      "description": "A release whose payload catalogue lists a version used by a time-based scenario and a step of a scenario in chaining, and a version no scenario uses.",
+      "approved": false,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "payload-file-missing",
+      "description": "A payload file the manifest lists, missing.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-sha256",
+      "description": "A payload file whose bytes are not the ones the manifest lists.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-content",
+      "description": "A payload file listed by its bytes whose content has another hash than listed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-id",
+      "description": "A payload file listed by its bytes that holds another ID than listed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-name",
+      "description": "A payload file named after another version than its own.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "manifest.json",
+          "field": "/payloads/0/file/name",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-version-twice",
+      "description": "A payload version the manifest lists twice.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-id-two-versions",
+      "description": "One payload ID listed with two versions.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-content-two-ids",
+      "description": "One payload content listed under two IDs.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-id-two-files",
+      "description": "One payload ID listed at one version and hash with two files.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-version-not-listed",
+      "description": "An item that references a payload version the release does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/items/0/payloads/0",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-not-listed",
+      "description": "A payload file beside the archives that the manifest lists nowhere.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "unused-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
       "name": "chaining-accepted",
       "description": "A release of a scenario in chaining, two steps one after the other, sharing its payload with a time-based scenario.",
       "approved": false,
