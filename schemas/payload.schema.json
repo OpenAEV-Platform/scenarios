@@ -245,13 +245,16 @@
                             "description": "Which group of the rule, as $<number>.",
                             "$ref": "#/$defs/short_text"
                           }
-                        }
+                        },
+                        "minProperties": 1
                       }
                     }
-                  }
+                  },
+                  "minProperties": 1
                 }
               }
-            }
+            },
+            "minProperties": 1
           }
         },
         "payload_domains": {

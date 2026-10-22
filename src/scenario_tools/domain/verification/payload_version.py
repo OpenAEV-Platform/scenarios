@@ -20,6 +20,7 @@ from scenario_tools.domain.verification.payload_hash import (
     FileHash,
     UnhashablePayloadError,
     payload_hash,
+    text_order,
 )
 from scenario_tools.domain.verification.payload_references import AgreedIds
 
@@ -30,6 +31,8 @@ _TECHNIQUES = "payload_attack_patterns"
 _DOMAINS = "payload_domains"
 _DOMAIN_NAME = "domain_name"
 _NOT_HASHED = frozenset({_ID, _TECHNIQUES, _DOMAINS})
+_TEXT_SETS = ("payload_platforms", "payload_expectations")
+_SECURITY_PLATFORMS = "payload_expected_security_platforms"
 
 ID_NOT_ITS_CONTENT = (
     "this ID is not the one this version's content has (the ID derived from its hash, or the one "
@@ -44,7 +47,10 @@ NAME_SUFFIX_ON_FIRST = (
     "file of that version"
 )
 NAME_NO_SUFFIX = "a version after the first ends its name with ' (<version>)', its own version"
-SET_NOT_SORTED = "a set is stored sorted: techniques by their ID, domains by their name"
+SET_NOT_SORTED = (
+    "a set is stored sorted, as the hash sorts it: techniques, platforms, expectations and "
+    "security platforms by their text, domains by their name"
+)
 NOT_STORED_FORM = (
     "the file is not in the repository's stored form: UTF-8, sorted keys, two-space indent, a "
     "final newline"
@@ -105,14 +111,27 @@ def _blocking(code: str, version: PayloadVersion, field: str, message: str) -> F
     return Finding(code, Severity.BLOCKING, version.path, field, message)
 
 
+def _unsorted(items: Sequence[object]) -> bool:
+    """Whether ``items`` are not in the order the canonical form sorts texts in."""
+    return list(items) != sorted(items, key=lambda item: text_order(str(item)))
+
+
 def _sorted_sets(version: PayloadVersion) -> list[Finding]:
-    found = []
-    if list(version.techniques) != sorted(version.techniques):
-        found.append(_blocking("PAY-009", version, f"/{_TECHNIQUES}", SET_NOT_SORTED))
-    names = [domain[_DOMAIN_NAME] for domain in version.domains]
-    if names != sorted(names):
-        found.append(_blocking("PAY-009", version, f"/{_DOMAINS}", SET_NOT_SORTED))
-    return found
+    document = version.document
+    sets: list[tuple[str, Sequence[object]]] = [
+        (f"/{_TECHNIQUES}", version.techniques),
+        (f"/{_DOMAINS}", [domain[_DOMAIN_NAME] for domain in version.domains]),
+        *((f"/{key}", document.get(key, ())) for key in _TEXT_SETS),
+        *(
+            (f"/{_SECURITY_PLATFORMS}/{expectation}", platforms)
+            for expectation, platforms in document.get(_SECURITY_PLATFORMS, {}).items()
+        ),
+    ]
+    return [
+        _blocking("PAY-009", version, pointer, SET_NOT_SORTED)
+        for pointer, items in sets
+        if _unsorted(items)
+    ]
 
 
 def _name(version: PayloadVersion) -> list[Finding]:

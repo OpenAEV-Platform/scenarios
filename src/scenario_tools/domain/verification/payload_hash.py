@@ -130,6 +130,9 @@ def _units(text: str) -> _Order:
     return tuple((0xE000 <= ord(character) <= 0xFFFF, ord(character)) for character in text)
 
 
+text_order = _units  # the order of the canonical form, for files stored in it
+
+
 def _canonical_units(item: object) -> _Order:
     return _units(jcs(item).decode())
 

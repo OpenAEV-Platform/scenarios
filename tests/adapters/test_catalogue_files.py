@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from scenario_tools.adapters import catalogue_files
 from scenario_tools.adapters.catalogue_files import CatalogueDirectory
 from scenario_tools.domain.verification.payload_catalogue import EntryKind, TreeEntry
+from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT
 from scenario_tools.ports.errors import UnsafeInputError
 
 
@@ -99,4 +101,43 @@ def test_a_folder_replaced_by_a_link_since_it_was_listed_is_never_followed(tmp_p
     (root / "b-payload").symlink_to(tmp_path / "moved")
     with pytest.raises(UnsafeInputError) as refused:
         directory.read(("b-payload", "2.0.0.json"))
+    assert refused.value.code == "IO-013"
+
+
+def test_a_folder_replaced_by_a_link_while_the_catalogue_is_listed_is_never_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _tree(tmp_path)
+    listed = catalogue_files._listed
+    calls: list[str] = []
+
+    def swapping(descriptor: int, shown: str) -> list[tuple[str, os.stat_result]]:
+        found = listed(descriptor, shown)
+        if not calls:  # once the root is listed, a folder becomes a link
+            (root / "b-payload").rename(tmp_path / "moved")
+            (root / "b-payload").symlink_to(tmp_path / "moved")
+        calls.append(shown)
+        return found
+
+    monkeypatch.setattr(catalogue_files, "_listed", swapping)
+    with pytest.raises(UnsafeInputError) as refused:
+        CatalogueDirectory(root).entries()
+    assert refused.value.code == "IO-013"
+
+
+def test_a_version_file_that_grew_past_the_limit_since_it_was_listed_is_refused(
+    tmp_path: Path,
+) -> None:
+    root = _tree(tmp_path)
+    (root / "a-payload" / "1.0.0.json").write_bytes(b" " * (VERSION_FILE_LIMIT + 1))
+    with pytest.raises(UnsafeInputError) as refused:
+        CatalogueDirectory(root).read(("a-payload", "1.0.0.json"))
+    assert refused.value.code == "IO-001"
+
+
+def test_a_special_file_is_refused_when_read(tmp_path: Path) -> None:
+    root = _tree(tmp_path)
+    os.mkfifo(root / "a-payload" / "3.0.0.json")
+    with pytest.raises(UnsafeInputError) as refused:
+        CatalogueDirectory(root).read(("a-payload", "3.0.0.json"))
     assert refused.value.code == "IO-013"

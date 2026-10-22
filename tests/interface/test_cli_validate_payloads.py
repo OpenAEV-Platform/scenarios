@@ -233,3 +233,25 @@ def test_the_repository_s_own_catalogue_passes() -> None:
         pytest.skip("the repository holds no payload catalogue yet")
     result = CliRunner().invoke(main, ["validate-payloads", str(catalogue)])
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda d: d["payload_output_parsers"].append({}),
+        lambda d: d["payload_output_parsers"][0]["output_parser_contract_output_elements"].append(
+            {}
+        ),
+        lambda d: d["payload_output_parsers"][0]["output_parser_contract_output_elements"][0][
+            "contract_output_element_regex_groups"
+        ].append({}),
+    ],
+)
+def test_an_empty_object_in_the_output_parsers_fails_the_schema(
+    tmp_path: Path, change: Callable[[dict[str, Any]], None]
+) -> None:
+    catalogue = repository(tmp_path)
+    edit(catalogue, PS_FIRST, change)
+    code, found = _run(catalogue)
+    assert code == 1
+    assert {(c, message) for c, _, _, message in found} == {("PAY-009", OUT_OF_SCHEMA)}

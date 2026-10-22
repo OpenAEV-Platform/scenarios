@@ -270,3 +270,32 @@ def test_a_version_that_would_attach_a_file_cannot_be_hashed() -> None:
     document.pop("command_executor")
     with pytest.raises(UnhashablePayloadError):
         _version(document).digest()
+
+
+@pytest.mark.parametrize(
+    ("change", "pointer"),
+    [
+        (lambda d: d.__setitem__("payload_platforms", ["MacOS", "Linux"]), "/payload_platforms"),
+        (
+            lambda d: d.__setitem__("payload_expectations", ["PREVENTION", "DETECTION"]),
+            "/payload_expectations",
+        ),
+        (
+            lambda d: d.__setitem__(
+                "payload_expected_security_platforms", {"DETECTION": ["XDR", "EDR"]}
+            ),
+            "/payload_expected_security_platforms/DETECTION",
+        ),
+    ],
+)
+def test_every_set_of_text_is_stored_sorted(change: Any, pointer: str) -> None:
+    document = _document()
+    change(document)
+    document = _with_id(document)
+    assert _findings(document) == [("PAY-009", pointer, SET_NOT_SORTED)]
+
+
+def test_sets_are_sorted_by_utf16_code_units_as_the_hash_sorts_them() -> None:
+    # U+FF5E sorts after U+1F600 by code point, before it by UTF-16 code unit.
+    document = _with_id({**_document(), "payload_platforms": ["\U0001f600", "\uff5e"]})
+    assert _findings(document) == []
