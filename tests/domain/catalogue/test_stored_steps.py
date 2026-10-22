@@ -473,3 +473,14 @@ def test_a_tree_at_its_deepest_takes_identifiers_of_a_bounded_size() -> None:
     chain.append(_condition(17, "EQ", 16, condition_key="k", condition_value="v"))
     stored = _stored(_filtered(*chain))  # 16 levels below the root, the most allowed
     assert len(_identifiers(stored)) == 17
+
+
+def test_two_steps_alike_but_for_their_filters_are_still_one_signature() -> None:
+    """A step's signature reads its payload, its title and the steps it waits for, never its own
+    filters: two such steps are refused, and their author tells them apart by their titles."""
+    export = _edit(EXPORT, 1, lambda data: data.update(inject_title="Step 1 - list processes"))
+    first, second = _steps(export)
+    first["step_conditions"] = [_condition(1, "EQ", condition_key="a", condition_value="1")]
+    second["step_conditions"] = [_condition(2, "EQ", condition_key="a", condition_value="2")]
+
+    assert _refusal(export)[0] == STEPS_SAME_SIGNATURE
