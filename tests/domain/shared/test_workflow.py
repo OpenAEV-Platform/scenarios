@@ -32,6 +32,7 @@ from scenario_tools.domain.shared.workflow import (
     conditions,
     export_refusals,
     has_workflow,
+    holds_workflow,
     parsed_workflow,
     settled_workflow,
 )
@@ -701,3 +702,15 @@ def test_the_conditions_of_a_stored_workflow_are_walked_leniently() -> None:
     assert list(conditions({"scenario_workflow": {"workflow_steps": "x"}})) == []
     assert list(conditions({"scenario_workflow": "x"})) == []
     assert list(conditions("not a scenario")) == []
+
+
+@pytest.mark.parametrize(
+    ("workflow", "held"),
+    [(None, False), ({}, False), ([], False), ({"workflow_steps": []}, True), ("x", True)],
+)
+def test_a_stored_scenario_holds_a_workflow_unless_the_part_is_left_empty(
+    workflow: object, held: bool
+) -> None:
+    assert holds_workflow({"scenario_workflow": workflow}) is held
+    assert holds_workflow({}) is False
+    assert holds_workflow("not a scenario") is False

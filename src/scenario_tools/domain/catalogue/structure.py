@@ -16,6 +16,7 @@ from scenario_tools.domain.shared.stored import (
     injects,
     step_pointer,
 )
+from scenario_tools.domain.shared.workflow import holds_workflow
 
 INFORMATION = "scenario_information"
 CONTRACT, PAYLOAD = "inject_injector_contract", "injector_contract_payload"
@@ -48,7 +49,7 @@ def checked_injects(export: Mapping[str, Any]) -> Iterator[StoredInject]:
         raise not_an_export(f"{INJECTS} must be a list")
     for index, inject in enumerate(part):
         yield StoredInject(inject_pointer(index), require_object(inject, INJECTS), Origin.INJECT)
-    if export.get(WORKFLOW) in (None, {}, []):  # no workflow, or one left empty
+    if not holds_workflow(export):
         return
     steps = require_object(export[WORKFLOW], WORKFLOW).get(STEPS)
     if not isinstance(steps, list):

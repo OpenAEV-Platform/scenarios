@@ -118,7 +118,7 @@ def _timed_steps(*offsets: int, kind: str) -> EntryContent:
 
 def test_steps_closer_than_a_minute_are_exempt_from_the_spacing_rule() -> None:
     # A chained scenario is outside the rule: time-based metadata reaches the rule, whose filter
-    # on the origin leaves the steps out.
+    # on the origin leaves the steps out (SCH-013 refuses that combination on its own).
     assert _of("POL-009", policy_findings(DATA, _timed_steps(0, 30, kind="time-based"))) == []
 
 

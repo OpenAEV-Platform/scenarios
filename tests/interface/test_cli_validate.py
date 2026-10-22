@@ -465,3 +465,26 @@ def test_a_stored_condition_out_of_the_subset_is_a_finding_not_a_crash(
     assert result.exit_code == 1, result.output
     pointer = f"/scenario_workflow/workflow_steps/{index}/step_conditions/0"
     assert ("IO-014", "scenarios/techniques/chained/scenario.json", pointer) in _findings(result)
+
+
+def test_a_chaining_entry_declared_time_based_is_refused_at_its_type(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _repository(tmp_path) / "scenarios" / "techniques" / "chained"
+    entry.mkdir(parents=True)
+    prepared = _invoke(
+        monkeypatch, "normalize", str(CHAINING), "--out", str(entry), "--external-id", ENTRY_ID
+    )
+    assert prepared.exit_code == 0, prepared.output
+    metadata = parse_yaml((entry / "scenario.yaml").read_bytes())
+    assert (metadata["type"], metadata["requires"]["edition"]) == ("chained", "EE")
+    metadata["type"] = "time-based"
+    metadata["threat"] = {"ttps": ["T1057"]}
+    metadata["sources"] = [
+        {"url": "https://attack.mitre.org/techniques/T1057/", "tlp": "TLP:CLEAR"}
+    ]
+    (entry / "scenario.yaml").write_bytes(yaml_bytes(metadata))
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert ("SCH-013", "scenarios/techniques/chained/scenario.yaml", "/type") in _findings(result)

@@ -78,7 +78,7 @@
       "maxLength": 64
     },
     "type": {
-      "description": "time-based: injects run at set times; chained: each inject runs when the previous one succeeds or fails.",
+      "description": "time-based: injects run at set times. chained: the scenario is a workflow of steps, each starting at launch or when a step it depends on has run.",
       "enum": [
         "time-based",
         "chained"
@@ -89,7 +89,7 @@
       "maxItems": 10,
       "minItems": 1,
       "uniqueItems": true,
-      "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject that needs an executor, which is checked against the export. At least one value, so that the scenario appears under some platform filter; for instance Generic for a scenario that runs on no endpoint.",
+      "description": "A catalogue facet chosen by the contributor; it must include every platform targeted by an inject or step that needs an executor, which is checked against the export. At least one value, so that the scenario appears under some platform filter; for instance Generic for a scenario that runs on no endpoint.",
       "items": {
         "enum": [
           "Linux",
@@ -135,7 +135,7 @@
           }
         },
         "ttps": {
-          "description": "MITRE ATT&CK techniques the injects play, such as T1595 or T1595.002.",
+          "description": "MITRE ATT&CK techniques the injects or steps play, such as T1595 or T1595.002.",
           "type": "array",
           "maxItems": 100,
           "minItems": 1,
@@ -195,14 +195,14 @@
           "pattern": "^(>=|>|==|~=)[0-9]+(\\.[0-9]+)*$"
         },
         "edition": {
-          "description": "The OpenAEV edition the scenario needs: CE (Community) or EE (Enterprise).",
+          "description": "The OpenAEV edition the scenario needs: CE (Community) or EE (Enterprise). A chaining scenario needs EE.",
           "enum": [
             "CE",
             "EE"
           ]
         },
         "injectors": {
-          "description": "Types of the injectors the injects use, which the platform must have.",
+          "description": "Types of the injectors the injects or steps use, which the platform must have.",
           "type": "array",
           "maxItems": 50,
           "uniqueItems": true,
@@ -213,7 +213,7 @@
           }
         },
         "executors": {
-          "description": "Types of the executors the injects need on the targeted endpoints, if any.",
+          "description": "Types of the executors the injects or steps need on the targeted endpoints, if any.",
           "type": "array",
           "maxItems": 50,
           "uniqueItems": true,

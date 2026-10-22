@@ -98,6 +98,7 @@ class ExportFacts:
     category: str
     main_focus: str
     injects: tuple[InjectFacts, ...]
+    has_workflow: bool  # the stored scenario holds a workflow, whose steps run its injects
 
 
 def communication_injectors_from_document(document: object) -> frozenset[str]:
@@ -120,10 +121,14 @@ def is_tabletop(facts: ExportFacts, communication: frozenset[str]) -> bool:
     """True when every inject uses a communication injector and none needs an executor. A
     scenario without any inject, with an injector outside the list, or with an inject that runs
     through an executor is technical. Both conditions are checked, so neither fact decides
-    alone."""
-    return bool(facts.injects) and all(
-        inject.injector_type in communication and not inject.needs_executor
-        for inject in facts.injects
+    alone. A scenario in chaining is never tabletop: its steps run on endpoints."""
+    return (
+        not facts.has_workflow
+        and bool(facts.injects)
+        and all(
+            inject.injector_type in communication and not inject.needs_executor
+            for inject in facts.injects
+        )
     )
 
 
@@ -136,6 +141,27 @@ def _differences(missing: frozenset[str], extra: frozenset[str]) -> str:
     if extra:
         parts.append(f"not used: {_names(extra)}")
     return "; ".join(parts)
+
+
+TYPE_WITHOUT_WORKFLOW = (
+    "type is 'chained' but scenario.json holds no workflow: a scenario without steps is time-based"
+)
+WORKFLOW_NOT_CHAINED = "scenario.json holds a workflow: the scenario's type is 'chained'"
+WORKFLOW_NEEDS_EE = (
+    "scenario.json holds a workflow, which only the Enterprise Edition runs: requires.edition "
+    "is 'EE'"
+)
+
+
+def _chaining(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> Iterator[Finding]:
+    """``SCH-013``: the type and the edition agree with whether the stored scenario has a
+    workflow, one finding per case."""
+    if facts.has_workflow and metadata.type != "chained":
+        yield Finding("SCH-013", Severity.BLOCKING, path, "/type", WORKFLOW_NOT_CHAINED)
+    elif not facts.has_workflow and metadata.type == "chained":
+        yield Finding("SCH-013", Severity.BLOCKING, path, "/type", TYPE_WITHOUT_WORKFLOW)
+    if facts.has_workflow and metadata.requires.edition != "EE":
+        yield Finding("SCH-013", Severity.BLOCKING, path, "/requires/edition", WORKFLOW_NEEDS_EE)
 
 
 def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tuple[Finding, ...]:
@@ -186,6 +212,7 @@ def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tu
                 f"missing: {_names(required - metadata.platforms)}",
             )
         )
+    findings.extend(_chaining(metadata, facts, path))
     return tuple(findings)
 
 
@@ -216,6 +243,7 @@ _REQUIRES_DEFAULTS = (
     ),
     ("/requires/edition", "default CE: give EE if the scenario needs the Enterprise Edition"),
 )
+STARTING_EDITION_OF_A_WORKFLOW = "EE: the scenario holds a workflow, which only EE runs"
 _THREAT = (
     "give at least one of threat.cves (CVE-YYYY-NNNN), threat.intrusion_sets (names) or "
     "threat.ttps (MITRE ATT&CK IDs such as T1595)"
@@ -419,6 +447,9 @@ def starting_metadata(
     todo["/threat"] = _THREAT
     todo["/sources"] = _SOURCES
     todo.update(_REQUIRES_DEFAULTS)
+    if facts.has_workflow:  # said, and nothing to choose
+        todo["/requires/edition"] = STARTING_EDITION_OF_A_WORKFLOW
+        asking_nothing.add("/requires/edition")
     injectors = sorted({inject.injector_type for inject in facts.injects})
     if len(injectors) > INJECTORS_LIMIT:
         todo["/requires/injectors"] = (
@@ -461,13 +492,13 @@ def starting_metadata(
         "severity": severity,
         "category": category,
         "main_focus": main_focus,
-        "type": "time-based",
+        "type": "chained" if facts.has_workflow else "time-based",
         "platforms": platforms or ["Generic"],
         "threat": {},
         "sources": [],
         "requires": {
             "openaev": f">={platform_version}",
-            "edition": "CE",
+            "edition": "EE" if facts.has_workflow else "CE",
             "injectors": injectors,
             "executors": [],
         },
