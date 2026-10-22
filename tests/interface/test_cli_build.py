@@ -468,3 +468,97 @@ def test_approvals_collected_at_another_commit_build_nothing(
     assert result.exit_code == 3, result.output
     assert "not at the commit built" in result.output
     assert not out.exists()
+
+
+CHAINED = "scenarios/techniques/chained"
+CHAINED_METADATA = """\
+schema_version: 1
+external_id: 5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42
+version: 1.0.0
+status: VERIFIED
+name: Two chained steps
+description: Lists the processes of an endpoint, then lists them again once it is done.
+severity: low
+category: attack-scenario
+main_focus: endpoint-protection
+type: chained
+platforms:
+- Linux
+- MacOS
+threat:
+  ttps:
+  - T1057
+sources:
+- url: https://attack.mitre.org/techniques/T1057/
+  tlp: TLP:CLEAR
+  title: 'MITRE ATT&CK T1057: Process Discovery'
+targets: []
+requires:
+  openaev: '>=3.261005.0'
+  edition: EE
+  injectors:
+  - openaev_implant
+  executors:
+  - openaev
+payloads: []
+"""
+
+
+def _chained_entry(root: Path) -> None:
+    """The hand-built scenario in chaining as an entry of ``root``, committed: its stored form,
+    its metadata, its payload references assigned and its sheet rendered."""
+    entry = root / CHAINED
+    entry.mkdir(parents=True)
+    stored = ROOT / "tests" / "golden" / "chaining" / "two-steps.normalised.json"
+    shutil.copyfile(stored, entry / "scenario.json")
+    (entry / "scenario.yaml").write_text(CHAINED_METADATA)
+    (entry / "CHANGELOG.md").write_text("# Changelog\n\n## 1.0.0 — 2026-10-22\n\nFirst version.\n")
+    for command in (["payloads", str(entry), "--assign"], ["render", str(entry)]):
+        result = CliRunner().invoke(main, command)
+        assert result.exit_code == 0, result.output
+    _git(root, "add", ".")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-m", "chained")  # fmt: skip
+
+
+def test_a_release_of_a_scenario_in_chaining_lists_its_steps_payloads_and_verifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repository(tmp_path, monkeypatch)
+    _chained_entry(root)
+    approvals = tmp_path / "approvals.json"
+    approved = {"pull_request": 124, "approvers": ["alice"]}
+    approvals.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "commit": _git(root, "rev-parse", "HEAD"),
+                "entries": {EASM: approved, CHAINED: approved},
+            }
+        )
+    )
+    out = tmp_path / "release"
+
+    result = _build(root, approvals, out)
+
+    assert result.exit_code == 0, result.output
+    document = json.loads((out / "manifest.json").read_bytes())
+    (item,) = [item for item in document["items"] if item["type"] == "chained"]
+    assert item["tabletop"] is False
+    assert (item["requires"]["edition"], item["requires"]["injectors"]) == (
+        "EE",
+        ["openaev_implant"],
+    )
+    stored = json.loads(zipfile.ZipFile(out / item["archive"]["name"]).read("scenario.json"))
+    steps = stored["scenario_workflow"]["workflow_steps"]
+    embedded = {
+        step["step_data"]["inject_injector_contract"]["injector_contract_payload"][
+            "payload_external_id"
+        ]
+        for step in steps
+    }
+    assert [payload["id"] for payload in item["payloads"]] == sorted(embedded)  # listed once
+    verified = CliRunner().invoke(
+        main, ["verify", str(out / "manifest.json"), "--schemas", str(ROOT / "schemas")]
+    )
+    assert verified.exit_code == 0, verified.output
