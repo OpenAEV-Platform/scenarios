@@ -465,3 +465,28 @@ def test_the_value_of_a_filter_is_checked_not_the_step_a_dependency_names(
 
     pointer = "/scenario_workflow/workflow_steps/0/step_conditions/0/condition_value"
     assert found == ([pointer] if flagged else [])
+
+
+@pytest.mark.parametrize("kind", ["IN", "NIN"])
+@pytest.mark.parametrize("value", ["evil.com,example.com", "evil.com,", " evil.com , x"])
+def test_each_item_of_a_list_is_checked_as_a_value_of_its_own(kind: str, value: str) -> None:
+    condition = {"condition_type": kind, "condition_value": value}
+    stored = {
+        "scenario_information": {},
+        "scenario_workflow": {"workflow_steps": [{"step_conditions": [condition]}]},
+    }
+    assert _pol_003(policy_findings(DATA, content(stored=stored))) == [
+        "/scenario_workflow/workflow_steps/0/step_conditions/0/condition_value"
+    ]
+
+
+@pytest.mark.parametrize("kind", [["IN"], {"IN": 1}, 5])
+def test_a_condition_type_that_is_not_text_reads_its_value_whole(kind: object) -> None:
+    condition = {"condition_type": kind, "condition_value": "http://10.0.0.5/"}
+    stored = {
+        "scenario_information": {},
+        "scenario_workflow": {"workflow_steps": [{"step_conditions": [condition]}]},
+    }
+    assert _pol_003(policy_findings(DATA, content(stored=stored))) == [
+        "/scenario_workflow/workflow_steps/0/step_conditions/0/condition_value"
+    ]

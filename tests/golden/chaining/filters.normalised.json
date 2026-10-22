@@ -54,7 +54,37 @@
         "step_conditions": [
           {
             "condition_description": null,
-            "condition_id": "0d5db436-765c-5219-b108-5648524f3e52",
+            "condition_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
+            "condition_is_root": false,
+            "condition_key": null,
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "A user or a process ID",
+            "condition_parent_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
+            "condition_step_from_id": null,
+            "condition_type": "OR",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "5f9bd554-d1d3-5d47-9e17-6b2124dfcb54",
+            "condition_is_root": false,
+            "condition_key": "pid",
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "A process ID is known",
+            "condition_parent_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
+            "condition_step_from_id": null,
+            "condition_type": "IS_NOT_NULL",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
             "condition_is_root": true,
             "condition_key": null,
             "condition_key_types": [
@@ -69,37 +99,7 @@
           },
           {
             "condition_description": null,
-            "condition_id": "17c1a6a2-ecfa-553c-b97c-c36aed4c2246",
-            "condition_is_root": false,
-            "condition_key": null,
-            "condition_key_types": [
-              "text"
-            ],
-            "condition_mapping_type": null,
-            "condition_name": "A user or a process ID",
-            "condition_parent_id": "0d5db436-765c-5219-b108-5648524f3e52",
-            "condition_step_from_id": null,
-            "condition_type": "OR",
-            "condition_value": null
-          },
-          {
-            "condition_description": null,
-            "condition_id": "387cfe67-632c-5f2c-9a46-2a39f5213440",
-            "condition_is_root": false,
-            "condition_key": "user",
-            "condition_key_types": [
-              "text"
-            ],
-            "condition_mapping_type": null,
-            "condition_name": "The user is root or admin",
-            "condition_parent_id": "17c1a6a2-ecfa-553c-b97c-c36aed4c2246",
-            "condition_step_from_id": null,
-            "condition_type": "IN",
-            "condition_value": "root,admin"
-          },
-          {
-            "condition_description": null,
-            "condition_id": "5eee3dff-af3d-50c8-a7c9-05c25a15daa1",
+            "condition_id": "c1274892-d474-5781-8eba-0a81c29772f0",
             "condition_is_root": false,
             "condition_key": "process",
             "condition_key_types": [
@@ -107,25 +107,25 @@
             ],
             "condition_mapping_type": null,
             "condition_name": "The process is sshd",
-            "condition_parent_id": "0d5db436-765c-5219-b108-5648524f3e52",
+            "condition_parent_id": "ba3a712a-3b10-5574-b72c-7c254d10d824",
             "condition_step_from_id": null,
             "condition_type": "EQ",
             "condition_value": "sshd"
           },
           {
             "condition_description": null,
-            "condition_id": "6a349d7f-209f-52b3-a62d-9a85ea2140a8",
+            "condition_id": "db16dc98-d50b-5b12-aa49-0fe4db6849cd",
             "condition_is_root": false,
-            "condition_key": "pid",
+            "condition_key": "user",
             "condition_key_types": [
               "text"
             ],
             "condition_mapping_type": null,
-            "condition_name": "A process ID is known",
-            "condition_parent_id": "17c1a6a2-ecfa-553c-b97c-c36aed4c2246",
+            "condition_name": "The user is root or admin",
+            "condition_parent_id": "4d8c66c0-53a7-5d16-882e-2a05140f087b",
             "condition_step_from_id": null,
-            "condition_type": "IS_NOT_NULL",
-            "condition_value": null
+            "condition_type": "IN",
+            "condition_value": "root,admin"
           }
         ],
         "step_data": {

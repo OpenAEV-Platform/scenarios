@@ -714,15 +714,31 @@ def _condition_identifiers(
 ) -> dict[str, str]:
     """The stable identifier of each condition of a step: the step, the content keys of the
     condition's ancestors and its own, so that a child is known by what it is and where it sits,
-    never by its place in a list. The identifiers its content quotes are masked, except the step a
-    dependency waits for, which is named by its stable identifier, one of the ``known`` ones."""
+    never by its place in a list. A condition's content holds the contents of the conditions under
+    it, in sorted order, so that two groups that differ only below are two conditions. The
+    identifiers its texts quote are masked; a filter's value is kept as it is, since it is what the
+    filter compares with, and a dependency's names the step it waits for by its stable
+    identifier, one of the ``known`` ones."""
     conditions = _by_identifier(step)
+    under: dict[str, list[Condition]] = {}
+    for condition in conditions.values():
+        if condition.parent is not None:
+            under.setdefault(str(condition.parent), []).append(condition)
+    contents: dict[str, str] = {}
 
     def content(condition: Condition) -> str:
-        values = _masked([condition.fields.get(key) for key in _CONDITION_CONTENT])
-        if condition.kind == "DEPEND_ON":
-            values[_CONDITION_CONTENT.index("condition_value")] = known[str(condition.value)]
-        return json.dumps(values, ensure_ascii=False, sort_keys=True)
+        source = str(condition.identifier)
+        if source not in contents:  # the graph checks made the conditions one tree
+            values = _masked([condition.fields.get(key) for key in _CONDITION_CONTENT])
+            value = _CONDITION_CONTENT.index("condition_value")
+            if condition.kind == "DEPEND_ON":
+                values[value] = known[str(condition.value)]
+            else:
+                values[value] = condition.value
+            below = sorted(content(child) for child in under.get(source, []))
+            held = [values, below] if below else values  # a leaf's, as before groups were read
+            contents[source] = json.dumps(held, ensure_ascii=False, sort_keys=True)
+        return contents[source]
 
     def path(condition: Condition) -> list[str]:
         parent = conditions.get(str(condition.parent)) if condition.parent is not None else None

@@ -39,6 +39,7 @@ _CONTENT = "inject_content"
 # What a person reads of a condition of a step: its name, its description and the key it reads;
 # a filter's value too, below.
 _CONDITION_TEXTS = ("condition_name", "condition_description", "condition_key")
+_LISTS = frozenset({"IN", "NIN"})  # whose value lists its items between commas
 _EXERCISE_TEXTS = ("scenario_articles", "scenario_channels", "scenario_challenges")
 _DOTS = str.maketrans(dict.fromkeys((chr(0x3002), chr(0xFF61), chr(0xFF0E)), "."))  # full stops
 _VARIABLE = re.compile(r"#\{[^}]{0,200}\}|\$\{[^}]{0,200}\}|\{\{[^}]{0,200}\}\}")
@@ -288,8 +289,12 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
     for pointer, condition in conditions(stored):
         for key in _CONDITION_TEXTS:
             yield f"{pointer}/{key}", condition.get(key)
-        if condition.get("condition_type") != "DEPEND_ON":  # its value names a step, not a text
-            yield f"{pointer}/condition_value", condition.get("condition_value")
+        kind, value = condition.get("condition_type"), condition.get("condition_value")
+        if isinstance(kind, str) and kind in _LISTS and isinstance(value, str):  # its items
+            for item in value.split(","):
+                yield f"{pointer}/condition_value", item.strip()
+        elif kind != "DEPEND_ON":  # its value names a step, not a text
+            yield f"{pointer}/condition_value", value
     for payload in payloads(stored):
         values = argument_values(payload)
         for field, command, _ in commands(payload):
