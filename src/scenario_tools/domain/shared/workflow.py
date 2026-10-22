@@ -693,12 +693,13 @@ def step_condition_trees(step: Mapping[str, Any]) -> tuple[ConditionNode, ...]:
             continue
         # No root is above it, so its parents lead to a loop: the tree starts on the loop, and
         # the condition is said once, below it.
-        path = [index]
+        seen, last = {index}, index
         following = parent_of(index)
-        while following is not None and following not in path:
-            path.append(following)
+        while following is not None and following not in seen:  # each parent followed once
+            seen.add(following)
+            last = following
             following = parent_of(following)
-        start = following if following is not None else path[-1]  # always on the loop
+        start = following if following is not None else last  # always on the loop
         trees.append(tree(start, frozenset({start})))
     return tuple(trees)
 

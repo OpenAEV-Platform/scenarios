@@ -4,6 +4,7 @@ reader needs before importing it."""
 
 import copy
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -650,3 +651,16 @@ def test_a_condition_below_a_loop_of_parents_is_said_once_whatever_its_place() -
     for order in ([leaf, *loop], [*loop, leaf]):
         sheet = _sheet(_filtered_step(*order))
         assert sheet.count("`k` is `a`.") == 1
+
+
+def test_a_long_loop_of_parents_is_found_in_linear_time() -> None:
+    """Each parent is followed once: a file with a long loop never hangs a run."""
+    count = 30_000
+    loop = [_filter(f"c{i}", "AND", f"c{(i + 1) % count}") for i in range(count)]
+    stored = _filtered_step(*loop)
+    started = time.perf_counter()
+
+    sheet = _sheet(stored)
+
+    assert time.perf_counter() - started < 3.0
+    assert "- More conditions below, not shown." in sheet
