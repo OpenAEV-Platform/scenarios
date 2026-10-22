@@ -58,6 +58,11 @@ version, keeps the exception. The entry's sheet lists its exceptions: render it 
 changes. The other rules have no exception, and no exception is taken before
 the repository names the code owners who approve them.
 
+A scenario that runs a payload the catalogue does not hold yet comes with that payload's version
+file, which `intake` writes under `payloads/`, in the same pull request. The pull request's check
+takes its payload catalogue as data, checks it as `scenario-tools validate-payloads payloads` does,
+then checks the entries against it.
+
 ### Versions
 
 Each entry has a version, in `scenario.yaml`, and a `CHANGELOG.md` with one section per version,
