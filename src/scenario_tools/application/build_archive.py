@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.findings import not_normalised
-from scenario_tools.domain.catalogue.archive import archive_findings
+from scenario_tools.domain.catalogue.archive import archive_findings, checked_workflow
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import rule_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
@@ -29,6 +29,7 @@ def build_archive(
     policy: PolicyData,
     declared: object,
     agreed: AgreedIds,
+    condition_types: frozenset[str],
 ) -> tuple[Report, bytes | None]:
     """The report, and the archive when the report is ok. ``scenario`` holds the stored bytes
     of ``document``, found at ``path``; the archive, meant for ``out``, is never larger than
@@ -38,9 +39,11 @@ def build_archive(
     gives what normalisation writes for the document, and ``contract_findings`` the contracts
     whose facts cannot be established. ``declared`` is the entry's ``scenario.yaml`` as read,
     whose references must name each payload the scenario embeds, with its hash, under the ID
-    its content has, ``agreed`` holding the IDs the registry agrees."""
+    its content has, ``agreed`` holding the IDs the registry agrees. A workflow is checked as
+    normalisation checks it, ``condition_types`` being the types of condition a step may hold."""
     try:
         findings = archive_findings(document, path)
+        checked_workflow(document, condition_types)
         entry = EntryContent(path.rpartition("/")[0], frozenset(), None, document)
         # The archive carries no recurrence and names no host outside the allowed targets.
         findings += rule_findings("POL-002", policy, entry)

@@ -17,6 +17,7 @@ OUT = "build/akira.zip"
 DOCUMENT: dict[str, Any] = {"scenario_information": {}, "scenario_injects": []}
 NO_PAYLOADS: dict[str, Any] = {"payloads": []}
 NONE = AgreedIds({})
+DEPENDENCIES = frozenset({"DEPEND_ON"})
 PAYLOAD = {"payload_type": "Command", "payload_name": "a", "command_content": "id"}
 
 
@@ -60,6 +61,7 @@ def test_an_entry_is_built_from_its_stored_bytes() -> None:
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert report.command == "archive"
@@ -87,6 +89,7 @@ def test_an_entry_the_archive_cannot_carry_is_never_built() -> None:
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert [(f.code, f.severity) for f in report.findings] == [("POL-002", Severity.BLOCKING)]
@@ -110,6 +113,7 @@ def test_an_archive_over_the_limit_is_refused() -> None:
             policy=DATA,
             declared=NO_PAYLOADS,
             agreed=NONE,
+            condition_types=DEPENDENCIES,
         )
     assert (error.value.code, error.value.message, error.value.path) == (
         "IO-001",
@@ -133,6 +137,7 @@ def test_an_archive_at_the_limit_is_built() -> None:
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert data == b"x" * 100
@@ -154,6 +159,7 @@ def test_a_stored_scenario_not_shaped_like_one_is_refused_on_its_file() -> None:
             policy=DATA,
             declared=NO_PAYLOADS,
             agreed=NONE,
+            condition_types=DEPENDENCIES,
         )
     assert (error.value.code, error.value.path) == ("IO-014", PATH)
     assert error.value.message == (
@@ -180,6 +186,7 @@ def test_an_archive_the_checks_refuse_is_never_returned() -> None:
             policy=DATA,
             declared=NO_PAYLOADS,
             agreed=NONE,
+            condition_types=DEPENDENCIES,
         )
 
 
@@ -200,6 +207,7 @@ def test_a_stored_scenario_normalisation_would_change_is_refused() -> None:
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert [(f.code, f.severity, f.path, f.field) for f in report.findings] == [
@@ -231,6 +239,7 @@ def test_a_contract_without_established_facts_keeps_the_entry_out() -> None:
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert report.findings == (unknown,)
@@ -259,6 +268,7 @@ def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> 
         policy=DATA,
         declared=NO_PAYLOADS,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
     assert [(f.code, f.field) for f in report.findings] == [
@@ -291,6 +301,7 @@ def _archive(document: object, declared: object) -> tuple[Any, bytes | None]:
         policy=DATA,
         declared=declared,
         agreed=NONE,
+        condition_types=DEPENDENCIES,
     )
 
 

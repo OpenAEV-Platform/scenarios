@@ -579,3 +579,27 @@ def step_waits(step: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...
         else:
             others.append(str(kind))
     return tuple(awaited), tuple(others)
+
+
+def checked_stored_workflow(stored: object) -> Workflow | None:
+    """The workflow of a stored scenario as value objects, or ``None`` when it holds none;
+    ``ValueError`` when its steps or their conditions are not lists of objects, or it holds more
+    steps than an export may."""
+    if not holds_workflow(stored):
+        return None
+    workflow = stored[WORKFLOW]  # type: ignore[index]  # holds_workflow read it as a mapping
+    if not isinstance(workflow, Mapping):
+        raise ValueError(f"{WORKFLOW} must be an object")
+    steps = workflow.get(STEPS)
+    if not isinstance(steps, list) or not all(isinstance(step, Mapping) for step in steps):
+        raise ValueError(f"{STEPS} must be a list of objects")
+    if len(steps) > MAX_STEPS:  # the graph is read only within the bounds of an export
+        raise ValueError(TOO_MANY_STEPS)
+    for step in steps:
+        conditions = step.get(CONDITIONS)
+        if conditions is not None and (
+            not isinstance(conditions, list)
+            or not all(isinstance(condition, Mapping) for condition in conditions)
+        ):
+            raise ValueError(f"{CONDITIONS} must be a list of objects")
+    return parsed_workflow(workflow)

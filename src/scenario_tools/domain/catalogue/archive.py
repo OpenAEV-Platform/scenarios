@@ -2,7 +2,8 @@
 
 The archive holds the reviewed ``scenario.json`` as it is, so it never changes content to make
 it importable, and it fails closed: a part a normalised scenario never has is refused, since the
-importer reads other parts too (an exercise set, a workflow whose steps rebuild payloads). A
+importer reads other parts too (an exercise set, lessons). A workflow is a part of a stored
+scenario: before an archive is built, its graph and conditions are checked again. A
 payload outside the contract of an inject or a step is refused, since no payload reference can
 name it; the payloads of the injects and steps are checked against their references. A
 recurrence is the policy's matter, which the archive also asks.
@@ -21,8 +22,10 @@ from scenario_tools.domain.catalogue.structure import (
     not_an_export,
     require_object,
 )
+from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.stored import INJECTS, WORKFLOW, injects
+from scenario_tools.domain.shared.workflow import checked_stored_workflow
 
 # The parts of a normalised scenario, which are all an archive may carry.
 STORED_PARTS = frozenset(
@@ -39,11 +42,11 @@ STORED_PARTS = frozenset(
         "scenario_teams",
         "scenario_users",
         "scenario_variables",
+        WORKFLOW,
     }
 )
-# Parts normalisation refuses unless empty, and then leaves in place; a workflow is carried once
-# its steps are checked here too.
-_LEFT_EMPTY = frozenset(part for part, _ in NOT_SUPPORTED) | {WORKFLOW}
+# Parts normalisation refuses unless empty, and then leaves in place.
+_LEFT_EMPTY = frozenset(part for part, _ in NOT_SUPPORTED)
 
 
 def _objects(value: Any, pointer: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
@@ -71,6 +74,26 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
         if contract is not None:
             require_object(contract, CONTRACT)
     return payloads_outside_contracts(export, path)
+
+
+def checked_workflow(document: object, condition_types: frozenset[str]) -> None:
+    """Refuse, before an archive is built, a workflow whose graph is not sound or whose
+    conditions are out of the subset, ``condition_types`` being the types a step may hold: the
+    stored file may have been edited by hand since it was normalised, and the rest of what
+    normalisation checks is checked by normalising it again."""
+    try:
+        workflow = checked_stored_workflow(document)
+    except ValueError as error:
+        raise not_an_export(str(error)) from error
+    if workflow is None:
+        return
+    refusal = next(graph_refusals(workflow), None) or next(
+        subset_refusals(workflow, condition_types), None
+    )
+    if refusal is not None:
+        refused = not_an_export(refusal.what)
+        refused.pointer = refusal.pointer
+        raise refused
 
 
 def payloads_outside_contracts(document: object, path: str) -> tuple[Finding, ...]:

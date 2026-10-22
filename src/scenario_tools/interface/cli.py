@@ -120,6 +120,7 @@ from scenario_tools.domain.shared.finding import (
     Severity,
     shorten,
 )
+from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -484,6 +485,7 @@ def _entry_archive(
     try:
         builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
         policy = _policy_data(loader)
+        condition_types = ExportKeys.from_document(loader.load("export-keys")).condition_types
     except ValueError as error:
         raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
     path = repository_path(str(scenario), root)
@@ -509,6 +511,7 @@ def _entry_archive(
         policy=policy,
         declared=declared,
         agreed=agreed_ids(loader),
+        condition_types=condition_types,
     )
     return ArchivedEntry(report.findings, built, declared, document)
 
