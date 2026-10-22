@@ -101,11 +101,12 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `validate` | Checks entries against the schemas and the repository's rules (some rules are not run yet) |
 | `render` | Writes the sheet of entries, their `README.md`, from `scenario.yaml` and `scenario.json`; with `--check`, reports a sheet out of date |
 | `diff` | Lists what changed in entries since the base branch's copy, each change with the version it needs |
-| `payloads` | Checks that `scenario.yaml` names each payload an entry embeds, with its hash; with `--assign`, gives each payload its ID |
+| `payloads` | Checks that `scenario.yaml` names each payload an entry embeds by a version of the catalogue, with its hash; with `--assign`, gives each payload its ID and version |
 | `archive` | Builds the archive of an entry that the platform's importer reads |
-| `build` | Builds a release of the catalogue from a commit: every entry's archive and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
+| `validate-payloads` | Checks the payload catalogue, `payloads/`: its layout, each version file, and the rules across its versions ([`docs/payloads.md`](docs/payloads.md)) |
+| `build` | Builds a release of the catalogue from a commit: every entry's archive, every payload version's file, and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
 | `approvals` | Collects who approved the last change of every entry, for `build` |
-| `verify` | Verifies a release as its consumers will: each archive against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
+| `verify` | Verifies a release as its consumers will: each archive and payload file against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
 | `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |
 | `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |
 | `check-title` | Checks a pull request title against the shared convention |

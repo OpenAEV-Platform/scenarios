@@ -64,4 +64,7 @@ version of a payload keeps them.
 ## A published version is never edited
 
 A version file, once merged, is frozen: a change of any field, the domains included, is a new
-version with a higher number, in a file of its own. A version is never removed.
+version with a higher number, in a file of its own. A version is never removed. For now the
+review of each pull request is what holds this rule, and a release refuses a version it published
+before with another content or file (`VER-021`); the checks of a pull request do not compare its
+version files with the base branch's yet.

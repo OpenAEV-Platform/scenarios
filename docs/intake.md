@@ -198,6 +198,7 @@ run refuses it. For instance:
 ```sh
 git switch -c add-easm <base>      # the plan's base
 git add scenarios/techniques/easm  # the whole entry: what the run wrote, and what was completed
+git add payloads                   # the version files of its new payloads, if the plan lists any
 git commit -S -m "feat(scenarios): add easm (#12)" && git push -u origin add-easm
 git switch main                    # back to where the next intake starts
 ```
