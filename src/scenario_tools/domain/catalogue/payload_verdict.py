@@ -21,7 +21,11 @@ from scenario_tools.domain.verification.payload_hash import (
     text_order,
 )
 from scenario_tools.domain.verification.payload_references import AgreedIds
-from scenario_tools.domain.verification.payload_version import PayloadVersion, version_findings
+from scenario_tools.domain.verification.payload_version import (
+    VERSION_FILE_LIMIT,
+    PayloadVersion,
+    version_findings,
+)
 
 _SLUG_LIMIT = 64
 _ATTACHED: dict[str, str] = {}  # an embedded payload's attached files are not read yet
@@ -64,6 +68,10 @@ SUFFIXED = (
 OUT_OF_SCHEMA = (
     "this payload's version file would be out of schemas/payload.schema.json: complete the "
     "payload in OpenAEV and export again"
+)
+OVER_SIZE = (
+    f"this payload's version file would be over {VERSION_FILE_LIMIT} bytes: shorten the payload "
+    "in OpenAEV and export again"
 )
 NOT_KEPT = "this payload cannot be written as a version file of the same content"
 
@@ -134,10 +142,15 @@ def _not_kept(
     if version.name != base_name(version.name):
         return SUFFIXED
     document = dict(version.document)
+    data = stored_form(document)
+    if len(data) > VERSION_FILE_LIMIT:
+        return OVER_SIZE
+    if not accepted(document):  # the checks of a file read it as its schema shapes it
+        return OUT_OF_SCHEMA
     # The checks of a file say first whether it can be hashed: only then is its hash compared.
-    if version_findings(version, stored_form(document), agreed) or version.digest() != digest:
+    if version_findings(version, data, agreed) or version.digest() != digest:
         return NOT_KEPT
-    return None if accepted(document) else OUT_OF_SCHEMA
+    return None
 
 
 def verdicts(

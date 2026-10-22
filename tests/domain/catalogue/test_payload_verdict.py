@@ -13,6 +13,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     NO_SLUG,
     NOT_KEPT,
     OUT_OF_SCHEMA,
+    OVER_SIZE,
     SUFFIXED,
     TAKEN_IN_EXPORT,
     proposed_slug,
@@ -221,3 +222,25 @@ def test_the_sets_of_a_new_payload_are_sorted_whatever_their_items() -> None:
     }
     assert document["payload_domains"] == ["text", {"domain_name": "a"}, {"domain_name": "z"}]
     assert document["payload_attack_patterns"] == ["T1", "T2"]
+
+
+def test_a_new_payload_the_schema_refuses_is_refused_before_its_file_is_checked() -> None:
+    stored = copy.deepcopy(STORED)
+    for payload in _payloads(stored):
+        payload["payload_domains"] = ["text"]  # out of the schema; read as objects by the checks
+
+    found, given = verdicts(stored, _catalogue(), NONE, accepted=lambda _: False)
+
+    assert {(f.code, f.message) for f in found} == {("PAY-009", OUT_OF_SCHEMA)}
+    assert given == {}
+
+
+def test_a_new_payload_whose_file_would_be_over_its_size_bound_is_refused() -> None:
+    stored = copy.deepcopy(STORED)
+    for payload in _payloads(stored):
+        payload["payload_description"] = "\U0001f600" * 65_536  # four bytes each in UTF-8
+
+    found, given = verdicts(stored, _catalogue(), NONE, accepted=ANY)
+
+    assert {(f.code, f.message) for f in found} == {("PAY-009", OVER_SIZE)}
+    assert given == {}

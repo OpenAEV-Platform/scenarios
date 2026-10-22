@@ -49,15 +49,15 @@ def catalogue_of(files: CatalogueFiles | None) -> Catalogue:
     entry's: `validate-payloads` says why."""
     if files is None:
         return Catalogue.of([])
-    _, places = layout("payloads", files.entries())
-    versions = []
-    for place in places:
-        _, document = files.read((place.slug, f"{place.version}.json"))
-        if isinstance(document, Mapping):
-            versions.append(PayloadVersion(place.slug, place.version, place.path, document))
     try:
+        _, places = layout("payloads", files.entries())
+        versions = []
+        for place in places:
+            _, document = files.read((place.slug, f"{place.version}.json"))
+            if isinstance(document, Mapping):
+                versions.append(PayloadVersion(place.slug, place.version, place.path, document))
         return Catalogue.of(versions)
-    except (CatalogueCollisionError, KeyError, TypeError) as error:
+    except (CatalogueCollisionError, UnsafeInputError, KeyError, TypeError) as error:
         raise EnvironmentProblemError(
             "the payload catalogue cannot be used: run `scenario-tools validate-payloads` "
             f"({error})"

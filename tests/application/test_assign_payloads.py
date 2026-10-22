@@ -1,16 +1,20 @@
 """The payload references of an entry, as the commands check and give them."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from scenario_tools.adapters.catalogue_files import CatalogueDirectory
 from scenario_tools.application.assign_payloads import (
     assigned_entry,
+    catalogue_of,
     no_attached_files,
     payload_findings,
 )
 from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import AgreedId, AgreedIds, derived_id
+from scenario_tools.ports.errors import EnvironmentProblemError
 from tests.support.catalogue import held
 
 ENTRY = "scenarios/techniques/x"
@@ -124,3 +128,19 @@ def test_a_file_that_is_no_object_is_refused(
 
     assert (result.metadata, result.stored) == (None, None)
     assert [(f.code, f.path, f.message) for f in result.refusals] == [expected]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b'{"payload_name": "a", "payload_name": "b"}', b"{not json", b"\xff\xfe"],
+    ids=["a key twice", "no JSON", "no UTF-8"],
+)
+def test_a_catalogue_file_that_cannot_be_read_is_the_repository_s_fault(
+    tmp_path: Path, content: bytes
+) -> None:
+    folder = tmp_path / "payloads" / "a"
+    folder.mkdir(parents=True)
+    (folder / "1.0.0.json").write_bytes(content)
+
+    with pytest.raises(EnvironmentProblemError, match="run `scenario-tools validate-payloads`"):
+        catalogue_of(CatalogueDirectory(tmp_path, ("payloads",)))
