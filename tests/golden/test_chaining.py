@@ -15,6 +15,7 @@ from scenario_tools.domain.shared.workflow import (
     Refusal,
     export_refusals,
 )
+from scenario_tools.domain.sheet.sheet import render_sheet
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
@@ -83,3 +84,27 @@ def test_no_identifier_of_its_steps_is_left() -> None:
         for condition in step["step_conditions"]
     ]
     assert [source for source in sources if source in text] == []
+
+
+SHEET = ROOT / "tests" / "golden" / "chaining" / "two-steps.README.md"
+SHEET_METADATA: dict[str, Any] = {
+    "name": "Two steps",
+    "description": "Lists the processes of an endpoint, then lists them again once it is done.",
+    "version": "1.0.0",
+    "status": "VERIFIED",
+    "type": "chained",
+    "platforms": ["Linux", "MacOS"],
+    "requires": {
+        "openaev": ">=3.261005.0",
+        "edition": "EE",
+        "injectors": ["openaev_implant"],
+        "executors": ["openaev"],
+    },
+}
+
+
+def test_its_sheet_is_the_reviewed_one_and_renders_the_same_twice() -> None:
+    stored = json.loads(NORMALISED.read_bytes())
+    first = render_sheet(SHEET_METADATA, stored, ())
+    assert first == render_sheet(SHEET_METADATA, copy.deepcopy(stored), ())
+    assert first == SHEET.read_text(encoding="utf-8")

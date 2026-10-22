@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
-from tests.interface.test_cli_validate import _complete_entry, _invoke, _repository
+from tests.interface.test_cli_validate import ENTRY_ID, _complete_entry, _invoke, _repository
 
 EASM = "scenarios/techniques/easm"
 
@@ -108,3 +108,23 @@ def test_unusable_exceptions_are_the_environment_s_fault(
 
     assert result.exit_code == 3
     assert "policy data cannot be used" in json.loads(result.stdout)["error"]
+
+
+def test_the_sheet_of_a_chaining_entry_is_written_and_checked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    entry = _repository(tmp_path) / "scenarios" / "techniques" / "chained"
+    entry.mkdir(parents=True)
+    chaining = Path(__file__).parents[2] / "tests" / "golden" / "chaining" / "two-steps.json"
+    prepared = _invoke(
+        monkeypatch, "normalize", str(chaining), "--out", str(entry), "--external-id", ENTRY_ID
+    )
+    assert prepared.exit_code == 0, prepared.output
+
+    written = _invoke(monkeypatch, "render", str(entry))
+    checked = _invoke(monkeypatch, "render", "--check", str(entry))
+
+    assert (written.exit_code, checked.exit_code) == (0, 0), written.output + checked.output
+    sheet = (entry / "README.md").read_text(encoding="utf-8")
+    assert "## Steps" in sheet
+    assert "```\nps aux --no-headers\n```" in sheet

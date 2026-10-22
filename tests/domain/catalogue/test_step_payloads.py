@@ -11,7 +11,6 @@ from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.application.assign_payloads import assigned_entry, payload_findings
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
-from scenario_tools.domain.sheet.sheet import render_sheet
 from scenario_tools.domain.verification.payload_references import AgreedIds
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -68,18 +67,6 @@ def test_the_payload_of_each_step_is_given_the_id_its_content_has() -> None:
     }
     (reference,) = assigned.metadata["payloads"]
     assert ids == {reference["id"]}
-
-
-def test_the_sheet_reads_the_injects_part_only_until_the_steps_have_a_section() -> None:
-    metadata = {
-        "name": "Chained",
-        "description": "Two steps.",
-        "version": "1.0.0",
-        "status": "VERIFIED",
-        "type": "chained",
-    }
-    without_steps = {**copy.deepcopy(STORED), "scenario_workflow": None}
-    assert render_sheet(metadata, STORED, ()) == render_sheet(metadata, without_steps, ())
 
 
 def _codes(findings: tuple[Any, ...]) -> list[tuple[str, str]]:
