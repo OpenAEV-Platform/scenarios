@@ -127,13 +127,13 @@ def test_a_step_whose_contract_is_unknown_is_reported_at_the_step() -> None:
 
 
 def test_the_facts_say_whether_the_scenario_has_a_workflow() -> None:
-    assert export_facts(STORED, BUILTIN, PATH)[0].has_workflow
+    assert export_facts(STORED, BUILTIN, PATH)[0].holds_workflow
     empty: object
     for empty in (None, {}, []):
         without = {**copy.deepcopy(STORED), "scenario_workflow": empty}
-        assert not export_facts(without, BUILTIN, PATH)[0].has_workflow
+        assert not export_facts(without, BUILTIN, PATH)[0].holds_workflow
 
 
 def test_a_workflow_with_no_step_is_still_a_workflow() -> None:
     stored = {**copy.deepcopy(STORED), "scenario_workflow": {"workflow_steps": []}}
-    assert export_facts(stored, BUILTIN, PATH)[0].has_workflow
+    assert export_facts(stored, BUILTIN, PATH)[0].holds_workflow
