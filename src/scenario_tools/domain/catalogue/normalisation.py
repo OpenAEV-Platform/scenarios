@@ -42,6 +42,7 @@ from scenario_tools.domain.catalogue.identifiers import (
 from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER, jcs
+from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.shared.stored import STEPS, WORKFLOW
 from scenario_tools.domain.shared.workflow import (
     CONDITION_SIBLINGS_SAME,
@@ -238,7 +239,7 @@ def _signature(inject: Mapping[str, Any], namespace: uuid.UUID) -> InjectSignatu
     payload = _payload(inject)
     contract = inject.get(_CONTRACT) or {}
     if payload is not None:
-        key = stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD))
+        key = stable_id(namespace, "payload", _base(payload))
     else:
         key = contract.get("injector_contract_id") or ""
     relations = inject.get("inject_depends_on")
@@ -265,6 +266,15 @@ def _name(item: Mapping[str, Any], key: str, where: str) -> str:
     if not name:
         raise _refuse(f"{where}.{key} must not be empty")
     return name
+
+
+def _base(payload: Mapping[str, Any]) -> str:
+    """The base name of ``payload``: what its stable identifiers are derived from, so that every
+    version of one payload shares them."""
+    base = base_name(_name(payload, "payload_name", _PAYLOAD))
+    if not base.strip():
+        raise _refuse(f"{_PAYLOAD}.payload_name must have a base name before its version")
+    return base
 
 
 def _catalogue_objects(export: Mapping[str, Any]) -> Iterator[dict[str, Any]]:
@@ -344,7 +354,7 @@ def _identifiers(
             raise _refuse(f"two articles of channel {channel!r} are named {name!r}")
         articles.add(article_key)
         identifiers.add(source, stable_id(namespace, "article", article_key))
-    payloads: dict[str, str] = {}
+    payloads: dict[str, tuple[str, str]] = {}  # the source and name of each base name
     for inject in [*_objects(export, _INJECTS), *_step_injects(export)]:
         payload = _payload(inject)
         contract_copy = inject.get(_CONTRACT)
@@ -361,12 +371,20 @@ def _identifiers(
             identifiers.add(built_in, built_in)
         if payload is not None:
             source = _text(payload, "payload_id", _PAYLOAD)
-            name = _name(payload, "payload_name", _PAYLOAD)
-            if payloads.setdefault(name, source) != source:
-                raise _refuse(f"two payloads are named {name!r}")
-            identifiers.add(source, stable_id(namespace, "payload", name))
+            name, base = _name(payload, "payload_name", _PAYLOAD), _base(payload)
+            first_source, first_name = payloads.setdefault(base, (source, name))
+            if first_source == source and first_name != name:
+                raise _refuse(f"one payload is named {first_name!r} and {name!r}")
+            if first_source != source:
+                if first_name == name:
+                    raise _refuse(f"two payloads are named {name!r}")
+                raise _refuse(
+                    f"two versions of the payload {base!r} are embedded: a scenario embeds one "
+                    "version of a payload"
+                )
+            identifiers.add(source, stable_id(namespace, "payload", base))
             contract = _text(inject[_CONTRACT], "injector_contract_id", _CONTRACT)
-            identifiers.add(contract, stable_id(namespace, "contract", name))
+            identifiers.add(contract, stable_id(namespace, "contract", base))
     for item in _catalogue_objects(export):
         for key, external_key, object_type in _CATALOGUE:
             if item.get(key) is not None:  # an identifier given: its shared key is required
@@ -615,7 +633,7 @@ def _runs(inject: Mapping[str, Any], namespace: uuid.UUID) -> tuple[str, str]:
     the payload's name, and its title, with the identifiers it quotes masked."""
     payload = _payload(inject) or {}
     return (
-        stable_id(namespace, "payload", _name(payload, "payload_name", _PAYLOAD)),
+        stable_id(namespace, "payload", _base(payload)),
         _masked(_text(inject, "inject_title", "step_data")),
     )
 

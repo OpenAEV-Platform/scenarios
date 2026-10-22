@@ -208,3 +208,81 @@ def test_an_export_from_an_instance_that_linked_techniques_gives_the_reviewed_fo
         ]
 
     assert _normalise(export) == (NORMALISED / "easm-scenario.json").read_bytes()
+
+
+# A payload moved to a later version keeps the identifiers of its scenario
+
+_SALT = EXPORTS / "salt-typhoon-cve-ttps-validation.zip"
+_MOVED = "Cleanup artifacts"
+
+
+def _with_payload(document: Any) -> list[dict[str, Any]]:
+    """The injects of ``document`` whose contract embeds a payload."""
+    return [
+        inject
+        for inject in document["scenario_injects"]
+        if isinstance(inject.get("inject_injector_contract"), dict)
+        and isinstance(inject["inject_injector_contract"].get("injector_contract_payload"), dict)
+    ]
+
+
+def _contracts(document: Any) -> list[dict[str, Any]]:
+    return [inject["inject_injector_contract"] for inject in _with_payload(document)]
+
+
+def _identity(document: Any) -> list[tuple[str, str, str]]:
+    return sorted(
+        (
+            inject["inject_id"],
+            inject["inject_injector_contract"]["injector_contract_id"],
+            inject["inject_injector_contract"]["injector_contract_payload"]["payload_id"],
+        )
+        for inject in _with_payload(document)
+    )
+
+
+def test_a_payload_moved_to_a_later_version_keeps_every_identifier_of_its_scenario() -> None:
+    export = read_export(_SALT)
+    before = json.loads(_normalise(copy.deepcopy(export)))
+    for contract in _contracts(export):
+        payload = contract["injector_contract_payload"]
+        if payload["payload_name"] == _MOVED:
+            payload["payload_name"] = f"{_MOVED} (1.1.0)"
+            payload["payload_description"] = "A later version."
+    after = json.loads(_normalise(export, previous=before))
+    assert _identity(after) == _identity(before)
+    moved = [
+        c
+        for c in _contracts(after)
+        if c["injector_contract_payload"]["payload_name"].startswith(_MOVED)
+    ]
+    assert moved
+    assert {c["injector_contract_payload"]["payload_name"] for c in moved} == {f"{_MOVED} (1.1.0)"}
+
+
+def test_two_versions_of_one_payload_in_one_scenario_are_refused() -> None:
+    export = read_export(_SALT)
+    contracts = _contracts(export)
+    first, second = (
+        contracts[0]["injector_contract_payload"],
+        contracts[1]["injector_contract_payload"],
+    )
+    second["payload_name"] = f"{first['payload_name']} (1.1.0)"
+    with pytest.raises(Exception, match="two versions of the payload"):
+        _normalise(export)
+
+
+def test_one_payload_under_two_names_in_one_scenario_is_refused() -> None:
+    export = read_export(_SALT)
+    first, second = (c["injector_contract_payload"] for c in _contracts(export)[:2])
+    second["payload_id"] = first["payload_id"]
+    second["payload_name"] = f"{first['payload_name']} (1.1.0)"
+    with pytest.raises(Exception, match="one payload is named"):
+        _normalise(export)
+
+
+def test_a_name_that_is_only_a_version_is_refused() -> None:
+    export = read_export(_SALT)
+    _contracts(export)[0]["injector_contract_payload"]["payload_name"] = " (1.1.0)"
+    with pytest.raises(Exception, match="base name"):
+        _normalise(export)
