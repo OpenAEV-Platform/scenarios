@@ -150,7 +150,7 @@ excepted.
 
 | Code | What it means | What to do |
 |---|---|---|
-| `GEN-001` | The entry's sheet, `README.md`, is missing or is not what `scenario-tools render` writes from `scenario.yaml`, `scenario.json` and the policy exceptions the entry was granted; or the sheet cannot be rendered, `scenario.yaml` or `scenario.json` being missing or not an object. In the sheet, every text of the entry is plain text, never Markdown, a link or an image. | Run `scenario-tools render <entry>`; never edit the sheet by hand. |
+| `GEN-001` | The entry's sheet, `README.md`, is missing or is not what `scenario-tools render` writes from `scenario.yaml`, `scenario.json` and the policy exceptions the entry was granted; or the sheet cannot be rendered, `scenario.yaml` or `scenario.json` being missing or not an object. In the sheet, every text of the entry is plain text, never Markdown, a link or an image; the commands of a workflow's steps are shown as code, with the values they run with. | Run `scenario-tools render <entry>`; never edit the sheet by hand. |
 | `GEN-002` | The stored `scenario.json` is not what normalisation gives for it. | Run `normalize` or `intake` again instead of editing the file by hand. |
 | `PAY-001` | No reference of `scenario.yaml` names a payload embedded in an inject or a step: its `payload_external_id` is missing, or names no reference. | Run `scenario-tools payloads <entry> --assign`. |
 | `PAY-002` | A reference's hash is not the hash of the payload it names, its version is not `1.0.0`, or two references give one ID. | Run `scenario-tools payloads <entry> --assign`. |

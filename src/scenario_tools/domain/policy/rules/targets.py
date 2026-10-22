@@ -22,7 +22,13 @@ import unicodedata
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.policy.payloads import COMMAND_LIMIT, commands, effective, payloads
+from scenario_tools.domain.policy.payloads import (
+    COMMAND_LIMIT,
+    argument_values,
+    commands,
+    payloads,
+    substituted,
+)
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
@@ -282,8 +288,9 @@ def _read(stored: object) -> Iterator[tuple[str, object]]:
         for key in _CONDITION_TEXTS:
             yield f"{pointer}/{key}", condition.get(key)
     for payload in payloads(stored):
+        values = argument_values(payload)
         for field, command, _ in commands(payload):
-            resolved = effective(payload, command, COMMAND_LIMIT)  # what the payload runs
+            resolved = substituted(command, values, COMMAND_LIMIT)  # what the payload runs
             if resolved is not None:  # else too long, which the forbidden actions report
                 yield field, resolved
 

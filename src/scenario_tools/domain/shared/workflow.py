@@ -23,6 +23,8 @@ _SCOPE_VARIABLES = "workflow_scope_variables"
 _STANDALONE = "workflow_standalone_conditions"
 _TEAM_MEMBERS = "workflow_scope_rule_team_members"
 _ID, _PARENT = "condition_id", "condition_parent_id"
+_STEP_ID = "step_id"
+DEPEND_ON = "DEPEND_ON"
 _VERSION = "workflow_version"
 _TIMEOUT_ON, _TIMEOUT = "workflow_timeout_enabled", "workflow_timeout_seconds"
 _SAFE_MODE = "workflow_safe_mode_enabled"
@@ -516,3 +518,64 @@ def holds_workflow(stored: object) -> bool:
     """Whether a stored scenario holds a workflow, of any shape: its part is not left empty, as
     normalisation leaves it for a time-based scenario (``null``, ``{}`` or ``[]``)."""
     return isinstance(stored, Mapping) and stored.get(WORKFLOW) not in (None, {}, [])
+
+
+def stored_steps(stored: object) -> Iterator[tuple[int, Mapping[str, Any]]]:
+    """Every step of the workflow of a stored scenario that is an object, with its index.
+    Lenient, as the walk over injects is."""
+    workflow = stored.get(WORKFLOW) if isinstance(stored, Mapping) else None
+    steps = workflow.get(STEPS) if isinstance(workflow, Mapping) else None
+    for index, step in enumerate(steps if isinstance(steps, list) else []):
+        if isinstance(step, Mapping):
+            yield index, step
+
+
+@dataclass(frozen=True, slots=True)
+class StoredSettings:
+    """The settings of a stored workflow as a reader shows them: each value as the file holds
+    it, a flag true only when it is ``true``."""
+
+    timeout_enabled: bool
+    timeout_seconds: object
+    safe_mode: bool
+    pace_enabled: bool
+    attempts: object
+    period: object
+
+
+def stored_settings(stored: object) -> StoredSettings:
+    """The settings of the workflow of a stored scenario, read leniently: a workflow of another
+    shape has every flag off and no value."""
+    workflow = stored.get(WORKFLOW) if isinstance(stored, Mapping) else None
+    found: Mapping[str, Any] = workflow if isinstance(workflow, Mapping) else {}
+    return StoredSettings(
+        timeout_enabled=found.get(_TIMEOUT_ON) is True,
+        timeout_seconds=found.get(_TIMEOUT),
+        safe_mode=found.get(_SAFE_MODE) is True,
+        pace_enabled=found.get(_PACE_ON) is True,
+        attempts=found.get(_ATTEMPTS),
+        period=found.get(_PERIOD),
+    )
+
+
+def step_identifier(step: Mapping[str, Any]) -> str:
+    """The identifier of a stored step, or an empty text when it has none that is text."""
+    value = step.get(_STEP_ID)
+    return value if isinstance(value, str) else ""
+
+
+def step_waits(step: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """What a stored step waits for, read leniently: the identifiers its dependencies name, in
+    its order, and the types of its other conditions, as text."""
+    found = step.get(CONDITIONS)
+    awaited: list[str] = []
+    others: list[str] = []
+    for condition in found if isinstance(found, list) else []:
+        if not isinstance(condition, Mapping):
+            continue
+        kind, value = condition.get("condition_type"), condition.get("condition_value")
+        if kind == DEPEND_ON and isinstance(value, str):
+            awaited.append(value)
+        else:
+            others.append(str(kind))
+    return tuple(awaited), tuple(others)

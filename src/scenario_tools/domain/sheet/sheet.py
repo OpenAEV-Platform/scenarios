@@ -1,17 +1,34 @@
 """The sheet of an entry, its README.md: what a reader of the catalogue needs to know before running
 the scenario, from its metadata and its stored scenario, rendered the same way every time. Every
 text of the entry is plain text (``markdown``); the only links are the sources', over HTTPS, and the
-changelog's. The commands of the payloads are never shown."""
+changelog's. The commands of the payloads of a time-based scenario are not shown; those of the
+steps of a workflow are, as code, with the values they run with: a reviewer reads what each step
+runs before the scenario can be imported."""
 
 import math
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from scenario_tools.domain.policy.exceptions import PolicyException
-from scenario_tools.domain.shared.stored import Origin
+from scenario_tools.domain.policy.payloads import (
+    COMMAND_LIMIT,
+    Payload,
+    argument_values,
+    payloads,
+    substituted,
+)
+from scenario_tools.domain.shared.stored import STEP_DATA, Origin, step_pointer
 from scenario_tools.domain.shared.stored import injects as stored_injects
-from scenario_tools.domain.sheet.markdown import inline, plain
+from scenario_tools.domain.shared.workflow import (
+    StoredSettings,
+    holds_workflow,
+    step_identifier,
+    step_waits,
+    stored_settings,
+    stored_steps,
+)
+from scenario_tools.domain.sheet.markdown import block, code, inline, plain
 
 SHEET_LIMIT = 1024 * 1024  # the most a README.md is read with: a larger sheet could not be checked
 NOTICE = (
@@ -215,12 +232,187 @@ def _payloads(injects: Sequence[Mapping[str, Any]]) -> str:
     return _table(["Name", "ID", "Type", "Platforms"], sorted(found))
 
 
-def _targets(targets: object) -> str:
+# The steps of a workflow
+
+
+_CAVEATS = (
+    "- OpenAEV does not enforce safe mode when the scenario runs, whatever it is set to.",
+    "- The limit of runs of a step is not enforced by OpenAEV either: it is written to a fixed "
+    "value, so that what is reviewed is what applies.",
+    "- The scenario names no target: targets are set by the operator after import, on the "
+    "platform that runs it.",
+)
+
+
+def _settings(settings: StoredSettings) -> str:
+    lines = [
+        f"- Each step times out after {inline(duration(settings.timeout_seconds))}."
+        if settings.timeout_enabled
+        else "- No step times out.",
+        f"- Safe mode: {'on' if settings.safe_mode else 'off'}.",
+        (
+            f"- Pace: at most {_text(str(settings.attempts))} attempts per "
+            f"{inline(duration(settings.period))}."
+        )
+        if settings.pace_enabled
+        else "- Pace: none, each step starts as soon as it can.",
+    ]
+    return "\n".join(lines)
+
+
+def _step_order(steps: list[tuple[int, Mapping[str, Any]]]) -> list[tuple[int, Mapping[str, Any]]]:
+    """The steps in the order they can run: round by round, the steps whose awaited steps are
+    all placed, by stable identifier, then by place in the file. Steps in a loop, which the
+    checks refuse, come last, in that order."""
+    keyed = sorted((step_identifier(step), index, step) for index, step in steps)
+    names = {name for name, _, _ in keyed}
+    awaited = {index: set(step_waits(step)[0]) & names for _, index, step in keyed}
+    waiting: dict[str, list[int]] = {}
+    for index, those in awaited.items():
+        for name in those:
+            waiting.setdefault(name, []).append(index)
+    rank = {index: place for place, (_, index, _) in enumerate(keyed)}
+    by_index = {index: (index, step) for _, index, step in keyed}
+    placed: list[int] = []
+    released: set[str] = set()
+    ready = [index for _, index, _ in keyed if not awaited[index]]
+    while ready:  # each step is placed once, in the round after the last step it waits for
+        placed += ready
+        following: list[int] = []
+        for index in ready:
+            name = step_identifier(by_index[index][1])
+            if name in released:  # the first of two steps of one identifier is the one awaited
+                continue
+            released.add(name)
+            for other in waiting.get(name, []):
+                awaited[other].discard(name)
+                if not awaited[other]:
+                    following.append(other)
+        ready = sorted(following, key=rank.__getitem__)
+    taken = set(placed)
+    return [by_index[index] for index in placed] + [
+        (index, step) for _, index, step in keyed if index not in taken
+    ]
+
+
+def _code_of(label: str, values: Mapping[str, str], text: str) -> Iterator[str]:
+    shown = substituted(text, values, COMMAND_LIMIT)
+    if shown is None:
+        yield (
+            f"{label}: too long to show, more than {COMMAND_LIMIT} characters once its "
+            "arguments are set."
+        )
+    else:
+        yield f"{label}:"
+        yield block(shown)
+
+
+def _commands(payload: Payload) -> Iterator[str]:
+    """What a step's payload runs, each command as code, with the values it runs with."""
+    fields = payload.fields
+    values = argument_values(payload)  # once, however many commands and arguments it has
+    for label, key, executor in (
+        ("Command", "command_content", "command_executor"),
+        ("Cleanup", "payload_cleanup_command", "payload_cleanup_executor"),
+    ):
+        if isinstance(fields.get(key), str):
+            yield from _code_of(f"{label} ({_text(fields.get(executor))})", values, fields[key])
+    prerequisites = fields.get("payload_prerequisites")
+    for prerequisite in prerequisites if isinstance(prerequisites, list) else []:
+        if not isinstance(prerequisite, Mapping):
+            continue
+        for label, key in (("check", "check_command"), ("install", "get_command")):
+            if isinstance(prerequisite.get(key), str):
+                where = f"Prerequisite {label} ({_text(prerequisite.get('executor'))})"
+                yield from _code_of(where, values, prerequisite[key])
+    arguments = fields.get("payload_arguments")
+    for argument in arguments if isinstance(arguments, list) else []:
+        if isinstance(argument, Mapping) and isinstance(argument.get("key"), str):
+            yield from _argument(values, argument["key"])
+
+
+def _argument(values: Mapping[str, str], key: str) -> Iterator[str]:
+    value = values.get(key, "#{" + key + "}")  # without a value, the placeholder is what runs
+    label = f"- Argument {code(key)}"
+    if len(value) > COMMAND_LIMIT:
+        yield f"{label}: too long to show, more than {COMMAND_LIMIT} characters."
+    elif not value:
+        yield f"{label}: empty."
+    elif "\n" in value or "\r" in value:
+        yield f"{label}:"
+        yield block(value)
+    else:
+        yield f"{label}: {code(value)}"
+
+
+def _waits(step: Mapping[str, Any], numbers: Mapping[str, int]) -> list[str]:
+    awaited, others = step_waits(step)
+    if not awaited and not others:
+        return ["- Starts when the scenario is launched."]
+    lines = []
+    if awaited:
+        known = sorted({numbers[name] for name in awaited if name in numbers})
+        named = [f"step {number}" for number in known]
+        if len(known) < len(set(awaited)):
+            named.append("a step the scenario does not have")
+        lines.append(f"- Waits for: {', '.join(named)}.")
+    lines += [
+        f"- Holds a condition of type {inline(kind)}, which the checks refuse for now."
+        for kind in others
+    ]
+    return lines
+
+
+def _step(
+    number: int,
+    step: Mapping[str, Any],
+    numbers: Mapping[str, int],
+    found: Mapping[str, Payload],
+    pointer: str,
+) -> Iterator[str]:
+    inject = step.get(STEP_DATA)
+    inject = inject if isinstance(inject, Mapping) else {}
+    yield f"### {number}\\. {_text(inject.get('inject_title'))}"
+    lines = _waits(step, numbers)
+    lines.append(f"- Injector: {_text(_contract(inject).get('injector_contract_injector_type'))}")
+    payload = found.get(f"{pointer}/{_CONTRACT}/{_PAYLOAD}")
+    if payload is not None:
+        lines.append(
+            f"- Payload: {_text(payload.fields.get('payload_name'))} "
+            f"{inline('(' + str(payload.fields.get('payload_external_id')) + ')')}"
+        )
+    yield "\n".join(lines)
+    if payload is not None:
+        yield from _commands(payload)
+
+
+def _workflow(stored: Mapping[str, Any]) -> Iterator[str]:
+    yield "## Workflow"
+    yield _settings(stored_settings(stored))
+    ordered = _step_order(list(stored_steps(stored)))
+    numbers: dict[str, int] = {}
+    for number, (_, step) in enumerate(ordered, 1):
+        numbers.setdefault(step_identifier(step), number)  # the first of two of one identifier
+    numbers.pop("", None)  # a step without an identifier is waited for by none
+    found = {payload.pointer: payload for payload in payloads(stored)}
+    yield "## Steps"
+    for number, (index, step) in enumerate(ordered, 1):
+        yield from _step(number, step, numbers, found, step_pointer(index))
+    yield "## Caveats"
+    yield "\n".join(_CAVEATS)
+
+
+def _targets(targets: object, *, workflow: bool) -> str:
     listed = (
         [target for target in targets if isinstance(target, Mapping)]
         if isinstance(targets, list)
         else []
     )
+    if not listed and workflow:  # its steps run on endpoints, which no stored file names
+        return (
+            "Set by the operator after import, on the platform that runs it: the scenario "
+            "names no target of its own."
+        )
     if not listed:
         return "None: the scenario needs no target of the platform."
     return "\n".join(
@@ -272,13 +464,15 @@ def _sections(
     requires = metadata.get("requires")
     yield "## Requirements"
     yield _requirements(requires if isinstance(requires, Mapping) else {})
-    injects = _ordered(stored)
-    yield "## Chain of injects"
-    yield _chain(injects)
+    if holds_workflow(stored):
+        yield from _workflow(stored)
+    else:
+        yield "## Chain of injects"
+        yield _chain(_ordered(stored))
     yield "## Payloads"
-    yield _payloads(injects)
+    yield _payloads([found.inject for found in stored_injects(stored)])
     yield "## Targets to fill in"
-    yield _targets(metadata.get("targets"))
+    yield _targets(metadata.get("targets"), workflow=holds_workflow(stored))
     own = [exception for exception in exceptions if exception.entry == metadata.get("external_id")]
     if own:
         yield "## Policy exceptions"
@@ -292,4 +486,15 @@ def render_sheet(
 ) -> str:
     """The README.md of the entry whose metadata and stored scenario are given, with the policy
     exceptions the maintainers granted it among ``exceptions``."""
-    return "\n\n".join(_sections(metadata, stored, exceptions)) + "\n"
+    return "\n\n".join(_bounded(_sections(metadata, stored, exceptions))) + "\n"
+
+
+def _bounded(parts: Iterable[str]) -> Iterator[str]:
+    """``parts`` until they are longer than a sheet can be: a sheet past the limit is refused,
+    so what follows it is never built."""
+    size = 0
+    for part in parts:
+        yield part
+        size += len(part)
+        if size > SHEET_LIMIT:
+            return

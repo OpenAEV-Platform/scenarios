@@ -11,9 +11,10 @@ from scenario_tools.domain.policy.payloads import (
     COMMAND_LIMIT,
     EXECUTOR,
     TYPE,
+    argument_values,
     commands,
-    effective,
     payloads,
+    substituted,
     text,
 )
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
@@ -32,8 +33,9 @@ def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     for payload in payloads(content.stored):
         if text(payload, CLEANUP).strip() and text(payload, EXECUTOR).strip():
             continue
+        values = argument_values(payload)
         resolved = [
-            effective(payload, command, COMMAND_LIMIT)
+            substituted(command, values, COMMAND_LIMIT)
             for _, command, where in commands(payload)
             if where != CLEANUP
         ]
