@@ -24,6 +24,12 @@ release is approved, its `release_approver`. For each scenario it gives:
   (`CE` or `EE`), the injectors and the executors;
 - the facets a catalogue shows, and who approved its change, in which pull request.
 
+A scenario's `type` says how its injects run: at set times (`time-based`), or in chaining
+(`chained`), where each step runs once the steps it depends on have run. A scenario in chaining
+needs the Enterprise edition; its `scenario.json` holds a `scenario_workflow`, whose steps each
+carry their inject, and its manifest item lists the payloads of its steps as it lists those of
+injects.
+
 The repository builds every release against the channel's previous one, and guarantees that:
 
 - a released version never changes: neither its archive nor what the manifest says of it, but
@@ -63,15 +69,35 @@ A release with any finding below is not used at all.
    possibly `attachments.zip`, with no comment: itself an archive, under the same rules, whose
    entries open with the shared password `infected` (an entry that is not encrypted is read as
    it is). Nothing else. `scenario.json` is read as strict JSON, as the manifest is, is
-   structured as an export and holds only the parts of a stored scenario.
-7. **Payloads.** Every payload the scenario embeds sits in an inject's contract, carries its ID,
-   can be hashed, and is listed once by that ID with the canonical hash of its content; every
-   listed payload is embedded; one payload ID has one version and one hash across the release.
+   structured as an export and holds only the parts of a stored scenario, `scenario_workflow`
+   among them.
+7. **Payloads.** Every payload the scenario embeds sits in the contract of an inject or of a
+   step, carries its ID, can be hashed, and is listed once by that ID with the canonical hash of
+   its content; every listed payload is embedded; one payload ID has one version and one hash
+   across the release.
    When an import would reuse a payload the platform already holds under an ID the manifest
    lists, the content it holds must have the hash the manifest lists: otherwise do not use it,
    and report the conflict.
 8. **Status and requirements.** A `REVOKED` scenario must no longer run; a `DEPRECATED` one is
    replaced or no longer maintained. Install only scenarios whose `requires` the platform meets.
+9. **Scenarios in chaining.** Import one only where the import does both of these:
+   - once it has created the steps, and before any run, it rewrites the value of every
+     `DEPEND_ON` condition, which is the `step_id` the archive gives the awaited step, to the
+     identifier the platform gave that step. The repository refuses a dependency on a step the
+     scenario does not have, so every such value names a step of the archive. Without this, a
+     step that waits for another never starts;
+   - when it would reuse an injector contract, or a payload, that the platform already holds
+     under the identifier the archive gives it, it compares what it holds with what the archive
+     embeds: the contract with its payload, and each payload by its canonical hash. When they
+     differ, it refuses the import and creates nothing. The identifiers of a release can be
+     computed in advance, so a contract placed first under one of them would otherwise run
+     something other than what was reviewed. Checking the payloads against the manifest
+     (check 7) is not enough: the contract decides what a step runs.
+
+   A consumer that lacks either of these must not import an archive whose scenario is in
+   chaining. The repository also refuses a condition that copies a step's output into the next
+   step's inject (a mapper): it would run on the platform data read from a targeted host, which
+   no review saw. Do not add that behaviour on your side.
 
 The canonical hash of a payload, with test vectors, is described in
 [`conformance/payload-hash.json`](../conformance/payload-hash.json).
@@ -79,8 +105,17 @@ The canonical hash of a payload, with test vectors, is described in
 ## Testing your checks
 
 The repository's own verifier runs checks 2 (but for which repository and channel you follow),
-4, 5, 6 and 7 (but for the reuse of a payload a platform holds). Checks 1, 3 and 8 depend on where
-you download from and on what is installed, and are yours alone. From the repository's root:
+4, 5, 6 and 7 (but for the reuse of a payload a platform holds). Checks 1, 3, 8 and 9 depend on
+where you download from, on what is installed and on how it is imported, and are yours alone.
+
+For a scenario in chaining, the verifier proves what it proves for any scenario: the archive is
+the one the manifest lists, safe to open, and embeds exactly the payloads the manifest vouches
+for, steps included. It does not check again that the workflow's graph and conditions are sound
+(no loop, every dependency on a step of the scenario, only the condition types the repository
+accepts): `build` checks them before it writes an archive, and the archive's hash then stands for
+them. Nor does it run check 9: it cannot see what a platform holds, nor how it imports.
+
+From the repository's root:
 
 ```sh
 uv run scenario-tools verify <manifest.json> --schemas schemas [--archives <dir>] [--approved]
@@ -101,5 +136,7 @@ refused releases are hostile on purpose, and are opened only by a verifier.
 - **No signature.** A release is trusted through its hashes and the location it comes from;
   what stands between an attacker and a platform is the repository's review and release
   rules. Signed releases may come later.
+- **No scenario in chaining yet.** As this page is written, none is released, and none will be
+  before the platform's import does what check 9 asks.
 - **No revocation list.** A scenario is withdrawn by a new version whose `status` is `REVOKED`;
   a platform learns it from the next release it reads.
