@@ -299,3 +299,15 @@ def test_sets_are_sorted_by_utf16_code_units_as_the_hash_sorts_them() -> None:
     # U+FF5E sorts after U+1F600 by code point, before it by UTF-16 code unit.
     document = _with_id({**_document(), "payload_platforms": ["\U0001f600", "\uff5e"]})
     assert _findings(document) == []
+
+
+@pytest.mark.parametrize(
+    ("key", "token"), [("DETECTION/EDR", "DETECTION~1EDR"), ("DETECTION~EDR", "DETECTION~0EDR")]
+)
+def test_a_key_of_the_security_platforms_is_escaped_in_its_pointer(key: str, token: str) -> None:
+    document = _with_id(
+        {**_document(), "payload_expected_security_platforms": {key: ["XDR", "EDR"]}}
+    )
+    assert _findings(document) == [
+        ("PAY-009", f"/payload_expected_security_platforms/{token}", SET_NOT_SORTED)
+    ]

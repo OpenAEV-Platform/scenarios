@@ -111,6 +111,11 @@ def _blocking(code: str, version: PayloadVersion, field: str, message: str) -> F
     return Finding(code, Severity.BLOCKING, version.path, field, message)
 
 
+def _token(key: str) -> str:
+    """``key`` as a JSON pointer token (RFC 6901)."""
+    return key.replace("~", "~0").replace("/", "~1")
+
+
 def _unsorted(items: Sequence[object]) -> bool:
     """Whether ``items`` are not in the order the canonical form sorts texts in."""
     return list(items) != sorted(items, key=lambda item: text_order(str(item)))
@@ -123,7 +128,7 @@ def _sorted_sets(version: PayloadVersion) -> list[Finding]:
         (f"/{_DOMAINS}", [domain[_DOMAIN_NAME] for domain in version.domains]),
         *((f"/{key}", document.get(key, ())) for key in _TEXT_SETS),
         *(
-            (f"/{_SECURITY_PLATFORMS}/{expectation}", platforms)
+            (f"/{_SECURITY_PLATFORMS}/{_token(expectation)}", platforms)
             for expectation, platforms in document.get(_SECURITY_PLATFORMS, {}).items()
         ),
     ]
