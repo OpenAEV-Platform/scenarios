@@ -82,13 +82,13 @@ def test_a_document_not_shaped_like_a_stored_scenario_is_refused(change: Any) ->
         ("exercise_information", {}),
         ("exercise_injects", []),
         ("anything", None),
-        ("scenario_workflow", [{"workflow_step": "x"}]),
+        ("scenario_lessons_categories", [{"lesson": "x"}]),
         ("scenario_objectives", ["x"]),
     ],
 )
 def test_a_part_a_normalised_scenario_never_has_is_refused(part: str, value: Any) -> None:
-    # The importer reads other parts too: an exercise set, a workflow whose steps rebuild
-    # payloads. The checks would not see them, so the archive fails closed.
+    # The importer reads other parts too, such as an exercise set or lessons. The checks would not
+    # see them, so the archive fails closed; the workflow is a part of its own, checked as such.
     document = copy.deepcopy(DOCUMENT)
     document[part] = value
 

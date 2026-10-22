@@ -236,8 +236,8 @@ def test_a_payload_outside_a_contract_is_refused_before_those_the_contracts_embe
     [
         ({"scenario_exercises": []}, "scenario_exercises is not a part of a stored scenario"),
         (
-            {"scenario_workflow": {"injector_contract_payload": PAYLOAD}},
-            "scenario_workflow is not a part of a stored scenario",
+            {"scenario_objectives": [{"injector_contract_payload": PAYLOAD}]},
+            "scenario_objectives is not a part of a stored scenario",
         ),
         ({"scenario_information": None}, "scenario_information must be an object"),
         ({"scenario_injects": {}}, "scenario_injects must be a list"),

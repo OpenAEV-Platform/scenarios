@@ -425,3 +425,52 @@ def test_a_stored_scenario_with_a_hidden_character_is_refused(tmp_path: Path) ->
     assert code == 1
     assert "IO-017" in {finding["code"] for finding in json.loads(stdout)["findings"]}
     assert not (tmp_path / "e").exists()
+
+
+CHAINING = ROOT / "tests" / "golden" / "chaining" / "two-steps.normalised.json"
+
+
+def _chaining_entry(tmp_path: Path) -> Path:
+    """A chaining entry whose payloads carry their IDs, named by the references of its
+    scenario.yaml."""
+    if not (tmp_path / "policy").exists():
+        shutil.copytree(ROOT / "policy", tmp_path / "policy")
+    entry = tmp_path / "scenarios" / "domain" / "chained"
+    entry.mkdir(parents=True)
+    shutil.copyfile(CHAINING, entry / "scenario.json")
+    (entry / "scenario.yaml").write_text(f"external_id: {ENTRY_ID}\n")
+    code, stdout, stderr = _run("payloads", str(entry), "--assign")
+    assert code == 0, stdout + stderr
+    return entry
+
+
+def test_a_chaining_entry_is_archived_the_same_twice(tmp_path: Path) -> None:
+    entry = _chaining_entry(tmp_path)
+
+    for name in ("first.zip", "second.zip"):
+        code, stdout, stderr = _run("archive", str(entry), "--out", str(tmp_path / name))
+        assert code == 0, stdout + stderr
+    first = (tmp_path / "first.zip").read_bytes()
+    assert first == (tmp_path / "second.zip").read_bytes()
+    stored = json.loads(zipfile.ZipFile(io.BytesIO(first)).read("scenario.json"))
+    assert len(stored["scenario_workflow"]["workflow_steps"]) == 2
+
+
+def test_a_chaining_entry_with_a_mapper_is_kept_out_of_an_archive(tmp_path: Path) -> None:
+    entry = _chaining_entry(tmp_path)
+
+    def mapper(document: dict[str, Any]) -> None:
+        for step in document["scenario_workflow"]["workflow_steps"]:
+            for condition in step["step_conditions"]:
+                condition["condition_type"] = "MAPPER"
+
+    _edit(entry, mapper)
+    out = tmp_path / "entry.zip"
+
+    code, stdout, _ = _run("--format", "json", "archive", str(entry), "--out", str(out))
+
+    assert code == 1
+    (finding,) = json.loads(stdout)["findings"]
+    assert finding["code"] == "IO-014"
+    assert finding["field"].endswith("/step_conditions/0")
+    assert not out.exists()
