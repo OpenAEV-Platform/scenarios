@@ -159,3 +159,38 @@ def test_the_identifiers_of_the_filters_do_not_depend_on_their_order_in_the_expo
 def test_no_identifier_of_the_filters_export_is_left() -> None:
     text = FILTERS_NORMALISED.read_text(encoding="utf-8")
     assert [c["condition_id"] for c in _filtered(FILTERS) if c["condition_id"] in text] == []
+
+
+def _rename_payloads(export: Any, name: str) -> None:
+    for step in export["scenario_workflow"]["workflow_steps"]:
+        data = (
+            json.loads(step["step_data"])
+            if isinstance(step["step_data"], str)
+            else step["step_data"]
+        )
+        data["inject_injector_contract"]["injector_contract_payload"]["payload_name"] = name
+        step["step_data"] = json.dumps(data) if isinstance(step["step_data"], str) else data
+
+
+def _step_ids(document: Any) -> list[str]:
+    return sorted(step["step_id"] for step in document["scenario_workflow"]["workflow_steps"])
+
+
+def test_a_step_whose_payload_moves_to_a_later_version_keeps_its_identifiers() -> None:
+    stored = json.loads(NORMALISED.read_bytes())
+    export = copy.deepcopy(EXPORT)
+    _rename_payloads(export, "Process Discovery - ps (1.1.0)")
+    moved = json.loads(_prepare(export, previous=stored))
+    assert _step_ids(moved) == _step_ids(stored)
+
+
+def test_two_versions_of_one_payload_on_two_steps_are_refused() -> None:
+    export = copy.deepcopy(EXPORT)
+    step = export["scenario_workflow"]["workflow_steps"][1]
+    data = json.loads(step["step_data"])
+    payload = data["inject_injector_contract"]["injector_contract_payload"]
+    payload["payload_id"] = "00000000-0000-4000-8000-0000000000e1"
+    payload["payload_name"] = "Process Discovery - ps (1.1.0)"
+    step["step_data"] = json.dumps(data)
+    with pytest.raises(Exception, match="two versions of the payload"):
+        _prepare(export)
