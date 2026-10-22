@@ -9,8 +9,9 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.domain.policy.payloads import COMMAND_LIMIT
 from scenario_tools.domain.sheet.markdown import block, code
-from scenario_tools.domain.sheet.sheet import render_sheet
+from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 
 ROOT = Path(__file__).resolve().parents[3]
 STORED: dict[str, Any] = json.loads(
@@ -84,7 +85,7 @@ def test_the_settings_and_the_caveats_are_shown() -> None:
     assert "- Safe mode: on." in sheet
     assert "- Pace: none, each step starts as soon as it can." in sheet
     caveats = sheet[sheet.index("## Caveats") :]
-    assert "Safe mode is on, but OpenAEV does not enforce it" in caveats
+    assert "OpenAEV does not enforce safe mode" in caveats
     assert "targets are set by the operator after import" in caveats
 
 
@@ -180,7 +181,7 @@ def test_a_condition_the_sheet_cannot_read_is_said_so() -> None:
 
 def test_each_caveat_has_its_own_line() -> None:
     caveats = _sheet()[_sheet().index("## Caveats") :]
-    assert "- Safe mode is on, but OpenAEV does not enforce it" in caveats
+    assert "- OpenAEV does not enforce safe mode" in caveats
     assert "- The limit of runs of a step is not enforced by OpenAEV" in caveats
 
 
@@ -215,6 +216,7 @@ def test_settings_that_are_off_or_on_are_said_so() -> None:
     )
     sheet = _sheet(stored)
     assert "- No step times out.\n- Safe mode: off.\n- Pace: at most 3 attempts per 2 min." in sheet
+    assert "Safe mode is on" not in sheet
 
 
 def _chain(*steps: tuple[str, str, list[str]]) -> dict[str, Any]:
@@ -330,3 +332,49 @@ def test_the_targets_of_a_workflow_are_set_after_import() -> None:
         "## Targets to fill in\n\nSet by the operator after import, on the platform that runs it: "
         "the scenario names no target of its own."
     )
+
+
+def test_the_steps_waiting_for_a_step_are_freed_once_whatever_the_steps_of_its_identifier() -> None:
+    stored = _chain(
+        ("a", "First a", []),
+        ("a", "Second a", []),
+        ("b", "B", []),
+        ("e", "Waits for a", ["a"]),
+        ("c", "Waits for b", ["b"]),
+        ("x", "Waits for e", ["e"]),
+    )
+    assert _titles(_sheet(stored)) == [
+        "First a",
+        "Second a",
+        "B",
+        "Waits for b",
+        "Waits for a",
+        "Waits for e",
+    ]
+
+
+def _described(size: int) -> str:
+    """The sheet whose description makes what comes up to it ``size`` characters long, the
+    separators aside."""
+    probe = render_sheet({**METADATA, "description": "x"}, STORED, ())
+    before = len(probe[: probe.index("x\n\n## At a glance")]) - len("\n\n") * 3
+    return render_sheet({**METADATA, "description": "x" * (size - before)}, STORED, ())
+
+
+def test_a_sheet_is_built_up_to_its_limit_and_no_further() -> None:
+    at_limit = _described(SHEET_LIMIT)
+    assert at_limit.endswith("\n\n## At a glance\n")  # the part that goes past it, then none
+    beyond = _described(SHEET_LIMIT + 1)
+    assert "## At a glance" not in beyond
+    assert len(beyond) > SHEET_LIMIT  # still past the limit, so refused as too long
+
+
+def test_values_repeated_across_commands_never_build_a_sheet_far_past_its_limit() -> None:
+    value = "v" * (COMMAND_LIMIT - 100)
+    sheet = _sheet(
+        _with_payload(
+            payload_prerequisites=[{"executor": "sh", "check_command": "#{k}"}] * 100,
+            payload_arguments=[{"key": "k", "type": "text", "default_value": value}],
+        )
+    )
+    assert SHEET_LIMIT < len(sheet) < SHEET_LIMIT + 2 * COMMAND_LIMIT

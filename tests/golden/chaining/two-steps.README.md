@@ -65,7 +65,7 @@ ps aux --no-headers
 
 ## Caveats
 
-- Safe mode is on, but OpenAEV does not enforce it when the scenario runs.
+- OpenAEV does not enforce safe mode when the scenario runs, whatever it is set to.
 - The limit of runs of a step is not enforced by OpenAEV either: it is written to a fixed value, so that what is reviewed is what applies.
 - The scenario names no target: targets are set by the operator after import, on the platform that runs it.
 

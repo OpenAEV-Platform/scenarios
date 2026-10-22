@@ -7,7 +7,7 @@ runs before the scenario can be imported."""
 
 import math
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from scenario_tools.domain.policy.exceptions import PolicyException
@@ -230,7 +230,7 @@ def _payloads(injects: Sequence[Mapping[str, Any]]) -> str:
 
 
 _CAVEATS = (
-    "- Safe mode is on, but OpenAEV does not enforce it when the scenario runs.",
+    "- OpenAEV does not enforce safe mode when the scenario runs, whatever it is set to.",
     "- The limit of runs of a step is not enforced by OpenAEV either: it is written to a fixed "
     "value, so that what is reviewed is what applies.",
     "- The scenario names no target: targets are set by the operator after import, on the "
@@ -258,19 +258,35 @@ def _step_order(steps: list[tuple[int, Mapping[str, Any]]]) -> list[tuple[int, M
     """The steps in the order they can run: round by round, the steps whose awaited steps are
     all placed, by stable identifier, then by place in the file. Steps in a loop, which the
     checks refuse, come last, in that order."""
-    remaining = sorted(steps, key=lambda found: (step_identifier(found[1]), found[0]))
-    names = {step_identifier(step) for _, step in steps}
-    placed: list[tuple[int, Mapping[str, Any]]] = []
-    for _ in steps:  # a step is placed in a round, or never
-        ready_ids = {step_identifier(step) for _, step in placed}
-        ready = [
-            found
-            for found in remaining
-            if all(name in ready_ids for name in step_waits(found[1])[0] if name in names)
-        ]
+    keyed = sorted((step_identifier(step), index, step) for index, step in steps)
+    names = {name for name, _, _ in keyed}
+    awaited = {index: set(step_waits(step)[0]) & names for _, index, step in keyed}
+    waiting: dict[str, list[int]] = {}
+    for index, those in awaited.items():
+        for name in those:
+            waiting.setdefault(name, []).append(index)
+    rank = {index: place for place, (_, index, _) in enumerate(keyed)}
+    by_index = {index: (index, step) for _, index, step in keyed}
+    placed: list[int] = []
+    released: set[str] = set()
+    ready = [index for _, index, _ in keyed if not awaited[index]]
+    while ready:  # each step is placed once, in the round after the last step it waits for
         placed += ready
-        remaining = [found for found in remaining if found not in ready]
-    return placed + remaining
+        following: list[int] = []
+        for index in ready:
+            name = step_identifier(by_index[index][1])
+            if name in released:  # the first of two steps of one identifier is the one awaited
+                continue
+            released.add(name)
+            for other in waiting.get(name, []):
+                awaited[other].discard(name)
+                if not awaited[other]:
+                    following.append(other)
+        ready = sorted(following, key=rank.__getitem__)
+    taken = set(placed)
+    return [by_index[index] for index in placed] + [
+        (index, step) for _, index, step in keyed if index not in taken
+    ]
 
 
 def _shown(payload: Payload, text: str) -> str | None:
@@ -470,4 +486,15 @@ def render_sheet(
 ) -> str:
     """The README.md of the entry whose metadata and stored scenario are given, with the policy
     exceptions the maintainers granted it among ``exceptions``."""
-    return "\n\n".join(_sections(metadata, stored, exceptions)) + "\n"
+    return "\n\n".join(_bounded(_sections(metadata, stored, exceptions))) + "\n"
+
+
+def _bounded(parts: Iterable[str]) -> Iterator[str]:
+    """``parts`` until they are longer than a sheet can be: a sheet past the limit is refused,
+    so what follows it is never built."""
+    size = 0
+    for part in parts:
+        yield part
+        size += len(part)
+        if size > SHEET_LIMIT:
+            return
