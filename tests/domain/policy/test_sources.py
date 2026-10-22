@@ -324,6 +324,7 @@ def _seconds(rest: str) -> float:
     return min(runs)
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize(
     "unit", ["=", "a=", "/", "%2541", "a=b&"], ids=["equals", "pairs", "slashes", "escapes", "and"]
 )
