@@ -29,6 +29,10 @@ exports, cleaned:
   (`payload_domains`, name and colour), both sorted;
 - the ID of this version (`payload_external_id`).
 
+A payload exported without a description is given its name as one when the scenario is
+normalised, so the scenario's copy and the version file carry the same description and the same
+hash. A real description is better: write it in OpenAEV and export again.
+
 The security platforms each expectation expects (`payload_expected_security_platforms`) are kept
 as the platform holds them: they are part of the content, so of the hash.
 

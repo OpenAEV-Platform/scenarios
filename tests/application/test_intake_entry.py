@@ -27,8 +27,10 @@ from scenario_tools.application.intake_entry import (
 )
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.ports.errors import EnvironmentProblemError
+from tests.support.catalogue import catalogue, held
 
 ROOT = Path(__file__).parents[2]
 EASM = read_export(ROOT / "tests" / "golden" / "exports" / "easm-scenario.zip")
@@ -99,8 +101,14 @@ class FakeSource:
         raise AssertionError("intake never asks")
 
 
+EMPTY = Catalogue.of([])
+
+
 def _intake(
-    request: Mapping[str, Any], source: FakeSource | None = None, export: Any = EASM
+    request: Mapping[str, Any],
+    source: FakeSource | None = None,
+    export: Any = EASM,
+    payloads: Catalogue = EMPTY,
 ) -> IntakeResult:
     return intake_entry(
         export,
@@ -112,6 +120,7 @@ def _intake(
         schema=SCHEMA,
         domains=DOMAINS,
         today=TODAY,
+        payloads=payloads,
     )
 
 
@@ -592,6 +601,7 @@ def test_a_place_outside_the_catalogue_is_refused_whatever_the_schema(
         schema=_Lenient(),  # type: ignore[arg-type]
         domains=(*DOMAINS, "../x"),
         today=TODAY,
+        payloads=EMPTY,
     )
 
     assert _codes(result.refusals) == [("SCH-001", REQUEST, pointer)]
@@ -608,6 +618,7 @@ def test_a_request_that_is_no_mapping_is_refused_whatever_the_schema() -> None:
         schema=_Lenient(),  # type: ignore[arg-type]
         domains=DOMAINS,
         today=TODAY,
+        payloads=EMPTY,
     )
 
     assert _codes(result.refusals) == [("SCH-001", REQUEST, "")]
@@ -626,9 +637,25 @@ def test_a_commit_that_changes_before_the_plan_takes_the_entry_back() -> None:
 SALT = read_export(ROOT / "tests" / "golden" / "exports" / "salt-typhoon-cve-ttps-validation.zip")
 
 
+def _catalogue_of(source: FakeSource) -> Catalogue:
+    """The payload catalogue that holds the payloads of the entry ``source`` holds, as the
+    intake that wrote it wrote their files."""
+    assert source.stored is not None
+    return catalogue(json.loads(source.stored[0]))
+
+
 def _payloads(result: IntakeResult) -> list[dict[str, Any]]:
     assert result.metadata is not None
     return list(result.metadata["payloads"])
+
+
+def test_a_new_payload_without_a_description_is_written_described_by_its_name() -> None:
+    result = _intake(NEW, export=SALT)
+
+    assert result.refusals == ()
+    documents = [json.loads(data) for data in result.payload_files.values()]
+    assert len(documents) == 11
+    assert all(d["payload_description"] == d["payload_name"] for d in documents)
 
 
 def test_a_new_entry_gives_each_payload_its_reference() -> None:
@@ -637,15 +664,23 @@ def test_a_new_entry_gives_each_payload_its_reference() -> None:
     assert result.scenario_json is not None
     assert len(_payloads(result)) == 11
     assert (
-        payload_findings(result.metadata, json.loads(result.scenario_json), ENTRY, AgreedIds({}))
+        payload_findings(
+            result.metadata,
+            json.loads(result.scenario_json),
+            ENTRY,
+            AgreedIds({}),
+            held(json.loads(result.scenario_json)),
+        )
         == ()
     )
 
 
 def test_an_update_with_the_same_payloads_keeps_their_references_and_changes_nothing() -> None:
-    result = _intake(UPDATE, _stored(SALT), export=SALT)
+    source = _stored(SALT)
+    result = _intake(UPDATE, source, export=SALT, payloads=_catalogue_of(source))
 
     assert (result.refusals, result.changed, result.metadata) == ((), False, None)
+    assert result.payload_files == {}
 
 
 def test_an_update_whose_payload_changed_gives_it_a_new_id_and_rewrites_scenario_yaml() -> None:
@@ -669,7 +704,13 @@ def test_an_update_whose_payload_changed_gives_it_a_new_id_and_rewrites_scenario
     assert (len(before - after), len(after - before)) == (1, 1)
     assert result.scenario_json is not None
     assert (
-        payload_findings(result.metadata, json.loads(result.scenario_json), ENTRY, AgreedIds({}))
+        payload_findings(
+            result.metadata,
+            json.loads(result.scenario_json),
+            ENTRY,
+            AgreedIds({}),
+            held(json.loads(result.scenario_json)),
+        )
         == ()
     )
 
@@ -739,6 +780,7 @@ def test_a_malformed_registry_is_an_environment_problem() -> None:
             schema=SCHEMA,
             domains=DOMAINS,
             today=TODAY,
+            payloads=EMPTY,
         )
 
 

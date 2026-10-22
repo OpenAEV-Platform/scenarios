@@ -11,6 +11,7 @@ from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.ports.errors import UnsafeInputError
 from tests.domain.policy.cases import DATA
+from tests.support.catalogue import held
 
 PATH = "scenarios/ransomware/akira/scenario.json"
 OUT = "build/akira.zip"
@@ -62,6 +63,7 @@ def test_an_entry_is_built_from_its_stored_bytes() -> None:
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(DOCUMENT),
     )
 
     assert report.command == "archive"
@@ -90,6 +92,7 @@ def test_an_entry_the_archive_cannot_carry_is_never_built() -> None:
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(document),
     )
 
     assert [(f.code, f.severity) for f in report.findings] == [("POL-002", Severity.BLOCKING)]
@@ -114,6 +117,7 @@ def test_an_archive_over_the_limit_is_refused() -> None:
             declared=NO_PAYLOADS,
             agreed=NONE,
             condition_types=DEPENDENCIES,
+            catalogue=held(DOCUMENT),
         )
     assert (error.value.code, error.value.message, error.value.path) == (
         "IO-001",
@@ -138,6 +142,7 @@ def test_an_archive_at_the_limit_is_built() -> None:
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(DOCUMENT),
     )
 
     assert data == b"x" * 100
@@ -160,6 +165,7 @@ def test_a_stored_scenario_not_shaped_like_one_is_refused_on_its_file() -> None:
             declared=NO_PAYLOADS,
             agreed=NONE,
             condition_types=DEPENDENCIES,
+            catalogue=held({"a": 1}),
         )
     assert (error.value.code, error.value.path) == ("IO-014", PATH)
     assert error.value.message == (
@@ -187,6 +193,7 @@ def test_an_archive_the_checks_refuse_is_never_returned() -> None:
             declared=NO_PAYLOADS,
             agreed=NONE,
             condition_types=DEPENDENCIES,
+            catalogue=held(DOCUMENT),
         )
 
 
@@ -208,6 +215,7 @@ def test_a_stored_scenario_normalisation_would_change_is_refused() -> None:
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(DOCUMENT),
     )
 
     assert [(f.code, f.severity, f.path, f.field) for f in report.findings] == [
@@ -240,6 +248,7 @@ def test_a_contract_without_established_facts_keeps_the_entry_out() -> None:
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(DOCUMENT),
     )
 
     assert report.findings == (unknown,)
@@ -269,6 +278,7 @@ def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> 
         declared=NO_PAYLOADS,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(document),
     )
 
     assert [(f.code, f.field) for f in report.findings] == [
@@ -302,6 +312,7 @@ def _archive(document: object, declared: object) -> tuple[Any, bytes | None]:
         declared=declared,
         agreed=NONE,
         condition_types=DEPENDENCIES,
+        catalogue=held(document),
     )
 
 

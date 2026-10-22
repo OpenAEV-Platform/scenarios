@@ -24,6 +24,7 @@ from scenario_tools.domain.verification.payload_references import AgreedIds, der
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.schema import SchemaViolation
 from tests.domain.policy.cases import DATA
+from tests.support.catalogue import held
 
 ENTRY = "scenarios/ransomware/akira"
 YAML, JSON = f"{ENTRY}/scenario.yaml", f"{ENTRY}/scenario.json"
@@ -164,6 +165,7 @@ def _validate(
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(given.get(JSON)),
     )
 
 
@@ -405,6 +407,7 @@ def test_the_sheet_shows_the_entry_s_policy_exceptions() -> None:
         domains=DOMAINS,
         policy=with_exception,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert "GEN-001" not in [code for code, _, _ in _codes(found)]  # the sheet shows it
@@ -444,6 +447,7 @@ def test_an_entry_the_readers_cannot_list_is_a_finding_of_the_entry() -> None:
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert findings == (Finding("IO-013", Severity.BLOCKING, ENTRY, "", "a symbolic link"),)
@@ -483,6 +487,7 @@ def test_a_built_in_contract_copy_other_than_the_recorded_one_is_refused() -> No
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(findings) == [("SCH-006", JSON, "/scenario_injects/0")]
@@ -508,6 +513,7 @@ def test_the_metadata_is_checked_as_written_too_comments_included() -> None:
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -528,6 +534,7 @@ def test_a_hidden_character_written_in_the_metadata_is_reported_once() -> None:
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -547,6 +554,7 @@ def test_a_line_break_yaml_reads_but_a_reviewer_may_not_see_is_refused() -> None
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(findings) == [("IO-017", YAML, "")]
@@ -640,6 +648,7 @@ def test_an_entry_whose_path_a_finding_cannot_show_is_refused_without_reading_it
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(findings) == [("SCH-008", "scenarios/techniques", "")]
@@ -750,6 +759,7 @@ def _validate_after(previous: FakePrevious, metadata: dict[str, Any]) -> tuple[F
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
         previous=previous,  # type: ignore[arg-type]
     )
 
@@ -828,6 +838,7 @@ def test_an_unreadable_changelog_still_lets_the_version_be_compared() -> None:
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
         previous=FakePrevious({YAML: METADATA, JSON: SCENARIO}),  # type: ignore[arg-type]
     )
 
@@ -863,6 +874,7 @@ def test_a_changelog_that_cannot_be_read_is_a_finding() -> None:
         domains=DOMAINS,
         policy=DATA,
         agreed=AgreedIds({}),
+        catalogue=held(SCENARIO),
     )
 
     assert _codes(found) == [("IO-013", CHANGELOG, "")]  # said once, by the texts' check

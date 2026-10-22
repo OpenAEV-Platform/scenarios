@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.interface.cli import main
+from tests.support.catalogue import write_catalogue
 
 ROOT = Path(__file__).parents[2]
 NORMALISED = ROOT / "tests" / "golden" / "normalised"
@@ -22,7 +23,8 @@ AGREED = "13973155-b166-4bbf-a34a-6b74c0d92957"
 
 
 def _entry(tmp_path: Path, reference: str = "salt-typhoon-cve-ttps-validation") -> Path:
-    """An entry in a repository with the policy data, as the reference was stored."""
+    """An entry in a repository with the policy data, as the reference was stored, and a
+    catalogue holding its payloads."""
     shutil.copytree(ROOT / "policy", tmp_path / "policy")
     entry = tmp_path / "scenarios" / "domain" / "entry"
     entry.mkdir(parents=True)
@@ -30,6 +32,7 @@ def _entry(tmp_path: Path, reference: str = "salt-typhoon-cve-ttps-validation") 
     (entry / "scenario.yaml").write_text(
         f"external_id: {ENTRY_ID}\nname: Entry\npayloads: []\ntargets: []\n"
     )
+    write_catalogue(tmp_path, json.loads((entry / "scenario.json").read_bytes()))
     return entry
 
 
@@ -137,7 +140,11 @@ def test_assign_gives_the_id_the_registry_agrees_for_a_content(tmp_path: Path) -
         )
     ]
 
+    # The version file takes the agreed ID too (validate-payloads says so), then the references.
+    write_catalogue(tmp_path, json.loads((entry / "scenario.json").read_bytes()))
     assert _run("payloads", str(entry), "--assign")[0] == 0
+    (crowdoor,) = (p for p in _embedded(entry) if p["payload_name"] == CROWDOOR)
+    assert crowdoor["payload_external_id"] == AGREED
     (crowdoor,) = (p for p in _embedded(entry) if p["payload_name"] == CROWDOOR)
     assert crowdoor["payload_external_id"] == AGREED
 

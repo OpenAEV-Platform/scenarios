@@ -1,10 +1,11 @@
 """Intake an export into the catalogue: everything that would refuse the request is found before
 anything is written, so that a refused request leaves the repository as it was."""
 
+import contextlib
 import datetime
 import json
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
@@ -20,10 +21,13 @@ from scenario_tools.domain.catalogue.intake import (
     intake_refusals,
     same_name,
 )
+from scenario_tools.domain.catalogue.payload_verdict import verdicts
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
+from scenario_tools.domain.verification.payload_catalogue import Catalogue
+from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError
 from scenario_tools.ports.plan import PlanSink
@@ -47,6 +51,7 @@ class IntakeResult:
     previous: dict[str, bytes] | None = None
     changelog: bytes | None = None  # a new entry's starting CHANGELOG.md
     sheet: bytes | None = None  # a new entry's README.md
+    payload_files: dict[str, bytes] = field(default_factory=dict)  # new versions, by their path
 
 
 def _scenario_name(export: Any) -> str:
@@ -71,9 +76,11 @@ def intake_entry(
     schema: SchemaValidator,
     domains: tuple[str, ...],
     today: datetime.date,
+    payloads: Catalogue,
 ) -> IntakeResult:
     """What intake makes of ``export`` and the request read from ``request_path``, against the
-    catalogue ``source`` reads; a new entry's changelog starts on ``today``."""
+    catalogue ``source`` reads and the payload catalogue ``payloads``; a new entry's changelog
+    starts on ``today``."""
     # What the request writes is checked as the export is, before anything else: a hidden
     # character is said as such, whatever the schema would say of the field that holds it.
     hidden = hidden_character_findings(request_document, request_path)
@@ -119,8 +126,40 @@ def intake_entry(
     if refusals:
         return IntakeResult(request, refusals)
     if request.mode == NEW:
-        return _new(request, export, export_path, request_path, data, schema, today)
-    return _update(request, export, name, export_path, data, source)
+        return _new(request, export, export_path, request_path, data, schema, today, payloads)
+    return _update(request, export, name, export_path, data, source, schema, payloads)
+
+
+@dataclass(frozen=True)
+class _Payloads:
+    """The verdicts on the payloads of an entry: the refusals (a new payload's name taken), the
+    information, the versions held once the new ones are written, and their files by path."""
+
+    refusals: tuple[Finding, ...]
+    told: tuple[Finding, ...]
+    held: HeldVersions
+    files: dict[str, bytes]
+
+
+def _payloads(
+    scenario_json: bytes, entry: str, payloads: Catalogue, data: DataLoader, schema: SchemaValidator
+) -> _Payloads:
+    found, new = verdicts(
+        json.loads(scenario_json),
+        payloads,
+        agreed_ids(data),
+        accepted=lambda document: not schema.validate("payload", document),
+        scenario=f"{entry}/scenario.json",
+    )
+    refusals = tuple(f for f in found if f.severity is Severity.BLOCKING)
+    held = [*payloads.held().by_id.values()]
+    held += [PayloadReference(v.identifier, v.version, digest) for digest, v in new.items()]
+    return _Payloads(
+        refusals,
+        tuple(f for f in found if f.severity is Severity.INFO),
+        HeldVersions.of(held),
+        {version.path: stored_form(version.document) for version in new.values()},
+    )
 
 
 def intake_files(
@@ -149,6 +188,9 @@ def plan_document(
         raise ValueError("a refused request has no plan")
     entry = result.request.entry
     digests = {f"{entry}/{name}": ContentHash.of_bytes(data).hex for name, data in files.items()}
+    digests.update(
+        {path: ContentHash.of_bytes(data).hex for path, data in result.payload_files.items()}
+    )
     return intake_plan(
         result.request,
         base=base,
@@ -180,17 +222,26 @@ def write_intake(
     if result.request is None or result.refusals:
         raise ValueError("a refused request is never written")
     entry = result.request.entry
-    with plan.reserving() as reservation:
+    with plan.reserving() as reservation, contextlib.ExitStack() as stack:
         files = intake_files(result, render)
-        with entries.writing(entry, files, previous=result.previous) as written:
-            findings = validate(entry)
-            document = plan_document(result, files, base, findings)
-            if current() != base:  # the plan must describe what its base gives
-                raise EnvironmentProblemError(
-                    "the checkout's commit changed while the run wrote: nothing is kept"
-                )
-            written.check()  # last: what the checkout's check leaves out, the files written
-            reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
+        # The new payload versions first, each in a folder of its own: the entry's check reads
+        # them, and they are taken back with it if anything stops the run.
+        versions = []
+        for path, data in sorted(result.payload_files.items()):
+            folder, name = path.rsplit("/", 1)
+            versions.append(
+                stack.enter_context(entries.writing(folder, {name: data}, previous=None))
+            )
+        written = stack.enter_context(entries.writing(entry, files, previous=result.previous))
+        findings = validate(entry)
+        document = plan_document(result, files, base, findings)
+        if current() != base:  # the plan must describe what its base gives
+            raise EnvironmentProblemError(
+                "the checkout's commit changed while the run wrote: nothing is kept"
+            )
+        for checked in (*versions, written):  # last: what the checkout's check leaves out
+            checked.check()
+        reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
     return (*result.to_complete, *findings)
 
 
@@ -202,6 +253,7 @@ def _new(
     data: DataLoader,
     schema: SchemaValidator,
     today: datetime.date,
+    payloads: Catalogue,
 ) -> IntakeResult:
     metadata_path = f"{request.entry}/scenario.yaml"
     prepared = prepare_entry(
@@ -228,7 +280,13 @@ def _new(
         finding for finding in prepared.to_complete if finding.field.strip("/") not in given
     )
     scenario_json = prepared.scenario_json
-    assigned = assigned_entry(metadata, json.loads(scenario_json), request.entry, agreed_ids(data))
+    verdict = _payloads(scenario_json, request.entry, payloads, data, schema)
+    if verdict.refusals:
+        return IntakeResult(request, verdict.refusals)
+    left += verdict.told
+    assigned = assigned_entry(
+        metadata, json.loads(scenario_json), request.entry, agreed_ids(data), verdict.held
+    )
     if assigned.metadata is not None and assigned.stored is not None:
         metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
     # Otherwise the entry's check, run once it is written, says why in the plan.
@@ -257,6 +315,7 @@ def _new(
         changed=True,
         changelog=changelog,
         sheet=sheet,
+        payload_files=verdict.files,
     )
 
 
@@ -267,6 +326,8 @@ def _update(
     export_path: str,
     data: DataLoader,
     source: EntrySource,
+    schema: SchemaValidator,
+    payloads: Catalogue,
 ) -> IntakeResult:
     stored_path = f"{request.entry}/scenario.json"
     if "scenario.json" not in source.names(request.entry):
@@ -296,15 +357,20 @@ def _update(
     if "scenario.yaml" in source.names(request.entry):
         written = source.read_text(metadata_path)
         declared = source.read_yaml(metadata_path)
-    assigned = assigned_entry(declared, json.loads(scenario_json), request.entry, agreed_ids(data))
+    verdict = _payloads(scenario_json, request.entry, payloads, data, schema)
+    if verdict.refusals:
+        return IntakeResult(request, verdict.refusals)
+    assigned = assigned_entry(
+        declared, json.loads(scenario_json), request.entry, agreed_ids(data), verdict.held
+    )
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
         if assigned.metadata != declared:  # its references change: scenario.yaml too
             metadata = assigned.metadata
             previous_files["scenario.yaml"] = written.encode()
     # Otherwise the entry's check, run once it is written, says why in the plan.
-    changed = scenario_json != stored or metadata is not None
-    left: tuple[Finding, ...] = ()
+    changed = scenario_json != stored or metadata is not None or bool(verdict.files)
+    left: tuple[Finding, ...] = verdict.told
     if changed:
         left += (
             Finding(
@@ -348,4 +414,13 @@ def _update(
         )
         for identifier in identifiers
     )
-    return IntakeResult(request, (), scenario_json, metadata, left, changed, previous_files)
+    return IntakeResult(
+        request,
+        (),
+        scenario_json,
+        metadata,
+        left,
+        changed,
+        previous_files,
+        payload_files=verdict.files,
+    )

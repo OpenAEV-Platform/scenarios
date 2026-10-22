@@ -20,6 +20,7 @@ from click.testing import CliRunner
 
 from scenario_tools.domain.shared.workflow import WORKFLOW_NO_STEP
 from scenario_tools.interface.cli import main
+from tests.support.catalogue import write_catalogue
 from tests.support.chaining import CHAINED, CHAINED_METADATA
 
 ROOT = Path(__file__).parents[2]
@@ -39,6 +40,7 @@ def _entry(tmp_path: Path) -> Path:
     )
     (entry / "scenario.yaml").write_text(CHAINED_METADATA)
     (entry / "CHANGELOG.md").write_text("# Changelog\n\n## 1.0.0 — 2026-10-22\n\nFirst version.\n")
+    write_catalogue(root, json.loads((entry / "scenario.json").read_text("utf-8")))
     for command in (["payloads", str(entry), "--assign"], ["render", str(entry)]):
         result = CliRunner().invoke(main, command)
         assert result.exit_code == 0, result.output
@@ -49,7 +51,10 @@ def _validate(entry: Path) -> tuple[int, set[tuple[str, str]]]:
     """The exit code and each finding as code and field, once the references are assigned again
     and the sheet rendered, as a contributor does after a change. Their exit codes are not read:
     a defect may make them refuse the entry, which `validate` then reports. The information that
-    a payload is new, which every run without a base branch gives, is left out."""
+    a payload is new, which every run without a base branch gives, is left out. A payload the
+    change made is added to the catalogue first, as its contributor adds it."""
+    stored = json.loads((entry / "scenario.json").read_text("utf-8"))
+    write_catalogue(entry.parents[len(Path(CHAINED).parts) - 1], stored)
     CliRunner().invoke(main, ["payloads", str(entry), "--assign"])
     CliRunner().invoke(main, ["render", str(entry)])
     result = CliRunner().invoke(main, ["--format", "json", "validate", str(entry)])

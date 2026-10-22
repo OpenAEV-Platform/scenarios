@@ -12,6 +12,7 @@ from scenario_tools.application.assign_payloads import assigned_entry, payload_f
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.verification.payload_references import AgreedIds
+from tests.support.catalogue import held
 
 ROOT = Path(__file__).resolve().parents[3]
 STORED: dict[str, Any] = json.loads(
@@ -57,7 +58,9 @@ def test_the_facts_cover_the_steps() -> None:
 
 
 def test_the_payload_of_each_step_is_given_the_id_its_content_has() -> None:
-    assigned = assigned_entry({"name": "x"}, copy.deepcopy(STORED), "entry", AgreedIds({}))
+    assigned = assigned_entry(
+        {"name": "x"}, copy.deepcopy(STORED), "entry", AgreedIds({}), held(copy.deepcopy(STORED))
+    )
     assert assigned.refusals == ()
     assert assigned.stored is not None
     assert assigned.metadata is not None
@@ -81,7 +84,9 @@ def _with_inject_of(step: int) -> dict[str, Any]:
 
 
 def test_a_payload_shared_by_an_inject_and_a_step_gets_one_reference() -> None:
-    assigned = assigned_entry({"name": "x"}, _with_inject_of(0), "entry", AgreedIds({}))
+    assigned = assigned_entry(
+        {"name": "x"}, _with_inject_of(0), "entry", AgreedIds({}), held(_with_inject_of(0))
+    )
     assert assigned.refusals == ()
     assert assigned.metadata is not None
     assert len(assigned.metadata["payloads"]) == 1
@@ -90,7 +95,7 @@ def test_a_payload_shared_by_an_inject_and_a_step_gets_one_reference() -> None:
 def test_two_payloads_of_one_name_in_an_inject_and_a_step_are_refused() -> None:
     stored = _with_inject_of(0)
     stored["scenario_injects"][0][CONTRACT][PAYLOAD]["payload_description"] = "Another content."
-    codes = _codes(payload_findings({}, stored, "entry", AgreedIds({})))
+    codes = _codes(payload_findings({}, stored, "entry", AgreedIds({}), held(stored)))
     name = f"step_data/{CONTRACT}/{PAYLOAD}/payload_name"
     assert [field for code, field in codes if code == "PAY-007"] == [
         f"{STEPS}/0/{name}",
@@ -101,7 +106,7 @@ def test_two_payloads_of_one_name_in_an_inject_and_a_step_are_refused() -> None:
 def test_a_payload_of_a_step_that_cannot_be_hashed_is_refused_at_its_pointer() -> None:
     stored = copy.deepcopy(STORED)
     _steps(stored)[1]["step_data"][CONTRACT][PAYLOAD]["payload_unknown_field"] = True
-    codes = _codes(payload_findings({}, stored, "entry", AgreedIds({})))
+    codes = _codes(payload_findings({}, stored, "entry", AgreedIds({}), held(stored)))
     assert any(code == "PAY-005" and field.startswith(f"{STEPS}/1/") for code, field in codes)
 
 
@@ -124,3 +129,28 @@ def test_the_facts_say_whether_the_scenario_has_a_workflow() -> None:
 def test_a_workflow_with_no_step_is_still_a_workflow() -> None:
     stored = {**copy.deepcopy(STORED), "scenario_workflow": {"workflow_steps": []}}
     assert export_facts(stored, BUILTIN, PATH)[0].holds_workflow
+
+
+def test_a_payload_of_a_step_in_no_version_file_is_refused_at_its_pointer() -> None:
+    held_first = held(STORED)
+    changed = copy.deepcopy(STORED)
+    _steps(changed)[1]["step_data"][CONTRACT][PAYLOAD]["command_content"] = "ps -ef"
+    assigned = assigned_entry({"name": "x"}, changed, "entry", AgreedIds({}), held_first)
+    found = _codes(payload_findings({}, changed, "entry", AgreedIds({}), held_first))
+    pointer = f"{STEPS}/1/step_data/{CONTRACT}/{PAYLOAD}/payload_external_id"
+    assert (assigned.metadata, assigned.stored) == (None, None)
+    assert [field for code, field in _codes(assigned.refusals) if code == "PAY-008"] == [pointer]
+    assert ("PAY-008", pointer) in found
+
+
+def test_a_reference_of_a_step_s_payload_naming_another_version_is_refused() -> None:
+    assigned = assigned_entry(
+        {"name": "x"}, copy.deepcopy(STORED), "entry", AgreedIds({}), held(STORED)
+    )
+    assert assigned.metadata is not None
+    declared = copy.deepcopy(assigned.metadata)
+    declared["payloads"][0]["version"] = "1.1.0"
+    found = _codes(
+        payload_findings(declared, assigned.stored, "entry", AgreedIds({}), held(STORED))
+    )
+    assert found == [("PAY-008", "/payloads/0/version")]

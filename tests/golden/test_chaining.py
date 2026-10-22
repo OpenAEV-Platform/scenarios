@@ -205,3 +205,17 @@ def test_the_sheet_of_the_filters_is_the_reviewed_one_and_renders_the_same_twice
     first = render_sheet(metadata, stored, ())
     assert first == render_sheet(metadata, copy.deepcopy(stored), ())
     assert first == FILTERS_SHEET.read_text(encoding="utf-8")
+
+
+def test_the_payload_of_a_step_without_a_description_is_described_by_its_name() -> None:
+    export = copy.deepcopy(EXPORT)
+    for step in export["scenario_workflow"]["workflow_steps"]:
+        data = json.loads(step["step_data"])
+        del data["inject_injector_contract"]["injector_contract_payload"]["payload_description"]
+        step["step_data"] = json.dumps(data)
+
+    stored = json.loads(_prepare(export))
+
+    for step in stored["scenario_workflow"]["workflow_steps"]:
+        payload = step["step_data"]["inject_injector_contract"]["injector_contract_payload"]
+        assert payload["payload_description"] == payload["payload_name"]

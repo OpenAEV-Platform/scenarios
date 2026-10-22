@@ -28,7 +28,7 @@ from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 from scenario_tools.domain.sheet.sheet import render_sheet
-from scenario_tools.domain.verification.payload_references import AgreedIds
+from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
 from scenario_tools.domain.verification.versioning import changelog_findings, versioning_findings
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
@@ -144,12 +144,14 @@ def validate_entry(
     domains: tuple[str, ...],
     policy: PolicyData,
     agreed: AgreedIds,
+    catalogue: HeldVersions,
     previous: EntrySource | None = None,
 ) -> tuple[Finding, ...]:
     """The findings of the entry at ``entry``, a directory relative to the repository.
     ``renormalised`` gives what normalisation writes for a stored scenario, given the entry's
     external ID and the scenario's path; ``policy`` holds the data the policy rules read, and
-    ``agreed`` the payload IDs the registry agrees. ``previous`` reads the entry as the base
+    ``agreed`` the payload IDs the registry agrees, ``catalogue`` the payload versions the catalogue
+    holds. ``previous`` reads the entry as the base
     branch holds it, its previous version, found by its external ID when it moved; without it,
     or when it holds no such entry, the entry is new."""
     if not reportable(entry):  # none of its files could be named in a finding: none is read
@@ -207,7 +209,7 @@ def validate_entry(
     if metadata is not None and facts is not None:
         findings += cross_check(metadata, facts, f"{entry}/scenario.yaml")
     if declared_checked is not None and stored_document is not None:
-        findings += payload_findings(declared_checked, stored_document, entry, agreed)
+        findings += payload_findings(declared_checked, stored_document, entry, agreed, catalogue)
     if declared_checked is not None and isinstance(stored_document, Mapping):
         findings += _version_findings(
             entry, names, source, previous, declared_checked, stored_document

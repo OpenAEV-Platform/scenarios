@@ -43,7 +43,7 @@ from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER, jcs
 from scenario_tools.domain.shared.payload_names import base_name
-from scenario_tools.domain.shared.stored import STEPS, WORKFLOW
+from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.shared.workflow import (
     CONDITION_SIBLINGS_SAME,
     CONDITIONS,
@@ -1005,6 +1005,29 @@ def _neutralise(document: dict[str, Any]) -> None:
         variable.pop("variable_value", None)
 
 
+def _listed(holder: object, key: str) -> list[Any]:
+    """The list ``holder`` holds under ``key``; none when it holds no list there."""
+    found = holder.get(key) if isinstance(holder, dict) else None
+    return found if isinstance(found, list) else []
+
+
+def _describe_payloads(document: dict[str, Any]) -> None:
+    """Give each payload, of an inject or a step, without a description (absent, null or blank)
+    its name as one: a payload of the catalogue has a description, and the starter pack's
+    exports hold payloads without. Any other value is left for the payload checks."""
+    holders = list(_listed(document, _INJECTS))
+    workflow = document.get(WORKFLOW)
+    holders += [step.get(STEP_DATA) for step in _listed(workflow, STEPS) if isinstance(step, dict)]
+    for holder in holders:
+        contract = holder.get(_CONTRACT) if isinstance(holder, dict) else None
+        payload = contract.get(_PAYLOAD) if isinstance(contract, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        text = payload.get("payload_description")
+        if text is None or (isinstance(text, str) and not text.strip()):
+            payload["payload_description"] = payload.get("payload_name")
+
+
 def normalise(
     export: object,
     external_id: str,
@@ -1053,6 +1076,7 @@ def normalise(
     document = _strip(document, rules)
     _unlink(document, rules)
     _neutralise(document)
+    _describe_payloads(document)
     document = _sort(document, rules)
     if has_workflow(document):
         document[WORKFLOW] = _stored_workflow(document[WORKFLOW], rules.export_keys.step_data)

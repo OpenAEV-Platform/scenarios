@@ -16,6 +16,7 @@ from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.payload_names import SEMVER
 from scenario_tools.domain.verification.payload_hash import UnhashablePayloadError
+from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.domain.verification.payload_version import (
     VERSION_FILE_LIMIT,
     PayloadVersion,
@@ -66,6 +67,11 @@ class VersionPlace:
     path: str
 
 
+def is_slug(name: str) -> bool:
+    """Whether ``name`` can name a payload folder: kebab-case, at most 64 characters."""
+    return _SLUG.fullmatch(name) is not None and len(name) <= _SLUG_LIMIT
+
+
 def _blocking(path: str, field: str, message: str) -> Finding:
     return Finding("PAY-009", Severity.BLOCKING, path, field, message)
 
@@ -77,7 +83,7 @@ def _entry_refusal(entry: TreeEntry) -> str | None:
         if entry.kind is not EntryKind.FOLDER:
             return ENTRY_NOT_FOLDER
         name = entry.path[0]
-        return None if _SLUG.fullmatch(name) and len(name) <= _SLUG_LIMIT else FOLDER_NOT_SLUG
+        return None if is_slug(name) else FOLDER_NOT_SLUG
     if len(entry.path) > 2:
         return ENTRY_NOT_VERSION_FILE
     if entry.kind is not EntryKind.FILE or not _VERSION_FILE.fullmatch(entry.path[1]):
@@ -191,4 +197,13 @@ class Catalogue:
             by_hash=by_hash,
             by_slug={slug: tuple(found) for slug, found in by_slug.items()},
             by_base_name={name_key(found[0].base_name): slug for slug, found in by_slug.items()},
+        )
+
+    def held(self) -> HeldVersions:
+        """The versions of the catalogue as the references that name them."""
+        return HeldVersions.of(
+            [
+                PayloadReference(version.identifier, version.version, digest)
+                for digest, version in self.by_hash.items()
+            ]
         )

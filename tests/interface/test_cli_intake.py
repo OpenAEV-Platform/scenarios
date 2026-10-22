@@ -28,9 +28,12 @@ from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface import cli as cli_module
 from scenario_tools.interface.cli import main
 from scenario_tools.ports.errors import EnvironmentProblemError
+from tests.support.catalogue import write_catalogue
 
 REPOSITORY = Path(__file__).parents[2]
 EASM = REPOSITORY / "tests" / "golden" / "exports" / "easm-scenario.zip"
+NORMALISED = REPOSITORY / "tests" / "golden" / "normalised"
+SALT = EASM.parent / "salt-typhoon-cve-ttps-validation.zip"
 ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
 ENTRY = "scenarios/techniques/easm"
 NEW: dict[str, Any] = {
@@ -200,7 +203,7 @@ def test_a_refused_request_writes_nothing(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert not plan.exists()
 
 
-@pytest.mark.parametrize("place", ["scenarios", "policy", "schemas", "policy/data"])
+@pytest.mark.parametrize("place", ["scenarios", "payloads", "policy", "schemas", "policy/data"])
 def test_a_plan_where_the_checkout_must_stay_committed_is_a_usage_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, place: str
 ) -> None:
@@ -210,7 +213,7 @@ def test_a_plan_where_the_checkout_must_stay_committed_is_a_usage_error(
 
     assert result.exit_code == 2, result.output
     assert result.stdout == ""
-    assert "scenarios/, policy/ or schemas/" in result.stderr
+    assert "scenarios/, payloads/, policy/ or schemas/" in result.stderr
     assert not (root / "scenarios").exists()
     assert not (root / place / "plan.json").exists()
 
@@ -342,7 +345,7 @@ def test_a_plan_reaching_the_entries_through_a_link_is_a_usage_error(
     assert list((root / "scenarios").iterdir()) == []
 
 
-@pytest.mark.parametrize("place", ["scenarios", "policy", "schemas"])
+@pytest.mark.parametrize("place", ["scenarios", "payloads", "policy", "schemas"])
 @pytest.mark.parametrize("which", ["export", "request"])
 def test_inputs_where_the_checkout_must_stay_committed_are_a_usage_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, which: str, place: str
@@ -366,11 +369,10 @@ def test_a_blocking_finding_after_writing_keeps_the_files_and_says_so_in_the_pla
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     root = _repository(tmp_path)
-    salt = EASM.parent / "salt-typhoon-cve-ttps-validation.zip"
     request = {**NEW, "domain": "intrusion-sets", "slug": "salt-typhoon"}
     plan = tmp_path / "plan.json"
 
-    result = _intake(monkeypatch, root, _request(tmp_path, request), plan, salt)
+    result = _intake(monkeypatch, root, _request(tmp_path, request), plan, SALT)
 
     assert result.exit_code == 1, result.output
     assert (root / "scenarios" / "intrusion-sets" / "salt-typhoon" / "scenario.yaml").exists()
@@ -383,6 +385,59 @@ def test_a_blocking_finding_after_writing_keeps_the_files_and_says_so_in_the_pla
     # two injects that run on the endpoint at the same second. The sender is normalised away.
     assert document["blocking"] == 10
     assert sorted(blocking) == ["POL-003"] * 4 + ["POL-005"] * 4 + ["POL-009"] + ["SCH-009"]
+
+
+SALT_REQUEST = {**NEW, "domain": "intrusion-sets", "slug": "salt-typhoon"}
+
+
+def test_a_new_entry_writes_the_version_file_of_each_new_payload_and_plans_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    plan = tmp_path / "plan.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, SALT_REQUEST), plan, SALT)
+
+    written = sorted(path.relative_to(root).as_posix() for path in root.glob("payloads/*/*"))
+    assert len(written) == 11
+    assert all(path.endswith("/1.0.0.json") for path in written)
+    planned = {file["path"]: file["sha256"] for file in json.loads(plan.read_text())["files"]}
+    assert {path: planned[path] for path in written} == {
+        path: _sha256(root / path) for path in written
+    }
+    verdicts = [
+        f["message"] for f in json.loads(result.stdout)["findings"] if f["code"] == "PAY-010"
+    ]
+    assert len(verdicts) == 11
+    assert all(message.startswith("new payload: ") for message in verdicts)
+
+
+def test_an_update_whose_payloads_are_all_there_writes_no_version_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    _intake(monkeypatch, root, _request(tmp_path, SALT_REQUEST), tmp_path / "new.json", SALT)
+    _commit(root)
+    held = {path: path.read_bytes() for path in root.glob("payloads/*/*")}
+    update = {
+        "mode": "update",
+        "external_id": ID,
+        "domain": "intrusion-sets",
+        "slug": "salt-typhoon",
+        "issue": 13,
+    }
+    plan = tmp_path / "update.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, update, "update.yaml"), plan, SALT)
+
+    assert {path: path.read_bytes() for path in root.glob("payloads/*/*")} == held
+    document = json.loads(plan.read_text(encoding="utf-8"))
+    assert (document["changed"], document["files"]) == (False, [])
+    verdicts = [
+        f["message"] for f in json.loads(result.stdout)["findings"] if f["code"] == "PAY-010"
+    ]
+    assert len(verdicts) == 11
+    assert all(message.startswith("already there: ") for message in verdicts)
 
 
 def test_a_plan_that_cannot_be_written_stops_the_run_before_any_entry(
@@ -671,7 +726,7 @@ def test_an_input_reaching_the_entries_through_a_link_and_back_is_a_usage_error(
     result = _intake(monkeypatch, root, roundabout, tmp_path / "plan.json")
 
     assert result.exit_code == 2, result.output
-    assert "scenarios/, policy/ or schemas/" in result.output
+    assert "scenarios/, payloads/, policy/ or schemas/" in result.output
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="permissions do not hold for root")
@@ -1185,3 +1240,52 @@ def test_metadata_changed_while_an_update_is_written_gets_no_plan(
     assert f"{ENTRY}/scenario.yaml" in result.output
     assert not plan.exists()
     assert (root / ENTRY / "scenario.json").read_bytes() == stored  # put back
+
+
+def _salt_catalogue(root: Path, change: Any = None) -> None:
+    """Commit in ``root`` the version files of the starter pack's Salt Typhoon payloads, the
+    first one changed by ``change``."""
+    stored = json.loads((NORMALISED / "salt-typhoon-cve-ttps-validation.json").read_bytes())
+    if change is not None:
+        change(
+            next(
+                inject["inject_injector_contract"]["injector_contract_payload"]
+                for inject in stored["scenario_injects"]
+                if (inject.get("inject_injector_contract") or {}).get("injector_contract_payload")
+            )
+        )
+    write_catalogue(root, stored)
+    _commit(root)
+
+
+def test_a_new_payload_whose_name_the_catalogue_holds_is_refused_and_nothing_is_written(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    _salt_catalogue(root, lambda payload: payload.update(command_content="echo other"))
+    held = {path: path.read_bytes() for path in root.glob("payloads/*/*")}
+    plan = tmp_path / "plan.json"
+
+    result = _intake(monkeypatch, root, _request(tmp_path, SALT_REQUEST), plan, SALT)
+
+    assert result.exit_code == 1, result.output
+    findings = json.loads(result.stdout)["findings"]
+    assert [f["code"] for f in findings if f["severity"] == "blocking"] == ["PAY-009"]
+    assert not (root / "scenarios").exists()
+    assert not plan.exists()
+    assert {path: path.read_bytes() for path in root.glob("payloads/*/*")} == held
+
+
+def test_a_new_entry_with_new_payloads_gives_the_same_plan_twice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    request = _request(tmp_path, SALT_REQUEST)
+    first, second = tmp_path / "first.json", tmp_path / "second.json"
+
+    _intake(monkeypatch, root, request, first, SALT)
+    shutil.rmtree(root / "scenarios")
+    shutil.rmtree(root / "payloads")
+    _intake(monkeypatch, root, request, second, SALT)
+
+    assert first.read_bytes() == second.read_bytes()
