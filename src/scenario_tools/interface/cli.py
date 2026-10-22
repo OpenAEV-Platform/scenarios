@@ -63,6 +63,7 @@ from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
 from scenario_tools.application.assign_payloads import (
     agreed_ids,
     assigned_entry,
+    catalogue_of,
     payload_findings,
 )
 from scenario_tools.application.build_archive import build_archive
@@ -123,7 +124,8 @@ from scenario_tools.domain.shared.finding import (
     shorten,
 )
 from scenario_tools.domain.shared.workflow import ExportKeys
-from scenario_tools.domain.verification.payload_references import AgreedIds
+from scenario_tools.domain.verification.payload_catalogue import Catalogue
+from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -471,11 +473,11 @@ def normalize(
 
 
 def _entry_archive(
-    entry: Path, root: Path, loader: YamlDataLoader, out: str | None
+    entry: Path, root: Path, loader: YamlDataLoader, catalogue: HeldVersions, out: str | None
 ) -> ArchivedEntry:
     """What the archive's checks find of the entry at ``entry``, of the repository at
-    ``root``, its import archive when they let it be built, meant for ``out`` or, without it,
-    named as a release names it, and what they read."""
+    ``root`` whose payload catalogue holds ``catalogue``, its import archive when they let it be
+    built, meant for ``out`` or, without it, named as a release names it, and what they read."""
     scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
     declared = read_yaml_file(metadata)
     external_id = declared.get("external_id") if isinstance(declared, dict) else None
@@ -513,6 +515,7 @@ def _entry_archive(
         policy=policy,
         declared=declared,
         agreed=agreed_ids(loader),
+        catalogue=catalogue,
         condition_types=condition_types,
     )
     return ArchivedEntry(report.findings, built, declared, document)
@@ -540,7 +543,8 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
 
     def produce() -> Report:
         loader = YamlDataLoader(root / "policy" / "data")
-        archived = _entry_archive(entry, root, loader, str(out))
+        catalogue = _catalogue(RepositoryEntries(root))
+        archived = _entry_archive(entry, root, loader, catalogue, str(out))
         if archived.archive is not None:
             write_output(out, archived.archive)
         return Report("archive", archived.findings)
@@ -691,7 +695,7 @@ def build(
                 return rules.validate(entry, source)
 
             def archived(entry: str) -> ArchivedEntry:
-                return _entry_archive(root / entry, root, rules.loader, None)
+                return _entry_archive(root / entry, root, rules.loader, rules.catalogue, None)
 
             def build_entry(entry: str) -> EntryResult:
                 return entry_for_release(
@@ -884,6 +888,7 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
 
     def produce() -> Report:
         agreed = agreed_ids(YamlDataLoader(root / "policy" / "data"))
+        catalogue = _catalogue(RepositoryEntries(root))
         where = repository_path(str(entry), root)
         # Its bytes and its document from one read: the bytes are what --assign replaces.
         written = read_regular_file(metadata, YAML_LIMIT)
@@ -892,8 +897,10 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
         # A payload outside an inject's contract is never named: nothing is given then.
         outside = payloads_outside_contracts(stored, f"{where}/scenario.json")
         if not assign or outside:
-            return Report("payloads", outside + payload_findings(declared, stored, where, agreed))
-        result = assigned_entry(declared, stored, where, agreed)
+            return Report(
+                "payloads", outside + payload_findings(declared, stored, where, agreed, catalogue)
+            )
+        result = assigned_entry(declared, stored, where, agreed, catalogue)
         if result.metadata is None or result.stored is None:
             return Report("payloads", result.refusals)
         previous = {"scenario.yaml": written, "scenario.json": data}
@@ -910,7 +917,9 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
         ) as replaced:
             replaced.check()
         # The assignment gives every payload its reference: the check of what was given says so.
-        return Report("payloads", payload_findings(result.metadata, result.stored, where, agreed))
+        return Report(
+            "payloads", payload_findings(result.metadata, result.stored, where, agreed, catalogue)
+        )
 
     _emit(ctx, "payloads", produce, root)
 
@@ -1102,6 +1111,7 @@ class _Rules:
     schema: JsonSchemaValidator
     policy: PolicyData
     agreed: AgreedIds
+    catalogue: HeldVersions
 
     def validate(
         self, entry: str, source: RepositoryEntries, previous: RepositoryEntries | None = None
@@ -1115,8 +1125,21 @@ class _Rules:
             domains=self.domains,
             policy=self.policy,
             agreed=self.agreed,
+            catalogue=self.catalogue,
             previous=previous,
         )
+
+
+def _payload_catalogue(source: RepositoryEntries) -> Catalogue:
+    """The index of the repository's payload catalogue: empty when it has no payloads/."""
+    if not (source.root / "payloads").is_dir():
+        return catalogue_of(None)
+    return catalogue_of(CatalogueDirectory(source.root, ("payloads",)))
+
+
+def _catalogue(source: RepositoryEntries) -> HeldVersions:
+    """The payload versions the repository's catalogue holds: none when it has no payloads/."""
+    return _payload_catalogue(source).held()
 
 
 def _policy_data(loader: YamlDataLoader) -> PolicyData:
@@ -1148,16 +1171,16 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
         schema = JsonSchemaValidator(schemas)
     except (OSError, ValueError, UnsafeInputError, EnvironmentProblemError) as error:
         raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
-    for name in ("scenario", "intake-request") if intake else ("scenario",):
+    for name in ("scenario", "intake-request", "payload") if intake else ("scenario",):
         if not (schemas / f"{name}.schema.json").is_file():
             raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
-    return _Rules(loader, builtin, domains, schema, policy, agreed_ids(loader))
+    return _Rules(loader, builtin, domains, schema, policy, agreed_ids(loader), _catalogue(source))
 
 
 REQUEST_LIMIT = 64 * 1024  # bytes of an intake request
 
 # What intake keeps as committed, but for the entry it writes: no plan nor input goes there.
-_PLANNED = ("scenarios", "policy", "schemas")
+_PLANNED = ("scenarios", "payloads", "policy", "schemas")
 _PLANNED_NAMED = ", ".join(f"{path}/" for path in _PLANNED[:-1]) + f" or {_PLANNED[-1]}/"
 
 
@@ -1217,11 +1240,13 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                     schema=rules.schema,
                     domains=rules.domains,
                     today=datetime.date.today(),
+                    payloads=_payload_catalogue(source),
                 )
                 if result.refusals or result.request is None:
                     return Report("intake", result.refusals)
                 entry = result.request.entry
                 ours = frozenset(f"{entry}/{name}" for name in intake_files(result, yaml_bytes))
+                ours |= frozenset(result.payload_files)
                 _refuse_converting(root, ours)  # files not written yet: attributes match them too
                 source.check_held()
                 with _stop_requests_held():
@@ -1231,8 +1256,7 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
                         plan=PlanFile(plan),
                         base=base,
                         current=lambda: _still_base(source, ours),
-                        # Read afresh: the catalogue now holds the entry written.
-                        validate=lambda entry: rules.validate(entry, RepositoryEntries(root)),
+                        validate=lambda entry: _validate_written(rules, root, entry),
                         render=yaml_bytes,
                     )
                     written = True  # while requests to stop still wait: never missed
@@ -1251,6 +1275,13 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
             raise EnvironmentProblemError(_unplaced(str(error), root, plan, inputs)) from error
 
     _emit(ctx, "intake", produce_shown, root)
+
+
+def _validate_written(rules: _Rules, root: Path, entry: str) -> tuple[Finding, ...]:
+    """The findings of ``entry`` once intake wrote it, read afresh: the scenarios now hold the
+    entry, and the payload catalogue the new versions written with it."""
+    written = RepositoryEntries(root)
+    return dataclasses.replace(rules, catalogue=_catalogue(written)).validate(entry, written)
 
 
 def _refuse_uncommitted(root: Path, *, release: bool = False) -> None:

@@ -69,6 +69,17 @@ Intake gives each payload the scenario embeds the ID its content has, written in
 unless `policy/data/payload-ids.yaml` agrees another ID for that very content: an unchanged
 payload keeps its ID, a changed one takes a new one.
 
+Each payload is also looked up in the payload catalogue, `payloads/`, by its hash, and intake
+says what it found (`PAY-010`): `already there: <payload> <version>` when a version file has that
+content, or `new payload: <payload> 1.0.0`, when intake writes the first version file of a new
+payload folder, its slug proposed from the payload's name, and lists the file in the plan with
+its hash. A new payload whose name or slug the catalogue, or another new payload of the export,
+already has, whose name gives no slug or carries a version suffix, or whose file the payload
+schema would refuse, is refused before anything is written (`PAY-009`): rename or complete it
+in OpenAEV and export again. A payload without a description is given its name as one, in the
+scenario and in its version file alike, so that both keep one hash. Nothing under `payloads/`
+may differ from the commit when intake runs, as for `scenarios/`, `policy/` and `schemas/`.
+
 An update rewrites `scenario.json`, and `scenario.yaml` only when the references of its payloads
 change: it is then written in the tools' layout, so a comment added to it by hand is not kept.
 Raise its `version`, add the section to `CHANGELOG.md`, and, after a rename, align its `name`,

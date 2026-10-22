@@ -301,14 +301,14 @@
       ],
       "properties": {
         "id": {
-          "description": "The payload's identifier.",
+          "description": "The identifier of the payload version: the payload_external_id of a file of payloads/.",
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$"
         },
         "version": {
-          "description": "The payload version the scenario uses.",
+          "description": "The payload version the scenario uses: the version of a file of payloads/, which holds the payload's ID.",
           "$ref": "#/$defs/semver"
         },
         "sha256": {

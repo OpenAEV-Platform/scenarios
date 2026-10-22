@@ -23,7 +23,6 @@ from scenario_tools.domain.verification.payload_hash import (
     payload_hash,
 )
 
-VERSION = "1.0.0"  # the interim rule: a changed content takes a new ID, never a new version
 _EXTERNAL_ID = "payload_external_id"
 _RUN = "run `scenario-tools payloads --assign`"
 _ID = re.compile(r"[a-z0-9][a-z0-9:._-]{0,127}")
@@ -112,6 +111,22 @@ class PayloadReference:
     id: str
     version: str
     sha256: str
+
+
+@dataclass(frozen=True)
+class HeldVersions:
+    """The versions the payload catalogue holds, each as the reference that names it, by ID and
+    by hash."""
+
+    by_id: Mapping[str, PayloadReference]
+    by_hash: Mapping[str, PayloadReference]
+
+    @classmethod
+    def of(cls, versions: Sequence[PayloadReference]) -> "HeldVersions":
+        return cls(
+            {version.id: version for version in versions},
+            {version.sha256: version for version in versions},
+        )
 
 
 @dataclass(frozen=True)
@@ -219,17 +234,41 @@ def _conflicts(hashed: list[_Hashed], agreed: AgreedIds, scenario: str) -> list[
     return conflicts
 
 
+_NOT_IN_CATALOGUE = (
+    "this payload is in no version file of payloads/: run `scenario-tools intake` to add it"
+)
+
+
+def _held(
+    reference: PayloadReference, index: int, catalogue: HeldVersions, metadata: str
+) -> list[Finding]:
+    """Why ``reference``, the reference at ``index``, names no version the catalogue holds: no
+    file has its ID, or the file with its ID is another version or has another hash."""
+    held = catalogue.by_id.get(reference.id)
+    if held is None:
+        message, field = "no version file of payloads/ has this ID", "id"
+    elif held.version != reference.version:
+        message, field = "the version file with this ID is another version", "version"
+    elif held.sha256 != reference.sha256:
+        message, field = "the version file with this ID has another hash", "sha256"
+    else:
+        return []
+    return [_blocking("PAY-008", metadata, f"/payloads/{index}/{field}", f"{message}: {_RUN}")]
+
+
 def reference_findings(
     stored: object,
     references: Sequence[PayloadReference],
     *,
     agreed: AgreedIds,
+    catalogue: HeldVersions,
     scenario: str,
     metadata: str,
     files: FileHash,
 ) -> tuple[Finding, ...]:
     """What keeps the payloads of ``stored``, at ``scenario``, from carrying the IDs their
-    contents have, each given with its hash by one of ``references``, in ``metadata``."""
+    contents have, each given with its hash by one of ``references``, in ``metadata``, and each
+    reference from naming a version the ``catalogue`` holds, with its version and its hash."""
     hashed, findings, used = _hashed(stored, files, scenario)
     findings += _conflicts(hashed, agreed, scenario)
     by_id: dict[str, tuple[int, PayloadReference]] = {}
@@ -245,21 +284,14 @@ def reference_findings(
             )
             continue
         by_id[reference.id] = (index, reference)
-        if reference.version != VERSION:
-            findings.append(
-                _blocking(
-                    "PAY-002",
-                    metadata,
-                    f"/payloads/{index}/version",
-                    f"a payload's version stays {VERSION} under the interim rule: a changed "
-                    "payload takes a new ID instead",
-                )
-            )
+        findings.extend(_held(reference, index, catalogue, metadata))
     stale: set[int] = set()
     for item in hashed:
         identifier = item.payload.get(_EXTERNAL_ID)
         field = f"{item.embedded.pointer}/{_EXTERNAL_ID}"
         used.add(agreed.id_for(item.digest))  # its own reference names it, whatever it carries
+        if item.digest not in catalogue.by_hash:
+            findings.append(_blocking("PAY-008", scenario, field, _NOT_IN_CATALOGUE))
         if not isinstance(identifier, str):
             findings.append(_unnamed(scenario, field))
             continue
@@ -304,13 +336,24 @@ def reference_findings(
 
 
 def assign(
-    stored: Mapping[str, Any], *, agreed: AgreedIds, files: FileHash, scenario: str
+    stored: Mapping[str, Any],
+    *,
+    agreed: AgreedIds,
+    catalogue: HeldVersions,
+    files: FileHash,
+    scenario: str,
 ) -> Assignment:
     """Give each payload of ``stored``, a parsed JSON document, the ID its content has, and the
-    references that name them; nothing when a payload cannot be hashed."""
+    references that name them, each with the version of the catalogue's file that holds it;
+    nothing when a payload cannot be hashed or is in no file of the ``catalogue``."""
     assigned = copy.deepcopy(dict(stored))
     hashed, refused, _ = _hashed(assigned, files, scenario)
     refused += _conflicts(hashed, agreed, scenario)
+    refused += [
+        _blocking("PAY-008", scenario, f"{item.embedded.pointer}/{_EXTERNAL_ID}", _NOT_IN_CATALOGUE)
+        for item in hashed
+        if item.digest not in catalogue.by_hash
+    ]
     if refused:
         return Assignment(None, (), tuple(refused))
     given: dict[str, str] = {}
@@ -319,7 +362,7 @@ def assign(
         item.payload[_EXTERNAL_ID] = identifier
         given[identifier] = item.digest
     references = tuple(
-        PayloadReference(identifier, VERSION, digest)
+        PayloadReference(identifier, catalogue.by_hash[digest].version, digest)
         for identifier, digest in sorted(given.items())
     )
     return Assignment(assigned, references, ())

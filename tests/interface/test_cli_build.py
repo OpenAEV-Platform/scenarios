@@ -15,6 +15,7 @@ from click.testing import CliRunner
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.domain.shared.canonical import jcs
 from scenario_tools.interface.cli import main
+from tests.support.catalogue import write_catalogue
 from tests.support.chaining import CHAINED, CHAINED_METADATA
 
 ROOT = Path(__file__).parents[2]
@@ -473,13 +474,15 @@ def test_approvals_collected_at_another_commit_build_nothing(
 
 def _chained_entry(root: Path) -> None:
     """The hand-built scenario in chaining as an entry of ``root``, committed: its stored form,
-    its metadata, its payload references assigned and its sheet rendered."""
+    its metadata, the version files of its payloads, its payload references assigned and its
+    sheet rendered."""
     entry = root / CHAINED
     entry.mkdir(parents=True)
     stored = ROOT / "tests" / "golden" / "chaining" / "two-steps.normalised.json"
     shutil.copyfile(stored, entry / "scenario.json")
     (entry / "scenario.yaml").write_text(CHAINED_METADATA)
     (entry / "CHANGELOG.md").write_text("# Changelog\n\n## 1.0.0 — 2026-10-22\n\nFirst version.\n")
+    write_catalogue(root, json.loads(stored.read_bytes()))
     for command in (["payloads", str(entry), "--assign"], ["render", str(entry)]):
         result = CliRunner().invoke(main, command)
         assert result.exit_code == 0, result.output

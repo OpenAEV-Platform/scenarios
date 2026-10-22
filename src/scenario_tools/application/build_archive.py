@@ -9,7 +9,7 @@ from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import rule_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.finding import Finding, Report
-from scenario_tools.domain.verification.payload_references import AgreedIds
+from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
 from scenario_tools.ports.archive import ArchiveBuilder
 from scenario_tools.ports.errors import UnsafeInputError
 
@@ -29,6 +29,7 @@ def build_archive(
     policy: PolicyData,
     declared: object,
     agreed: AgreedIds,
+    catalogue: HeldVersions,
     condition_types: frozenset[str],
 ) -> tuple[Report, bytes | None]:
     """The report, and the archive when the report is ok. ``scenario`` holds the stored bytes
@@ -39,7 +40,8 @@ def build_archive(
     gives what normalisation writes for the document, and ``contract_findings`` the contracts
     whose facts cannot be established. ``declared`` is the entry's ``scenario.yaml`` as read,
     whose references must name each payload the scenario embeds, with its hash, under the ID
-    its content has, ``agreed`` holding the IDs the registry agrees. A workflow is checked as
+    its content has, ``agreed`` holding the IDs the registry agrees, and naming a version the
+    ``catalogue`` holds. A workflow is checked as
     normalisation checks it, ``condition_types`` being the types of condition a step may hold."""
     try:
         findings = archive_findings(document, path)
@@ -49,7 +51,7 @@ def build_archive(
         findings += rule_findings("POL-002", policy, entry)
         findings += rule_findings("POL-003", policy, entry)
         findings += contract_findings(document)
-        findings += payload_findings(declared, document, path.rpartition("/")[0], agreed)
+        findings += payload_findings(declared, document, path.rpartition("/")[0], agreed, catalogue)
     except ExportStructureError as error:
         raise UnsafeInputError(error.code, str(error), path, error.pointer) from error
     if renormalised(document) != scenario:

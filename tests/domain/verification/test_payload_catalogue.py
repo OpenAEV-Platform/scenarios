@@ -28,6 +28,7 @@ from scenario_tools.domain.verification.payload_catalogue import (
     layout,
     schema_findings,
 )
+from scenario_tools.domain.verification.payload_references import PayloadReference
 from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT, PayloadVersion
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -348,3 +349,13 @@ def test_a_folder_holding_only_refused_entries_holds_no_version() -> None:
         ("payloads/empty/x.txt", ENTRY_NOT_VERSION_FILE),
         ("payloads/empty", FOLDER_WITHOUT_VERSION),
     ]
+
+
+def test_the_catalogue_gives_each_version_as_the_reference_that_names_it() -> None:
+    versions = _tree()
+    held = Catalogue.of(versions).held()
+
+    assert sorted(held.by_id.values(), key=lambda r: (r.id, r.version)) == sorted(
+        (PayloadReference(v.identifier, v.version, v.digest()) for v in versions),
+        key=lambda r: (r.id, r.version),
+    )

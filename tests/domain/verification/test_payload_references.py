@@ -3,16 +3,24 @@
 registry agrees for it, and one reference of ``scenario.yaml`` gives that ID with the hash."""
 
 import copy
+from collections.abc import Callable
 from typing import Any
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from scenario_tools.domain.catalogue.identifiers import NS_OPENAEV_SCENARIOS, stable_id
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.domain.verification.payload_hash import payload_hash
+from scenario_tools.domain.verification.payload_hash import (
+    UnhashablePayloadError,
+    embedded_payloads,
+    payload_hash,
+)
 from scenario_tools.domain.verification.payload_references import (
     AgreedId,
     AgreedIds,
+    HeldVersions,
     PayloadReference,
     assign,
     declared_references,
@@ -73,13 +81,44 @@ def reference(
     return PayloadReference(identifier or derived_id(digest(item)), version, digest(item))
 
 
+EMPTY = HeldVersions.of([])
+
+
+def held(
+    scenario: object,
+    agreed: AgreedIds = NONE,
+    references: tuple[PayloadReference, ...] = (),
+    files: Callable[[str], str | None] = _no_files,
+) -> HeldVersions:
+    """A catalogue holding each payload ``scenario`` embeds as its version 1.0.0, and the
+    versions ``references`` name, so that a test of another rule reads the catalogue as
+    agreeing."""
+    versions = []
+    for embedded in embedded_payloads(scenario):
+        try:
+            hashed = payload_hash(embedded.payload, embedded.attack_patterns, files).hex
+        except UnhashablePayloadError:
+            continue
+        versions.append(PayloadReference(agreed.id_for(hashed), "1.0.0", hashed))
+    return HeldVersions.of([*versions, *references])
+
+
 def findings(
-    scenario: object, references: tuple[PayloadReference, ...], agreed: AgreedIds = NONE
+    scenario: object,
+    references: tuple[PayloadReference, ...],
+    agreed: AgreedIds = NONE,
+    catalogue: HeldVersions | None = None,
 ) -> list[tuple[str, str, str, str]]:
     return [
         (f.code, f.path, f.field, f.message)
         for f in reference_findings(
-            scenario, references, agreed=agreed, scenario=JSON, metadata=YAML, files=_no_files
+            scenario,
+            references,
+            agreed=agreed,
+            catalogue=held(scenario, agreed, references) if catalogue is None else catalogue,
+            scenario=JSON,
+            metadata=YAML,
+            files=_no_files,
         )
     ]
 
@@ -294,16 +333,17 @@ def test_a_reference_whose_hash_is_not_its_payload_s_is_refused_once() -> None:
     ]
 
 
-def test_a_reference_whose_version_is_not_1_0_0_is_refused() -> None:
+def test_a_reference_whose_version_is_not_the_file_s_is_refused() -> None:
     item = named(payload("a"))
 
-    assert findings(stored(item), (reference(item, version="1.1.0"),)) == [
+    assert findings(
+        stored(item), (reference(item, version="1.1.0"),), catalogue=held(stored(item))
+    ) == [
         (
-            "PAY-002",
+            "PAY-008",
             YAML,
             "/payloads/0/version",
-            "a payload's version stays 1.0.0 under the interim rule: a changed payload takes a "
-            "new ID instead",
+            f"the version file with this ID is another version: {RUN}",
         )
     ]
 
@@ -312,7 +352,7 @@ def test_two_references_giving_one_id_are_refused_and_the_first_counts() -> None
     item = named(payload("a"))
     stale = PayloadReference(item["payload_external_id"], "1.0.0", "0" * 64)
 
-    assert findings(stored(item), (reference(item), stale)) == [
+    assert findings(stored(item), (reference(item), stale), catalogue=held(stored(item))) == [
         (
             "PAY-002",
             YAML,
@@ -388,13 +428,14 @@ def test_every_finding_blocks() -> None:
         stored(payload("a")),
         (reference(payload("b")),),
         agreed=NONE,
+        catalogue=EMPTY,
         scenario=JSON,
         metadata=YAML,
         files=_no_files,
     )
 
     assert {f.severity for f in found} == {Severity.BLOCKING}
-    assert [f.code for f in found] == ["PAY-001", "PAY-006"]
+    assert [f.code for f in found] == ["PAY-008", "PAY-008", "PAY-001", "PAY-006"]
 
 
 def test_the_techniques_of_the_contract_enter_the_hash() -> None:
@@ -422,9 +463,11 @@ def test_assign_gives_each_payload_the_id_its_content_has() -> None:
     first["payload_external_id"] = "anything"  # replaced: the ID follows the content
     agreed = AgreedIds({digest(third): AgreedId("agreed", "c")})
 
+    scenario = stored(first, second, copy.deepcopy(first), third)
     result = assign(
-        stored(first, second, copy.deepcopy(first), third),
+        scenario,
         agreed=agreed,
+        catalogue=held(scenario, agreed),
         files=_no_files,
         scenario=JSON,
     )
@@ -449,8 +492,9 @@ def test_assign_writes_one_reference_per_content_sorted_by_id() -> None:
         {digest(first): AgreedId("b-agreed", "a"), digest(second): AgreedId("a-agreed", "b")}
     )
 
+    scenario = stored(first, second, copy.deepcopy(first))
     result = assign(
-        stored(first, second, copy.deepcopy(first)), agreed=agreed, files=_no_files, scenario=JSON
+        scenario, agreed=agreed, catalogue=held(scenario, agreed), files=_no_files, scenario=JSON
     )
 
     assert result.references == (
@@ -466,20 +510,34 @@ def test_an_assigned_scenario_passes_the_check() -> None:
     )
     agreed = AgreedIds({digest(second, ("T1",)): AgreedId("agreed", "b")})
 
-    result = assign(scenario, agreed=agreed, files=_no_files, scenario=JSON)
+    result = assign(
+        scenario, agreed=agreed, catalogue=held(scenario, agreed), files=_no_files, scenario=JSON
+    )
 
     assert findings(result.stored, result.references, agreed) == []
 
 
 def test_assign_writes_nothing_when_a_payload_cannot_be_hashed() -> None:
-    result = assign(stored(payload("a"), "x"), agreed=NONE, files=_no_files, scenario=JSON)
+    result = assign(
+        stored(payload("a"), "x"),
+        agreed=NONE,
+        catalogue=held(stored(payload("a"))),
+        files=_no_files,
+        scenario=JSON,
+    )
 
     assert (result.stored, result.references) == (None, ())
     assert [(f.code, f.field) for f in result.refusals] == [("PAY-005", PAYLOAD.format(1))]
 
 
 def test_assign_of_a_scenario_without_payloads_gives_no_reference() -> None:
-    result = assign({"scenario_injects": []}, agreed=NONE, files=_no_files, scenario=JSON)
+    result = assign(
+        {"scenario_injects": []},
+        agreed=NONE,
+        catalogue=held({"scenario_injects": []}, NONE),
+        files=_no_files,
+        scenario=JSON,
+    )
 
     assert (result.stored, result.references, result.refusals) == ({"scenario_injects": []}, (), ())
 
@@ -491,14 +549,26 @@ def test_an_attached_file_enters_by_the_hash_its_resolver_gives() -> None:
     item = {"payload_type": "FileDrop", "payload_name": "drop", "file_drop_file": "doc"}
     digest_with_file = payload_hash(item, (), files).hex
 
-    result = assign(stored(item), agreed=NONE, files=files, scenario=JSON)
+    result = assign(
+        stored(item),
+        agreed=NONE,
+        catalogue=held(stored(item), files=files),
+        files=files,
+        scenario=JSON,
+    )
 
     assert result.references == (
         PayloadReference(derived_id(digest_with_file), "1.0.0", digest_with_file),
     )
     assert (
         reference_findings(
-            result.stored, result.references, agreed=NONE, scenario=JSON, metadata=YAML, files=files
+            result.stored,
+            result.references,
+            agreed=NONE,
+            catalogue=held(stored(item), files=files),
+            scenario=JSON,
+            metadata=YAML,
+            files=files,
         )
         == ()
     )
@@ -555,7 +625,13 @@ def test_the_registry_must_name_the_payload_it_agrees() -> None:
     assert findings(stored(carrying), (reference(item, "agreed"),), agreed) == [
         ("PAY-003", JSON, NAME.format(0), OTHER_NAME)
     ]
-    result = assign(stored(item), agreed=agreed, files=_no_files, scenario=JSON)
+    result = assign(
+        stored(item),
+        agreed=agreed,
+        catalogue=held(stored(item), agreed),
+        files=_no_files,
+        scenario=JSON,
+    )
     assert (result.stored, [(f.code, f.field, f.message) for f in result.refusals]) == (
         None,
         [("PAY-003", NAME.format(0), OTHER_NAME)],
@@ -569,7 +645,61 @@ def test_two_payloads_sharing_a_name_with_other_contents_are_refused() -> None:
     assert findings(scenario, (reference(first), reference(second))) == [
         ("PAY-007", JSON, NAME.format(1), SAME_NAME)
     ]
-    result = assign(
-        stored(payload("a"), payload("a", "id")), agreed=NONE, files=_no_files, scenario=JSON
-    )
+    scenario = stored(payload("a"), payload("a", "id"))
+    result = assign(scenario, agreed=NONE, catalogue=held(scenario), files=_no_files, scenario=JSON)
     assert [(f.code, f.field) for f in result.refusals] == [("PAY-007", NAME.format(1))]
+
+
+@given(
+    st.lists(
+        st.tuples(st.text("abc", min_size=1, max_size=3), st.text("xyz", max_size=3)),
+        max_size=6,
+        unique_by=lambda pair: pair[0],
+    )
+)
+def test_a_scenario_naming_versions_of_its_catalogue_gives_no_finding(
+    named_contents: list[tuple[str, str]],
+) -> None:
+    scenario = stored(*(payload(name, content) for name, content in named_contents))
+    catalogue = held(scenario)
+
+    result = assign(scenario, agreed=NONE, catalogue=catalogue, files=_no_files, scenario=JSON)
+
+    assert result.refusals == ()
+    assert result.stored is not None
+    assert findings(result.stored, result.references, catalogue=catalogue) == []
+
+
+def test_a_reference_whose_file_has_another_hash_is_refused() -> None:
+    item = named(payload("a"))
+    other = HeldVersions.of([PayloadReference(item["payload_external_id"], "1.0.0", "f" * 64)])
+
+    assert [
+        (code, field)
+        for code, _, field, _ in findings(stored(item), (reference(item),), catalogue=other)
+    ] == [
+        ("PAY-008", "/payloads/0/sha256"),
+        (
+            "PAY-008",
+            "/scenario_injects/0/inject_injector_contract/injector_contract_payload/payload_external_id",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("held_as", "field", "message"),
+    [
+        (None, "id", "no version file of payloads/ has this ID"),
+        (("1.0.0", "f" * 64), "sha256", "the version file with this ID has another hash"),
+    ],
+    ids=["no file", "another hash"],
+)
+def test_a_reference_the_catalogue_does_not_hold_says_why_at_its_field(
+    held_as: tuple[str, str] | None, field: str, message: str
+) -> None:
+    item = named(payload("a"))
+    versions = [] if held_as is None else [PayloadReference(item["payload_external_id"], *held_as)]
+
+    found = findings(stored(item), (reference(item),), catalogue=HeldVersions.of(versions))
+
+    assert found[0] == ("PAY-008", YAML, f"/payloads/0/{field}", f"{message}: {RUN}")

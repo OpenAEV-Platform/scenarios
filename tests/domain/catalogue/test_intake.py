@@ -590,3 +590,17 @@ def test_a_format_character_never_reaches_the_body() -> None:
     findings = [Finding("SCH-007", Severity.INFO, "a", "/v", message)]
 
     assert "`raiseitnow`" in _plan(checklist=findings)["body"]
+
+
+def test_a_plan_of_many_files_keeps_its_body_within_what_a_pull_request_takes() -> None:
+    files = {f"payloads/{'p' * 60}{index:04}/1.0.0.json": "3" * 64 for index in range(1000)}
+
+    plan = _plan(files=files)
+
+    assert len(plan["body"]) <= 65_536
+    assert len(plan["files"]) == 1000  # the plan itself lists them all
+    shown = [line for line in plan["body"].splitlines() if line.startswith("- `payloads/")]
+    assert 0 < len(shown) < 1000
+    assert plan["body"].endswith(
+        f"- and {1000 - len(shown)} more: the plan's files list them all\n"
+    )

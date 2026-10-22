@@ -591,3 +591,82 @@ def test_the_diff_of_the_changed_entries_is_written_for_the_reviewer() -> None:
     assert '-- "${entries[@]}"' in script
     assert "GITHUB_STEP_SUMMARY" in script
     assert "|| true" in script
+
+
+# The pull request's payload catalogue
+
+CATALOGUE = "Take the pull request's payload catalogue"
+
+
+def _run_catalogue(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    [step] = [step for step in STEPS if step.get("name") == CATALOGUE]
+    return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
+        ["/bin/bash", "-c", str(step["run"])],
+        cwd=tmp_path,
+        env={"PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _catalogues(tmp_path: Path) -> None:
+    """A base branch holding one version, and a pull request that adds another."""
+    (tmp_path / "payloads" / "ps").mkdir(parents=True)
+    (tmp_path / "payloads" / "ps" / "1.0.0.json").write_text("{}\n")
+    (tmp_path / "pull" / "payloads" / "ps").mkdir(parents=True)
+    (tmp_path / "pull" / "payloads" / "ps" / "1.0.0.json").write_text("{}\n")
+    (tmp_path / "pull" / "payloads" / "new").mkdir()
+    (tmp_path / "pull" / "payloads" / "new" / "1.0.0.json").write_text('{"new": 1}\n')
+
+
+def test_the_catalogue_is_taken_and_checked_before_the_entries_are() -> None:
+    names = [step.get("name", "") for step in STEPS]
+    scripts = "\n".join(step.get("run", "") for step in STEPS)
+
+    taken = names.index(CATALOGUE)
+    assert names.index("Take the pull request's policy exceptions") < taken
+    assert taken < names.index("Check the payload catalogue")
+    assert names.index("Check the payload catalogue") < names.index("Validate the changed entries")
+    assert "scenario-tools validate-payloads payloads" in scripts
+
+
+def test_the_pull_request_s_catalogue_replaces_the_base_s(tmp_path: Path) -> None:
+    _catalogues(tmp_path)
+    (tmp_path / "payloads" / "gone").mkdir()
+    (tmp_path / "payloads" / "gone" / "1.0.0.json").write_text("{}\n")
+
+    result = _run_catalogue(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.glob("payloads/*/*")) == [
+        "payloads/new/1.0.0.json",
+        "payloads/ps/1.0.0.json",
+    ]
+
+
+def test_a_pull_request_without_a_catalogue_leaves_none(tmp_path: Path) -> None:
+    _catalogues(tmp_path)
+    shutil.rmtree(tmp_path / "pull" / "payloads")
+
+    result = _run_catalogue(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "payloads").exists()
+
+
+@pytest.mark.parametrize("shape", ["link", "file"])
+def test_a_catalogue_that_is_a_link_or_no_directory_is_refused(tmp_path: Path, shape: str) -> None:
+    _catalogues(tmp_path)
+    shutil.rmtree(tmp_path / "pull" / "payloads")
+    if shape == "link":
+        (tmp_path / "elsewhere").mkdir()
+        (tmp_path / "pull" / "payloads").symlink_to(tmp_path / "elsewhere")
+    else:
+        (tmp_path / "pull" / "payloads").write_text("not a directory\n")
+
+    result = _run_catalogue(tmp_path)
+
+    assert result.returncode != 0
+    assert "refused" in result.stderr
+    assert (tmp_path / "payloads" / "ps" / "1.0.0.json").exists()  # the base's is kept

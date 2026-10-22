@@ -5,7 +5,8 @@ name: Pull request entries
 # out beside them as data only, and only the files of the entries it adds, changes or removes are
 # taken over, links copied as links, never followed, with the policy exceptions it grants for them,
 # which a code owner approves (none is taken while the base branch names no code owner of the
-# policy data). No code of the pull request runs. The token is read-only and no
+# policy data), and its payload catalogue, which the base branch's tools check before the entries
+# are checked against it. No code of the pull request runs. The token is read-only and no
 # secret is used, so a pull request from a fork is judged the same way. Its other changes (tools,
 # policy, schemas) are the tools CI's.
 on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
@@ -106,6 +107,38 @@ jobs:
             echo "The pull request changes the policy exceptions: a code owner approves each one before the merge." \
               >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Take the pull request's payload catalogue
+        run: |
+          set -euo pipefail
+          # The version files are data, as entries are: the pull request's catalogue replaces the
+          # base's, so that an entry is judged against the payload versions it comes with. The
+          # base branch's tools check it in the next step, before any entry is checked against it.
+          if [ -L pull/payloads ]; then echo "refused, a link: pull/payloads" >&2; exit 1; fi
+          if [ -e pull/payloads ] && [ ! -d pull/payloads ]; then
+            echo "refused, not a directory: pull/payloads" >&2
+            exit 1
+          fi
+          rm -rf -- payloads
+          if [ -d pull/payloads ]; then cp -P -R -- pull/payloads payloads; fi
+
+      - name: Check the payload catalogue
+        run: |
+          set -euo pipefail
+          if [ ! -d payloads ]; then
+            echo "The pull request holds no payload catalogue." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          status=0
+          uv run --frozen --no-dev scenario-tools validate-payloads payloads \
+            > "$RUNNER_TEMP/payloads" 2>&1 || status=$?
+          {
+            echo "## Payload catalogue"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/payloads"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/payloads"
+          exit "$status"
 
       - name: Validate the changed entries
         run: |

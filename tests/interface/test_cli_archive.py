@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.interface.cli import main
 from tests.adapters.test_safe_zip import ENCRYPTED
+from tests.support.catalogue import write_catalogue
 
 ROOT = Path(__file__).parents[2]
 NORMALISED = ROOT / "tests" / "golden" / "normalised"
@@ -21,13 +22,15 @@ ENTRY_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"  # the references were normali
 
 
 def _entry(tmp_path: Path, reference: str) -> Path:
-    """An entry in a repository with the policy data, as the references were stored."""
+    """An entry in a repository with the policy data, as the references were stored, and a
+    catalogue holding its payloads."""
     if not (tmp_path / "policy").exists():
         shutil.copytree(ROOT / "policy", tmp_path / "policy")
     entry = tmp_path / "scenarios" / "domain" / "entry"
     entry.mkdir(parents=True)
     shutil.copyfile(NORMALISED / f"{reference}.json", entry / "scenario.json")
     (entry / "scenario.yaml").write_text(f"external_id: {ENTRY_ID}\n")
+    write_catalogue(tmp_path, json.loads((entry / "scenario.json").read_bytes()))
     return entry
 
 
@@ -432,13 +435,14 @@ CHAINING = ROOT / "tests" / "golden" / "chaining" / "two-steps.normalised.json"
 
 def _chaining_entry(tmp_path: Path) -> Path:
     """A chaining entry whose payloads carry their IDs, named by the references of its
-    scenario.yaml."""
+    scenario.yaml, which name the versions of the catalogue."""
     if not (tmp_path / "policy").exists():
         shutil.copytree(ROOT / "policy", tmp_path / "policy")
     entry = tmp_path / "scenarios" / "domain" / "chained"
     entry.mkdir(parents=True)
     shutil.copyfile(CHAINING, entry / "scenario.json")
     (entry / "scenario.yaml").write_text(f"external_id: {ENTRY_ID}\n")
+    write_catalogue(tmp_path, json.loads(CHAINING.read_bytes()))
     code, stdout, stderr = _run("payloads", str(entry), "--assign")
     assert code == 0, stdout + stderr
     return entry

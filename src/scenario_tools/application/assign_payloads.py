@@ -7,12 +7,20 @@ from dataclasses import dataclass
 from typing import Any
 
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.verification.payload_catalogue import (
+    Catalogue,
+    CatalogueCollisionError,
+    layout,
+)
 from scenario_tools.domain.verification.payload_references import (
     AgreedIds,
+    HeldVersions,
     assign,
     declared_references,
     reference_findings,
 )
+from scenario_tools.domain.verification.payload_version import PayloadVersion
+from scenario_tools.ports.catalogue import CatalogueFiles
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -35,20 +43,43 @@ def agreed_ids(data: DataLoader) -> AgreedIds:
         raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
 
 
+def catalogue_of(files: CatalogueFiles | None) -> Catalogue:
+    """The index of the repository's payload catalogue, ``files`` (empty when it has no
+    ``payloads/``). A catalogue the index cannot be built on is the repository's fault, never an
+    entry's: `validate-payloads` says why."""
+    if files is None:
+        return Catalogue.of([])
+    unusable = "the payload catalogue cannot be used: run `scenario-tools validate-payloads`"
+    try:
+        found, places = layout("payloads", files.entries())
+        if found:  # a version left out of the index would read as absent, or as new
+            raise EnvironmentProblemError(f"{unusable} ({found[0].field or found[0].path})")
+        versions = []
+        for place in places:
+            _, document = files.read((place.slug, f"{place.version}.json"))
+            if isinstance(document, Mapping):
+                versions.append(PayloadVersion(place.slug, place.version, place.path, document))
+        return Catalogue.of(versions)
+    except (CatalogueCollisionError, UnsafeInputError, KeyError, TypeError) as error:
+        raise EnvironmentProblemError(f"{unusable} ({error})") from error
+
+
 def no_attached_files(document: str) -> str | None:
     """No attached file's bytes are read yet: a payload that carries one cannot be hashed."""
     return None
 
 
 def payload_findings(
-    declared: object, stored: object, entry: str, agreed: AgreedIds
+    declared: object, stored: object, entry: str, agreed: AgreedIds, catalogue: HeldVersions
 ) -> tuple[Finding, ...]:
     """What keeps the payloads of the stored scenario of ``entry`` from carrying the IDs their
-    contents have, each named by a reference of its ``scenario.yaml``, ``declared``."""
+    contents have, each named by a reference of its ``scenario.yaml``, ``declared``, which names
+    a version of the ``catalogue``."""
     return reference_findings(
         stored,
         declared_references(declared),
         agreed=agreed,
+        catalogue=catalogue,
         scenario=f"{entry}/scenario.json",
         metadata=f"{entry}/scenario.yaml",
         files=no_attached_files,
@@ -60,7 +91,7 @@ def _refused(code: str, path: str, message: str) -> AssignedEntry:
 
 
 def assigned_entry(
-    declared: object, stored: object, entry: str, agreed: AgreedIds
+    declared: object, stored: object, entry: str, agreed: AgreedIds, catalogue: HeldVersions
 ) -> AssignedEntry:
     """``entry`` with each payload given the ID its content has, in its stored scenario and in
     the references of its ``scenario.yaml``, whose key keeps its place among the others."""
@@ -77,7 +108,11 @@ def assigned_entry(
             "not an OpenAEV scenario export: the document must be an object",
         )
     result = assign(
-        stored, agreed=agreed, files=no_attached_files, scenario=f"{entry}/scenario.json"
+        stored,
+        agreed=agreed,
+        catalogue=catalogue,
+        files=no_attached_files,
+        scenario=f"{entry}/scenario.json",
     )
     if result.refusals:
         return AssignedEntry(None, None, result.refusals)

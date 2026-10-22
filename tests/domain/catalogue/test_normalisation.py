@@ -1419,3 +1419,29 @@ def test_a_built_in_contract_copy_without_the_list_does_not_gain_it() -> None:
 
     mail = _injects(document)["Ransom note"]["inject_injector_contract"]
     assert "injector_contract_attack_patterns" not in mail
+
+
+@pytest.mark.parametrize("missing", ["absent", None, "", "  "])
+def test_a_payload_without_a_description_is_described_by_its_name(missing: object) -> None:
+    export = copy.deepcopy(EXPORT)
+    payload = export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_payload"]
+    if missing == "absent":
+        payload.pop("payload_description", None)
+    else:
+        payload["payload_description"] = missing
+
+    stored = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Dump credentials"]
+
+    described = stored["inject_injector_contract"]["injector_contract_payload"]
+    assert described["payload_description"] == payload["payload_name"]
+
+
+def test_a_payload_s_own_description_is_kept() -> None:
+    export = copy.deepcopy(EXPORT)
+    payload = export["scenario_injects"][1]["inject_injector_contract"]["injector_contract_payload"]
+    payload["payload_description"] = "What it does."
+
+    stored = _injects(normalise(export, EXTERNAL_ID, RULES).document)["Dump credentials"]
+
+    kept = stored["inject_injector_contract"]["injector_contract_payload"]
+    assert kept["payload_description"] == "What it does."
