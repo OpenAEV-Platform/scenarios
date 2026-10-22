@@ -125,18 +125,20 @@ fault:
   state, no input, and no target, asset, team or document;
 - a step holds no condition, or one dependency, or filters. A dependency (`DEPEND_ON`) is the
   only condition of its step and names a step of the scenario, and steps never wait for each
-  other, directly or through others. Filters compare a value an earlier step found (`EQ`, `NEQ`,
-  `GT`, `GTE`, `LT`, `LTE`, `IN`, `NIN`, `IS_NULL`, `IS_NOT_NULL`), alone or grouped under
-  `AND` and `OR`: a group holds at least one condition and a filter none, an `IN` or `NIN` list
-  names at least one value, and a filter compares with a text or nothing, never with the
-  identifier of a step or a condition;
+  other, directly or through others. Filters (`EQ`, `NEQ`, `GT`, `GTE`, `LT`, `LTE`, `IN`,
+  `NIN`, `IS_NULL`, `IS_NOT_NULL`) stand alone or grouped under `AND` and `OR`: a group holds at
+  least one condition and a filter none, an `IN` or `NIN` list names at least one value, and a
+  filter compares with a text or nothing, never with the identifier of a step or a condition. No
+  condition names a step to read from: `condition_step_from_id` is empty on every condition;
 - a condition that maps the output of a step into another is refused for good: the data passed
   between steps is not reviewed.
 
 The metadata says what the scenario is: for an export holding a workflow, the `scenario.yaml`
 that `intake` starts writes `type: chained` and `requires.edition: EE`, since chaining needs the
-Enterprise edition. `scenario-tools validate` blocks an entry whose type or edition does not agree
-with its stored scenario, in either direction (`SCH-013`).
+Enterprise edition. `scenario-tools validate` blocks an entry whose type does not agree with its
+stored scenario, either way, and an entry whose stored scenario holds a workflow without
+`requires.edition: EE` (`SCH-013`); a time-based scenario may still require the Enterprise
+edition.
 
 A scenario in chaining can be prepared and checked, with `normalize`, `intake` and `validate`,
 but none enters the catalogue yet. The repository does not accept one until the platform's
