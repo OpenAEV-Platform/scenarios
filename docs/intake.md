@@ -106,6 +106,44 @@ different. An export without a name takes no other's. `validate` compares the na
 entries of the repository the same way (`SCH-012`), so that two branches cannot each bring in the
 same name: rename one of the scenarios, or update the existing entry instead.
 
+## Scenarios in chaining
+
+A scenario in chaining runs its injects as the steps of a workflow, each step starting when the
+step it waits for is done, instead of at set times. Export it from the platform as any other
+scenario, with the same options: the export holds a `scenario_workflow` part and no
+`scenario_injects`. A scenario holds injects or a workflow, never both. The tools read only a
+subset of what the platform can export, and refuse the rest (`IO-014`), pointing at the node at
+fault:
+
+- the workflow holds from 1 to 50 steps, and its settings stay within their bounds: the delay on
+  and between 60 and 3600 seconds, safe mode on, and the pace off, or on with 1 to 99 attempts per
+  1 to 5940 seconds;
+- the workflow has no scope: its scope rules, scope variables and team members are empty, since
+  the targets are set where the scenario is installed. They are refused, not removed, so empty
+  them in the export;
+- each step runs the inject of a command payload on the platform's implant, and holds no run
+  state, no input, and no target, asset, team or document;
+- a step holds no condition, or one dependency, or filters. A dependency (`DEPEND_ON`) is the
+  only condition of its step and names a step of the scenario, and steps never wait for each
+  other, directly or through others. Filters (`EQ`, `NEQ`, `GT`, `GTE`, `LT`, `LTE`, `IN`,
+  `NIN`, `IS_NULL`, `IS_NOT_NULL`) stand alone or grouped under `AND` and `OR`: a group holds at
+  least one condition and a filter none, an `IN` or `NIN` list names at least one value, and a
+  filter compares with a text or nothing, never with the identifier of a step or a condition. No
+  condition names a step to read from: `condition_step_from_id` is empty on every condition;
+- a condition that maps the output of a step into another is refused for good: the data passed
+  between steps is not reviewed.
+
+The metadata says what the scenario is: for an export holding a workflow, the `scenario.yaml`
+that `intake` starts writes `type: chained` and `requires.edition: EE`, since chaining needs the
+Enterprise edition. `scenario-tools validate` blocks an entry whose type does not agree with its
+stored scenario, either way, and an entry whose stored scenario holds a workflow without
+`requires.edition: EE` (`SCH-013`); a time-based scenario may still require the Enterprise
+edition.
+
+A scenario in chaining can be prepared and checked, with `normalize`, `intake` and `validate`,
+but none enters the catalogue yet. The repository does not accept one until the platform's
+import does what check 9 of [the consumers' checks](consumers.md) asks.
+
 ## The plan
 
 `plan.json` holds:
