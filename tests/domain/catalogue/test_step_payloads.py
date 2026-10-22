@@ -11,7 +11,11 @@ from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.application.assign_payloads import assigned_entry, payload_findings
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
-from scenario_tools.domain.verification.payload_references import AgreedIds
+from scenario_tools.domain.verification.payload_references import (
+    AgreedIds,
+    HeldVersions,
+    PayloadReference,
+)
 from tests.support.catalogue import held
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -154,3 +158,19 @@ def test_a_reference_of_a_step_s_payload_naming_another_version_is_refused() -> 
         payload_findings(declared, assigned.stored, "entry", AgreedIds({}), held(STORED))
     )
     assert found == [("PAY-008", "/payloads/0/version")]
+
+
+def test_a_reference_of_a_step_s_payload_the_catalogue_does_not_hold_says_why() -> None:
+    assigned = assigned_entry(
+        {"name": "x"}, copy.deepcopy(STORED), "entry", AgreedIds({}), held(STORED)
+    )
+    assert assigned.metadata is not None
+    reference = assigned.metadata["payloads"][0]
+    no_file = HeldVersions.of([])
+    other_hash = HeldVersions.of([PayloadReference(reference["id"], "1.0.0", "f" * 64)])
+
+    for catalogue, field in ((no_file, "id"), (other_hash, "sha256")):
+        found = payload_findings(
+            assigned.metadata, assigned.stored, "entry", AgreedIds({}), catalogue
+        )
+        assert ("PAY-008", f"/payloads/0/{field}") in _codes(found)

@@ -4,7 +4,8 @@ carries the ID its content has: the one derived from its hash, a UUID v5, unless
 registry ``policy/data/payload-ids.yaml`` agrees another ID for that very hash. The ID thereby
 proves the content: it cannot be taken from another payload, nor kept by a changed one, and one
 ID names one content in every entry. One reference of ``scenario.yaml`` gives the ID with the
-hash; its version stays ``1.0.0`` until the platform stores payload versions."""
+hash and the version of the file of ``payloads/`` that holds that content, which the references
+are checked against."""
 
 import copy
 import re

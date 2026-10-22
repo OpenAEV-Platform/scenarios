@@ -12,10 +12,13 @@ cannot be hashed. A platform computing the hash must give the same result for ea
 ## `releases/`
 
 Release fixtures, written by `scenario-tools conformance build`, the same bytes on every build.
-Each directory is a release: its `manifest.json`, and the archives beside it.
+Each directory is a release: its `manifest.json`, and the archives and payload files beside it.
 
 - `accepted` is an approved release `verify` accepts: two scenarios sharing one payload, one
   with attachments encrypted with the shared password.
+- `catalogue-accepted` is a release `verify` accepts with a payload catalogue: one version used
+  by a time-based scenario and by the steps of a scenario in chaining, and one no scenario uses,
+  each file beside the archives.
 - `chaining-accepted` is a release `verify` accepts with a scenario in chaining: two steps, the
   second waiting for the first, both running the payload a time-based scenario also runs, listed
   once. Its steps carry only what `verify` reads, not every field an export carries.
@@ -33,6 +36,11 @@ Each directory is a release: its `manifest.json`, and the archives beside it.
     without its ID, that cannot be hashed, listed twice, outside an inject's contract, or one
     ID with two contents across the release; the `chaining-*` fixtures refuse a step's payload
     that is not listed, not the one listed, or outside its contract;
+  - a payload file missing, with other bytes than listed, whose content has another hash or
+    holds another ID than listed, or named after another version; a payload version listed
+    twice, one ID with two versions or two payloads, one content under two IDs, a reference of
+    a scenario to a version the release does not list, a payload file the manifest lists
+    nowhere;
   - a manifest that does not meet its schema, an approved one without its release approver, a
     scenario listed twice, an archive named after another version.
 

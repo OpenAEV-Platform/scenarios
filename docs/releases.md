@@ -1,7 +1,8 @@
 # Releases
 
-A release of the catalogue is every entry's import archive and a manifest that lists them, with
-the hash of each archive, so that a platform can check what it imports. This page is for the
+A release of the catalogue is every entry's import archive, the file of every payload version of
+`payloads/`, and a manifest that lists them, with the hash of each, so that a platform can check
+what it imports. This page is for the
 maintainers who build releases; what a platform checks of a release is in
 [`consumers.md`](consumers.md). Releases are not published yet: the workflow builds one and
 checks that it is reproducible.
@@ -22,14 +23,19 @@ whose changes were reviewed.
    makes an approval count for a merge is the default branch's rules, which this check stands
    behind, never in place of.
 2. **Two builds.** `scenario-tools build` runs on two runners, each from its own checkout of the
-   commit, with those approvals; it refuses approvals collected at another commit.
+   commit, with those approvals; it refuses approvals collected at another commit. It runs the
+   checks of `validate-payloads` on the catalogue first, then lists every payload version with
+   its file, used by a scenario or not; against the previous release, a payload version it
+   published with another content or file, or that the catalogue no longer holds, is `VER-021`.
 3. **Comparison.** The two releases must be the same bytes, file for file.
 4. **Verification.** `scenario-tools verify <manifest> --schemas schemas` checks the release as its
    consumers will: each archive against the manifest, by its size and its SHA-256; safe extraction,
    and nothing in an archive, or in its scenario's parts, but what `build` writes; each payload an
    archive embeds, inside an inject's contract and listed with the canonical hash its content has;
-   one version and one hash for each payload ID across the release; and nothing beside the
-   archives, but the manifest verified, that the manifest does not list. `--archives` gives another
+   one version and one hash for each payload ID across the release; each payload file against
+   the manifest, by its bytes, its content hash and its ID, and every reference of a scenario to
+   a listed version; and nothing beside the archives and payload files, but the manifest
+   verified, that the manifest does not list. `--archives` gives another
    directory for the archives, and `--approved` also requires the release approver, once the
    release is approved.
 
