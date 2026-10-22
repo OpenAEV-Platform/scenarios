@@ -236,7 +236,6 @@ _CAVEATS = (
     "- The scenario names no target: targets are set by the operator after import, on the "
     "platform that runs it.",
 )
-_NO_LIMIT = 1 << 62  # for measuring a value too long to show
 
 
 def _settings(settings: StoredSettings) -> str:
@@ -280,15 +279,13 @@ def _shown(payload: Payload, text: str) -> str | None:
     return effective(payload, text, COMMAND_LIMIT)
 
 
-def _too_long(payload: Payload, text: str) -> int:
-    return len(effective(payload, text, _NO_LIMIT) or "")
-
-
 def _code_of(label: str, payload: Payload, text: str) -> Iterator[str]:
     shown = _shown(payload, text)
     if shown is None:
-        length = _too_long(payload, text)
-        yield f"{label}: too long to show, {length} characters once its arguments are set."
+        yield (
+            f"{label}: too long to show, more than {COMMAND_LIMIT} characters once its "
+            "arguments are set."
+        )
     else:
         yield f"{label}:"
         yield block(shown)
@@ -322,7 +319,7 @@ def _argument(payload: Payload, key: str) -> Iterator[str]:
     value = _shown(payload, variable)
     label = f"- Argument {code(key)}"
     if value is None:
-        yield f"{label}: too long to show, {_too_long(payload, variable)} characters."
+        yield f"{label}: too long to show, more than {COMMAND_LIMIT} characters."
     elif not value:
         yield f"{label}: empty."
     elif "\n" in value or "\r" in value:
@@ -389,12 +386,17 @@ def _workflow(stored: Mapping[str, Any]) -> Iterator[str]:
     yield "\n".join(_CAVEATS)
 
 
-def _targets(targets: object) -> str:
+def _targets(targets: object, *, workflow: bool) -> str:
     listed = (
         [target for target in targets if isinstance(target, Mapping)]
         if isinstance(targets, list)
         else []
     )
+    if not listed and workflow:  # its steps run on endpoints, which no stored file names
+        return (
+            "Set by the operator after import, on the platform that runs it: the scenario "
+            "names no target of its own."
+        )
     if not listed:
         return "None: the scenario needs no target of the platform."
     return "\n".join(
@@ -454,7 +456,7 @@ def _sections(
     yield "## Payloads"
     yield _payloads([found.inject for found in stored_injects(stored)])
     yield "## Targets to fill in"
-    yield _targets(metadata.get("targets"))
+    yield _targets(metadata.get("targets"), workflow=holds_workflow(stored))
     own = [exception for exception in exceptions if exception.entry == metadata.get("external_id")]
     if own:
         yield "## Policy exceptions"

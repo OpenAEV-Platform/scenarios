@@ -77,7 +77,7 @@ ps aux --no-headers
 
 ## Targets to fill in
 
-None: the scenario needs no target of the platform.
+Set by the operator after import, on the platform that runs it: the scenario names no target of its own.
 
 ## Versions
 

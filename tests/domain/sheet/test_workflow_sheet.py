@@ -133,8 +133,11 @@ def test_a_value_too_long_to_show_is_said_so() -> None:
         )
     )
     assert long not in sheet
-    assert "Command (sh): too long to show, 70005 characters once its arguments are set." in sheet
-    assert "- Argument `value`: too long to show, 70000 characters." in sheet
+    assert (
+        "Command (sh): too long to show, more than 65536 characters once its arguments are set."
+        in sheet
+    )
+    assert "- Argument `value`: too long to show, more than 65536 characters." in sheet
 
 
 def test_an_empty_value_is_said_so() -> None:
@@ -299,3 +302,31 @@ def test_a_span_is_one_line_and_shows_its_tabs() -> None:
 def test_steps_ready_together_come_by_identifier_not_by_place_in_the_file() -> None:
     stored = _chain(("b", "Second by identifier", []), ("a", "First by identifier", []))
     assert _titles(_sheet(stored)) == ["First by identifier", "Second by identifier"]
+
+
+def test_a_value_too_long_is_never_expanded_to_be_measured() -> None:
+    huge = "x" * 1_000_000
+    sheet = _sheet(
+        _with_payload(
+            command_content=" ".join(["#{value}"] * 10_000),
+            payload_arguments=[{"key": "value", "type": "text", "default_value": huge}],
+        )
+    )
+    assert (
+        "Command (sh): too long to show, more than 65536 characters once its arguments are set."
+        in sheet
+    )
+    assert "- Argument `value`: too long to show, more than 65536 characters." in sheet
+
+
+def test_a_span_keeps_the_spaces_around_a_value() -> None:
+    assert code(" value ") == "`  value  `"
+    assert code(" ") == "` `"
+
+
+def test_the_targets_of_a_workflow_are_set_after_import() -> None:
+    targets = _sheet()[_sheet().index("## Targets to fill in") :]
+    assert targets.startswith(
+        "## Targets to fill in\n\nSet by the operator after import, on the platform that runs it: "
+        "the scenario names no target of its own."
+    )

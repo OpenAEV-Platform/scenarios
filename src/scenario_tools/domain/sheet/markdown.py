@@ -20,7 +20,11 @@ _LINES = re.compile(r"\r\n|\r|\n")
 def _code(word: str) -> str:
     """``word`` as a code span, its fence longer than any run of backticks in it."""
     fence = "`" * (max((len(run) for run in _TICKS.findall(word)), default=0) + 1)
-    padded = f" {word} " if word.startswith("`") or word.endswith("`") else word
+    # A space is added on both sides when the text starts or ends with a backtick, or starts and
+    # ends with a space: CommonMark strips one on each side of such a span.
+    edges = word.startswith("`") or word.endswith("`")
+    spaced = word.startswith(" ") and word.endswith(" ") and bool(word.strip())
+    padded = f" {word} " if edges or spaced else word
     return fence + padded + fence
 
 
