@@ -194,3 +194,14 @@ def test_two_versions_of_one_payload_on_two_steps_are_refused() -> None:
     step["step_data"] = json.dumps(data)
     with pytest.raises(Exception, match="two versions of the payload"):
         _prepare(export)
+
+
+FILTERS_SHEET = ROOT / "tests" / "golden" / "chaining" / "filters.README.md"
+
+
+def test_the_sheet_of_the_filters_is_the_reviewed_one_and_renders_the_same_twice() -> None:
+    stored = json.loads(FILTERS_NORMALISED.read_bytes())
+    metadata = {**SHEET_METADATA, "name": "A step and a filtered step"}
+    first = render_sheet(metadata, stored, ())
+    assert first == render_sheet(metadata, copy.deepcopy(stored), ())
+    assert first == FILTERS_SHEET.read_text(encoding="utf-8")

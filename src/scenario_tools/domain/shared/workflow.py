@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, TypeGuard
 
+from scenario_tools.domain.shared.canonical import jcs
 from scenario_tools.domain.shared.stored import INJECTS, STEPS, WORKFLOW
 
 CONDITIONS = "step_conditions"
@@ -591,6 +592,116 @@ def step_waits(step: Mapping[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...
         else:
             others.append(str(kind))
     return tuple(awaited), tuple(others)
+
+
+@dataclass(frozen=True)
+class ConditionNode:
+    """A condition of a stored step as a reader sees it: its type, the key it reads, the value it
+    compares with, the conditions under it, and whether some of those were left out because they
+    lie deeper than a sheet reads."""
+
+    kind: object
+    key: object
+    value: object
+    children: tuple["ConditionNode", ...]
+    cut: bool = False
+
+
+def step_condition_trees(step: Mapping[str, Any]) -> tuple[ConditionNode, ...]:
+    """Every condition of a stored step but a plain dependency (a root that waits for a step and
+    holds nothing), as trees, read leniently so that none is hidden: identical copies once, a
+    copy that differs as a condition of its own, the conditions under a parent in the order of the
+    file, a condition whose parent the step does not hold as a root, and a condition on a loop of
+    parents as a root where the loop is first met. Below ``MAX_DEPTH`` levels a tree is cut, and
+    says so."""
+    found = step.get(CONDITIONS)
+    nodes: list[Mapping[str, Any]] = []
+    copies: set[str] = set()
+    first: dict[str, int] = {}  # the first condition of each identifier, by its index
+    for condition in found if isinstance(found, list) else []:
+        if not isinstance(condition, Mapping):
+            continue
+        try:
+            text = jcs(condition).decode()
+        except (TypeError, ValueError):  # what no JSON reader gives, as a test may
+            text = repr(condition)
+        if text in copies:
+            continue
+        copies.add(text)
+        identifier = condition.get("condition_id")
+        if isinstance(identifier, str):
+            first.setdefault(identifier, len(nodes))
+        nodes.append(condition)
+    below: dict[int, list[int]] = {}
+    roots: list[int] = []
+    for index, condition in enumerate(nodes):
+        parent = condition.get("condition_parent_id")
+        holder = first.get(parent) if isinstance(parent, str) else None
+        if holder is None or holder == index:
+            roots.append(index)
+        else:
+            below.setdefault(holder, []).append(index)
+    reached: set[int] = set()
+
+    def reach(index: int) -> None:
+        pending = [index]
+        while pending:
+            current = pending.pop()
+            if current not in reached:
+                reached.add(current)
+                pending += below.get(current, [])
+
+    def tree(index: int, path: frozenset[int]) -> ConditionNode:
+        reached.add(index)
+        children: list[ConditionNode] = []
+        cut = False
+        for child in below.get(index, []):
+            if child in path:
+                continue  # a loop: the child is said above, where the loop begins
+            if len(path) > MAX_DEPTH:
+                cut = True
+                reach(child)
+                continue
+            children.append(tree(child, path | {child}))
+        condition = nodes[index]
+        return ConditionNode(
+            condition.get("condition_type"),
+            condition.get("condition_key"),
+            condition.get("condition_value"),
+            tuple(children),
+            cut,
+        )
+
+    def plain_dependency(index: int) -> bool:
+        condition = nodes[index]
+        return (
+            condition.get("condition_type") == DEPEND_ON
+            and isinstance(condition.get("condition_value"), str)
+            and condition.get("condition_parent_id") is None  # not on itself, nor orphaned
+            and not below.get(index)
+        )
+
+    trees = [tree(index, frozenset({index})) for index in roots if not plain_dependency(index)]
+    reached.update(index for index in roots if plain_dependency(index))
+
+    def parent_of(index: int) -> int | None:
+        parent = nodes[index].get("condition_parent_id")
+        return first.get(parent) if isinstance(parent, str) else None
+
+    for index in range(len(nodes)):
+        if index in reached:
+            continue
+        # No root is above it, so its parents lead to a loop: the tree starts on the loop, and
+        # the condition is said once, below it.
+        seen, last = {index}, index
+        following = parent_of(index)
+        while following is not None and following not in seen:  # each parent followed once
+            seen.add(following)
+            last = following
+            following = parent_of(following)
+        start = following if following is not None else last  # always on the loop
+        trees.append(tree(start, frozenset({start})))
+    return tuple(trees)
 
 
 def checked_stored_workflow(stored: object) -> Workflow | None:
