@@ -617,3 +617,12 @@ def test_every_released_payload_version_is_compared_after_an_unchanged_one() -> 
         "payloads/b/1.0.0.json",
         True,
     )
+
+
+def test_a_previous_release_listing_a_payload_version_twice_is_refused() -> None:
+    entry = payload_entry(_version("ps", "1.0.0"))
+    document = manifest(channel="edge", issued_at="x", release="r", items=[], payloads=[entry])
+    document["payloads"].append(payload_entry(_version("ps", "1.0.0", sha256="c" * 64)))
+
+    with pytest.raises(ValueError, match=r"the previous release lists ps 1\.0\.0 twice"):
+        previous_release(document)

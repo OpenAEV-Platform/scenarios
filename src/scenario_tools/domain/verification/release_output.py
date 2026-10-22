@@ -160,7 +160,8 @@ def payload_content_findings(
 
 def payload_list_findings(payloads: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
     """``VRF-008`` for each payload version of the manifest's list whose ID is listed before
-    with another version, hash or file, whose content is listed before under another ID, or
+    with another payload, version, hash or file, whose content is listed before under another
+    ID, or
     which is listed before itself: one ID names one version file, and one content one ID.
     ``VRF-006`` for a version whose file is not named ``<payload>-<version>.json``."""
     findings = []
@@ -170,13 +171,13 @@ def payload_list_findings(payloads: Iterable[Mapping[str, Any]]) -> tuple[Findin
     for index, entry in enumerate(payloads):
         payload, version = str(entry["payload"]), str(entry["version"])
         identifier, sha256 = str(entry["openaev_id"]), str(entry["sha256"])
-        listed = (version, sha256, str(entry["file"]["sha256"]))
+        listed = (payload, version, sha256)  # its file is named by the first two
         at, known = by_id.setdefault(identifier, (index, listed))
         first, owner = by_hash.setdefault(sha256, (index, identifier))
         if known != listed:
             message = (
-                f"the payload ID {identifier} is listed with another version, hash or file than "
-                f"in /payloads/{at}"
+                f"the payload ID {identifier} is listed with another payload, version, hash or "
+                f"file than in /payloads/{at}"
             )
             findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
         elif owner != identifier:

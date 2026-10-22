@@ -371,13 +371,12 @@ def previous_release(document: Mapping[str, Any]) -> PreviousRelease:
         key = (external_id, str(item["version"]))
         archives[key] = str(item["archive"]["sha256"])
         items[key] = _said(item)
-    payloads = {
-        (str(entry["payload"]), str(entry["version"])): (
-            str(entry["sha256"]),
-            str(entry["file"]["sha256"]),
-        )
-        for entry in document["payloads"]
-    }
+    payloads: dict[tuple[str, str], tuple[str, str]] = {}
+    for entry in document["payloads"]:
+        key = (str(entry["payload"]), str(entry["version"]))
+        if key in payloads:
+            raise ValueError(f"the previous release lists {key[0]} {key[1]} twice")
+        payloads[key] = (str(entry["sha256"]), str(entry["file"]["sha256"]))
     return PreviousRelease(
         str(document["channel"]), str(document["release"]), archives, items, payloads
     )

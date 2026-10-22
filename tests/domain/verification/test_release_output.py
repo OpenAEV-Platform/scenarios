@@ -500,8 +500,8 @@ def test_a_payload_version_or_an_id_listed_twice_and_a_misnamed_file_are_refused
             "VRF-008",
             MANIFEST,
             "/payloads/1",
-            f"the payload ID {PS.identifier} is listed with another version, hash or file "
-            "than in /payloads/0",
+            f"the payload ID {PS.identifier} is listed with another payload, version, hash "
+            "or file than in /payloads/0",
         ),
         ("VRF-008", MANIFEST, "/payloads/2", "process-discovery-ps 1.0.0 is listed twice"),
         (
@@ -549,7 +549,15 @@ def test_one_content_under_two_ids_or_one_id_with_two_files_is_refused() -> None
             "VRF-008",
             MANIFEST,
             "/payloads/2",
-            f"the payload ID {PS.identifier} is listed with another version, hash or file "
-            "than in /payloads/0",
+            f"the payload ID {PS.identifier} is listed with another payload, version, hash "
+            "or file than in /payloads/0",
         ),
+    ]
+
+
+def test_one_id_with_the_same_file_under_two_payloads_is_refused() -> None:
+    elsewhere = _entry(payload="elsewhere", file={"name": "elsewhere-1.0.0.json"})
+
+    assert [(f.code, f.field) for f in payload_list_findings([_entry(), elsewhere])] == [
+        ("VRF-008", "/payloads/1")
     ]
