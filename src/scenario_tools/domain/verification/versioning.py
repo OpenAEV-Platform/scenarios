@@ -18,7 +18,7 @@ from scenario_tools.domain.catalogue.structure import (
     contracts_with_payloads,
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.stored import INJECTS
+from scenario_tools.domain.shared.stored import INJECTS, STEP_DATA, STEPS, WORKFLOW
 
 
 class Bump(IntEnum):
@@ -114,6 +114,15 @@ _COLLECTIONS = {
     "scenario_organizations": "organization_id",
     "scenario_tags": "tag_id",
 }
+_STEP_ADDED = Change(Bump.MAJOR, "a step added")
+_STEP_REMOVED = Change(Bump.MAJOR, "a step removed")
+_CONDITIONS_CHANGED = Change(Bump.MAJOR, "a step's conditions changed")
+_STEP_INJECT_CHANGED = Change(Bump.MAJOR, "a step's inject changed")
+_WORKFLOW_CONDITIONS_CHANGED = Change(Bump.MAJOR, "a workflow's conditions changed")
+_SETTING_CHANGED = Change(Bump.MINOR, "a workflow setting changed")
+_STEP_ID = "step_id"
+_STEP_CONDITIONS = frozenset({"step_conditions", "step_condition_executed"})
+_WORKFLOW_CONDITIONS = "workflow_standalone_conditions"
 _TEXT_ENDINGS = ("_name", "_description", "_tags")
 _INJECT_ID, _TITLE = "inject_id", "inject_title"
 _EXTERNAL_ID = "payload_external_id"
@@ -291,6 +300,61 @@ def _injects(before: object, after: object) -> Iterator[LocatedChange]:
             yield from _inject_changes(old[identifier], new[identifier], at, identifier)
 
 
+def _step_changes(
+    before: Mapping[str, Any], after: Mapping[str, Any], pointer: str, step: str
+) -> Iterator[LocatedChange]:
+    """What changed in one step: what it waits for (major), its inject, classed field by field as
+    an inject is, and the rest of the step (minor)."""
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if _same(old, new):
+            continue
+        at = pointer + _segment(key)
+        if key in _STEP_CONDITIONS:
+            yield LocatedChange(_CONDITIONS_CHANGED, _JSON, at, step)
+        elif key == STEP_DATA:
+            if isinstance(old, Mapping) and isinstance(new, Mapping):
+                yield from _inject_changes(old, new, at, step)
+            else:  # an inject of another shape, as an inject is
+                yield LocatedChange(_STEP_INJECT_CHANGED, _JSON, at, step)
+        else:
+            yield LocatedChange(Change(Bump.MINOR, f"a step's {key} changed"), _JSON, at, step)
+
+
+def _steps(before: object, after: object, pointer: str) -> Iterator[LocatedChange]:
+    old, new = _by_id(before, _STEP_ID), _by_id(after, _STEP_ID)
+    if old is None or new is None or not isinstance(before, list) or not isinstance(after, list):
+        yield LocatedChange(Change(Bump.MAJOR, f"its {STEPS} changed"), _JSON, pointer)
+        return
+    for identifier in old:
+        if identifier not in new:
+            yield LocatedChange(_STEP_REMOVED, _JSON, pointer, identifier)
+    for index, identifier in enumerate(new):
+        at = f"{pointer}/{index}"
+        if identifier not in old:
+            yield LocatedChange(_STEP_ADDED, _JSON, at, identifier)
+        else:
+            yield from _step_changes(old[identifier], new[identifier], at, identifier)
+
+
+def _workflow(before: object, after: object) -> Iterator[LocatedChange]:
+    """What changed in a workflow: its steps, then each setting (minor)."""
+    pointer = _segment(WORKFLOW)
+    if not isinstance(before, Mapping) or not isinstance(after, Mapping):
+        yield LocatedChange(Change(Bump.MAJOR, f"its {WORKFLOW} changed"), _JSON, pointer)
+        return
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if _same(old, new):
+            continue
+        if key == STEPS:
+            yield from _steps(old, new, pointer + _segment(key))
+        elif key == _WORKFLOW_CONDITIONS:
+            yield LocatedChange(_WORKFLOW_CONDITIONS_CHANGED, _JSON, pointer + _segment(key))
+        else:
+            yield LocatedChange(_SETTING_CHANGED, _JSON, pointer + _segment(key))
+
+
 def _information(before: object, after: object) -> Iterator[LocatedChange]:
     pointer = _segment(_INFORMATION)
     if not isinstance(before, Mapping) or not isinstance(after, Mapping):
@@ -336,6 +400,8 @@ def _stored_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> Iter
             yield from _information(old, new)
         elif part in _COLLECTIONS:
             yield from _collection(part, old, new)
+        elif part == WORKFLOW:
+            yield from _workflow(old, new)
         else:
             yield LocatedChange(Change(Bump.MAJOR, f"its {part} changed"), _JSON, _segment(part))
 
@@ -432,6 +498,34 @@ def _same_injects(previous: object, current: object, path: str) -> Iterator[Find
             )
 
 
+def _step_runs(step: Mapping[str, Any]) -> tuple[object, object]:
+    """What a step runs, as a step re-added is recognised by: its contract and its title."""
+    data = step.get(STEP_DATA)
+    data = data if isinstance(data, Mapping) else {}
+    return _contract_id(data), data.get(_TITLE)
+
+
+def _same_steps(previous: object, current: object, path: str) -> Iterator[Finding]:
+    """A step added that runs the contract and has the title of a step removed: the same step
+    under a new identifier. A workflow or steps of another shape are a major change already."""
+    if not isinstance(previous, Mapping) or not isinstance(current, Mapping):
+        return
+    old, new = _by_id(previous.get(STEPS), _STEP_ID), _by_id(current.get(STEPS), _STEP_ID)
+    if not old or not new:
+        return
+    removed = [_step_runs(old[key]) for key in old if key not in new]
+    for index, identifier in enumerate(new):
+        if identifier not in old and _step_runs(new[identifier]) in removed:
+            yield _blocking(
+                "VER-003",
+                path,
+                f"/{WORKFLOW}/{STEPS}/{index}/{_STEP_ID}",
+                "this step runs the contract and has the title of a step of the previous version, "
+                "under a new ID: its ID must stay; prepare the entry with `normalize --previous` "
+                "or `intake`, or give a new step another title",
+            )
+
+
 def versioning_findings(
     previous: tuple[object, object] | None,
     metadata: Mapping[str, Any],
@@ -494,6 +588,7 @@ def versioning_findings(
             )
         )
     findings.extend(_same_injects(previous_stored.get(INJECTS), stored.get(INJECTS), scenario_path))
+    findings.extend(_same_steps(previous_stored.get(WORKFLOW), stored.get(WORKFLOW), scenario_path))
     return (*findings, *news)
 
 

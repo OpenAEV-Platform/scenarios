@@ -26,8 +26,8 @@ EXEMPT = {
 # Modules that read a part on purpose.
 ALLOWED = {
     "domain/verification/versioning.py": (
-        "compares the raw inject lists of two versions, where an item of another shape is itself "
-        "a change"
+        "compares the raw inject lists and workflows of two versions, where an item of another "
+        "shape is itself a change"
     ),
     "application/build_fixtures.py": "writes the parts of test exports",
 }
