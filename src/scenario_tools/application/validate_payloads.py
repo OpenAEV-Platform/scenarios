@@ -14,17 +14,17 @@ from scenario_tools.ports.catalogue import CatalogueFiles
 from scenario_tools.ports.schema import SchemaValidator
 
 
-def validate_payloads(
+def checked_payloads(
     files: CatalogueFiles, schema: SchemaValidator, agreed: AgreedIds, root: str
-) -> Report:
+) -> tuple[tuple[Finding, ...], tuple[tuple[PayloadVersion, bytes], ...]]:
     """The findings on the catalogue ``files`` hold, at ``root`` in the repository: its layout,
     each version file against the payload schema, its stored form, its name and its ID by the IDs
-    ``agreed``, then the rules across its versions. A file the schema refuses is checked no
-    further."""
+    ``agreed``, then the rules across its versions; and each version the schema accepts, with the
+    bytes of its file. A file the schema refuses is checked no further."""
     findings: list[Finding] = []
     layout_findings, places = layout(root, files.entries())
     findings += layout_findings
-    versions: list[PayloadVersion] = []
+    versions: list[tuple[PayloadVersion, bytes]] = []
     for place in places:
         data, document = files.read((place.slug, f"{place.version}.json"))
         violations = schema.validate("payload", document)
@@ -33,6 +33,14 @@ def validate_payloads(
             continue
         version = PayloadVersion(place.slug, place.version, place.path, document)
         findings += version_findings(version, data, agreed)
-        versions.append(version)
-    findings += catalogue_findings(versions)
-    return Report("validate-payloads", tuple(findings))
+        versions.append((version, data))
+    findings += catalogue_findings([version for version, _ in versions])
+    return tuple(findings), tuple(versions)
+
+
+def validate_payloads(
+    files: CatalogueFiles, schema: SchemaValidator, agreed: AgreedIds, root: str
+) -> Report:
+    """The report on the catalogue ``files`` hold, at ``root`` in the repository, as
+    ``checked_payloads`` checks it."""
+    return Report("validate-payloads", checked_payloads(files, schema, agreed, root)[0])

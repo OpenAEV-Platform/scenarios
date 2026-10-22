@@ -52,6 +52,7 @@ from scenario_tools.adapters.plan import PlanFile
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import (
     YAML_LIMIT,
+    parse_json,
     parse_yaml,
     read_json_file,
     read_regular_file,
@@ -88,7 +89,7 @@ from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_e
 from scenario_tools.application.run_fixtures import run_fixtures
 from scenario_tools.application.transfer import export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
-from scenario_tools.application.validate_payloads import validate_payloads
+from scenario_tools.application.validate_payloads import checked_payloads, validate_payloads
 from scenario_tools.application.verify_release import verify_release
 from scenario_tools.domain.catalogue.archive import payloads_outside_contracts
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -106,6 +107,7 @@ from scenario_tools.domain.policy.vendors import vendors_from_document
 from scenario_tools.domain.release.manifest import (
     CHANNELS,
     REPOSITORY,
+    PayloadFile,
     PreviousRelease,
     approvals_document,
     approvals_from_document,
@@ -125,7 +127,13 @@ from scenario_tools.domain.shared.finding import (
 )
 from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
-from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
+from scenario_tools.domain.verification.payload_references import (
+    AgreedIds,
+    HeldVersions,
+    PayloadReference,
+)
+from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT
+from scenario_tools.domain.verification.release_output import payload_reference_findings
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -671,7 +679,14 @@ def build(
                 )
             source.check_held()  # git found the checkout by its path: still the one held
             moment = commit_time(root, base)
-            rules = _rules(source)
+            # The catalogue is read once, by its own checks: their findings are the release's,
+            # and the entries are checked against the versions they let through.
+            rules = _rules(source, catalogue=HeldVersions.of([]))
+            found, versions = _release_payloads(root, rules)
+            if any(finding.severity is Severity.BLOCKING for finding in found):
+                return Report("build", found)
+            held = [PayloadReference(v.openaev_id, v.version, v.sha256) for v in versions]
+            rules = dataclasses.replace(rules, catalogue=HeldVersions.of(held))
             try:
                 granted = approvals_from_document(read_json_file(approvals))
                 if granted.commit != base:
@@ -710,14 +725,23 @@ def build(
                 previous=released,
                 channel=channel,
                 moment=moment,
+                payloads=versions,
+                catalogue=found,
             )
             if release is None:
                 return report
-            violations = rules.schema.validate("manifest", json.loads(release.manifest))
+            built = json.loads(release.manifest)
+            violations = rules.schema.validate("manifest", built)
             if violations:  # a defect of the tools: the release goes nowhere
                 raise EnvironmentProblemError(
                     "the manifest built does not meet its schema, at "
                     + ", ".join(violation.pointer or "/" for violation in violations[:5])
+                )
+            unlisted = payload_reference_findings(built["items"], built["payloads"])
+            if unlisted:  # validate and the catalogue's checks read one payloads/: a defect
+                raise EnvironmentProblemError(
+                    "the manifest built lists a payload reference no listed version has, at "
+                    + ", ".join(finding.field for finding in unlisted[:5])
                 )
             _refuse_uncommitted(root, release=True)  # nothing changed while it was built
             if head_commit(root) != base:
@@ -726,12 +750,44 @@ def build(
                 )
             source.check_held()
             out.mkdir(exist_ok=True)
-            for name, data in sorted(release.archives.items()):
+            for name, data in sorted({**release.archives, **release.payload_files}.items()):
                 write_output(out / name, data, create=True)
             write_output(out / "manifest.json", release.manifest, create=True)  # last
             return report
 
     _emit(ctx, "build", produce, root)
+
+
+def _release_payloads(
+    root: Path, rules: "_Rules"
+) -> tuple[tuple[Finding, ...], tuple[PayloadFile, ...]]:
+    """What the checks of the payload catalogue find of the repository at ``root``, as
+    ``validate-payloads`` checks it, and each of its versions, with the bytes of its file; none
+    while a finding blocks, or when the repository holds no ``payloads/``."""
+    if not (root / "payloads").is_dir():
+        return (), ()
+    if not (root / "schemas" / "payload.schema.json").is_file():
+        raise EnvironmentProblemError("schemas cannot be used: payload.schema.json is missing")
+    found, checked = checked_payloads(
+        CatalogueDirectory(root, ("payloads",)), rules.schema, rules.agreed, "payloads"
+    )
+    if any(finding.severity is Severity.BLOCKING for finding in found):
+        return found, ()
+    # Each version is hashable: one that is not is a blocking finding of its checks, above.
+    versions = tuple(
+        PayloadFile(version.slug, version.version, version.digest(), version.identifier, data)
+        for version, data in checked
+    )
+    return found, versions
+
+
+def _payload_document(data: bytes) -> object:
+    """A payload file of a release as JSON, read as the repository reads its own files;
+    ``ValueError`` with why when it cannot be."""
+    try:
+        return parse_json(data, limit=VERSION_FILE_LIMIT)
+    except UnsafeInputError as error:
+        raise ValueError(f"{error.code}: {error.message}") from error
 
 
 def _verified(manifest: Path, schemas: Path, held: Path, *, approved: bool) -> Report:
@@ -754,6 +810,10 @@ def _verified(manifest: Path, schemas: Path, held: Path, *, approved: bool) -> R
         place = held / name  # the name meets the manifest's schema: a plain file name
         return read_regular_file(place, ARCHIVE_LIMIT) if os.path.lexists(place) else None
 
+    def payload_of(name: str) -> bytes | None:
+        place = held / name  # the name meets the manifest's schema: a plain file name
+        return read_regular_file(place, VERSION_FILE_LIMIT) if os.path.lexists(place) else None
+
     return verify_release(
         document,
         validate=lambda found: tuple(
@@ -764,6 +824,8 @@ def _verified(manifest: Path, schemas: Path, held: Path, *, approved: bool) -> R
         archive_of=archive_of,
         scenario_of=scenario_from_archive,
         present=beside,
+        payload_of=payload_of,
+        read_payload=_payload_document,
     )
 
 
@@ -1155,10 +1217,13 @@ def _policy_data(loader: YamlDataLoader) -> PolicyData:
     )
 
 
-def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
+def _rules(
+    source: RepositoryEntries, *, intake: bool = False, catalogue: HeldVersions | None = None
+) -> _Rules:
     """The rules of the repository ``source`` reads, read like the entries, never through a
     link, the intake request's schema among them for ``intake``; rules that cannot be used are
-    the environment's fault, never an entry's."""
+    the environment's fault, never an entry's. The payload versions held are ``catalogue`` when
+    the caller read them already, the repository's otherwise."""
     try:
         loader = YamlDataLoader(source.directory("policy/data"))
         builtin = BuiltinContracts.from_document(loader.load("builtin-contracts"))
@@ -1174,7 +1239,8 @@ def _rules(source: RepositoryEntries, *, intake: bool = False) -> _Rules:
     for name in ("scenario", "intake-request", "payload") if intake else ("scenario",):
         if not (schemas / f"{name}.schema.json").is_file():
             raise EnvironmentProblemError(f"schemas cannot be used: {name}.schema.json is missing")
-    return _Rules(loader, builtin, domains, schema, policy, agreed_ids(loader), _catalogue(source))
+    held = _catalogue(source) if catalogue is None else catalogue
+    return _Rules(loader, builtin, domains, schema, policy, agreed_ids(loader), held)
 
 
 REQUEST_LIMIT = 64 * 1024  # bytes of an intake request

@@ -12,6 +12,11 @@ SEMVER = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 _SUFFIX = re.compile(rf" \({SEMVER}\)\Z")
 
 
+def version_key(version: str) -> tuple[int, ...]:
+    """The semantic version ``version``, ``MAJOR.MINOR.PATCH``, as numbers to order it by."""
+    return tuple(int(part) for part in version.split("."))
+
+
 def base_name(name: str) -> str:
     """``name`` without a final ``" (<version>)"``, stripped once; a name without one is its own
     base name."""

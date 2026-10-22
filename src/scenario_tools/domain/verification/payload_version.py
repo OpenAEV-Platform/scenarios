@@ -15,7 +15,12 @@ from typing import Any
 
 from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.payload_names import FIRST_VERSION, base_name, versioned_name
+from scenario_tools.domain.shared.payload_names import (
+    FIRST_VERSION,
+    base_name,
+    version_key,
+    versioned_name,
+)
 from scenario_tools.domain.verification.payload_hash import (
     FileHash,
     UnhashablePayloadError,
@@ -62,6 +67,15 @@ _ATTACHED: dict[str, str] = {}  # a version file attaches no file
 _NO_FILES: FileHash = _ATTACHED.get
 
 
+def content_digest(document: Mapping[str, Any]) -> str:
+    """The hash of the payload a version file holds as ``document``, as the hash of the same
+    payload embedded in a scenario: its fields without its ID, its techniques and its domains,
+    with its techniques as a contract's; an ``UnhashablePayloadError`` when the canonical form
+    cannot read it."""
+    fields = {key: value for key, value in document.items() if key not in _NOT_HASHED}
+    return payload_hash(fields, tuple(document[_TECHNIQUES]), _NO_FILES).hex
+
+
 @dataclass(frozen=True)
 class PayloadVersion:
     """The version ``version`` of the payload of the folder ``slug``, whose file is at ``path``
@@ -101,10 +115,8 @@ class PayloadVersion:
         return fields, self.techniques
 
     def digest(self) -> str:
-        """The hash of this version, as the hash of the same payload embedded in a scenario; an
-        ``UnhashablePayloadError`` when the canonical form cannot read it."""
-        fields, techniques = self.hash_input()
-        return payload_hash(fields, techniques, _NO_FILES).hex
+        """The hash of this version, as ``content_digest`` gives it."""
+        return content_digest(self.document)
 
 
 def _blocking(code: str, version: PayloadVersion, field: str, message: str) -> Finding:
@@ -176,6 +188,4 @@ def version_findings(
 
 def ordered(versions: Sequence[PayloadVersion]) -> list[PayloadVersion]:
     """``versions`` by folder, then by version in semantic order."""
-    return sorted(
-        versions, key=lambda v: (v.slug, tuple(int(part) for part in v.version.split(".")))
-    )
+    return sorted(versions, key=lambda v: (v.slug, version_key(v.version)))

@@ -11,7 +11,8 @@
     "channel",
     "issued_at",
     "release",
-    "items"
+    "items",
+    "payloads"
   ],
   "properties": {
     "schema_version": {
@@ -45,6 +46,14 @@
       "maxItems": 10000,
       "items": {
         "$ref": "#/$defs/item"
+      }
+    },
+    "payloads": {
+      "description": "Every payload version of the repository at the commit the release is built from, not only the ones scenarios use. The same limit as items.",
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/payload_version"
       }
     },
     "release_approver": {
@@ -297,14 +306,14 @@
             ],
             "properties": {
               "id": {
-                "description": "The payload's identifier.",
+                "description": "The identifier of the payload version: the payload_external_id of a file of payloads/.",
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 128,
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$"
               },
               "version": {
-                "description": "The payload version the scenario uses.",
+                "description": "The payload version the scenario uses: the version of a file of payloads/, which holds the payload's ID.",
                 "$ref": "#/$defs/semver"
               },
               "sha256": {
@@ -361,6 +370,71 @@
               "items": {
                 "$ref": "#/$defs/github_login"
               }
+            }
+          }
+        }
+      }
+    },
+    "payload_version": {
+      "description": "A payload version of the repository, with the file the release carries.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payload",
+        "version",
+        "sha256",
+        "openaev_id",
+        "file"
+      ],
+      "properties": {
+        "payload": {
+          "description": "The payload's slug: its folder in payloads/.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "description": "The version, in semantic versioning.",
+          "$ref": "#/$defs/semver"
+        },
+        "sha256": {
+          "description": "The payload hash of this version: the canonical content hash a platform recomputes.",
+          "$ref": "#/$defs/sha256"
+        },
+        "openaev_id": {
+          "description": "The ID this version has in OpenAEV in V1 (its payload_external_id). Kept so that a platform that later stores versions can recognise it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9:._-]*$"
+        },
+        "file": {
+          "description": "The version file, published next to the archives.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "sha256",
+            "size"
+          ],
+          "properties": {
+            "name": {
+              "description": "The file's name in the release: <payload>-<version>.json.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*-[0-9]+\\.[0-9]+\\.[0-9]+\\.json$"
+            },
+            "sha256": {
+              "description": "The SHA-256 of the file's bytes. Kept beside the content hash because the file carries payload_domains, which the content hash leaves out.",
+              "$ref": "#/$defs/sha256"
+            },
+            "size": {
+              "description": "The file's size in bytes, at most 262,144, the size bound of a version file.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 262144
             }
           }
         }

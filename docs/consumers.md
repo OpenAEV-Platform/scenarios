@@ -9,7 +9,8 @@ Releases are not published yet. Where they are published will be said here with 
 ## What a release holds
 
 A release is a `manifest.json` and, beside it, one import archive per scenario, named
-`<external_id>-<version>.zip`. The manifest follows
+`<external_id>-<version>.zip`, and one file per payload version of the catalogue, named
+`<payload>-<version>.json`. The manifest follows
 [`schemas/manifest.schema.json`](../schemas/manifest.schema.json). It names its `repository`, its
 `channel` (`edge` for every release, `stable` for those recommended to everyone), its name
 `release` (`YYYY.MM.DD.N`), `issued_at` (the time of the commit it is built from) and, once the
@@ -24,6 +25,13 @@ release is approved, its `release_approver`. For each scenario it gives:
   (`CE` or `EE`), the injectors and the executors;
 - the facets a catalogue shows, and who approved its change, in which pull request.
 
+Under `payloads`, the manifest lists every payload version of the catalogue at the commit the
+release is built from, used by a scenario or not: its `payload` (the folder it lives in), its
+`version`, its content hash `sha256`, its `openaev_id` (the ID it has on the platform) and its
+`file` (`name`, `sha256` of the file's bytes, `size`). The two hashes differ on purpose: the
+content hash is what a platform recomputes; the file hash also covers the payload's domains, which
+the content hash leaves out. Every payload a scenario's item lists is one of these versions.
+
 A scenario's `type` says how its injects run: at set times (`time-based`), or in chaining
 (`chained`), where each step runs once the steps it depends on have run. A scenario in chaining
 needs the Enterprise edition; its `scenario.json` holds a `scenario_workflow`, whose steps each
@@ -36,7 +44,8 @@ The repository builds every release against the channel's previous one, and guar
   for its approvals and its test report; a correction is a new version;
 - a version never decreases;
 - a released scenario stays in every later release: it is withdrawn by a new version, never
-  removed.
+  removed;
+- a released payload version never changes, neither its content nor its file.
 
 ## What to check before using a release
 
@@ -78,6 +87,11 @@ A release with any finding below is not used at all.
    When an import would reuse a payload the platform already holds under an ID the manifest
    lists, the content it holds must have the hash the manifest lists: otherwise do not use it,
    and report the conflict.
+   Every payload file the manifest lists is present, has the size and the SHA-256 listed and the
+   name `<payload>-<version>.json`, holds the `openaev_id` listed, and its content has the hash
+   `sha256` listed (computed as for an embedded payload, its techniques taken from
+   `payload_attack_patterns`); a version is listed once, an ID with one payload, one version, one hash and one file, a content under one ID, and
+   every payload an item lists is a listed version.
 8. **Status and requirements.** A `REVOKED` scenario must no longer run; a `DEPRECATED` one is
    replaced or no longer maintained. Install only scenarios whose `requires` the platform meets.
 9. **Scenarios in chaining.** Import one only where the import does both of these:

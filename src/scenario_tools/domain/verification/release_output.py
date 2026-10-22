@@ -6,7 +6,7 @@ ID names one version and one hash across the release. What ``build`` checks on t
 builds, the scenario's facts, its normalised form and the policy, is not checked again here."""
 
 import hashlib
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from scenario_tools.domain.catalogue import archive as stored_scenario
@@ -18,6 +18,7 @@ from scenario_tools.domain.verification.payload_hash import (
     embedded_payloads,
     payload_hash,
 )
+from scenario_tools.domain.verification.payload_version import content_digest
 
 MANIFEST = "manifest.json"
 _EXTERNAL_ID = "payload_external_id"
@@ -155,3 +156,104 @@ def payload_content_findings(
         message = f"the manifest lists the payload {payload_id}, which the archive does not embed"
         findings.append(_refused("VRF-008", name, "", message))
     return tuple(findings)
+
+
+def payload_list_findings(payloads: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
+    """``VRF-008`` for each payload version of the manifest's list whose ID is listed before
+    with another payload, version, hash or file, whose content is listed before under another
+    ID, or
+    which is listed before itself: one ID names one version file, and one content one ID.
+    ``VRF-006`` for a version whose file is not named ``<payload>-<version>.json``."""
+    findings = []
+    seen: set[tuple[str, str]] = set()
+    by_id: dict[str, tuple[int, tuple[str, str, str]]] = {}
+    by_hash: dict[str, tuple[int, str]] = {}
+    for index, entry in enumerate(payloads):
+        payload, version = str(entry["payload"]), str(entry["version"])
+        identifier, sha256 = str(entry["openaev_id"]), str(entry["sha256"])
+        listed = (payload, version, sha256)  # its file is named by the first two
+        at, known = by_id.setdefault(identifier, (index, listed))
+        first, owner = by_hash.setdefault(sha256, (index, identifier))
+        if known != listed:
+            message = (
+                f"the payload ID {identifier} is listed with another payload, version, hash or "
+                f"file than in /payloads/{at}"
+            )
+            findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
+        elif owner != identifier:
+            message = f"this content is listed under another ID in /payloads/{first}"
+            findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
+        elif (payload, version) in seen:
+            message = f"{payload} {version} is listed twice"
+            findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
+        seen.add((payload, version))
+        name = str(entry["file"]["name"])
+        if name != f"{payload}-{version}.json":
+            message = f"the file of {payload} {version} is named {name}"
+            field = f"/payloads/{index}/file/name"
+            findings.append(_refused("VRF-006", MANIFEST, field, message))
+    return tuple(findings)
+
+
+def payload_reference_findings(
+    items: Iterable[Mapping[str, Any]], payloads: Iterable[Mapping[str, Any]]
+) -> tuple[Finding, ...]:
+    """``VRF-008`` for each payload an item references by an ID, a version and a hash that no
+    payload version of the manifest's list has."""
+    listed = {
+        (str(entry["openaev_id"]), str(entry["version"]), str(entry["sha256"]))
+        for entry in payloads
+    }
+    message = "the release lists no payload version with this ID, version and hash"
+    return tuple(
+        _refused("VRF-008", MANIFEST, f"/items/{index}/payloads/{position}", message)
+        for index, item in enumerate(items)
+        for position, payload in enumerate(item["payloads"])
+        if (str(payload["id"]), str(payload["version"]), str(payload["sha256"])) not in listed
+    )
+
+
+def _file_digest(document: Mapping[str, Any]) -> str | None:
+    """The content hash of the version file holding ``document``; none when it cannot be
+    hashed, whatever a file of the release may hold."""
+    techniques = document.get("payload_attack_patterns")
+    if not isinstance(techniques, list):  # read as a list of techniques, whatever it holds
+        return None
+    try:
+        return content_digest(document)
+    except UnhashablePayloadError:
+        return None
+
+
+def payload_file_findings(
+    entry: Mapping[str, Any], data: bytes | None, read: Callable[[bytes], object]
+) -> tuple[Finding, ...]:
+    """``VRF-006`` when the file of the payload version ``entry`` is missing, or ``data``, its
+    bytes, are not of the size and the SHA-256 the manifest lists; otherwise ``VRF-008`` when
+    ``read`` cannot read them, or their content has another hash or another ID than listed."""
+    listed = entry["file"]
+    name = str(listed["name"])
+    if data is None:
+        return (_refused("VRF-006", name, "", "the payload file the manifest lists is missing"),)
+    if len(data) != listed["size"]:
+        message = f"{len(data)} bytes, where the manifest lists {listed['size']}"
+        return (_refused("VRF-006", name, "", message),)
+    if hashlib.sha256(data).hexdigest() != listed["sha256"]:
+        return (_refused("VRF-006", name, "", "its SHA-256 is not the one the manifest lists"),)
+    try:
+        document = read(data)
+    except ValueError as error:
+        return (_refused("VRF-008", name, "", f"its content cannot be read: {error}"),)
+    unhashable = (_refused("VRF-008", name, "", "its content cannot be hashed"),)
+    if not isinstance(document, Mapping):
+        return unhashable
+    digest = _file_digest(document)
+    if digest is None:
+        return unhashable
+    if digest != entry["sha256"]:
+        message = "its content has another hash than the one the manifest lists"
+        return (_refused("VRF-008", name, "", message),)
+    if document.get(_EXTERNAL_ID) != entry["openaev_id"]:
+        message = "it holds another ID than the openaev_id the manifest lists"
+        return (_refused("VRF-008", name, "", message),)
+    return ()

@@ -5,6 +5,7 @@ Nothing in it depends on when, or where, it is built."""
 
 import copy
 import datetime
+import hashlib
 import itertools
 import re
 from collections.abc import Iterable, Mapping
@@ -13,6 +14,7 @@ from typing import Any
 
 from scenario_tools.domain.shared.commits import is_commit_id
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.payload_names import version_key
 
 CHANNELS = ("edge", "stable")
 REPOSITORY = "OpenAEV-Platform/scenarios"
@@ -60,6 +62,18 @@ class BuiltEntry:
 
 
 @dataclass(frozen=True)
+class PayloadFile:
+    """A payload version a release lists: its slug, its version, its content hash, the ID it has
+    in OpenAEV, and the bytes of its file."""
+
+    payload: str
+    version: str
+    sha256: str
+    openaev_id: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class Approval:
     """The pull request that last changed an entry, and the logins of those who approved it,
     sorted."""
@@ -86,6 +100,8 @@ class PreviousRelease:
     release: str
     archives: Mapping[tuple[str, str], str]
     items: Mapping[tuple[str, str], Mapping[str, Any]] = field(default_factory=dict)
+    # The content hash and the file hash of each payload version, by slug and version.
+    payloads: Mapping[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
 
 
 # What may differ between two releases of one version: who approved its last change, and the
@@ -122,16 +138,52 @@ def manifest_item(
     return item
 
 
+def payload_file_name(payload: str, version: str) -> str:
+    """The name a release gives the file of the version ``version`` of the payload ``payload``."""
+    return f"{payload}-{version}.json"
+
+
+def payload_entry(found: PayloadFile) -> dict[str, Any]:
+    """What the manifest says of the payload version ``found``: its content hash, which a
+    platform recomputes, and its file's name, hash and size, since the file also carries what
+    the content hash leaves out."""
+    return {
+        "payload": found.payload,
+        "version": found.version,
+        "sha256": found.sha256,
+        "openaev_id": found.openaev_id,
+        "file": {
+            "name": payload_file_name(found.payload, found.version),
+            "sha256": hashlib.sha256(found.data).hexdigest(),
+            "size": len(found.data),
+        },
+    }
+
+
+def _payload_order(entry: Mapping[str, Any]) -> tuple[str, tuple[int, ...]]:
+    return str(entry["payload"]), version_key(str(entry["version"]))
+
+
 def manifest(
-    *, channel: str, issued_at: str, release: str, items: Iterable[Mapping[str, Any]]
+    *,
+    channel: str,
+    issued_at: str,
+    release: str,
+    items: Iterable[Mapping[str, Any]],
+    payloads: Iterable[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """The manifest of a release on ``channel``, its items sorted by external ID, one each."""
+    """The manifest of a release on ``channel``, its items sorted by external ID, one each, and
+    its payload versions by slug then by version in semantic order, one each."""
     if channel not in CHANNELS:
         raise ValueError(f"the channel {channel!r} is not one of {', '.join(CHANNELS)}")
     listed = sorted(items, key=lambda item: str(item["external_id"]))
     for before, after in itertools.pairwise(listed):
         if before["external_id"] == after["external_id"]:
             raise ValueError(f"two entries have the external_id {after['external_id']}")
+    versions = sorted(payloads, key=_payload_order)
+    for before, after in itertools.pairwise(versions):
+        if _payload_order(before) == _payload_order(after):
+            raise ValueError(f"two payload versions are {after['payload']} {after['version']}")
     return {
         "schema_version": SCHEMA_VERSION,
         "repository": REPOSITORY,
@@ -139,6 +191,7 @@ def manifest(
         "issued_at": issued_at,
         "release": release,
         "items": [dict(item) for item in listed],
+        "payloads": [dict(entry) for entry in versions],
     }
 
 
@@ -318,7 +371,45 @@ def previous_release(document: Mapping[str, Any]) -> PreviousRelease:
         key = (external_id, str(item["version"]))
         archives[key] = str(item["archive"]["sha256"])
         items[key] = _said(item)
-    return PreviousRelease(str(document["channel"]), str(document["release"]), archives, items)
+    payloads: dict[tuple[str, str], tuple[str, str]] = {}
+    for entry in document["payloads"]:
+        key = (str(entry["payload"]), str(entry["version"]))
+        if key in payloads:
+            raise ValueError(f"the previous release lists {key[0]} {key[1]} twice")
+        payloads[key] = (str(entry["sha256"]), str(entry["file"]["sha256"]))
+    return PreviousRelease(
+        str(document["channel"]), str(document["release"]), archives, items, payloads
+    )
+
+
+def released_payload_findings(
+    previous: PreviousRelease, entries: Iterable[Mapping[str, Any]]
+) -> tuple[Finding, ...]:
+    """``VER-021`` for each payload version of ``entries`` the ``previous`` release lists with
+    another content hash or another file, and for each one it lists that ``entries`` no longer
+    hold: a released version never changes, nor goes."""
+    findings = []
+    present = set()
+    for entry in entries:
+        present.add((str(entry["payload"]), str(entry["version"])))
+        payload, version = str(entry["payload"]), str(entry["version"])
+        before = previous.payloads.get((payload, version))
+        if before is None or before == (str(entry["sha256"]), str(entry["file"]["sha256"])):
+            continue
+        message = (
+            f"the previous release lists {payload} {version} with another hash or another file, "
+            "and a released version never changes: add a new version"
+        )
+        path = f"payloads/{payload}/{version}.json"
+        findings.append(Finding("VER-021", Severity.BLOCKING, path, "", message))
+    for payload, version in sorted(previous.payloads.keys() - present):
+        message = (
+            f"the previous release lists {payload} {version}, which the catalogue no longer "
+            "holds, and a released version never goes: put its file back"
+        )
+        path = f"payloads/{payload}/{version}.json"
+        findings.append(Finding("VER-021", Severity.BLOCKING, path, "", message))
+    return tuple(findings)
 
 
 def released_item_findings(

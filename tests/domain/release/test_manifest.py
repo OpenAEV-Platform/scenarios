@@ -1,6 +1,7 @@
 """The release manifest: what each item says, and how the release is named and approved."""
 
 import datetime
+import hashlib
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -12,6 +13,7 @@ from scenario_tools.domain.release.manifest import (
     Approvals,
     ArchiveFacts,
     BuiltEntry,
+    PayloadFile,
     PreviousRelease,
     approval_findings,
     approvals_document,
@@ -22,9 +24,11 @@ from scenario_tools.domain.release.manifest import (
     manifest,
     manifest_item,
     merged_before_review_from_document,
+    payload_entry,
     previous_release,
     release_name,
     released_item_findings,
+    released_payload_findings,
     withdrawn_findings,
 )
 from scenario_tools.domain.shared.finding import Severity
@@ -103,6 +107,7 @@ def test_the_manifest_lists_the_items_by_external_id() -> None:
         issued_at="2026-10-30T09:15:02Z",
         release="2026.10.30.1",
         items=[second, first],
+        payloads=[],
     )
 
     assert document == {
@@ -112,6 +117,7 @@ def test_the_manifest_lists_the_items_by_external_id() -> None:
         "issued_at": "2026-10-30T09:15:02Z",
         "release": "2026.10.30.1",
         "items": [first, second],
+        "payloads": [],
     }
 
 
@@ -119,13 +125,13 @@ def test_two_items_of_one_scenario_have_no_manifest() -> None:
     item = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
 
     with pytest.raises(ValueError, match=f"two entries have the external_id {ID}"):
-        manifest(channel="edge", issued_at="x", release="y", items=[item, dict(item)])
+        manifest(channel="edge", issued_at="x", release="y", items=[item, dict(item)], payloads=[])
 
 
 @pytest.mark.parametrize("channel", ["", "beta", "EDGE"])
 def test_a_channel_is_edge_or_stable(channel: str) -> None:
     with pytest.raises(ValueError, match="channel"):
-        manifest(channel=channel, issued_at="x", release="y", items=[])
+        manifest(channel=channel, issued_at="x", release="y", items=[], payloads=[])
 
 
 def test_the_issue_time_is_the_moment_in_utc_to_the_second() -> None:
@@ -290,7 +296,9 @@ def test_a_list_of_pull_requests_merged_before_review_out_of_its_shape_is_refuse
 
 def test_the_previous_release_gives_its_channel_name_and_archives() -> None:
     first = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
-    document = manifest(channel="edge", issued_at="x", release="2026.10.29.4", items=[first])
+    document = manifest(
+        channel="edge", issued_at="x", release="2026.10.29.4", items=[first], payloads=[]
+    )
 
     released = previous_release(document)
 
@@ -380,7 +388,7 @@ def test_a_list_merged_before_review_out_of_its_shape_says_what_it_needs() -> No
 
 def test_a_channel_out_of_the_list_is_named_with_the_list() -> None:
     with pytest.raises(ValueError, match="channel") as error:
-        manifest(channel="beta", issued_at="x", release="y", items=[])
+        manifest(channel="beta", issued_at="x", release="y", items=[], payloads=[])
 
     assert str(error.value) == "the channel 'beta' is not one of edge, stable"
 
@@ -412,7 +420,9 @@ def test_the_issue_time_and_the_day_are_utc_s_whatever_the_machine_s_zone() -> N
 
 
 def _released(item: dict[str, Any]) -> PreviousRelease:
-    return previous_release(manifest(channel="edge", issued_at="x", release="r", items=[item]))
+    return previous_release(
+        manifest(channel="edge", issued_at="x", release="r", items=[item], payloads=[])
+    )
 
 
 def test_a_released_version_that_says_otherwise_of_the_scenario_is_refused() -> None:
@@ -496,3 +506,123 @@ def test_the_approvals_document_is_what_build_reads() -> None:
 )  # fmt: skip
 def test_a_github_login_is_one_in_lower_case_as_github_allows(login: object, fit: bool) -> None:
     assert is_github_login(login) is fit
+
+
+def _version(payload: str, version: str, data: bytes = b"{}\n", sha256: str = SHA) -> PayloadFile:
+    return PayloadFile(payload, version, sha256, f"id-{payload}-{version}", data)
+
+
+def test_a_payload_version_is_listed_with_its_two_hashes_and_its_file() -> None:
+    entry = payload_entry(_version("process-discovery-ps", "1.1.0", b'{"a": 1}\n'))
+
+    assert entry == {
+        "payload": "process-discovery-ps",
+        "version": "1.1.0",
+        "sha256": SHA,
+        "openaev_id": "id-process-discovery-ps-1.1.0",
+        "file": {
+            "name": "process-discovery-ps-1.1.0.json",
+            "sha256": hashlib.sha256(b'{"a": 1}\n').hexdigest(),
+            "size": 9,
+        },
+    }
+
+
+def test_the_manifest_lists_the_payload_versions_by_slug_then_by_semantic_version() -> None:
+    later, first, other = (
+        payload_entry(_version("ps", "1.10.0")),
+        payload_entry(_version("ps", "1.9.0")),
+        payload_entry(_version("a-first", "2.0.0")),
+    )
+
+    document = manifest(
+        channel="edge", issued_at="x", release="y", items=[], payloads=[later, other, first]
+    )
+
+    assert document["payloads"] == [other, first, later]
+
+
+def test_an_empty_catalogue_is_listed_as_no_payload() -> None:
+    document = manifest(channel="edge", issued_at="x", release="y", items=[], payloads=[])
+
+    assert document["payloads"] == []
+
+
+def test_a_payload_version_given_twice_has_no_manifest() -> None:
+    entry = payload_entry(_version("ps", "1.0.0"))
+
+    with pytest.raises(ValueError, match=r"two payload versions are ps 1\.0\.0"):
+        manifest(channel="edge", issued_at="x", release="y", items=[], payloads=[entry, entry])
+
+
+def _previous_with(*entries: dict[str, Any]) -> PreviousRelease:
+    return previous_release(
+        manifest(channel="edge", issued_at="x", release="r", items=[], payloads=list(entries))
+    )
+
+
+def test_a_released_payload_version_with_another_hash_or_file_is_refused() -> None:
+    released = payload_entry(_version("ps", "1.0.0"))
+    previous = _previous_with(released)
+    other_hash = payload_entry(_version("ps", "1.0.0", sha256="c" * 64))
+    other_file = payload_entry(_version("ps", "1.0.0", data=b'{"b": 2}\n'))
+    message = (
+        "the previous release lists ps 1.0.0 with another hash or another file, and a released "
+        "version never changes: add a new version"
+    )
+
+    assert released_payload_findings(previous, [released]) == ()
+    for changed in (other_hash, other_file):
+        (found,) = released_payload_findings(previous, [changed])
+        assert (found.code, found.severity, found.path, found.field, found.message) == (
+            "VER-021",
+            Severity.BLOCKING,
+            "payloads/ps/1.0.0.json",
+            "",
+            message,
+        )
+
+
+def test_a_payload_version_the_previous_release_does_not_list_is_new() -> None:
+    previous = _previous_with(payload_entry(_version("ps", "1.0.0")))
+
+    released, later = payload_entry(_version("ps", "1.0.0")), payload_entry(_version("ps", "1.1.0"))
+
+    assert released_payload_findings(previous, [released, later]) == ()
+
+
+def test_a_released_payload_version_the_catalogue_no_longer_holds_is_refused() -> None:
+    previous = _previous_with(payload_entry(_version("ps", "1.0.0")))
+
+    (found,) = released_payload_findings(previous, [payload_entry(_version("ps", "1.1.0"))])
+
+    assert (found.code, found.severity, found.path, found.message) == (
+        "VER-021",
+        Severity.BLOCKING,
+        "payloads/ps/1.0.0.json",
+        "the previous release lists ps 1.0.0, which the catalogue no longer holds, and a "
+        "released version never goes: put its file back",
+    )
+    assert released_payload_findings(previous, []) == (found,)
+
+
+def test_every_released_payload_version_is_compared_after_an_unchanged_one() -> None:
+    first, second = payload_entry(_version("a", "1.0.0")), payload_entry(_version("b", "1.0.0"))
+    previous = _previous_with(first, second)
+    changed = payload_entry(_version("b", "1.0.0", sha256="c" * 64))
+
+    (found,) = released_payload_findings(previous, [first, changed])
+
+    assert (found.path, "with another hash or another file" in found.message) == (
+        "payloads/b/1.0.0.json",
+        True,
+    )
+
+
+def test_a_previous_release_listing_a_payload_version_twice_is_refused() -> None:
+    entry = payload_entry(_version("ps", "1.0.0"))
+    document = manifest(channel="edge", issued_at="x", release="r", items=[], payloads=[entry])
+    document["payloads"].append(payload_entry(_version("ps", "1.0.0", sha256="c" * 64)))
+
+    with pytest.raises(ValueError, match=r"the previous release lists ps 1\.0\.0 twice"):
+        previous_release(document)

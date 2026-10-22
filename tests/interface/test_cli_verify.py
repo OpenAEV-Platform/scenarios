@@ -99,7 +99,7 @@ def test_an_archive_unsafe_to_extract_is_refused_even_listed_with_its_hash(
     assert _findings(result) == [("VRF-007", ARCHIVE)]
 
 
-def test_a_payload_listed_but_not_embedded_is_refused(
+def test_a_payload_reference_to_a_version_the_release_does_not_list_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     release = _release(tmp_path, monkeypatch)
@@ -110,7 +110,7 @@ def test_a_payload_listed_but_not_embedded_is_refused(
     result = _verify(release / "manifest.json")
 
     assert result.exit_code == 1, result.output
-    assert _findings(result) == [("VRF-008", ARCHIVE)]
+    assert _findings(result) == [("VRF-008", "manifest.json")]
 
 
 def test_a_manifest_out_of_its_schema_is_refused(
@@ -146,6 +146,8 @@ def test_a_release_with_a_payload_built_into_its_archive_is_verified_by_its_cont
 ) -> None:
     """What build lists is what verify recomputes, payload by payload."""
     from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
+    from scenario_tools.domain.release.manifest import PayloadFile, payload_entry
+    from scenario_tools.domain.shared.canonical import stored_form
     from tests.domain.verification.test_release_output import PAYLOAD, PAYLOAD_ID, VECTOR, _stored
 
     release = _release(tmp_path, monkeypatch)
@@ -157,6 +159,10 @@ def test_a_release_with_a_payload_built_into_its_archive_is_verified_by_its_cont
         item = document["items"][0]
         item["archive"].update(sha256=hashlib.sha256(data).hexdigest(), size=len(data))
         item["payloads"] = [{"id": PAYLOAD_ID, "version": "1.0.0", "sha256": VECTOR["sha256"]}]
+        version = {**PAYLOAD, "payload_attack_patterns": VECTOR["attack_patterns"]}
+        listed = PayloadFile("vector", "1.0.0", VECTOR["sha256"], PAYLOAD_ID, stored_form(version))
+        (release / "vector-1.0.0.json").write_bytes(listed.data)
+        document["payloads"] = [payload_entry(listed)]
         _rewrite(release, document)
 
     with_payload(PAYLOAD)

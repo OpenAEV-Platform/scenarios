@@ -83,6 +83,7 @@ MANIFEST: dict[str, Any] = {
             "approvals": {"pull_request": 12, "approvers": ["alice", "bob"]},
         }
     ],
+    "payloads": [],
 }
 
 
@@ -937,3 +938,43 @@ def test_a_channel_pointer_the_domain_writes_meets_its_schema(
     assert [v.pointer for v in validator.validate("channel", {**pointer, "release": "x"})] == [
         "/release"
     ]
+
+
+PAYLOAD_VERSION: dict[str, Any] = {
+    "payload": "process-discovery-ps",
+    "version": "1.1.0",
+    "sha256": SHA,
+    "openaev_id": "13973155-b166-4bbf-a34a-6b74c0d92957",
+    "file": {"name": "process-discovery-ps-1.1.0.json", "sha256": SHA, "size": 1024},
+}
+
+
+def test_a_manifest_lists_its_payload_versions(validator: JsonSchemaValidator) -> None:
+    document = {**MANIFEST, "payloads": [PAYLOAD_VERSION]}
+
+    assert validator.validate("manifest", document) == ()
+
+
+@pytest.mark.parametrize(
+    ("change", "pointer"),
+    [
+        ({"file": {**PAYLOAD_VERSION["file"], "size": 262_145}}, "/payloads/0/file/size"),
+        ({"file": {**PAYLOAD_VERSION["file"], "name": "../x.json"}}, "/payloads/0/file/name"),
+        ({"payload": "Process Discovery"}, "/payloads/0/payload"),
+        ({"openaev_id": "Upper-Case"}, "/payloads/0/openaev_id"),
+        ({"domains": []}, "/payloads/0/domains"),
+    ],
+    ids=["size", "name", "slug", "id", "unknown field"],
+)
+def test_a_payload_version_out_of_its_definition_is_refused(
+    validator: JsonSchemaValidator, change: dict[str, Any], pointer: str
+) -> None:
+    document = {**MANIFEST, "payloads": [{**PAYLOAD_VERSION, **change}]}
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [pointer]
+
+
+def test_a_manifest_without_its_payload_list_is_refused(validator: JsonSchemaValidator) -> None:
+    document = {key: value for key, value in MANIFEST.items() if key != "payloads"}
+
+    assert [v.pointer for v in validator.validate("manifest", document)] == [""]
