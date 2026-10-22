@@ -241,9 +241,19 @@ def _identity(document: Any) -> list[tuple[str, str, str]]:
     )
 
 
+def _fresh_inject_ids(export: Any) -> Any:
+    """``export`` as another instance exports it: every inject under a new identifier, the
+    references to it rewritten, so that only the signatures can match it to the previous one."""
+    text = json.dumps(export)
+    for number, inject in enumerate(export["scenario_injects"]):
+        text = text.replace(inject["inject_id"], f"00000000-0000-4000-8000-{number + 1:012x}")
+    return json.loads(text)
+
+
 def test_a_payload_moved_to_a_later_version_keeps_every_identifier_of_its_scenario() -> None:
     export = read_export(_SALT)
     before = json.loads(_normalise(copy.deepcopy(export)))
+    export = _fresh_inject_ids(export)
     for contract in _contracts(export):
         payload = contract["injector_contract_payload"]
         if payload["payload_name"] == _MOVED:
