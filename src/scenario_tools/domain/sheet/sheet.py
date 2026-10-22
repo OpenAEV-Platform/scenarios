@@ -11,7 +11,13 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from scenario_tools.domain.policy.exceptions import PolicyException
-from scenario_tools.domain.policy.payloads import COMMAND_LIMIT, Payload, effective, payloads
+from scenario_tools.domain.policy.payloads import (
+    COMMAND_LIMIT,
+    Payload,
+    argument_values,
+    payloads,
+    substituted,
+)
 from scenario_tools.domain.shared.stored import STEP_DATA, Origin, step_pointer
 from scenario_tools.domain.shared.stored import injects as stored_injects
 from scenario_tools.domain.shared.workflow import (
@@ -289,14 +295,8 @@ def _step_order(steps: list[tuple[int, Mapping[str, Any]]]) -> list[tuple[int, M
     ]
 
 
-def _shown(payload: Payload, text: str) -> str | None:
-    """``text`` with the values the payload runs it with, or ``None`` when that is too long to
-    show."""
-    return effective(payload, text, COMMAND_LIMIT)
-
-
-def _code_of(label: str, payload: Payload, text: str) -> Iterator[str]:
-    shown = _shown(payload, text)
+def _code_of(label: str, values: Mapping[str, str], text: str) -> Iterator[str]:
+    shown = substituted(text, values, COMMAND_LIMIT)
     if shown is None:
         yield (
             f"{label}: too long to show, more than {COMMAND_LIMIT} characters once its "
@@ -310,12 +310,13 @@ def _code_of(label: str, payload: Payload, text: str) -> Iterator[str]:
 def _commands(payload: Payload) -> Iterator[str]:
     """What a step's payload runs, each command as code, with the values it runs with."""
     fields = payload.fields
+    values = argument_values(payload)  # once, however many commands and arguments it has
     for label, key, executor in (
         ("Command", "command_content", "command_executor"),
         ("Cleanup", "payload_cleanup_command", "payload_cleanup_executor"),
     ):
         if isinstance(fields.get(key), str):
-            yield from _code_of(f"{label} ({_text(fields.get(executor))})", payload, fields[key])
+            yield from _code_of(f"{label} ({_text(fields.get(executor))})", values, fields[key])
     prerequisites = fields.get("payload_prerequisites")
     for prerequisite in prerequisites if isinstance(prerequisites, list) else []:
         if not isinstance(prerequisite, Mapping):
@@ -323,16 +324,15 @@ def _commands(payload: Payload) -> Iterator[str]:
         for label, key in (("check", "check_command"), ("install", "get_command")):
             if isinstance(prerequisite.get(key), str):
                 where = f"Prerequisite {label} ({_text(prerequisite.get('executor'))})"
-                yield from _code_of(where, payload, prerequisite[key])
+                yield from _code_of(where, values, prerequisite[key])
     arguments = fields.get("payload_arguments")
     for argument in arguments if isinstance(arguments, list) else []:
         if isinstance(argument, Mapping) and isinstance(argument.get("key"), str):
-            yield from _argument(payload, argument["key"])
+            yield from _argument(values, argument["key"])
 
 
-def _argument(payload: Payload, key: str) -> Iterator[str]:
-    variable = "#{" + key + "}"
-    value = _shown(payload, variable)
+def _argument(values: Mapping[str, str], key: str) -> Iterator[str]:
+    value = substituted("#{" + key + "}", values, COMMAND_LIMIT)
     label = f"- Argument {code(key)}"
     if value is None:
         yield f"{label}: too long to show, more than {COMMAND_LIMIT} characters."

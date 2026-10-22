@@ -69,10 +69,9 @@ def _given(payload: Payload) -> dict[str, tuple[str, str]]:
     }
 
 
-def effective(payload: Payload, command: str, limit: int) -> str | None:
-    """``command`` with each ``#{argument}`` replaced by the value the payload runs it with:
-    the one the inject gives, or else the argument's default; ``None`` when that makes it
-    longer than ``limit`` characters, which no rule reads."""
+def argument_values(payload: Payload) -> dict[str, str]:
+    """The value the payload runs each argument with, by name: the one the inject gives, or
+    else the argument's default. Read once for a payload, whose commands are many."""
     values: dict[str, str] = {}
     arguments = payload.fields.get(_ARGUMENTS)
     if isinstance(arguments, list):
@@ -82,6 +81,12 @@ def effective(payload: Payload, command: str, limit: int) -> str | None:
                 if isinstance(default, str):
                     values[argument["key"]] = default
     values.update((name, value) for name, (_, value) in _given(payload).items())
+    return values
+
+
+def substituted(command: str, values: Mapping[str, str], limit: int) -> str | None:
+    """``command`` with each ``#{argument}`` among ``values`` replaced by its value; ``None``
+    when that makes it longer than ``limit`` characters."""
     pieces: list[str] = []
     length, position = 0, 0
     for found in _VARIABLE.finditer(command):

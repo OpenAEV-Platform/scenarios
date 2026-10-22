@@ -11,9 +11,10 @@ from scenario_tools.domain.policy.payloads import (
     COMMAND_LIMIT,
     EXECUTOR,
     Payload,
+    argument_values,
     commands,
-    effective,
     payloads,
+    substituted,
     text,
 )
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
@@ -33,11 +34,12 @@ def _runs(payload: Payload) -> bool:
 def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     path = f"{content.directory}/scenario.json"
     for payload in payloads(content.stored):
-        cleanup = effective(payload, text(payload, CLEANUP), COMMAND_LIMIT)
+        values = argument_values(payload)  # once, however many commands it has
+        cleanup = substituted(text(payload, CLEANUP), values, COMMAND_LIMIT)
         runs = _runs(payload)
         restored = None if cleanup is None else as_command(cleanup)
         for field, command, where in commands(payload):
-            resolved = effective(payload, command, COMMAND_LIMIT)
+            resolved = substituted(command, values, COMMAND_LIMIT)
             if resolved is None:
                 yield Violation(path, field, _TOO_LONG)
                 continue

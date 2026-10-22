@@ -8,10 +8,11 @@ from collections.abc import Iterator
 from scenario_tools.domain.policy.actions import as_command
 from scenario_tools.domain.policy.payloads import (
     COMMAND_LIMIT,
+    argument_values,
     commands,
-    effective,
     payloads,
     strings,
+    substituted,
 )
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.shared.finding import Severity
@@ -26,8 +27,9 @@ _DESCRIBED = ("payload_name", "payload_output_parsers")
 def _check(data: PolicyData, content: EntryContent) -> Iterator[Violation]:
     path = f"{content.directory}/scenario.json"
     for payload in payloads(content.stored):
+        values = argument_values(payload)
         texts = [
-            (field, effective(payload, command, COMMAND_LIMIT))
+            (field, substituted(command, values, COMMAND_LIMIT))
             for field, command, _ in commands(payload)
         ]
         for key in _DESCRIBED:
