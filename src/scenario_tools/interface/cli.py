@@ -998,25 +998,31 @@ def validate_payloads_command(ctx: click.Context, directory: Path) -> None:
 
     The policy data and the schemas are the repository's, above DIRECTORY. No symbolic link is
     followed, and git is not read. No policy rule runs on the version files yet."""
+    # Not resolved: a link inside the repository is refused when the catalogue is read.
     directory = Path(os.path.normpath(directory.absolute()))
     levels: list[Path] = []
     try:
-        levels = _policy_levels(directory.parent)
+        levels = _levels_as_given(directory.parent)
         root = _repository_root(levels, directory.parent)
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
         _emit(ctx, "validate-payloads", _refused(error), levels[-1] if levels else None)
 
     def produce() -> Report:
-        agreed = agreed_ids(YamlDataLoader(root / "policy" / "data"))
-        schemas = root / "schemas"
+        source = RepositoryEntries(root)  # the rules, read like an entry's, never through a link
+        try:
+            agreed = agreed_ids(YamlDataLoader(source.directory("policy/data")))
+            schemas = source.directory("schemas")
+        except UnsafeInputError as error:
+            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
         if not (schemas / "payload.schema.json").is_file():
             raise EnvironmentProblemError("schemas cannot be used: payload.schema.json is missing")
         try:
             schema = JsonSchemaValidator(schemas)
         except (OSError, ValueError, UnsafeInputError) as error:
             raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
-        where = repository_path(str(directory), root)
-        return validate_payloads(CatalogueDirectory(directory), schema, agreed, where)
+        parts = directory.relative_to(root).parts
+        catalogue = CatalogueDirectory(root, parts)
+        return validate_payloads(catalogue, schema, agreed, "/".join(parts))
 
     _emit(ctx, "validate-payloads", produce, root)
 

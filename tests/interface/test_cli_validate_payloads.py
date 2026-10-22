@@ -255,3 +255,28 @@ def test_an_empty_object_in_the_output_parsers_fails_the_schema(
     code, found = _run(catalogue)
     assert code == 1
     assert {(c, message) for c, _, _, message in found} == {("PAY-009", OUT_OF_SCHEMA)}
+
+
+@pytest.mark.parametrize("part", ["schemas", "policy", "policy/data"])
+def test_rules_reached_through_a_link_are_the_environment_never_followed(
+    tmp_path: Path, part: str
+) -> None:
+    catalogue = repository(tmp_path)
+    root = catalogue.parent
+    moved = tmp_path / "outside"
+    (root / part).rename(moved)
+    (root / part).symlink_to(moved)
+    result = CliRunner().invoke(main, ["validate-payloads", str(catalogue)])
+    assert result.exit_code == 3
+
+
+def test_a_catalogue_reached_through_a_link_in_the_repository_is_refused(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    root = catalogue.parent
+    (root / "copies").mkdir()
+    (root / "copies" / "real").mkdir()
+    catalogue.rename(root / "copies" / "real" / "payloads")
+    (root / "linked").symlink_to(root / "copies" / "real")
+    code, found = _run(root / "linked" / "payloads")
+    assert code == 1
+    assert [c for c, *_ in found] == ["IO-013"]

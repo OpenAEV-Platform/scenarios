@@ -5,6 +5,7 @@ Each directory is opened once, never through a link, and what it holds is listed
 relative to that open directory: a folder replaced by a link after it was listed is refused, never
 followed, whether it is being listed or read."""
 
+import contextlib
 import errno
 import os
 import stat
@@ -79,14 +80,28 @@ def _read(parent: int, name: str, shown: str) -> bytes:
 
 
 class CatalogueDirectory:
-    """The catalogue held by the directory ``root``, itself never a link."""
+    """The catalogue at ``parts`` below the repository ``repository``: the path to the
+    repository may go through a link, but no directory from the repository down is one."""
 
-    def __init__(self, root: Path) -> None:
-        self._root = root
+    def __init__(self, repository: Path, parts: tuple[str, ...]) -> None:
+        self._repository = repository
+        self._parts = parts
+        self._root = repository.joinpath(*parts)
+
+    @contextmanager
+    def _catalogue(self) -> Iterator[int]:
+        """The catalogue's directory, opened one directory at a time from the repository, none
+        of them through a link."""
+        with contextlib.ExitStack() as opened:
+            current = opened.enter_context(_directory(str(self._repository), str(self._repository)))
+            for depth, part in enumerate(self._parts, 1):
+                shown = str(self._repository.joinpath(*self._parts[:depth]))
+                current = opened.enter_context(_directory(part, shown, current))
+            yield current
 
     def entries(self) -> tuple[TreeEntry, ...]:
         found: list[TreeEntry] = []
-        with _directory(str(self._root), str(self._root)) as root:
+        with self._catalogue() as root:
             for name, status in _listed(root, str(self._root)):
                 kind = _kind(status.st_mode)
                 found.append(TreeEntry((name,), kind, 0))
@@ -104,7 +119,7 @@ class CatalogueDirectory:
         folder_name, file_name = path
         shown = str(self._root.joinpath(*path))
         with (
-            _directory(str(self._root), str(self._root)) as root,
+            self._catalogue() as root,
             _directory(folder_name, str(self._root / folder_name), root) as folder,
         ):
             data = _read(folder, file_name, shown)
