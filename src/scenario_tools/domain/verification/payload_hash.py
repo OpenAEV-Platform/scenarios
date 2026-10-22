@@ -2,9 +2,10 @@
 imported payload; the shared test vectors of ``conformance/payload-hash.json`` pin it down.
 
 The form is a JSON object of the payload's fields under the names the platform exports, each read
-as its type requires. Identifiers, sources, statuses, authors, tags and dates are left out, each
-by its name, so that a field the form does not know is refused rather than dropped; so is every
-null or empty value at any depth, while ``false`` and ``0`` are kept. Sets are sorted, texts by
+as its type requires. Identifiers, sources, statuses, authors, tags, dates and the domains an
+export projects onto the payload are left out, each by its name, so that a field the form does not
+know is refused rather than dropped; so is every null or empty value at any depth, while ``false``
+and ``0`` are kept. Sets are sorted, texts by
 their UTF-16 code units and objects by their JCS text in the same order, and may not hold an item
 twice; ordered lists keep their order. An attached file enters by the SHA-256 of its bytes, and
 the techniques the payload's contract holds by their external IDs. The hash is the SHA-256 of the
@@ -309,6 +310,7 @@ _PAYLOAD_INSTANCE = _INSTANCE | {
     "payload_tags",
     "payload_created_at",
     "payload_updated_at",
+    "payload_domains",  # the platform holds them on the contract and projects them in an export
 }
 _COMMON: Mapping[str, _Spec] = {
     "payload_type": _TEXT,

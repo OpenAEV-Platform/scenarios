@@ -1,0 +1,39 @@
+{
+  "command_content": "password=$(openssl passwd -1 art)\n([ \"$(uname)\" = 'Linux' ] && useradd --shell /bin/bash --create-home --password $password art) || (pw useradd art -g wheel -s /bin/sh && (echo $password | pw mod user testuser1 -h 0))\nsu art -c \"whoami; exit\"\n",
+  "command_executor": "bash",
+  "payload_attack_patterns": [
+    "T1078.003"
+  ],
+  "payload_cleanup_command": "[ \"$(uname)\" = 'Linux' ] && userdel art -rf || rmuser -y art\n",
+  "payload_cleanup_executor": "bash",
+  "payload_description": "An adversary may wish to create an account with admin privileges to work with. In this test we create a \"art\" user with the password art, switch to art, execute whoami, exit and delete the art user.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "84ad1dfe-0b96-452c-a122-4767aab6584e",
+  "payload_name": "Create local account",
+  "payload_platforms": [
+    "Linux"
+  ],
+  "payload_type": "Command"
+}

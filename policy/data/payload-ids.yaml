@@ -5,4 +5,58 @@
 # An entry here agrees another ID for one content, given by its hash: a payload the platform ships
 # as it is keeps the ID the platform knows it by. Any other content takes its derived ID. Each
 # entry is reviewed by the maintainers: it binds an ID to a content for every scenario.
-payloads: []
+payloads:
+- id: 78e95057-d429-4e66-8f82-0f060c1ac96f
+  name: ADFS token signing and encryption certificates theft - Local
+  sha256: bedefab4dca16c399d5485263c1e5c3133f9832ffa31595b5b609df04ad23164
+- id: cab413d8-9e4a-4b8d-9b84-c985bd73a442
+  name: ADFS token signing and encryption certificates theft - Remote
+  sha256: f681c5cb7e0b6cf4f2a85571eada72ca9a15a6a3d4a01fb291d2a47fff80ea24
+- id: 695eed40-e949-40e5-b306-b4031e4154bd
+  name: AMSI Bypass - AMSI InitFailed
+  sha256: ae5765d30e7f97a739b60040c29a767bdfef5eac8a4e2b0b6f8b7d65f5229907
+- id: 728eca7b-0444-4f6f-ac36-437e3d751dc0
+  name: AMSI Bypass - Create AMSIEnable Reg Key
+  sha256: e4a1589816bd5e9d12bb7ce1e2073de43a67dc36dcb274fab00c6022dcd7bb58
+- id: ac0de8fe-a821-499c-ba22-591bbe84b06f
+  name: AMSI Bypass - Override AMSI via COM
+  sha256: 5420bbfd594b128c6fb4c8cba9d8c594b6eef932e4ea0bd91ba4eb18b40072c2
+- id: 13f09b91-c953-438e-845b-b585e51cac9b
+  name: AMSI Bypass - Remove AMSI Provider Reg Key
+  sha256: 5153e782162b1f3350092c1356bbc5fe4db650ccb1765a0d24842c9411275f32
+- id: c900ee64-bec7-4ebf-abf8-64da7e2e70df
+  name: Abuse Nslookup with DNS Records
+  sha256: 1ddf0e6f1da2a7539bfaa2a6767749f67f6fe99833db34050447a90c185fa5c3
+- id: 8b8ecda8-7cfd-4b3e-9f22-f052c8119106
+  name: Activate Guest Account
+  sha256: be9bca185cddc269325be48b1b0842777344664aa5d2abb11396378760fcb0e4
+- id: 0ca8c46c-3f2c-4c5f-9f32-cf6b68eeb3d7
+  name: Activate Windows NoControlPanel Group Policy Feature
+  sha256: 95f5080720d77b1ddaa071d5040f355fa4318fb75b8399addd6f3cc6b0661795
+- id: 84ad1dfe-0b96-452c-a122-4767aab6584e
+  name: Create local account
+  sha256: 21e94efc994c3bd4ec71982dd850751e3acee44cd2d171be6f78380773b60cbf
+- id: eade458c-938e-4b32-b6db-7ce9cec57e4a
+  name: Download Macro-Enabled Phishing Attachment
+  sha256: 026804bf335a9aa91592deb3f6e2d82da5444d79f0ce49a5bc80109f4c7840a7
+- id: 3bf77fd9-fdda-41d2-82b0-0da5744a5f69
+  name: Enable Guest Account
+  sha256: b6d6b56823a1a5c01a9f35b08af48695a6ba38f7fd68b301b3f1cef58bce9cec
+- id: f2c12fda-3ea2-4b5e-a0a3-cc5900784d3b
+  name: Enable Guest account with RDP capability and admin privileges
+  sha256: 2b18d8c35ee171231ef0b45c2c7e531bdd30a77b40b5c79970ed4010a6587125
+- id: 58d33f75-cf14-4008-ae8d-d2cdcf1b5b0a
+  name: Exfiltration Over Alternative Protocol - FTP - Rclone
+  sha256: 0e2e72bf3ff60ff57293dc3346575f418672e5bd17de05161b0ad594eddb1291
+- id: 33073100-f642-4351-b330-625e548a344d
+  name: Exfiltration Over Alternative Protocol - HTTP
+  sha256: 42542c3bd63f891ede3e864706e08d4add71d6875b52a994654b693f47831075
+- id: 16e5f26d-e92f-4a2f-8894-abbf29087153
+  name: Exfiltration Over Alternative Protocol - ICMP
+  sha256: d5c86cc4a918cad80d47efd4dcbc4d47e7454f7c43f4c82ea9a9637770fbd132
+- id: 56a1b6bb-f403-41be-993c-bdda2467978b
+  name: In-Memory Mimikatz- DumpCreds
+  sha256: 1673da32e202eb2a667a049cde1c7edd0660f07b6eab0872b6a4214e7866d06a
+- id: 4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7
+  name: Process Discovery - ps
+  sha256: 258d29808ec995a71b4497957550f951e54372a9c9cb63675e7053824925deff
