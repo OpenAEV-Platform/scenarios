@@ -1015,3 +1015,23 @@ def test_a_version_above_every_one_released_is_no_finding() -> None:
     released = {("id", "1.0.0"): "a" * 64, ("id", "1.2.0"): "c" * 64}
 
     assert released_version_findings("scenarios/x/y", "id", "1.10.0", "b" * 64, released) == ()
+
+
+def test_a_null_metadata_field_added_or_removed_is_a_change() -> None:
+    with_null = {**METADATA, "description": None}
+
+    assert diff(metadata=with_null) == [(Bump.PATCH, "its description changed")]
+
+
+def test_a_null_key_added_to_an_item_or_to_an_inject_s_content_is_a_change() -> None:
+    team = {**STORED["scenario_teams"][0], "team_contextual": None}
+    content = {**CONTENT, "targets": None}
+    with_content = changed("scenario_injects", value=[inject("a", inject_content=CONTENT)])
+    with_null = changed("scenario_injects", value=[inject("a", inject_content=content)])
+
+    assert diff(stored=changed("scenario_teams", value=[team])) == [
+        (Bump.MINOR, "an item of scenario_teams changed")
+    ]
+    assert [(c.bump, c.reason) for c in changes(METADATA, with_content, METADATA, with_null)] == [
+        (Bump.MAJOR, "an inject's targets changed")
+    ]

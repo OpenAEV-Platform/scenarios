@@ -416,3 +416,51 @@ def test_ver_003_says_why_the_identifier_must_stay() -> None:
         "a new ID: its ID must stay; prepare the entry with `normalize --previous` or `intake`, "
         "or give a new step another title"
     )
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (
+            ("scenario_workflow", "workflow_max_attempts"),
+            (Bump.MINOR, "a workflow setting changed"),
+        ),
+        (
+            ("scenario_workflow", "workflow_steps", 0, "step_output"),
+            (Bump.MINOR, "a step's step_output changed"),
+        ),
+        (
+            ("scenario_workflow", "workflow_steps", 0, "step_condition_executed"),
+            (Bump.MAJOR, "a step's conditions changed"),
+        ),
+        (
+            ("scenario_workflow", "workflow_steps", 0, "step_data", "inject_city"),
+            (Bump.PATCH, "an inject's text changed"),
+        ),
+        (
+            (
+                "scenario_workflow",
+                "workflow_steps",
+                0,
+                "step_data",
+                "inject_injector_contract",
+                "injector_contract_external_id",
+            ),
+            (Bump.MAJOR, "an inject's contract changed"),
+        ),
+        (
+            ("scenario_information", "scenario_message_footer"),
+            (Bump.PATCH, "its scenario_message_footer changed"),
+        ),
+    ],
+    ids=["workflow", "step", "step conditions", "step's inject", "step's contract", "information"],
+)
+def test_a_null_key_removed_or_added_is_a_change(path: tuple[Any, ...], expected: Any) -> None:
+    without = copy.deepcopy(STORED)
+    holder: Any = without
+    for part in path[:-1]:
+        holder = holder[part]
+    assert holder[path[-1]] is None
+    del holder[path[-1]]
+    assert _reasons(without) == [expected]
+    assert _reasons(STORED, without) == [expected]
