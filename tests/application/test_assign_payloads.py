@@ -144,3 +144,18 @@ def test_a_catalogue_file_that_cannot_be_read_is_the_repository_s_fault(
 
     with pytest.raises(EnvironmentProblemError, match="run `scenario-tools validate-payloads`"):
         catalogue_of(CatalogueDirectory(tmp_path, ("payloads",)))
+
+
+@pytest.mark.parametrize("stray", ["README.md", "a/notes.txt", "a/1.0.0.json"])
+def test_a_catalogue_its_layout_refuses_is_the_repository_s_fault(
+    tmp_path: Path, stray: str
+) -> None:
+    (tmp_path / "payloads" / "a").mkdir(parents=True)
+    if stray == "a/1.0.0.json":  # over the size bound: left out of the layout
+        (tmp_path / "payloads" / stray).write_bytes(b" " * 262_145 + b"{}")
+    else:
+        (tmp_path / "payloads" / "a" / "1.0.0.json").write_text("{}")
+        (tmp_path / "payloads" / stray).write_text("Not a version.\n")
+
+    with pytest.raises(EnvironmentProblemError, match="run `scenario-tools validate-payloads`"):
+        catalogue_of(CatalogueDirectory(tmp_path, ("payloads",)))

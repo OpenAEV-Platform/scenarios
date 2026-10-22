@@ -16,6 +16,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     OVER_SIZE,
     SUFFIXED,
     TAKEN_IN_EXPORT,
+    TOO_MANY_NEW,
     proposed_slug,
     verdicts,
     version_document,
@@ -244,3 +245,34 @@ def test_a_new_payload_whose_file_would_be_over_its_size_bound_is_refused() -> N
 
     assert {(f.code, f.message) for f in found} == {("PAY-009", OVER_SIZE)}
     assert given == {}
+
+
+def _injects_running(count: int) -> dict[str, Any]:
+    return {
+        "scenario_injects": [
+            {
+                "inject_injector_contract": {
+                    "injector_contract_payload": {
+                        "payload_type": "Command",
+                        "payload_name": f"Payload {index}",
+                        "payload_description": "Prints a number.",
+                        "payload_platforms": ["Linux"],
+                        "command_executor": "sh",
+                        "command_content": f"echo {index}",
+                    }
+                }
+            }
+            for index in range(count)
+        ]
+    }
+
+
+def test_an_export_of_more_new_payloads_than_one_intake_writes_is_refused() -> None:
+    found, given = verdicts(_injects_running(101), _catalogue(), NONE, accepted=ANY)
+    _, written = verdicts(_injects_running(100), _catalogue(), NONE, accepted=ANY)
+
+    assert [(f.code, f.path, f.field, f.message) for f in found] == [
+        ("PAY-009", "scenario.json", "", TOO_MANY_NEW)
+    ]
+    assert given == {}
+    assert len(written) == 100

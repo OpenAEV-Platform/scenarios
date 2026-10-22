@@ -49,8 +49,11 @@ def catalogue_of(files: CatalogueFiles | None) -> Catalogue:
     entry's: `validate-payloads` says why."""
     if files is None:
         return Catalogue.of([])
+    unusable = "the payload catalogue cannot be used: run `scenario-tools validate-payloads`"
     try:
-        _, places = layout("payloads", files.entries())
+        found, places = layout("payloads", files.entries())
+        if found:  # a version left out of the index would read as absent, or as new
+            raise EnvironmentProblemError(f"{unusable} ({found[0].field or found[0].path})")
         versions = []
         for place in places:
             _, document = files.read((place.slug, f"{place.version}.json"))
@@ -58,10 +61,7 @@ def catalogue_of(files: CatalogueFiles | None) -> Catalogue:
                 versions.append(PayloadVersion(place.slug, place.version, place.path, document))
         return Catalogue.of(versions)
     except (CatalogueCollisionError, UnsafeInputError, KeyError, TypeError) as error:
-        raise EnvironmentProblemError(
-            "the payload catalogue cannot be used: run `scenario-tools validate-payloads` "
-            f"({error})"
-        ) from error
+        raise EnvironmentProblemError(f"{unusable} ({error})") from error
 
 
 def no_attached_files(document: str) -> str | None:

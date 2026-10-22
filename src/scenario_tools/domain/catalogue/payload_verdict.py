@@ -73,6 +73,11 @@ OVER_SIZE = (
     f"this payload's version file would be over {VERSION_FILE_LIMIT} bytes: shorten the payload "
     "in OpenAEV and export again"
 )
+NEW_PAYLOADS_LIMIT = 100  # the new payloads one intake writes, each in a folder held open
+TOO_MANY_NEW = (
+    f"this export holds more than {NEW_PAYLOADS_LIMIT} new payloads, which one intake writes at "
+    "most: add some of its payloads to the catalogue with an earlier intake"
+)
 NOT_KEPT = "this payload cannot be written as a version file of the same content"
 
 
@@ -220,4 +225,6 @@ def verdicts(
         slugs.add(slug)
         message = f"new payload: {slug} {FIRST_VERSION}"
         findings.append(Finding("PAY-010", Severity.INFO, scenario, embedded.pointer, message))
+    if len(new) > NEW_PAYLOADS_LIMIT:
+        return (Finding("PAY-009", Severity.BLOCKING, scenario, "", TOO_MANY_NEW),), {}
     return tuple(findings), new

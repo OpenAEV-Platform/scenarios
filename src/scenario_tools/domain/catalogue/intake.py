@@ -196,8 +196,8 @@ def _checklist(findings: Iterable[Finding]) -> list[Finding]:
     ]
 
 
-# Characters the items of a body may take: GitHub takes 65,536 for a body, and the rest of it,
-# the issue, the entry and its files, takes far less than what is left.
+# Characters the items of a body, what is left to do then its files, may take: GitHub takes
+# 65,536 for a body, and the rest of it, the issue and the entry, takes far less than what is left.
 BODY_ITEMS_LIMIT = 60_000
 
 
@@ -232,12 +232,17 @@ def intake_plan(
     if len(findings) > len(left):
         more = len(findings) - len(left)
         lines.append(f"- and {more} more: run validate on the entry to see them all")
+    shown: list[str] = []
+    for path in sorted(files):  # what the checklist leaves of the budget
+        item = f"- {_span(path)} {_span(files[path])}"
+        budget -= len(item) + 1
+        if budget < 0:
+            break
+        shown.append(item)
     if files:
-        lines += [
-            "",
-            "Files:",
-            *(f"- {_span(path)} {_span(files[path])}" for path in sorted(files)),
-        ]
+        lines += ["", "Files:", *shown]
+    if len(files) > len(shown):
+        lines.append(f"- and {len(files) - len(shown)} more: the plan's files list them all")
     return {  # in the order of its keys, as it is written
         "base": base,
         "blocking": sum(1 for finding in findings if finding.severity is Severity.BLOCKING),
