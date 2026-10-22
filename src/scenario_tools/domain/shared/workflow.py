@@ -677,6 +677,7 @@ def step_condition_trees(step: Mapping[str, Any]) -> tuple[ConditionNode, ...]:
         return (
             condition.get("condition_type") == DEPEND_ON
             and isinstance(condition.get("condition_value"), str)
+            and condition.get("condition_parent_id") is None  # not on itself, nor orphaned
             and not below.get(index)
         )
 

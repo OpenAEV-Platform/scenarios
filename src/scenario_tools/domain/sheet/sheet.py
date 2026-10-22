@@ -375,7 +375,10 @@ def _operand(value: object) -> str:
     text = str(value)
     if not text:
         return "an empty text"
-    return _TOO_LONG if len(text) > COMMAND_LIMIT else code(text)
+    if len(text) > COMMAND_LIMIT:
+        return _TOO_LONG
+    # A span is one line: a line break is named, so that "a<LF>b" never reads as "a b".
+    return code(text.replace("\r", "U+000D").replace("\n", "U+000A"))
 
 
 def _listed(value: object) -> str:

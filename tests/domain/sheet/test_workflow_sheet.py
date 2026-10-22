@@ -629,3 +629,16 @@ def test_a_loop_of_parents_longer_than_the_depth_read_is_cut_and_said() -> None:
 def test_a_condition_no_json_reader_gives_is_still_said() -> None:
     stored = _filtered_step(_filter("c1", "EQ", condition_key="k", condition_value=float("nan")))
     assert "- `k` is `nan`." in _sheet(stored)
+
+
+@pytest.mark.parametrize("parent", ["c1", "elsewhere"])
+def test_a_dependency_with_a_parent_is_said_not_taken_for_a_plain_one(parent: str) -> None:
+    stored = _filtered_step(_filter("c1", "DEPEND_ON", parent, condition_value="s1"))
+    step = _sheet(stored).split("### 2")[1]
+    assert "- Runs only if:\n  - A condition of type `DEPEND_ON`" in step
+
+
+@pytest.mark.parametrize(("text", "shown"), [("a\nb", "`aU+000Ab`"), ("a\rb", "`aU+000Db`")])
+def test_a_line_break_in_a_key_or_a_value_is_shown_not_flattened(text: str, shown: str) -> None:
+    sheet = _sheet(_filtered_step(_filter("c1", "EQ", condition_key=text, condition_value=text)))
+    assert f"- Runs only if:\n  - {shown} is {shown}." in sheet
