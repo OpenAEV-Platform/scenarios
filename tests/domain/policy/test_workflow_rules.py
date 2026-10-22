@@ -8,13 +8,18 @@ import pytest
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.workflow import (
     CONDITION_DEPEND_NESTED,
+    CONDITION_GROUP_EMPTY,
     CONDITION_ID_TWICE,
+    CONDITION_LEAF_CHILD,
+    CONDITION_LIST_EMPTY,
     CONDITION_MAPPER,
     CONDITION_NOT_YET,
     CONDITION_PARENT_ELSEWHERE,
     CONDITION_ROOT,
     CONDITION_SHARED,
     CONDITION_STEP_FROM,
+    CONDITION_VALUE_IDENTIFIER,
+    CONDITION_VALUE_SHAPE,
     CYCLE,
     DEPEND_ON_DANGLING,
     DEPEND_ON_NULL,
@@ -353,3 +358,135 @@ def test_a_mapper_is_refused_for_good_with_the_list_of_the_cut() -> None:
     assert _subset(_step("s1"), _step("s2", _condition("c1", kind="MAPPER"))) == [
         Refusal(CONDITION_MAPPER, _at(1, 0))
     ]
+
+
+# The full format: filters and AND / OR
+
+
+FULL = frozenset(
+    {"DEPEND_ON", "AND", "OR", "EQ", "NEQ", "GT", "GTE", "LT", "LTE", "IN", "NIN"}
+    | {"IS_NULL", "IS_NOT_NULL"}
+)
+
+
+def _full(*steps: dict[str, Any]) -> list[Refusal]:
+    return _subset(*steps, supported=FULL)
+
+
+def _tree() -> list[dict[str, Any]]:
+    """The tree of the second probe: an AND holding an EQ and an OR of an IN and an IS_NOT_NULL,
+    each condition repeated once for each path to it, as the export lists them."""
+    root = _condition("c1", kind="AND", value=None)
+    equal = _condition("c2", "c1", kind="EQ", value="sshd", condition_key="process")
+    either = _condition("c3", "c1", kind="OR", value=None)
+    listed = _condition("c4", "c3", kind="IN", value="root,admin", condition_key="user")
+    known = _condition("c5", "c3", kind="IS_NOT_NULL", value=None, condition_key="pid")
+    return [root, equal, either, listed, known, equal, either, listed, known, listed, known]
+
+
+def test_a_tree_of_filters_under_and_and_or_is_in_the_full_format() -> None:
+    assert _full(_step("s1"), _step("s2", *_tree())) == []
+    assert _refusals(_step("s1"), _step("s2", *_tree())) == []
+
+
+def test_a_filter_holding_a_condition_is_refused() -> None:
+    equal = _condition("c1", kind="EQ", value="x")
+    child = _condition("c2", "c1", kind="EQ", value="y")
+    assert _full(_step("s1"), _step("s2", equal, child)) == [
+        Refusal(CONDITION_LEAF_CHILD, _at(1, 0))
+    ]
+
+
+@pytest.mark.parametrize("kind", ["AND", "OR"])
+def test_a_group_holding_no_condition_is_refused(kind: str) -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", kind=kind, value=None))) == [
+        Refusal(CONDITION_GROUP_EMPTY, _at(1, 0))
+    ]
+
+
+@pytest.mark.parametrize("kind", ["IN", "NIN"])
+@pytest.mark.parametrize("value", ["", "  ", ",", " , ,", None])
+def test_an_empty_list_is_refused(kind: str, value: object) -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", kind=kind, value=value))) == [
+        Refusal(CONDITION_LIST_EMPTY, _at(1, 0, "condition_value"))
+    ]
+
+
+@pytest.mark.parametrize("value", ["a", " a ,", ",b"])
+def test_a_list_with_a_value_passes(value: str) -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", kind="IN", value=value))) == []
+
+
+@pytest.mark.parametrize("value", ["", None])
+def test_a_filter_other_than_a_list_may_compare_with_nothing(value: object) -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", kind="EQ", value=value))) == []
+
+
+@pytest.mark.parametrize("value", ["s1", "is S1 done", "c9", "after-c9"])
+def test_a_filter_value_holding_a_step_or_condition_identifier_is_refused(value: str) -> None:
+    other = _step("s3", _condition("c9", kind="EQ", value="x"))
+    found = _full(_step("s1"), _step("s2", _condition("c1", kind="EQ", value=value)), other)
+    assert found == [Refusal(CONDITION_VALUE_IDENTIFIER, _at(1, 0, "condition_value"))]
+
+
+def test_a_dependency_value_is_the_step_it_names_not_a_filter_value() -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", value="s1"))) == []
+
+
+def test_a_dependency_under_a_group_is_still_refused_in_the_full_format() -> None:
+    group = _condition("c1", kind="AND", value=None)
+    assert _full(_step("s1"), _step("s2", group, _condition("c2", "c1"))) == [
+        Refusal(CONDITION_DEPEND_NESTED, _at(1, 1))
+    ]
+
+
+def test_a_mapper_is_still_refused_in_the_full_format() -> None:
+    group = _condition("c1", kind="OR", value=None)
+    mapper = _condition("c2", "c1", kind="MAPPER", value="x")
+    assert _full(_step("s1"), _step("s2", group, mapper)) == [Refusal(CONDITION_MAPPER, _at(1, 1))]
+
+
+@pytest.mark.parametrize("parent", [["c1"], {"id": "c1"}, 5])
+def test_a_filter_whose_parent_is_not_text_leaves_its_group_empty(parent: object) -> None:
+    group = _condition("c1", kind="AND", value=None)
+    child = _condition("c2", parent, kind="EQ", value="x")
+    assert _full(_step("s1"), _step("s2", group, child)) == [
+        Refusal(CONDITION_GROUP_EMPTY, _at(1, 0))
+    ]
+
+
+@pytest.mark.parametrize("kind", ["EQ", "IN"])
+@pytest.mark.parametrize("value", [["x"], {"v": "x"}, 5, True])
+def test_a_filter_value_that_is_not_text_is_refused(kind: str, value: object) -> None:
+    assert _full(_step("s1"), _step("s2", _condition("c1", kind=kind, value=value))) == [
+        Refusal(CONDITION_VALUE_SHAPE, _at(1, 0, "condition_value"))
+    ]
+
+
+@pytest.mark.parametrize("value", ["s1", "x", ""])
+def test_a_group_with_a_value_is_refused(value: str) -> None:
+    group = _condition("c1", kind="OR", value=value)
+    child = _condition("c2", "c1", kind="EQ", value="y")
+    assert _full(_step("s1"), _step("s2", group, child)) == [
+        Refusal(CONDITION_VALUE_SHAPE, _at(1, 0, "condition_value"))
+    ]
+
+
+def test_an_identifier_is_found_in_a_value_whatever_its_case() -> None:
+    found = _full(_step("S1"), _step("s2", _condition("c1", kind="EQ", value="after s1")))
+    assert found == [Refusal(CONDITION_VALUE_IDENTIFIER, _at(1, 0, "condition_value"))]
+
+
+def test_a_group_without_an_identifier_beside_a_root_holds_nothing() -> None:
+    root = _condition("c1", kind="AND", value=None)
+    unnamed = _condition(None, "c1", kind="OR", value=None)
+    leaf = _condition("c3", "c1", kind="EQ", value="x")
+    assert _full(_step("s1"), _step("s2", root, unnamed, leaf)) == [
+        Refusal(CONDITION_GROUP_EMPTY, _at(1, 1))
+    ]
+
+
+@pytest.mark.parametrize("unnamed", ["", None, 5])
+def test_an_identifier_that_is_empty_or_not_text_is_never_looked_for(unnamed: object) -> None:
+    found = _full(_step(unnamed), _step("s2", _condition("c1", kind="EQ", value="any text")))
+    assert found == []

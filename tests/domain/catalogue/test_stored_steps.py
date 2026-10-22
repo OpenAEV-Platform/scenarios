@@ -37,8 +37,7 @@ FIRST, SECOND = "00000000-0000-4000-8000-000000000016", "00000000-0000-4000-8000
 AT = "/scenario_workflow/workflow_steps"
 
 
-# Rules that accept filters and their groups, which the subset refuses for now: the identifiers
-# of a tree of conditions are derived already.
+# Rules that accept dependencies, one filter and one group only, the types these tests use.
 TREES = dataclasses.replace(
     RULES,
     export_keys=dataclasses.replace(
@@ -251,10 +250,10 @@ def test_two_payloads_of_one_name_are_refused_across_steps() -> None:
     assert what == "two payloads are named 'Process Discovery - ps'"
 
 
-def test_a_condition_that_names_a_step_in_its_value_is_known_by_the_stored_step() -> None:
+def test_a_filter_that_quotes_a_step_in_its_name_keeps_the_identifiers_stable() -> None:
     export = copy.deepcopy(EXPORT)
     condition = _steps(export)[1]["step_conditions"][0]
-    condition.update(condition_type="EQ", condition_name=f"Like {FIRST}")
+    condition.update(condition_type="EQ", condition_value="x", condition_name=f"Like {FIRST}")
     assert _stored(_renumbered(export, "11111111"), TREES) == _stored(export, TREES)
 
 
@@ -345,7 +344,7 @@ def test_a_dependency_under_a_group_is_refused_even_once_filters_are_accepted() 
 
 
 @pytest.mark.parametrize(
-    ("kind", "what"), [("MAPPER", CONDITION_MAPPER), ("EQ", CONDITION_NOT_YET)]
+    ("kind", "what"), [("MAPPER", CONDITION_MAPPER), ("UNKNOWN", CONDITION_NOT_YET)]
 )
 def test_a_condition_out_of_the_subset_is_refused_by_normalisation(kind: str, what: str) -> None:
     export = copy.deepcopy(EXPORT)
@@ -370,3 +369,107 @@ def test_a_dependency_whose_parent_is_not_an_identifier_is_refused() -> None:
     export = copy.deepcopy(EXPORT)
     _steps(export)[1]["step_conditions"][0].update(condition_parent_id=5, condition_is_root=False)
     assert _refusal(export) == (ID_NOT_KNOWN, f"{AT}/1/step_conditions/0/condition_parent_id")
+
+
+def _condition(number: int, kind: str, parent: int | None = None, **fields: Any) -> dict[str, Any]:
+    return {
+        "condition_description": None,
+        "condition_id": f"00000000-0000-4000-8000-0000000001{number:02d}",
+        "condition_is_root": parent is None,
+        "condition_key": None,
+        "condition_key_types": ["text"],
+        "condition_mapping_type": None,
+        "condition_name": None,
+        "condition_parent_id": None
+        if parent is None
+        else f"00000000-0000-4000-8000-0000000001{parent:02d}",
+        "condition_step_from_id": None,
+        "condition_type": kind,
+        "condition_value": None,
+        **fields,
+    }
+
+
+def _filtered(*conditions: dict[str, Any]) -> dict[str, Any]:
+    export = copy.deepcopy(EXPORT)
+    _steps(export)[1]["step_conditions"] = list(conditions)
+    return export
+
+
+def _identifiers(document: dict[str, Any]) -> set[str]:
+    return {c["condition_id"] for step in _steps(document) for c in step["step_conditions"]}
+
+
+def test_two_groups_alike_but_for_what_they_hold_are_two_conditions() -> None:
+    export = _filtered(
+        _condition(1, "AND"),
+        _condition(2, "OR", 1),
+        _condition(3, "OR", 1),
+        _condition(4, "EQ", 2, condition_key="a", condition_value="1"),
+        _condition(5, "EQ", 2, condition_key="b", condition_value="2"),
+        _condition(6, "EQ", 3, condition_key="c", condition_value="3"),
+        _condition(7, "EQ", 3, condition_key="d", condition_value="4"),
+    )
+    assert len(_identifiers(_stored(export))) == 7
+
+
+def test_two_groups_that_hold_the_same_are_the_same_condition() -> None:
+    export = _filtered(
+        _condition(1, "AND"),
+        _condition(2, "OR", 1),
+        _condition(3, "OR", 1),
+        _condition(4, "EQ", 2, condition_key="a", condition_value="1"),
+        _condition(5, "EQ", 3, condition_key="a", condition_value="1"),
+    )
+    assert _refusal(export)[0] == CONDITION_SIBLINGS_SAME
+
+
+def test_two_filters_that_compare_with_two_uuids_are_two_conditions() -> None:
+    export = _filtered(
+        _condition(1, "OR"),
+        _condition(
+            2, "EQ", 1, condition_key="k", condition_value="11111111-1111-4111-8111-111111111111"
+        ),
+        _condition(
+            3, "EQ", 1, condition_key="k", condition_value="22222222-2222-4222-8222-222222222222"
+        ),
+    )
+    assert len(_identifiers(_stored(export))) == 3
+
+
+def test_the_identifier_of_a_group_does_not_depend_on_the_order_of_what_it_holds() -> None:
+    conditions = [
+        _condition(1, "OR"),
+        _condition(2, "EQ", 1, condition_key="a", condition_value="1"),
+        _condition(3, "EQ", 1, condition_key="b", condition_value="2"),
+    ]
+    first = _identifiers(_stored(_filtered(*conditions)))
+    assert _identifiers(_stored(_filtered(*reversed(conditions)))) == first
+
+
+SCENARIO_ID = "00000000-0000-4000-8000-000000000001"  # the export's own scenario
+
+
+def test_a_filter_value_that_quotes_an_identifier_of_the_instance_is_stored_as_given() -> None:
+    export = _filtered(
+        _condition(1, "EQ", condition_key="k", condition_value=f"see {SCENARIO_ID}"),
+    )
+    stored = _stored(export)
+    (filtered,) = [s for s in _steps(stored) if s["step_conditions"]]
+    assert filtered["step_conditions"][0]["condition_value"] == f"see {SCENARIO_ID}"
+    assert normalise(copy.deepcopy(stored), ENTRY_ID, RULES, previous=stored).document == stored
+
+
+def test_a_dependency_is_still_rewritten_to_its_stable_step() -> None:
+    stored = _stored(EXPORT)
+    (waiting,) = [s for s in _steps(stored) if s["step_conditions"]]
+    assert waiting["step_conditions"][0]["condition_value"] in {
+        s["step_id"] for s in _steps(stored)
+    }
+
+
+def test_a_tree_at_its_deepest_takes_identifiers_of_a_bounded_size() -> None:
+    chain = [_condition(1, "OR")] + [_condition(n, "OR", n - 1) for n in range(2, 17)]
+    chain.append(_condition(17, "EQ", 16, condition_key="k", condition_value="v"))
+    stored = _stored(_filtered(*chain))  # 16 levels below the root, the most allowed
+    assert len(_identifiers(stored)) == 17

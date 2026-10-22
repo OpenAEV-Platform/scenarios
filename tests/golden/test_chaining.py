@@ -108,3 +108,54 @@ def test_its_sheet_is_the_reviewed_one_and_renders_the_same_twice() -> None:
     first = render_sheet(SHEET_METADATA, stored, ())
     assert first == render_sheet(SHEET_METADATA, copy.deepcopy(stored), ())
     assert first == SHEET.read_text(encoding="utf-8")
+
+
+# The second hand-built export: a step, then a step that runs when filters hold
+
+FILTERS = json.loads((ROOT / "tests" / "golden" / "chaining" / "filters.json").read_text())
+FILTERS_NORMALISED = ROOT / "tests" / "golden" / "chaining" / "filters.normalised.json"
+
+
+def _filtered(export: Any) -> list[dict[str, Any]]:
+    conditions: list[dict[str, Any]] = export["scenario_workflow"]["workflow_steps"][1][
+        "step_conditions"
+    ]
+    return conditions
+
+
+def test_the_filters_export_repeats_each_condition_once_for_each_path_to_it() -> None:
+    conditions = _filtered(FILTERS)
+    assert len(conditions) == 11
+    assert len({condition["condition_id"] for condition in conditions}) == 5
+    assert list(export_refusals(FILTERS, KEYS)) == []
+
+
+def test_the_filters_export_normalises_to_its_reviewed_form_one_copy_each() -> None:
+    assert _prepare(copy.deepcopy(FILTERS)) == FILTERS_NORMALISED.read_bytes()
+    stored = json.loads(FILTERS_NORMALISED.read_bytes())
+    (filtered,) = [
+        step for step in stored["scenario_workflow"]["workflow_steps"] if step["step_conditions"]
+    ]
+    assert sorted(c["condition_type"] for c in filtered["step_conditions"]) == [
+        "AND",
+        "EQ",
+        "IN",
+        "IS_NOT_NULL",
+        "OR",
+    ]
+
+
+def test_the_stored_filters_normalised_with_themselves_give_the_same_bytes() -> None:
+    stored = json.loads(FILTERS_NORMALISED.read_bytes())
+    assert _prepare(copy.deepcopy(stored), previous=stored) == FILTERS_NORMALISED.read_bytes()
+
+
+def test_the_identifiers_of_the_filters_do_not_depend_on_their_order_in_the_export() -> None:
+    export = copy.deepcopy(FILTERS)
+    _filtered(export).reverse()
+    assert _prepare(export) == FILTERS_NORMALISED.read_bytes()
+
+
+def test_no_identifier_of_the_filters_export_is_left() -> None:
+    text = FILTERS_NORMALISED.read_text(encoding="utf-8")
+    assert [c["condition_id"] for c in _filtered(FILTERS) if c["condition_id"] in text] == []

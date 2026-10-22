@@ -1,0 +1,1051 @@
+{
+  "export_version": 1,
+  "scenario_articles": [],
+  "scenario_challenges": [],
+  "scenario_channels": [],
+  "scenario_documents": [],
+  "scenario_information": {
+    "scenario_category": "attack-scenario",
+    "scenario_default_kill_chain": null,
+    "scenario_dependencies": null,
+    "scenario_description": "A test input: one step runs after another.",
+    "scenario_documents": [],
+    "scenario_id": "076d811c-1a5f-5c76-9c22-267fa8dbcad8",
+    "scenario_lessons_anonymized": false,
+    "scenario_lessons_enabled": false,
+    "scenario_mail_from": "simulation@example.org",
+    "scenario_main_focus": "endpoint-protection",
+    "scenario_message_footer": null,
+    "scenario_message_header": null,
+    "scenario_name": "A step and a filtered step",
+    "scenario_severity": "low",
+    "scenario_subtitle": null,
+    "scenario_tags": []
+  },
+  "scenario_injects": [],
+  "scenario_organizations": [],
+  "scenario_tags": [
+    {
+      "tag_color": "#10b981",
+      "tag_id": "6c5b791d-fccb-5cd4-b8cc-6680c6fd8224",
+      "tag_name": "type:native"
+    },
+    {
+      "tag_color": "#ef4444",
+      "tag_id": "790cdcb7-389b-5d2b-99a4-e79e9e2f107e",
+      "tag_name": "source:openaev-datasets"
+    }
+  ],
+  "scenario_teams": [],
+  "scenario_users": [],
+  "scenario_variables": [],
+  "scenario_workflow": {
+    "workflow_max_attempts": null,
+    "workflow_max_temporal_rate_seconds": null,
+    "workflow_rate_limit_enabled": false,
+    "workflow_safe_mode_enabled": true,
+    "workflow_scope_rules": [],
+    "workflow_scope_variables": [],
+    "workflow_standalone_conditions": [],
+    "workflow_steps": [
+      {
+        "step_action_class": "INJECT_EXECUTION",
+        "step_condition_executed": null,
+        "step_conditions": [
+          {
+            "condition_description": null,
+            "condition_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
+            "condition_is_root": true,
+            "condition_key": null,
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "sshd seen and a user known",
+            "condition_parent_id": null,
+            "condition_step_from_id": null,
+            "condition_type": "AND",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "69ba4e6f-44eb-5240-be31-3239c728ce06",
+            "condition_is_root": false,
+            "condition_key": "pid",
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "A process ID is known",
+            "condition_parent_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
+            "condition_step_from_id": null,
+            "condition_type": "IS_NOT_NULL",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
+            "condition_is_root": false,
+            "condition_key": null,
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "A user or a process ID",
+            "condition_parent_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
+            "condition_step_from_id": null,
+            "condition_type": "OR",
+            "condition_value": null
+          },
+          {
+            "condition_description": null,
+            "condition_id": "d2674cba-c37e-5275-847e-99e5e4e2f04d",
+            "condition_is_root": false,
+            "condition_key": "user",
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "The user is root or admin",
+            "condition_parent_id": "c4fec00e-33dc-5c40-a656-5cac1b50751c",
+            "condition_step_from_id": null,
+            "condition_type": "IN",
+            "condition_value": "root,admin"
+          },
+          {
+            "condition_description": null,
+            "condition_id": "e5070295-23d1-52c5-8422-48e842abd479",
+            "condition_is_root": false,
+            "condition_key": "process",
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "The process is sshd",
+            "condition_parent_id": "5e130816-a728-5f88-9dc2-8af0ee129dbe",
+            "condition_step_from_id": null,
+            "condition_type": "EQ",
+            "condition_value": "sshd"
+          }
+        ],
+        "step_data": {
+          "inject_all_teams": false,
+          "inject_city": null,
+          "inject_content": {
+            "obfuscator": "plain-text"
+          },
+          "inject_contract_domains": [
+            {
+              "domain_color": "#389CFF",
+              "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+              "domain_name": "Endpoint"
+            }
+          ],
+          "inject_country": null,
+          "inject_depends_duration": null,
+          "inject_depends_on": [],
+          "inject_description": null,
+          "inject_documents": [],
+          "inject_enabled": true,
+          "inject_exercise": null,
+          "inject_expectations": [],
+          "inject_id": null,
+          "inject_injector": "49229430-b5b5-431f-ba5b-f36f599b0144",
+          "inject_injector_contract": {
+            "convertedContent": {
+              "atomicTesting": true,
+              "config": {
+                "color_dark": "#000000",
+                "color_light": "#000000",
+                "label": {
+                  "en": "OpenAEV Implant",
+                  "fr": "OpenAEV Implant"
+                },
+                "type": "openaev_implant"
+              },
+              "context": {},
+              "contract_attack_patterns_external_ids": [],
+              "contract_id": "b513f151-f08a-59bc-909e-35e73f8c7896",
+              "domains": [
+                {
+                  "domain_color": "#389CFF",
+                  "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+                  "domain_name": "Endpoint"
+                }
+              ],
+              "fields": [
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "assets",
+                  "label": "Source assets",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "asset_groups",
+                  "label": "Source asset groups",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset-group",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "1",
+                  "choices": [
+                    {
+                      "label": "plain-text",
+                      "value": "plain-text"
+                    },
+                    {
+                      "label": "base64",
+                      "value": "base64"
+                    }
+                  ],
+                  "defaultValue": [
+                    "plain-text"
+                  ],
+                  "key": "obfuscator",
+                  "label": "Obfuscators",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "choice",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "availableExpectations": [
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Detection",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "DETECTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Prevention",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "PREVENTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Vulnerability",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "VULNERABILITY"
+                    }
+                  ],
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "expectations",
+                  "label": "Expectations",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "expectation",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                }
+              ],
+              "is_atomic_testing": true,
+              "label": {
+                "en": "Process Discovery - ps",
+                "fr": "Process Discovery - ps"
+              },
+              "manual": false,
+              "needs_executor": true,
+              "outputs": [],
+              "platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "variables": [
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.id",
+                      "label": "Id of the user in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.email",
+                      "label": "Email of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.firstname",
+                      "label": "First name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lastname",
+                      "label": "Last name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lang",
+                      "label": "Language of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.pgpKey",
+                      "label": "PGP key of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.phone",
+                      "label": "Phone number of the user",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "user",
+                  "label": "User that will receive the injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.id",
+                      "label": "Id of the simulation in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.name",
+                      "label": "Name of the simulation",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.description",
+                      "label": "Description of the simulation",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "exercise",
+                  "label": "Exercise of the current injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "n",
+                  "children": [],
+                  "key": "teams",
+                  "label": "List of team names for the injection",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "player_uri",
+                  "label": "Player interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "challenges_uri",
+                  "label": "Challenges interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "scoreboard_uri",
+                  "label": "Scoreboard interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "lessons_uri",
+                  "label": "Lessons learned interface platform link",
+                  "type": "String"
+                }
+              ]
+            },
+            "injector_contract_arch": "ALL_ARCHITECTURES",
+            "injector_contract_atomic_testing": true,
+            "injector_contract_attack_patterns": [
+              {
+                "attack_pattern_description": "Adversaries may attempt to get information about running processes on a system. Information obtained could be used to gain an understanding of common software/applications running on systems within the network. Administrator or otherwise elevated access may provide better process details. Adversaries may use the information from [Process Discovery](https://attack.mitre.org/techniques/T1057) during automated discovery to shape follow-on behaviors, including whether or not the adversary fully infects the target and/or attempts specific actions.\n\nIn Windows environments, adversaries could obtain details on running processes using the [Tasklist](https://attack.mitre.org/software/S0057) utility via [cmd](https://attack.mitre.org/software/S0106) or <code>Get-Process</code> via [PowerShell](https://attack.mitre.org/techniques/T1059/001). Information about processes can also be extracted from the output of [Native API](https://attack.mitre.org/techniques/T1106) calls such as <code>CreateToolhelp32Snapshot</code>. In Mac and Linux, this is accomplished with the <code>ps</code> command. Adversaries may also opt to enumerate processes via `/proc`. ESXi also supports use of the `ps` command, as well as `esxcli system process list`.(Citation: Sygnia ESXi Ransomware 2025)(Citation: Crowdstrike Hypervisor Jackpotting Pt 2 2021)\n\nOn network devices, [Network Device CLI](https://attack.mitre.org/techniques/T1059/008) commands such as `show processes` can be used to display current running processes.(Citation: US-CERT-TA18-106A)(Citation: show_processes_cisco_cmd)",
+                "attack_pattern_external_id": "T1057",
+                "attack_pattern_id": "a0559ae5-7a0d-5788-afd4-88e1b506be4d",
+                "attack_pattern_kill_chain_phases": [
+                  {
+                    "phase_description": "The adversary is trying to figure out your environment.\n\nDiscovery consists of techniques an adversary may use to gain knowledge about the system and internal network. These techniques help adversaries observe the environment and orient themselves before deciding how to act. They also allow adversaries to explore what they can control and what’s around their entry point in order to discover how it could benefit their current objective. Native operating system tools are often used toward this post-compromise information-gathering objective. ",
+                    "phase_external_id": "TA0007",
+                    "phase_id": "719c5827-3215-5f1a-9a02-ff255fb5c627",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Discovery",
+                    "phase_order": 8,
+                    "phase_shortname": "discovery",
+                    "phase_stix_id": "x-mitre-tactic--00000000-0000-4000-8000-000000000015"
+                  }
+                ],
+                "attack_pattern_name": "Process Discovery"
+              }
+            ],
+            "injector_contract_content": "{\"atomicTesting\":true,\"config\":{\"color_dark\":\"#000000\",\"color_light\":\"#000000\",\"label\":{\"en\":\"OpenAEV Implant\",\"fr\":\"OpenAEV Implant\"},\"type\":\"openaev_implant\"},\"context\":{},\"contract_attack_patterns_external_ids\":[],\"contract_id\":\"b513f151-f08a-59bc-909e-35e73f8c7896\",\"domains\":[{\"domain_color\":\"#389CFF\",\"domain_id\":\"ab6ca52b-c631-536f-85e2-dce8d960f3c4\",\"domain_name\":\"Endpoint\"}],\"fields\":[{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"assets\",\"label\":\"Source assets\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"asset_groups\",\"label\":\"Source asset groups\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset-group\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"1\",\"choices\":[{\"label\":\"plain-text\",\"value\":\"plain-text\"},{\"label\":\"base64\",\"value\":\"base64\"}],\"defaultValue\":[\"plain-text\"],\"key\":\"obfuscator\",\"label\":\"Obfuscators\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"choice\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"availableExpectations\":[{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Detection\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"DETECTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Prevention\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"PREVENTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Vulnerability\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"VULNERABILITY\"}],\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"expectations\",\"label\":\"Expectations\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"expectation\",\"visibleConditionFields\":null,\"visibleConditionValues\":null}],\"is_atomic_testing\":true,\"label\":{\"en\":\"Process Discovery - ps\",\"fr\":\"Process Discovery - ps\"},\"manual\":false,\"needs_executor\":true,\"outputs\":[],\"platforms\":[\"Linux\",\"MacOS\"],\"variables\":[{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.id\",\"label\":\"Id of the user in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.email\",\"label\":\"Email of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.firstname\",\"label\":\"First name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lastname\",\"label\":\"Last name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lang\",\"label\":\"Language of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.pgpKey\",\"label\":\"PGP key of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.phone\",\"label\":\"Phone number of the user\",\"type\":\"String\"}],\"key\":\"user\",\"label\":\"User that will receive the injection\",\"type\":\"Object\"},{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.id\",\"label\":\"Id of the simulation in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.name\",\"label\":\"Name of the simulation\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.description\",\"label\":\"Description of the simulation\",\"type\":\"String\"}],\"key\":\"exercise\",\"label\":\"Exercise of the current injection\",\"type\":\"Object\"},{\"cardinality\":\"n\",\"children\":[],\"key\":\"teams\",\"label\":\"List of team names for the injection\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"player_uri\",\"label\":\"Player interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"challenges_uri\",\"label\":\"Challenges interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"scoreboard_uri\",\"label\":\"Scoreboard interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"lessons_uri\",\"label\":\"Lessons learned interface platform link\",\"type\":\"String\"}]}",
+            "injector_contract_custom": false,
+            "injector_contract_domains": [
+              "ab6ca52b-c631-536f-85e2-dce8d960f3c4"
+            ],
+            "injector_contract_external_id": null,
+            "injector_contract_id": "b513f151-f08a-59bc-909e-35e73f8c7896",
+            "injector_contract_import_available": false,
+            "injector_contract_injector_type": "openaev_implant",
+            "injector_contract_labels": {
+              "en": "Process Discovery - ps",
+              "fr": "Process Discovery - ps"
+            },
+            "injector_contract_manual": false,
+            "injector_contract_needs_executor": true,
+            "injector_contract_payload": {
+              "command_content": "ps aux --no-headers",
+              "command_executor": "sh",
+              "payload_arguments": [],
+              "payload_cleanup_command": null,
+              "payload_cleanup_executor": null,
+              "payload_description": "Utilize ps to identify processes.",
+              "payload_detection_remediations": [],
+              "payload_elevation_required": false,
+              "payload_execution_arch": "ALL_ARCHITECTURES",
+              "payload_expectations": [],
+              "payload_expected_security_platforms": {},
+              "payload_external_id": "00000000-0000-4000-8000-00000000000c",
+              "payload_id": "7d691149-91a1-5f7a-9e7d-afd81eea5b47",
+              "payload_name": "Process Discovery - ps",
+              "payload_output_parsers": [
+                {
+                  "output_parser_contract_output_elements": [
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-00000000000f",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "command",
+                      "contract_output_element_name": "Command",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000010",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+\\d+\\s+[\\d\\.]+\\s+[\\d\\.]+\\s+\\d+\\s+\\d+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(.+)$",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    },
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-000000000011",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "user",
+                      "contract_output_element_name": "User",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000012",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^(\\S+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    },
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-000000000013",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "pid",
+                      "contract_output_element_name": "PID",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "number",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000014",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+(\\d+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "number"
+                    }
+                  ],
+                  "output_parser_id": "00000000-0000-4000-8000-00000000000e",
+                  "output_parser_mode": "STDOUT",
+                  "output_parser_type": "REGEX"
+                }
+              ],
+              "payload_platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "payload_prerequisites": [],
+              "payload_source": "FILIGRAN",
+              "payload_status": "VERIFIED",
+              "payload_type": "Command"
+            },
+            "injector_contract_payload_status": "VERIFIED",
+            "injector_contract_platforms": [
+              "Linux",
+              "MacOS"
+            ],
+            "injector_contract_providing": [
+              "number",
+              "text"
+            ],
+            "injector_contract_tags": [
+              "6c5b791d-fccb-5cd4-b8cc-6680c6fd8224",
+              "790cdcb7-389b-5d2b-99a4-e79e9e2f107e"
+            ],
+            "injector_contract_vulnerabilities": []
+          },
+          "inject_recurrence": null,
+          "inject_recurrence_end": null,
+          "inject_recurrence_start": null,
+          "inject_scenario": null,
+          "inject_secret_references": [],
+          "inject_tags": [],
+          "inject_teams": [],
+          "inject_title": "Step 2 - list processes when the first found sshd",
+          "inject_type": "openaev_implant"
+        },
+        "step_id": "36a4efa0-c86e-5ce1-9158-a0017f3d427e",
+        "step_input": "{\"input\":[]}",
+        "step_limit_execution": 0,
+        "step_output": null,
+        "step_output_parser": "{}"
+      },
+      {
+        "step_action_class": "INJECT_EXECUTION",
+        "step_condition_executed": null,
+        "step_conditions": [],
+        "step_data": {
+          "inject_all_teams": false,
+          "inject_city": null,
+          "inject_content": {
+            "obfuscator": "plain-text"
+          },
+          "inject_contract_domains": [
+            {
+              "domain_color": "#389CFF",
+              "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+              "domain_name": "Endpoint"
+            }
+          ],
+          "inject_country": null,
+          "inject_depends_duration": null,
+          "inject_depends_on": [],
+          "inject_description": null,
+          "inject_documents": [],
+          "inject_enabled": true,
+          "inject_exercise": null,
+          "inject_expectations": [],
+          "inject_id": null,
+          "inject_injector": "49229430-b5b5-431f-ba5b-f36f599b0144",
+          "inject_injector_contract": {
+            "convertedContent": {
+              "atomicTesting": true,
+              "config": {
+                "color_dark": "#000000",
+                "color_light": "#000000",
+                "label": {
+                  "en": "OpenAEV Implant",
+                  "fr": "OpenAEV Implant"
+                },
+                "type": "openaev_implant"
+              },
+              "context": {},
+              "contract_attack_patterns_external_ids": [],
+              "contract_id": "b513f151-f08a-59bc-909e-35e73f8c7896",
+              "domains": [
+                {
+                  "domain_color": "#389CFF",
+                  "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+                  "domain_name": "Endpoint"
+                }
+              ],
+              "fields": [
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "assets",
+                  "label": "Source assets",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "asset_groups",
+                  "label": "Source asset groups",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset-group",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "1",
+                  "choices": [
+                    {
+                      "label": "plain-text",
+                      "value": "plain-text"
+                    },
+                    {
+                      "label": "base64",
+                      "value": "base64"
+                    }
+                  ],
+                  "defaultValue": [
+                    "plain-text"
+                  ],
+                  "key": "obfuscator",
+                  "label": "Obfuscators",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "choice",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "availableExpectations": [
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Detection",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "DETECTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Prevention",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "PREVENTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Vulnerability",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "VULNERABILITY"
+                    }
+                  ],
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "expectations",
+                  "label": "Expectations",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "expectation",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                }
+              ],
+              "is_atomic_testing": true,
+              "label": {
+                "en": "Process Discovery - ps",
+                "fr": "Process Discovery - ps"
+              },
+              "manual": false,
+              "needs_executor": true,
+              "outputs": [],
+              "platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "variables": [
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.id",
+                      "label": "Id of the user in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.email",
+                      "label": "Email of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.firstname",
+                      "label": "First name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lastname",
+                      "label": "Last name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lang",
+                      "label": "Language of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.pgpKey",
+                      "label": "PGP key of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.phone",
+                      "label": "Phone number of the user",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "user",
+                  "label": "User that will receive the injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.id",
+                      "label": "Id of the simulation in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.name",
+                      "label": "Name of the simulation",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.description",
+                      "label": "Description of the simulation",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "exercise",
+                  "label": "Exercise of the current injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "n",
+                  "children": [],
+                  "key": "teams",
+                  "label": "List of team names for the injection",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "player_uri",
+                  "label": "Player interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "challenges_uri",
+                  "label": "Challenges interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "scoreboard_uri",
+                  "label": "Scoreboard interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "lessons_uri",
+                  "label": "Lessons learned interface platform link",
+                  "type": "String"
+                }
+              ]
+            },
+            "injector_contract_arch": "ALL_ARCHITECTURES",
+            "injector_contract_atomic_testing": true,
+            "injector_contract_attack_patterns": [
+              {
+                "attack_pattern_description": "Adversaries may attempt to get information about running processes on a system. Information obtained could be used to gain an understanding of common software/applications running on systems within the network. Administrator or otherwise elevated access may provide better process details. Adversaries may use the information from [Process Discovery](https://attack.mitre.org/techniques/T1057) during automated discovery to shape follow-on behaviors, including whether or not the adversary fully infects the target and/or attempts specific actions.\n\nIn Windows environments, adversaries could obtain details on running processes using the [Tasklist](https://attack.mitre.org/software/S0057) utility via [cmd](https://attack.mitre.org/software/S0106) or <code>Get-Process</code> via [PowerShell](https://attack.mitre.org/techniques/T1059/001). Information about processes can also be extracted from the output of [Native API](https://attack.mitre.org/techniques/T1106) calls such as <code>CreateToolhelp32Snapshot</code>. In Mac and Linux, this is accomplished with the <code>ps</code> command. Adversaries may also opt to enumerate processes via `/proc`. ESXi also supports use of the `ps` command, as well as `esxcli system process list`.(Citation: Sygnia ESXi Ransomware 2025)(Citation: Crowdstrike Hypervisor Jackpotting Pt 2 2021)\n\nOn network devices, [Network Device CLI](https://attack.mitre.org/techniques/T1059/008) commands such as `show processes` can be used to display current running processes.(Citation: US-CERT-TA18-106A)(Citation: show_processes_cisco_cmd)",
+                "attack_pattern_external_id": "T1057",
+                "attack_pattern_id": "a0559ae5-7a0d-5788-afd4-88e1b506be4d",
+                "attack_pattern_kill_chain_phases": [
+                  {
+                    "phase_description": "The adversary is trying to figure out your environment.\n\nDiscovery consists of techniques an adversary may use to gain knowledge about the system and internal network. These techniques help adversaries observe the environment and orient themselves before deciding how to act. They also allow adversaries to explore what they can control and what’s around their entry point in order to discover how it could benefit their current objective. Native operating system tools are often used toward this post-compromise information-gathering objective. ",
+                    "phase_external_id": "TA0007",
+                    "phase_id": "719c5827-3215-5f1a-9a02-ff255fb5c627",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Discovery",
+                    "phase_order": 8,
+                    "phase_shortname": "discovery",
+                    "phase_stix_id": "x-mitre-tactic--00000000-0000-4000-8000-000000000015"
+                  }
+                ],
+                "attack_pattern_name": "Process Discovery"
+              }
+            ],
+            "injector_contract_content": "{\"atomicTesting\":true,\"config\":{\"color_dark\":\"#000000\",\"color_light\":\"#000000\",\"label\":{\"en\":\"OpenAEV Implant\",\"fr\":\"OpenAEV Implant\"},\"type\":\"openaev_implant\"},\"context\":{},\"contract_attack_patterns_external_ids\":[],\"contract_id\":\"b513f151-f08a-59bc-909e-35e73f8c7896\",\"domains\":[{\"domain_color\":\"#389CFF\",\"domain_id\":\"ab6ca52b-c631-536f-85e2-dce8d960f3c4\",\"domain_name\":\"Endpoint\"}],\"fields\":[{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"assets\",\"label\":\"Source assets\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"asset_groups\",\"label\":\"Source asset groups\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset-group\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"1\",\"choices\":[{\"label\":\"plain-text\",\"value\":\"plain-text\"},{\"label\":\"base64\",\"value\":\"base64\"}],\"defaultValue\":[\"plain-text\"],\"key\":\"obfuscator\",\"label\":\"Obfuscators\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"choice\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"availableExpectations\":[{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Detection\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"DETECTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Prevention\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"PREVENTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Vulnerability\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"VULNERABILITY\"}],\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"expectations\",\"label\":\"Expectations\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"expectation\",\"visibleConditionFields\":null,\"visibleConditionValues\":null}],\"is_atomic_testing\":true,\"label\":{\"en\":\"Process Discovery - ps\",\"fr\":\"Process Discovery - ps\"},\"manual\":false,\"needs_executor\":true,\"outputs\":[],\"platforms\":[\"Linux\",\"MacOS\"],\"variables\":[{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.id\",\"label\":\"Id of the user in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.email\",\"label\":\"Email of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.firstname\",\"label\":\"First name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lastname\",\"label\":\"Last name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lang\",\"label\":\"Language of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.pgpKey\",\"label\":\"PGP key of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.phone\",\"label\":\"Phone number of the user\",\"type\":\"String\"}],\"key\":\"user\",\"label\":\"User that will receive the injection\",\"type\":\"Object\"},{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.id\",\"label\":\"Id of the simulation in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.name\",\"label\":\"Name of the simulation\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.description\",\"label\":\"Description of the simulation\",\"type\":\"String\"}],\"key\":\"exercise\",\"label\":\"Exercise of the current injection\",\"type\":\"Object\"},{\"cardinality\":\"n\",\"children\":[],\"key\":\"teams\",\"label\":\"List of team names for the injection\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"player_uri\",\"label\":\"Player interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"challenges_uri\",\"label\":\"Challenges interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"scoreboard_uri\",\"label\":\"Scoreboard interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"lessons_uri\",\"label\":\"Lessons learned interface platform link\",\"type\":\"String\"}]}",
+            "injector_contract_custom": false,
+            "injector_contract_domains": [
+              "ab6ca52b-c631-536f-85e2-dce8d960f3c4"
+            ],
+            "injector_contract_external_id": null,
+            "injector_contract_id": "b513f151-f08a-59bc-909e-35e73f8c7896",
+            "injector_contract_import_available": false,
+            "injector_contract_injector_type": "openaev_implant",
+            "injector_contract_labels": {
+              "en": "Process Discovery - ps",
+              "fr": "Process Discovery - ps"
+            },
+            "injector_contract_manual": false,
+            "injector_contract_needs_executor": true,
+            "injector_contract_payload": {
+              "command_content": "ps aux --no-headers",
+              "command_executor": "sh",
+              "payload_arguments": [],
+              "payload_cleanup_command": null,
+              "payload_cleanup_executor": null,
+              "payload_description": "Utilize ps to identify processes.",
+              "payload_detection_remediations": [],
+              "payload_elevation_required": false,
+              "payload_execution_arch": "ALL_ARCHITECTURES",
+              "payload_expectations": [],
+              "payload_expected_security_platforms": {},
+              "payload_external_id": "00000000-0000-4000-8000-00000000000c",
+              "payload_id": "7d691149-91a1-5f7a-9e7d-afd81eea5b47",
+              "payload_name": "Process Discovery - ps",
+              "payload_output_parsers": [
+                {
+                  "output_parser_contract_output_elements": [
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-00000000000f",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "command",
+                      "contract_output_element_name": "Command",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000010",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+\\d+\\s+[\\d\\.]+\\s+[\\d\\.]+\\s+\\d+\\s+\\d+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(.+)$",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    },
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-000000000011",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "user",
+                      "contract_output_element_name": "User",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000012",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^(\\S+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    },
+                    {
+                      "contract_output_element_id": "00000000-0000-4000-8000-000000000013",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "pid",
+                      "contract_output_element_name": "PID",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "number",
+                          "regex_group_id": "00000000-0000-4000-8000-000000000014",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+(\\d+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "number"
+                    }
+                  ],
+                  "output_parser_id": "00000000-0000-4000-8000-00000000000e",
+                  "output_parser_mode": "STDOUT",
+                  "output_parser_type": "REGEX"
+                }
+              ],
+              "payload_platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "payload_prerequisites": [],
+              "payload_source": "FILIGRAN",
+              "payload_status": "VERIFIED",
+              "payload_type": "Command"
+            },
+            "injector_contract_payload_status": "VERIFIED",
+            "injector_contract_platforms": [
+              "Linux",
+              "MacOS"
+            ],
+            "injector_contract_providing": [
+              "number",
+              "text"
+            ],
+            "injector_contract_tags": [
+              "6c5b791d-fccb-5cd4-b8cc-6680c6fd8224",
+              "790cdcb7-389b-5d2b-99a4-e79e9e2f107e"
+            ],
+            "injector_contract_vulnerabilities": []
+          },
+          "inject_recurrence": null,
+          "inject_recurrence_end": null,
+          "inject_recurrence_start": null,
+          "inject_scenario": null,
+          "inject_secret_references": [],
+          "inject_tags": [],
+          "inject_teams": [],
+          "inject_title": "Step 1 - list processes",
+          "inject_type": "openaev_implant"
+        },
+        "step_id": "3b953a43-23c8-5ca2-b6cb-bb8cbbcb3a5c",
+        "step_input": "{}",
+        "step_limit_execution": 0,
+        "step_output": null,
+        "step_output_parser": "{}"
+      }
+    ],
+    "workflow_timeout_enabled": true,
+    "workflow_timeout_seconds": 3600
+  }
+}

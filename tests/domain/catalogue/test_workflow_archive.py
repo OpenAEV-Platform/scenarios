@@ -15,11 +15,13 @@ from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.catalogue.metadata import is_tabletop
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.workflow import (
+    CONDITION_LIST_EMPTY,
     CONDITION_MAPPER,
     CONDITION_STEP_FROM,
     CYCLE,
     MAX_STEPS,
     TOO_MANY_STEPS,
+    ExportKeys,
 )
 from scenario_tools.domain.verification.payload_hash import embedded_payloads, payload_hash
 from scenario_tools.domain.verification.release_output import payload_content_findings
@@ -196,3 +198,30 @@ def test_a_workflow_beyond_its_bound_is_refused_before_its_graph_is_read() -> No
     with pytest.raises(ExportStructureError) as error:
         checked_workflow(stored, SUPPORTED)
     assert error.value.what == TOO_MANY_STEPS
+
+
+FILTERED: dict[str, Any] = json.loads(
+    (ROOT / "tests" / "golden" / "chaining" / "filters.normalised.json").read_text("utf-8")
+)
+ACCEPTED = ExportKeys.from_document(
+    YamlDataLoader(ROOT / "policy" / "data").load("export-keys")
+).condition_types
+
+
+def test_a_stored_tree_of_filters_is_carried_with_the_types_the_repository_accepts() -> None:
+    checked_workflow(FILTERED, ACCEPTED)
+    assert archive_findings(FILTERED, PATH) == ()
+
+
+def test_an_empty_list_edited_into_a_stored_file_keeps_it_out_of_an_archive() -> None:
+    stored = copy.deepcopy(FILTERED)
+    (step,) = [step for step in _steps(stored) if step["step_conditions"]]
+    listed = next(c for c in step["step_conditions"] if c["condition_type"] == "IN")
+    listed["condition_value"] = " , "
+    index, position = _steps(stored).index(step), step["step_conditions"].index(listed)
+    with pytest.raises(ExportStructureError) as error:
+        checked_workflow(stored, ACCEPTED)
+    assert (error.value.what, error.value.pointer) == (
+        CONDITION_LIST_EMPTY,
+        f"{STEPS}/{index}/step_conditions/{position}/condition_value",
+    )
