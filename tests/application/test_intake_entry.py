@@ -808,3 +808,10 @@ def test_steps_the_update_no_longer_has_are_reported() -> None:
 
     assert ("VER-012", f"{ENTRY}/scenario.json", "") in _codes(result.to_complete)
     assert any(f.message.startswith("step ") for f in result.to_complete)
+
+
+def test_a_new_entry_from_a_workflow_starts_as_chained_and_needing_ee() -> None:
+    result = _intake(NEW, export=CHAINING)
+    assert result.refusals == ()
+    assert result.metadata is not None
+    assert (result.metadata["type"], result.metadata["requires"]["edition"]) == ("chained", "EE")

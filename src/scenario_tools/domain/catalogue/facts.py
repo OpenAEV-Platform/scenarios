@@ -25,6 +25,7 @@ from scenario_tools.domain.catalogue.structure import (
 )
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.workflow import holds_workflow
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 INJECTOR_TYPE_LIMIT = 64  # characters, as the schema says for requires.injectors
@@ -155,7 +156,8 @@ def export_facts(
             )
         else:
             known.append(facts)
-    return ExportFacts(name, severity, category, main_focus, tuple(known)), tuple(findings)
+    result = ExportFacts(name, severity, category, main_focus, tuple(known), holds_workflow(export))
+    return result, tuple(findings)
 
 
 def copy_findings(document: object, builtin: BuiltinContracts, path: str) -> tuple[Finding, ...]:

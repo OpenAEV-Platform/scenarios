@@ -94,6 +94,7 @@ def test_facts_come_from_the_recorded_contract_and_the_embedded_payload() -> Non
             InjectFacts("openaev_email", False, frozenset({"Service"})),
             InjectFacts("openaev_implant", True, frozenset({"Windows", "Linux"})),
         ),
+        has_workflow=False,
     )
 
 

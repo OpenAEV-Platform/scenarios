@@ -509,3 +509,9 @@ def conditions(stored: object) -> Iterator[tuple[str, Mapping[str, Any]]]:
         for position, condition in enumerate(found if isinstance(found, list) else []):
             if isinstance(condition, Mapping):
                 yield f"/{WORKFLOW}/{STEPS}/{index}/{CONDITIONS}/{position}", condition
+
+
+def holds_workflow(stored: object) -> bool:
+    """Whether a stored scenario holds a workflow, of any shape: its part is not left empty, as
+    normalisation leaves it for a time-based scenario (``null``, ``{}`` or ``[]``)."""
+    return isinstance(stored, Mapping) and stored.get(WORKFLOW) not in (None, {}, [])

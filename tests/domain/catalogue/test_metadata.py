@@ -14,6 +14,10 @@ from scenario_tools.domain.catalogue.metadata import (
     FACET_LIMIT,
     INJECTORS_LIMIT,
     NAME_LIMIT,
+    STARTING_EDITION_OF_A_WORKFLOW,
+    TYPE_WITHOUT_WORKFLOW,
+    WORKFLOW_NEEDS_EE,
+    WORKFLOW_NOT_CHAINED,
     ExportFacts,
     InjectFacts,
     Requirements,
@@ -77,6 +81,7 @@ FACTS = ExportFacts(
         _inject("openaev_email", platforms=frozenset({"Service"})),
         _inject("openaev_implant", needs_executor=True, platforms=frozenset({"Windows"})),
     ),
+    has_workflow=False,
 )
 
 
@@ -249,7 +254,7 @@ def test_cross_check_reports_exactly_the_rules_that_are_broken(
     used: list[tuple[str, bool, frozenset[str]]],
     platforms: frozenset[str],
 ) -> None:
-    facts = ExportFacts("a", "a", "a", "a", tuple(_inject(*inject) for inject in used))
+    facts = ExportFacts("a", "a", "a", "a", tuple(_inject(*inject) for inject in used), False)
     metadata = _metadata(
         name=facet,
         severity="a",
@@ -897,3 +902,59 @@ def test_a_list_of_communication_injectors_from_document_out_of_its_shape_is_ref
 ) -> None:
     with pytest.raises(ValueError, match="tabletop-injectors"):
         communication_injectors_from_document(document)
+
+
+# A scenario in chaining
+
+
+CHAINED = replace(FACTS, has_workflow=True)
+
+
+def _sch_013(metadata: ScenarioMetadata, facts: ExportFacts) -> list[tuple[str, str]]:
+    return [(f.field, f.message) for f in cross_check(metadata, facts, PATH) if f.code == "SCH-013"]
+
+
+def test_a_workflow_with_type_chained_and_edition_ee_passes() -> None:
+    metadata = _metadata(type="chained", requires=replace(_metadata().requires, edition="EE"))
+    assert _sch_013(metadata, CHAINED) == []
+
+
+def test_type_chained_without_a_workflow_is_refused() -> None:
+    assert _sch_013(_metadata(type="chained"), FACTS) == [("/type", TYPE_WITHOUT_WORKFLOW)]
+
+
+def test_a_workflow_with_type_time_based_is_refused() -> None:
+    metadata = _metadata(requires=replace(_metadata().requires, edition="EE"))
+    assert _sch_013(metadata, CHAINED) == [("/type", WORKFLOW_NOT_CHAINED)]
+
+
+def test_a_workflow_with_another_edition_is_refused() -> None:
+    assert _sch_013(_metadata(type="chained"), CHAINED) == [
+        ("/requires/edition", WORKFLOW_NEEDS_EE)
+    ]
+
+
+def test_each_case_is_its_own_finding() -> None:
+    assert _sch_013(_metadata(), CHAINED) == [
+        ("/type", WORKFLOW_NOT_CHAINED),
+        ("/requires/edition", WORKFLOW_NEEDS_EE),
+    ]
+
+
+def test_a_time_based_scenario_may_need_the_enterprise_edition() -> None:
+    metadata = _metadata(requires=replace(_metadata().requires, edition="EE"))
+    assert _sch_013(metadata, FACTS) == []
+
+
+def test_a_scenario_in_chaining_is_never_tabletop() -> None:
+    facts = replace(CHAINED, injects=(_inject("openaev_email"), _inject("openaev_manual")))
+    assert not is_tabletop(facts, COMMUNICATION)
+
+
+def test_the_starting_metadata_of_a_workflow_is_chained_and_needs_ee() -> None:
+    metadata, findings = _start(CHAINED)
+    assert (metadata["type"], metadata["requires"]["edition"]) == ("chained", "EE")
+    assert _message(findings, "/requires/edition") == STARTING_EDITION_OF_A_WORKFLOW
+    assert _asks_nothing(findings, "/requires/edition")
+    complete = {**metadata, **{k: _document()[k] for k in ("threat", "sources")}}
+    assert cross_check(ScenarioMetadata.from_document(complete), CHAINED, PATH) == ()
