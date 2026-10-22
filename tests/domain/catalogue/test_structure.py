@@ -9,7 +9,7 @@ from scenario_tools.domain.catalogue.structure import (
     checked_injects,
     contracts_with_payloads,
 )
-from scenario_tools.domain.shared.stored import INJECTS, Origin, StoredInject
+from scenario_tools.domain.shared.stored import INJECTS, STEPS, WORKFLOW, Origin, StoredInject
 
 
 def test_checked_injects_are_the_walk_when_the_part_is_well_shaped() -> None:
@@ -57,4 +57,39 @@ def test_a_payload_of_another_shape_is_still_yielded_for_its_check_to_refuse() -
     inject = {CONTRACT: contract}
     assert list(contracts_with_payloads({INJECTS: [inject]})) == [
         ("/scenario_injects/0", inject, contract)
+    ]
+
+
+def test_checked_injects_include_the_inject_of_each_step() -> None:
+    data = {"inject_title": "s1"}
+    export = {INJECTS: [], WORKFLOW: {STEPS: [{"step_data": data}]}}
+    assert list(checked_injects(export)) == [
+        StoredInject("/scenario_workflow/workflow_steps/0/step_data", data, Origin.STEP)
+    ]
+    empty: object
+    for empty in (None, {}, []):  # no workflow, or one left empty
+        assert list(checked_injects({INJECTS: [], WORKFLOW: empty})) == []
+
+
+@pytest.mark.parametrize(
+    ("workflow", "what"),
+    [
+        ("text", "scenario_workflow must be an object"),
+        ({STEPS: "text"}, "workflow_steps must be a list"),
+        ({STEPS: ["text"]}, "workflow_steps must be an object"),
+        ({STEPS: [{"step_data": "{}"}]}, "step_data must be an object"),
+    ],
+)
+def test_a_workflow_of_another_shape_is_refused(workflow: object, what: str) -> None:
+    with pytest.raises(ExportStructureError) as raised:
+        list(checked_injects({INJECTS: [], WORKFLOW: workflow}))
+    assert raised.value.what == what
+
+
+def test_contracts_with_payloads_include_those_of_steps() -> None:
+    contract = {PAYLOAD: {"payload_name": "Process Discovery - ps"}}
+    data = {CONTRACT: contract}
+    stored = {INJECTS: [], WORKFLOW: {STEPS: [{"step_data": data}]}}
+    assert list(contracts_with_payloads(stored)) == [
+        ("/scenario_workflow/workflow_steps/0/step_data", data, contract)
     ]

@@ -148,9 +148,9 @@ def export_facts(
                     Severity.BLOCKING,
                     path,
                     found.pointer,
-                    "the inject's contract is neither a recorded built-in contract nor created "
-                    "from a payload: its injector type, executor need and platforms cannot be "
-                    "established",
+                    "the contract of this inject or step is neither a recorded built-in contract "
+                    "nor created from a payload: its injector type, executor need and platforms "
+                    "cannot be established",
                 )
             )
         else:

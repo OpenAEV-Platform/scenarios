@@ -9,6 +9,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from scenario_tools.domain.policy.exceptions import PolicyException
+from scenario_tools.domain.shared.stored import Origin
 from scenario_tools.domain.shared.stored import injects as stored_injects
 from scenario_tools.domain.sheet.markdown import inline, plain
 
@@ -141,7 +142,11 @@ def depths(injects: Sequence[Mapping[str, Any]]) -> dict[str, int]:
 def _ordered(stored: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     """The injects in the order they start, a parent before its children at the same time, then
     by title and identifier."""
-    found = [stored_inject.inject for stored_inject in stored_injects(stored)]
+    found = [  # the steps of a workflow are not part of the chain of injects
+        stored_inject.inject
+        for stored_inject in stored_injects(stored)
+        if stored_inject.origin is Origin.INJECT
+    ]
     chains = depths(found)
     return sorted(
         found,
