@@ -146,8 +146,8 @@ def test_a_payload_outside_an_inject_s_contract_is_refused() -> None:
         ("PAY-004", Severity.BLOCKING, PATH, "/scenario_articles/0/article~1name/nested~0"),
     ]
     assert findings[0].message == (
-        "the document embeds a payload outside an inject's contract: no reference can name it, "
-        "and the archive cannot carry it"
+        "the document embeds a payload outside an inject's or a step's contract: no reference "
+        "can name it, and the archive cannot carry it"
     )
 
 

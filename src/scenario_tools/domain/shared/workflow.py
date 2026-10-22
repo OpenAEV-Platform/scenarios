@@ -14,10 +14,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, TypeGuard
 
-from scenario_tools.domain.shared.stored import INJECTS
+from scenario_tools.domain.shared.stored import INJECTS, STEPS, WORKFLOW
 
-WORKFLOW = "scenario_workflow"
-STEPS = "workflow_steps"
 CONDITIONS = "step_conditions"
 _EXPORT_VERSION = "export_version"
 _SCOPE_RULES = "workflow_scope_rules"

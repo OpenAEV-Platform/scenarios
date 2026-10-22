@@ -3,9 +3,9 @@
 The archive holds the reviewed ``scenario.json`` as it is, so it never changes content to make
 it importable, and it fails closed: a part a normalised scenario never has is refused, since the
 importer reads other parts too (an exercise set, a workflow whose steps rebuild payloads). A
-payload outside an inject's contract is refused, since no payload reference can name it; the
-payloads of the injects are checked against their references. A recurrence is the policy's
-matter, which the archive also asks.
+payload outside the contract of an inject or a step is refused, since no payload reference can
+name it; the payloads of the injects and steps are checked against their references. A
+recurrence is the policy's matter, which the archive also asks.
 """
 
 from collections.abc import Iterator
@@ -22,8 +22,7 @@ from scenario_tools.domain.catalogue.structure import (
     require_object,
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.stored import INJECTS, injects
-from scenario_tools.domain.shared.workflow import WORKFLOW
+from scenario_tools.domain.shared.stored import INJECTS, WORKFLOW, injects
 
 # The parts of a normalised scenario, which are all an archive may carry.
 STORED_PARTS = frozenset(
@@ -75,8 +74,8 @@ def archive_findings(document: object, path: str) -> tuple[Finding, ...]:
 
 
 def payloads_outside_contracts(document: object, path: str) -> tuple[Finding, ...]:
-    """The payloads of ``document``, at ``path``, that sit outside an inject's contract: no
-    payload reference can name them, and the importer may read them still."""
+    """The payloads of ``document``, at ``path``, that sit outside an inject's or a step's
+    contract: no payload reference can name them, and the importer may read them still."""
     contracts = {f"{found.pointer}/{CONTRACT}" for found in injects(document)}
     return tuple(
         Finding(
@@ -84,8 +83,8 @@ def payloads_outside_contracts(document: object, path: str) -> tuple[Finding, ..
             Severity.BLOCKING,
             path,
             pointer,
-            "the document embeds a payload outside an inject's contract: no reference can name "
-            "it, and the archive cannot carry it",
+            "the document embeds a payload outside an inject's or a step's contract: no reference "
+            "can name it, and the archive cannot carry it",
         )
         for pointer, item in _objects(document)
         if item.get(PAYLOAD) not in (None, {}) and pointer not in contracts

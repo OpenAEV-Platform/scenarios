@@ -42,16 +42,15 @@ from scenario_tools.domain.catalogue.identifiers import (
 from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER, jcs
+from scenario_tools.domain.shared.stored import STEPS, WORKFLOW
 from scenario_tools.domain.shared.workflow import (
     CONDITION_SIBLINGS_SAME,
     CONDITIONS,
     ID_NOT_KNOWN,
     MAX_STEPS,
     STEP_DATA_UNREADABLE,
-    STEPS,
     STEPS_SAME_SIGNATURE,
     TOO_MANY_STEPS,
-    WORKFLOW,
     Condition,
     ExportKeys,
     Refusal,

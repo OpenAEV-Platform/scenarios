@@ -7,10 +7,14 @@ from typing import Any
 from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.stored import (
     INJECTS,
+    STEP_DATA,
+    STEPS,
+    WORKFLOW,
     Origin,
     StoredInject,
     inject_pointer,
     injects,
+    step_pointer,
 )
 
 INFORMATION = "scenario_information"
@@ -37,13 +41,21 @@ def require_text(item: Mapping[str, Any], key: str, where: str) -> str:
 
 
 def checked_injects(export: Mapping[str, Any]) -> Iterator[StoredInject]:
-    """The injects of ``export``, as the walk gives them, refusing a part that is not a list and,
-    when it is reached, an item that is not an object."""
+    """The injects of ``export``, then those of its steps, as the walk gives them, refusing a part
+    that is not a list and, when it is reached, an item that is not an object."""
     part = export.get(INJECTS)
     if not isinstance(part, list):
         raise not_an_export(f"{INJECTS} must be a list")
     for index, inject in enumerate(part):
         yield StoredInject(inject_pointer(index), require_object(inject, INJECTS), Origin.INJECT)
+    if export.get(WORKFLOW) in (None, {}, []):  # no workflow, or one left empty
+        return
+    steps = require_object(export[WORKFLOW], WORKFLOW).get(STEPS)
+    if not isinstance(steps, list):
+        raise not_an_export(f"{STEPS} must be a list")
+    for index, step in enumerate(steps):
+        inject = require_object(require_object(step, STEPS).get(STEP_DATA), STEP_DATA)
+        yield StoredInject(step_pointer(index), inject, Origin.STEP)
 
 
 def contracts_with_payloads(
