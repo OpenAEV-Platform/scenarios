@@ -444,6 +444,7 @@ def test_a_source_link_goes_where_its_address_says(url: str) -> None:
     assert url in links
 
 
+@pytest.mark.timing
 def test_an_inject_after_thousands_of_others_is_ordered_in_linear_time() -> None:
     """Each dependency is followed once: a scenario with many parents never hangs a run."""
     parents = [inject(f"p{index:05}", "P", 0) for index in range(20_000)]

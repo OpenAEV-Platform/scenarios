@@ -130,6 +130,8 @@ do_not_mutate = [
 # Mutants are judged by the domain tests only; the architecture tests would reject
 # the instrumentation mutmut injects into the copied sources.
 pytest_add_cli_args_test_selection = ["tests/domain/"]
+# A timing test failing under the load of mutation would kill a mutant it never read.
+pytest_add_cli_args = ["-m", "not timing"]
 # The shared test vectors and the closed lists of export keys some domain tests read.
 also_copy = ["conformance/", "policy/data/"]
 
@@ -141,6 +143,9 @@ files = ["src", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
+# A test that bounds a running time fails under another process's load: `make timing` runs these
+# alone, after the others, and mutation testing never runs them.
+markers = ["timing: bounds a running time, and runs alone (`make timing`)"]
 xfail_strict = true
 
 [tool.coverage.run]

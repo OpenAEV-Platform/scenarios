@@ -653,6 +653,7 @@ def test_a_condition_below_a_loop_of_parents_is_said_once_whatever_its_place() -
         assert sheet.count("`k` is `a`.") == 1
 
 
+@pytest.mark.timing
 def test_a_long_loop_of_parents_is_found_in_linear_time() -> None:
     """Each parent is followed once: a file with a long loop never hangs a run."""
     count = 30_000

@@ -281,6 +281,7 @@ def test_an_unreachable_platform_is_an_environment_problem() -> None:
     assert "127.0.0.1" not in str(error.value)
 
 
+@pytest.mark.timing
 def test_a_platform_that_does_not_answer_in_time_is_an_environment_problem(
     platform: Platform,
 ) -> None:
@@ -292,6 +293,7 @@ def test_a_platform_that_does_not_answer_in_time_is_an_environment_problem(
         _client(platform, timeout=0.1).export_scenario(SCENARIO)
 
 
+@pytest.mark.timing
 def test_a_platform_that_answers_byte_by_byte_is_cut_at_the_deadline(platform: Platform) -> None:
     platform.answer(200, b"x" * 100)
     platform.drip = 0.02  # two seconds for the whole body, each byte well within the timeout
@@ -304,6 +306,7 @@ def test_a_platform_that_answers_byte_by_byte_is_cut_at_the_deadline(platform: P
     assert time.monotonic() - start < 1.0
 
 
+@pytest.mark.timing
 def test_a_read_that_stalls_near_the_deadline_is_cut_at_the_deadline(platform: Platform) -> None:
     # Each byte comes within the timeout of one network operation, but the third would come
     # after the total deadline: the read waiting for it must stop at the deadline.
@@ -318,6 +321,7 @@ def test_a_read_that_stalls_near_the_deadline_is_cut_at_the_deadline(platform: P
     assert time.monotonic() - start < 0.65
 
 
+@pytest.mark.timing
 def test_an_answer_whose_headers_crawl_is_cut_at_the_deadline(platform: Platform) -> None:
     platform.raw = b"HTTP/1.1 200 OK\r\nX-Padding: " + b"a" * 200 + b"\r\n\r\n"
     platform.drip = 0.02  # four seconds of headers, each byte well within the timeout
@@ -345,6 +349,7 @@ def test_no_connection_is_attempted_after_the_deadline(platform: Platform) -> No
     assert platform.received == []
 
 
+@pytest.mark.timing
 def test_no_attempt_starts_once_the_deadline_has_passed(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -358,6 +363,7 @@ def test_no_attempt_starts_once_the_deadline_has_passed(
     assert platform.received == []
 
 
+@pytest.mark.timing
 def test_a_connection_completed_after_the_deadline_is_closed(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -382,6 +388,7 @@ def test_a_connection_made_while_the_watchdog_expires_is_closed(platform: Platfo
         watchdog.create_connection(_address(platform), 5)
 
 
+@pytest.mark.timing
 def test_the_watchdog_cuts_a_connection_wrapped_for_encryption() -> None:
     # Wrapping for encryption detaches the socket the watchdog made: the encrypted socket is the
     # one to watch, and the cut must reach it.
@@ -519,6 +526,7 @@ LOOPBACK = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9))
 ELSEWHERE = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", 8080))
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("addresses", [[ELSEWHERE], [LOOPBACK, ELSEWHERE]], ids=["one", "mixed"])
 def test_localhost_must_resolve_to_the_local_machine(
     monkeypatch: pytest.MonkeyPatch, addresses: list[object]
@@ -556,6 +564,7 @@ def test_a_connection_attempt_gets_only_the_time_left(
     assert 0 < (timeouts[0] or 0) <= 5
 
 
+@pytest.mark.timing
 def test_a_name_resolution_that_outlives_the_deadline_is_abandoned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -612,6 +621,7 @@ def test_each_resolved_address_is_tried_in_turn(
         assert _client(platform).export_scenario(SCENARIO) == b"archive"
 
 
+@pytest.mark.timing
 def test_an_encrypted_call_whose_tunnel_crawls_is_cut_at_the_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -635,6 +645,7 @@ def test_an_encrypted_call_whose_tunnel_crawls_is_cut_at_the_deadline(
         assert time.monotonic() - start < 0.6
 
 
+@pytest.mark.timing
 def test_the_handshake_after_a_slow_tunnel_ends_at_the_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -683,6 +694,7 @@ def test_a_transport_failure_is_named_by_its_kind_only(platform: Platform) -> No
         _client(platform).export_scenario(SCENARIO)
 
 
+@pytest.mark.timing
 def test_an_answer_finished_after_the_deadline_is_late_even_if_the_timer_lags(
     platform: Platform, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -884,6 +896,7 @@ SHORT = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}"
 CHUNK_CUT = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nab"
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize(
     ("setup", "call", "may_have_acted"),
     [
@@ -932,6 +945,7 @@ def test_an_import_refused_before_it_could_reach_the_platform_did_nothing() -> N
     assert not isinstance(error.value, OutcomeUnknownError)
 
 
+@pytest.mark.timing
 def test_an_import_late_before_any_connection_did_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

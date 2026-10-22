@@ -75,3 +75,79 @@ def test_the_catalogue_s_sheets_are_up_to_date() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "render: ok" in result.stdout
+
+
+def _make(
+    *targets: str, path: str, lock: Path, dry: bool = True
+) -> subprocess.CompletedProcess[str]:
+    make = shutil.which("make")
+    assert make is not None
+    arguments = [make, "--no-print-directory", "-f", str(ROOT / "Makefile"), "-C", str(ROOT)]
+    return subprocess.run(  # noqa: S603 - make runs the repository's own targets
+        [*arguments, *(["-n"] if dry else []), f"PIPELINE_LOCK={lock}", *targets],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": path},
+    )
+
+
+def test_the_timing_tests_run_once_every_other_check_has_ended_even_in_parallel(
+    tmp_path: Path,
+) -> None:
+    """Not a prerequisite, which make -j may start beside the others, but the recipe of check,
+    which make starts once every prerequisite has ended."""
+    (prerequisites,) = re.findall(r"^check:(.*)$", MAKEFILE, re.MULTILINE)
+    assert "timing" not in prerequisites.split()
+    assert "$(MAKE) --no-print-directory timing" in _recipe("check")
+    lines = _make("-j4", "check", path=os.environ["PATH"], lock=tmp_path / "lock").stdout
+    commands = lines.splitlines()
+    timing = next(i for i, line in enumerate(commands) if "pytest -m timing" in line)
+
+    others = [i for i, line in enumerate(commands) if "mutmut run" in line or "ruff check" in line]
+    assert others
+    assert all(i < timing for i in others)
+
+
+def test_without_flock_the_steps_run_as_they_are(tmp_path: Path) -> None:
+    empty = tmp_path / "bin"
+    empty.mkdir()  # no flock on this PATH
+
+    lines = _make("tests", "timing", path=str(empty), lock=tmp_path / "lock").stdout
+
+    assert "flock" not in lines
+    assert 'uv run pytest -m "not timing"' in lines
+    assert "uv run pytest -m timing" in lines
+
+
+@pytest.mark.skipif(shutil.which("flock") is None, reason="flock is not installed")
+def test_the_timing_tests_wait_for_another_checkout_s_tests_to_end(tmp_path: Path) -> None:
+    """Another checkout holds the lock shared, as its tests or mutation do: the timing tests start
+    only once it lets go."""
+    stub, log, held, lock = tmp_path / "bin", tmp_path / "log", tmp_path / "held", tmp_path / "lock"
+    stub.mkdir()
+    (stub / "uv").write_text(f"#!/bin/sh\necho timing >> {log}\n")
+    (stub / "uv").chmod(0o755)
+    flock = shutil.which("flock")
+    assert flock is not None
+    holder = subprocess.Popen(  # noqa: S603 - the lock held as another checkout holds it
+        [
+            flock,
+            "-s",
+            str(lock),
+            "sh",
+            "-c",
+            f"echo held > {held}; sleep 0.5; echo released >> {log}",
+        ]
+    )
+    try:
+        for _ in range(500):  # until the other checkout holds the lock
+            if held.exists():
+                break
+            subprocess.run(["sleep", "0.01"], check=True)  # noqa: S607 - from the PATH
+        result = _make("timing", path=f"{stub}:{Path(flock).parent}:/bin", lock=lock, dry=False)
+    finally:
+        holder.wait()
+
+    assert result.returncode == 0, result.stderr
+    assert log.read_text().split() == ["released", "timing"]

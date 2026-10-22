@@ -166,6 +166,7 @@ def test_two_keys_whose_pointers_would_collide_are_two_places() -> None:
     assert len(_fields(document)) == 2
 
 
+@pytest.mark.timing
 def test_a_long_chain_of_escaped_backslashes_is_refused_in_linear_time() -> None:
     chain = "\\u005c" + "u005c" * 50_000 + "u202e"  # many decodings away from the character
     started = time.monotonic()
