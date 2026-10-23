@@ -7,7 +7,8 @@ part of another shape, or an item that is not an object, yields nothing, and a c
 refuse such a shape refuses it itself.
 """
 
-from collections.abc import Iterator, Mapping
+import json
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -59,3 +60,37 @@ def injects(stored: object) -> Iterator[StoredInject]:
         inject = step.get(STEP_DATA) if isinstance(step, Mapping) else None
         if isinstance(inject, Mapping):
             yield StoredInject(step_pointer(index), inject, Origin.STEP)
+
+
+def injects_replaced(document: object, change: Callable[[object], object]) -> object:
+    """A copy of ``document`` with ``change`` applied to each item of its injects part and to
+    the inject of each step of its workflow, whether a step holds it decoded, as a stored
+    scenario does, or as JSON text, as an export does; the rest is kept as it is. A step whose
+    text is not JSON is left to the checks that refuse it."""
+    if not isinstance(document, Mapping):
+        return document
+    copied = dict(document)
+    part = document.get(INJECTS)
+    if isinstance(part, list):
+        copied[INJECTS] = [change(inject) for inject in part]
+    workflow = document.get(WORKFLOW)
+    steps = workflow.get(STEPS) if isinstance(workflow, Mapping) else None
+    if isinstance(workflow, Mapping) and isinstance(steps, list):
+        copied[WORKFLOW] = {**workflow, STEPS: [_step_replaced(step, change) for step in steps]}
+    return copied
+
+
+def _step_replaced(step: object, change: Callable[[object], object]) -> object:
+    data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
+    if not isinstance(step, Mapping) or data is None:
+        return step
+    if not isinstance(data, str):
+        return {**step, STEP_DATA: change(data)}
+    try:
+        decoded = json.loads(data)
+    except ValueError:
+        return step
+    return {
+        **step,
+        STEP_DATA: json.dumps(change(decoded), ensure_ascii=False, separators=(",", ":")),
+    }

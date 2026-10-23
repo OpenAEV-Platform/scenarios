@@ -22,7 +22,7 @@ from scenario_tools.domain.shared.payload_names import (
     version_key,
     versioned_name,
 )
-from scenario_tools.domain.shared.stored import INJECTS, STEP_DATA, STEPS, WORKFLOW
+from scenario_tools.domain.shared.stored import injects_replaced
 from scenario_tools.domain.verification.payload_catalogue import Catalogue, is_slug
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
@@ -496,33 +496,7 @@ def export_renamed(export: object, names: Mapping[str, str]) -> object:
     it. A payload without a description keeps the one normalisation gives it, its first name.
     Only the payloads of contracts are renamed: an inject's content, its arguments, is never
     read nor rewritten."""
-    if not isinstance(export, Mapping):
-        return export
-    copied = dict(export)
-    injects = export.get(INJECTS)
-    if isinstance(injects, list):
-        copied[INJECTS] = [_inject_renamed(inject, names) for inject in injects]
-    workflow = export.get(WORKFLOW)
-    steps = workflow.get(STEPS) if isinstance(workflow, Mapping) else None
-    if isinstance(workflow, Mapping) and isinstance(steps, list):
-        copied[WORKFLOW] = {**workflow, STEPS: [_step_renamed(step, names) for step in steps]}
-    return copied
-
-
-def _step_renamed(step: object, names: Mapping[str, str]) -> object:
-    """``step`` with the payload of its data renamed: data as an export holds it, JSON text,
-    or decoded, as a stored scenario holds it."""
-    data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
-    if not isinstance(step, Mapping) or data is None:
-        return step
-    if not isinstance(data, str):
-        return {**step, STEP_DATA: _inject_renamed(data, names)}
-    try:
-        decoded = json.loads(data)
-    except ValueError:
-        return step  # normalisation refuses it
-    text = json.dumps(_inject_renamed(decoded, names), ensure_ascii=False, separators=(",", ":"))
-    return {**step, STEP_DATA: text}
+    return injects_replaced(export, lambda inject: _inject_renamed(inject, names))
 
 
 def _inject_renamed(inject: object, names: Mapping[str, str]) -> object:
