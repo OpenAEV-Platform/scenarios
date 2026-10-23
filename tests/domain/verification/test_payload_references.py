@@ -715,3 +715,11 @@ def test_the_payloads_that_cannot_be_hashed_are_refused_and_no_other() -> None:
         ("PAY-005", Severity.BLOCKING, JSON, PAYLOAD.format(1) + "/payload_new_field")
     ]
     assert unhashable_findings(stored(payload("a")), _no_files, JSON) == ()
+
+
+def test_a_payload_whose_attached_file_the_entry_holds_can_be_hashed() -> None:
+    attached = {"payload_type": "Executable", "payload_name": "a", "executable_file": "doc"}
+    scenario = stored(attached)
+
+    assert unhashable_findings(scenario, lambda document: "0" * 64, JSON) == ()
+    assert [f.code for f in unhashable_findings(scenario, _no_files, JSON)] == ["PAY-005"]
