@@ -25,6 +25,7 @@ from scenario_tools.application.intake_entry import (
     plan_document,
     write_intake,
 )
+from scenario_tools.application.prepare_entry import renormaliser
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
@@ -1085,11 +1086,11 @@ def test_an_update_takes_claims_too() -> None:
 def test_a_claim_on_a_payload_of_a_chaining_step_gives_it_a_new_version() -> None:
     held_steps = catalogue(json.loads(_intake(NEW, export=CHAINING).scenario_json or b""))
     edited = copy.deepcopy(CHAINING)
-    step = edited["scenario_workflow"]["workflow_steps"][0]
-    data = json.loads(step["step_data"])
-    payload = data["inject_injector_contract"]["injector_contract_payload"]
-    payload["command_content"] += " -ef"
-    step["step_data"] = json.dumps(data)
+    for step in edited["scenario_workflow"]["workflow_steps"]:  # one payload, in both steps
+        data = json.loads(step["step_data"])
+        payload = data["inject_injector_contract"]["injector_contract_payload"]
+        payload["command_content"] += " -ef"
+        step["step_data"] = json.dumps(data)
     slug = next(v.slug for v in held_steps.by_hash.values() if v.name == payload["payload_name"])
     claims = {"payloads": [{"name": payload["payload_name"], "based_on": {"payload": slug}}]}
 
@@ -1139,3 +1140,18 @@ def test_an_update_whose_ids_cannot_be_assigned_still_writes_each_copy_under_its
     }
     assert f"{name} (1.1.0)" in names
     assert name not in names
+
+
+def test_a_claimed_copy_under_another_base_name_is_stored_as_normalisation_gives_it() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    _salt_payload(edited)["payload_name"] = f"Copy of {name}"
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+    assert result.scenario_json is not None
+    stored = json.loads(result.scenario_json)
+    assert _at(stored, f"{name} (1.1.0)")
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json

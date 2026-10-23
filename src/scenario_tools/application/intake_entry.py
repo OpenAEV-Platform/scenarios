@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
-from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
@@ -152,6 +152,19 @@ class _Payloads:
     held: HeldVersions
     files: dict[str, bytes]
     changes: dict[str, tuple[str, ...]]
+    renamed: bool = False  # whether a claimed copy takes another name
+
+
+def _named(
+    stored: Mapping[str, Any], verdict: _Payloads, request: IntakeRequest, data: DataLoader
+) -> bytes:
+    """``stored``, its payload IDs assigned, as normalisation writes it once a claimed copy took
+    another name: the identifiers derived from a payload's base name follow its new name, the
+    others stay, the scenario being its own previous version."""
+    if not verdict.renamed:
+        return stored_form(stored)
+    path = f"{request.entry}/scenario.json"
+    return renormaliser(data)(stored, request.external_id, path)
 
 
 def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
@@ -196,6 +209,7 @@ def _payloads(
         HeldVersions.of(held),
         {version.path: stored_form(version.document) for version in new.values()},
         verdict.changes,
+        bool(verdict.renames),
     )
 
 
@@ -332,7 +346,7 @@ def _new(
         metadata, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
-        metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
+        metadata, scenario_json = assigned.metadata, _named(assigned.stored, verdict, request, data)
     # Otherwise the entry's check, run once it is written, says why in the plan.
     changelog = (
         f"# Changelog\n\n## {metadata['version']} \u2014 {today.isoformat()}\n\n"
@@ -417,7 +431,7 @@ def _update(
         declared, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
-        scenario_json = stored_form(assigned.stored)
+        scenario_json = _named(assigned.stored, verdict, request, data)
         # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
         information = assigned.stored.get(INFORMATION) or {}  # as normalised, then stored
         given = {name: information.get(FACETS[name]) for name in request.facets}
