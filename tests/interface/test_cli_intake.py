@@ -401,6 +401,8 @@ def test_a_new_entry_writes_the_version_file_of_each_new_payload_and_plans_it(
     written = sorted(path.relative_to(root).as_posix() for path in root.glob("payloads/*/*"))
     assert len(written) == 11
     assert all(path.endswith("/1.0.0.json") for path in written)
+    # A real export holds the domains on the contracts: every version file carries them.
+    assert all(json.loads((root / path).read_bytes())["payload_domains"] for path in written)
     planned = {file["path"]: file["sha256"] for file in json.loads(plan.read_text())["files"]}
     assert {path: planned[path] for path in written} == {
         path: _sha256(root / path) for path in written

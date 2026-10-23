@@ -4,12 +4,14 @@ first version of a folder of its own, its slug proposed from its base name. A ne
 slug or base name another payload of the catalogue has is refused: a reviewer could not tell the
 two apart."""
 
+import json
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from scenario_tools.domain.catalogue.intake import name_key
+from scenario_tools.domain.catalogue.structure import CONTRACT, contracts_with_payloads
 from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.payload_names import FIRST_VERSION, base_name
@@ -108,12 +110,40 @@ def _cleaned(value: Any) -> Any:
     return value
 
 
+def contract_domains(contract: Mapping[str, Any]) -> list[dict[str, str]]:
+    """The domains a contract's own copy declares, by name and colour, as a version file holds
+    them: an export holds a payload's domains on its contract, never on the payload. None when
+    the copy names none, or not as normalisation reads it."""
+    copy = contract.get("convertedContent")
+    if copy is None and isinstance(contract.get("injector_contract_content"), str):
+        try:
+            copy = json.loads(contract["injector_contract_content"])
+        except ValueError:
+            return []
+    domains = copy.get("domains") if isinstance(copy, Mapping) else None
+    if not isinstance(domains, list):
+        return []
+    return [
+        {"domain_color": domain["domain_color"], "domain_name": domain["domain_name"]}
+        for domain in domains
+        if isinstance(domain, Mapping)
+        and isinstance(domain.get("domain_name"), str)
+        and isinstance(domain.get("domain_color"), str)
+    ]
+
+
 def version_document(
-    payload: Mapping[str, Any], techniques: Sequence[object], identifier: str
+    payload: Mapping[str, Any],
+    techniques: Sequence[object],
+    identifier: str,
+    declared: Sequence[Mapping[str, str]] = (),
 ) -> dict[str, Any]:
     """The first version file of ``payload``, embedded with the ``techniques`` of its contract,
-    under ``identifier``: cleaned, its sets sorted."""
+    under ``identifier``, with the domains its contract ``declared`` when it carries none:
+    cleaned, its sets sorted."""
     document: dict[str, Any] = _cleaned(payload)
+    if not document.get(_DOMAINS) and declared:
+        document[_DOMAINS] = [dict(domain) for domain in declared]
     for key in _TEXT_SETS:
         if isinstance(document.get(key), list):
             document[key] = sorted(document[key], key=lambda item: text_order(str(item)))
@@ -174,6 +204,9 @@ def verdicts(
     new: dict[str, PayloadVersion] = {}
     named: dict[str, str] = {}  # the slug of each new payload, by its base name's key
     slugs: set[str] = set()  # the slugs of the new payloads
+    contracts = {
+        f"{at}/{CONTRACT}": contract for at, _, contract in contracts_with_payloads(stored)
+    }
     for embedded in embedded_payloads(stored):
         payload = embedded.payload
         if not isinstance(payload, Mapping):
@@ -210,7 +243,10 @@ def verdicts(
                 Finding("PAY-009", Severity.BLOCKING, scenario, embedded.pointer, message)
             )
             continue
-        document = version_document(payload, embedded.attack_patterns, agreed.id_for(digest))
+        domains = contract_domains(contracts[embedded.contract])
+        document = version_document(
+            payload, embedded.attack_patterns, agreed.id_for(digest), domains
+        )
         version = PayloadVersion(
             slug, FIRST_VERSION, f"payloads/{slug}/{FIRST_VERSION}.json", document
         )
