@@ -517,3 +517,16 @@ def test_a_claim_on_a_payload_that_cannot_be_hashed_names_it_and_leaves_it_to_it
 
     assert result.findings == ()
     assert (result.versions, result.renames) == ({}, {})
+
+
+def test_a_new_version_the_catalogue_would_refuse_is_refused_and_not_given() -> None:
+    result = claimed_verdicts(
+        STORED,
+        _catalogue(PS),
+        NONE,
+        accepted=lambda _: False,
+        claims=(Claim("Process Discovery - ps", PS),),
+    )
+
+    assert {f.code for f in result.findings} == {"PAY-009"}
+    assert (result.versions, result.renames, result.changes) == ({}, {}, {})
