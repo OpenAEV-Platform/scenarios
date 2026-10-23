@@ -84,7 +84,6 @@ from scenario_tools.application.fixture_expectations import (
     expectations_from_document,
 )
 from scenario_tools.application.intake_entry import (
-    CHECKED_ID,
     intake_check,
     intake_entry,
     intake_files,
@@ -1319,7 +1318,13 @@ _DIRECTORY = click.Path(path_type=Path, file_okay=False, exists=True)
 @click.option(
     "--external-id",
     "external_id",
-    help="With --check: the entry's external ID, so that each pointer is the one intake gives.",
+    help="With --check: the entry's external ID, which normalisation derives identifiers from.",
+)
+@click.option(
+    "--previous",
+    "previous",
+    type=click.Path(path_type=Path, dir_okay=False, exists=True),
+    help="With --check, for an update: the entry's stored scenario.json.",
 )
 @click.pass_context
 def intake(
@@ -1333,6 +1338,7 @@ def intake(
     rules: Path | None,
     claims: Path | None,
     external_id: str | None,
+    previous: Path | None,
 ) -> None:
     """Turn EXPORT, a platform export (an archive, or its JSON), and the request at --request
     into an entry of the repository at --repo, written in place, and write at --plan the plan of
@@ -1346,17 +1352,18 @@ def intake(
         "--rules": rules,
         "--claims": claims,
         "--external-id": external_id,
+        "--previous": previous,
     }
     writing = {"--request": request, "--repo": repo, "--plan": plan}
     if check:
         extra = [name for name, value in writing.items() if value is not None]
         if extra:
             raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
-        if payloads is None or rules is None:
-            raise click.UsageError("--check needs --payloads and --rules")
-        if external_id is not None and not _CANONICAL_UUID.fullmatch(external_id):
+        if payloads is None or rules is None or external_id is None:
+            raise click.UsageError("--check needs --payloads, --rules and --external-id")
+        if not _CANONICAL_UUID.fullmatch(external_id):
             raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
-        _intake_check(ctx, export, payloads, rules, claims, external_id)
+        _intake_check(ctx, export, payloads, rules, claims, external_id, previous)
         return
     extra = [name for name, value in checking.items() if value is not None]
     if extra:
@@ -1453,7 +1460,8 @@ def _intake_check(
     payloads: Path,
     rules: Path,
     claims: Path | None,
-    external_id: str | None,
+    external_id: str,
+    previous: Path | None,
 ) -> None:
     """``intake --check``: the verdicts on EXPORT's payloads, writing nothing and reading no git."""
     try:
@@ -1483,7 +1491,9 @@ def _intake_check(
             data=loader,
             schema=schema,
             payloads=catalogue_of(CatalogueDirectory(catalogue.parent, (catalogue.name,))),
-            external_id=CHECKED_ID if external_id is None else external_id,
+            external_id=external_id,
+            previous=None if previous is None else read_stored_scenario(previous)[1],
+            previous_path=None if previous is None else previous.name,
         )
         return Report("intake", found)
 

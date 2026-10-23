@@ -93,7 +93,7 @@ def test_a_refused_claim_fails_the_check(tmp_path: Path, monkeypatch: pytest.Mon
 
     code, document = _check(
         str(CHAINING), "--check", "--payloads", str(payloads), "--rules", str(rules),
-        "--claims", str(claims),
+        "--claims", str(claims), "--external-id", CHAINED_ID,
     )  # fmt: skip
 
     assert code == 1
@@ -105,8 +105,13 @@ def test_a_refused_claim_fails_the_check(tmp_path: Path, monkeypatch: pytest.Mon
 @pytest.mark.parametrize(
     ("arguments", "said"),
     [
-        (["--check", "--rules", "r"], "--check needs --payloads and --rules"),
+        (["--check", "--rules", "r"], "--check needs --payloads, --rules and --external-id"),
         (["--check", "--payloads", "p", "--rules", "r", "--plan", "x"], "leave out --plan"),
+        (
+            ["--check", "--payloads", "p", "--rules", "r"],
+            "--check needs --payloads, --rules and --external-id",
+        ),
+        (["--previous", "c.yaml"], "only with --check: --previous"),
         (["--claims", "c.yaml"], "only with --check: --claims"),
         (
             ["--check", "--payloads", "p", "--rules", "r", "--external-id", "not a uuid"],
@@ -139,7 +144,7 @@ def test_an_empty_claims_file_is_refused_never_read_as_no_claims(
 
     code, document = _check(
         str(CHAINING), "--check", "--payloads", str(payloads), "--rules", str(rules),
-        "--claims", str(claims),
+        "--claims", str(claims), "--external-id", CHAINED_ID,
     )  # fmt: skip
 
     assert code == 1

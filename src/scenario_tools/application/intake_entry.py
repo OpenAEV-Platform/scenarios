@@ -309,14 +309,18 @@ def intake_check(
     data: DataLoader,
     schema: SchemaValidator,
     payloads: Catalogue,
-    external_id: str = CHECKED_ID,
+    external_id: str,
+    previous: object = None,
+    previous_path: str | None = None,
 ) -> tuple[Finding, ...]:
     """The verdicts ``intake`` gives on the payloads ``export`` embeds against the catalogue
     ``payloads``, with the findings on ``claims``, a document holding a request's ``payloads``
     alone (none when it is ``None``): from the same functions, writing nothing. The export is
-    normalised as intake normalises it for the entry ``external_id``, which orders its injects,
-    so that each pointer is the one intake gives; a facet it lacks is given a value the verdicts
-    never read."""
+    normalised as intake normalises it for the entry ``external_id``, and, for an update, with
+    the entry's stored scenario, ``previous``, read from ``previous_path``: normalisation derives
+    the identifiers it orders injects by, and rewrites in values, from both, so the verdicts
+    are intake's only with them. A facet the export lacks is given a value the verdicts never
+    read."""
     listed: tuple[Mapping[str, Any], ...] = ()
     if claims is not None:
         refused = _claims_refused(claims, claims_path, schema)
@@ -326,7 +330,14 @@ def intake_check(
     export, _ = completed_facets(export, {}, _CHECKED_FACETS, export_path)
     prepared, verdict = _adopting(
         export,
-        lambda form: prepare_entry(form, external_id, data, path=export_path),
+        lambda form: prepare_entry(
+            form,
+            external_id,
+            data,
+            path=export_path,
+            previous=previous,
+            previous_path=previous_path,
+        ),
         lambda form: prepare_entry(form, external_id, data, path=export_path),
         _claims(listed),
         (export_path, claims_path),

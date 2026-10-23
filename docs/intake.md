@@ -209,8 +209,11 @@ scenario-tools --format json intake export.zip --check --payloads payloads --rul
   checkout, or a copy of those two folders. The export is normalised as `intake` normalises it,
   and these are the rules it reads.
 - `--claims`, optional, is a YAML document holding the request's `payloads` list alone.
-- `--external-id`, optional, is the entry's: the stored scenario orders its injects by it, so
-  that each pointer is the one `intake` gives.
+- `--external-id` is the entry's. Normalisation derives the identifiers of the injects from it,
+  orders them by these, and rewrites the identifiers a payload's command holds: the verdicts and
+  their pointers are `intake`'s only with it.
+- `--previous`, for an update, is the entry's stored `scenario.json`: as `intake` does, the
+  export is normalised against it, so that an inject keeps the identifier the entry gave it.
 
 A facet the export lacks is not asked for: the verdicts never read it. Where `intake` would
 refuse, it says only what refuses; the check also gives the verdict on every other payload.

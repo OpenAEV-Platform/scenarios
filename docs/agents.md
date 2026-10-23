@@ -32,7 +32,7 @@ Keep the export, the request and the plan outside the checkout, in a directory t
 plan must not exist yet.
 
 An agent without a checkout can learn what intake will make of an export's payloads first, from
-a release's version files and a copy of the repository's rules, with `intake --check`
+a release's version files, a copy of the repository's rules and the entry's external ID (and, for an update, its stored `scenario.json`), with `intake --check`
 ([`intake.md`](intake.md#checking-the-payloads-first)).
 
 ## The steps

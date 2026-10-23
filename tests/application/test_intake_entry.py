@@ -1536,3 +1536,71 @@ def test_the_check_of_one_payload_that_cannot_be_hashed_is_refused() -> None:
     found = _checked(export, None, EMPTY)
 
     assert "PAY-005" in {f.code for f in found if f.severity is Severity.BLOCKING}
+
+
+def test_the_check_of_an_update_gives_the_verdicts_the_update_gives() -> None:
+    source = _stored(SALT)
+    assert source.stored is not None
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = [{"name": name, "based_on": {"payload": slug}}]
+
+    result = _intake({**UPDATE, "payloads": claims}, source, export=edited, payloads=held_salt)
+    checked = intake_check(
+        edited,
+        {"payloads": claims},
+        export_path=EXPORT,
+        claims_path=REQUEST,
+        data=DATA,
+        schema=SCHEMA,
+        payloads=held_salt,
+        external_id=ID,
+        previous=source.stored[1],
+        previous_path="scenario.json",
+    )
+
+    assert result.refusals == ()
+    assert _verdicts(checked) == _verdicts(result.to_complete)
+
+
+def test_the_check_of_an_update_needs_the_previous_version_its_identifiers_come_from() -> None:
+    """A command holding its inject's ID: normalisation rewrites it to the ID the previous
+    version gave that inject, so the payload is the catalogue's only with that version."""
+    exported = copy.deepcopy(SALT)
+    inject = next(
+        i
+        for i in exported["scenario_injects"]
+        if (i.get("inject_injector_contract") or {}).get("injector_contract_payload")
+    )
+    payload = inject["inject_injector_contract"]["injector_contract_payload"]
+    payload["command_content"] += f" # {inject['inject_id']}"
+    first = json.loads(_intake(NEW, export=exported).scenario_json or b"")
+    stable = next(
+        i["inject_id"]
+        for i in first["scenario_injects"]
+        if " # "
+        in ((i.get("inject_injector_contract") or {}).get("injector_contract_payload") or {}).get(
+            "command_content", ""
+        )
+    )
+    previous = json.loads(json.dumps(first).replace(stable, "11111111-2222-4333-8444-555555555555"))
+    held_previous = catalogue(previous)
+
+    def there(found: Iterable[Finding]) -> int:
+        return sum(f.message.startswith("already there") for f in found)
+
+    def check(prior: object) -> tuple[Finding, ...]:
+        return intake_check(
+            exported,
+            None,
+            export_path=EXPORT,
+            claims_path="",
+            data=DATA,
+            schema=SCHEMA,
+            payloads=held_previous,
+            external_id=ID,
+            previous=prior,
+            previous_path=None if prior is None else "scenario.json",
+        )
+
+    assert there(check(previous)) == 11
+    assert there(check(None)) == 10  # the one payload is judged on another command
