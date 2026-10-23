@@ -603,7 +603,7 @@ def _run_catalogue(tmp_path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
         ["/bin/bash", "-c", str(step["run"])],
         cwd=tmp_path,
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": "/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path / "runner")},
         capture_output=True,
         text=True,
         check=False,
@@ -645,14 +645,30 @@ def test_the_pull_request_s_catalogue_replaces_the_base_s(tmp_path: Path) -> Non
     ]
 
 
-def test_a_pull_request_without_a_catalogue_leaves_none(tmp_path: Path) -> None:
+def test_a_pull_request_without_a_catalogue_leaves_an_empty_one_and_the_base_s_kept(
+    tmp_path: Path,
+) -> None:
+    """So that the next step refuses every version the base holds and the pull request drops."""
     _catalogues(tmp_path)
     shutil.rmtree(tmp_path / "pull" / "payloads")
 
     result = _run_catalogue(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert not (tmp_path / "payloads").exists()
+    assert list((tmp_path / "payloads").iterdir()) == []
+    assert (tmp_path / "runner" / "base" / "payloads" / "ps" / "1.0.0.json").read_text() == "{}\n"
+
+
+def test_the_base_s_catalogue_is_kept_for_the_check_against_it(tmp_path: Path) -> None:
+    _catalogues(tmp_path)
+
+    result = _run_catalogue(tmp_path)
+    scripts = "\n".join(step.get("run", "") for step in STEPS)
+
+    assert result.returncode == 0, result.stderr
+    kept = sorted(p.name for p in (tmp_path / "runner" / "base" / "payloads").iterdir())
+    assert kept == ["ps"]  # the base's, not the pull request's
+    assert '--previous-root "$RUNNER_TEMP/base"' in scripts
 
 
 @pytest.mark.parametrize("shape", ["link", "file"])
@@ -670,3 +686,19 @@ def test_a_catalogue_that_is_a_link_or_no_directory_is_refused(tmp_path: Path, s
     assert result.returncode != 0
     assert "refused" in result.stderr
     assert (tmp_path / "payloads" / "ps" / "1.0.0.json").exists()  # the base's is kept
+
+
+@pytest.mark.parametrize("shape", ["link", "file"])
+def test_a_base_catalogue_that_is_no_directory_stops_the_job(tmp_path: Path, shape: str) -> None:
+    _catalogues(tmp_path)
+    shutil.rmtree(tmp_path / "payloads")
+    if shape == "link":
+        (tmp_path / "elsewhere").mkdir()
+        (tmp_path / "payloads").symlink_to(tmp_path / "elsewhere")
+    else:
+        (tmp_path / "payloads").write_text("not a directory\n")
+
+    result = _run_catalogue(tmp_path)
+
+    assert result.returncode != 0
+    assert "the base branch's payloads is no directory" in result.stderr

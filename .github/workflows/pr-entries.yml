@@ -119,18 +119,25 @@ jobs:
             echo "refused, not a directory: pull/payloads" >&2
             exit 1
           fi
+          # The base's catalogue is kept, so that the next step checks what the pull request
+          # does to the versions it holds.
+          mkdir -p -- "$RUNNER_TEMP/base"
+          if [ -L payloads ] || { [ -e payloads ] && [ ! -d payloads ]; }; then
+            echo "refused, the base branch's payloads is no directory" >&2
+            exit 1
+          fi
+          if [ -d payloads ]; then cp -P -R -- payloads "$RUNNER_TEMP/base/payloads"; fi
           rm -rf -- payloads
-          if [ -d pull/payloads ]; then cp -P -R -- pull/payloads payloads; fi
+          if [ -d pull/payloads ]; then cp -P -R -- pull/payloads payloads; else mkdir -- payloads; fi
 
       - name: Check the payload catalogue
         run: |
           set -euo pipefail
-          if [ ! -d payloads ]; then
-            echo "The pull request holds no payload catalogue." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           status=0
+          # Against the base's catalogue: a version it holds is never edited or removed, and a
+          # new version is higher than every version it holds of its payload.
           uv run --frozen --no-dev scenario-tools validate-payloads payloads \
+            --previous-root "$RUNNER_TEMP/base" \
             > "$RUNNER_TEMP/payloads" 2>&1 || status=$?
           {
             echo "## Payload catalogue"

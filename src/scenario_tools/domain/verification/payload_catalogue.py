@@ -41,6 +41,14 @@ BASE_NAME_DIFFERS = "every version of a payload has the base name of its other v
 BASE_NAME_TAKEN = "another payload of the catalogue has this base name: give each payload its own"
 ID_TWICE = "another version of the catalogue has this ID: an ID names one version"
 HASH_TWICE = "another version of the catalogue has this content: a content is one version"
+VERSION_CHANGED = (
+    "a version file the base branch holds never changes: put it back, and add the change as a "
+    "new version"
+)
+VERSION_REMOVED = "a version file the base branch holds is never removed: put it back"
+VERSION_NOT_HIGHER = (
+    "a new version is higher than every version the base branch holds for this payload"
+)
 
 
 class EntryKind(Enum):
@@ -205,3 +213,29 @@ class Catalogue:
                 for digest, version in self.by_hash.items()
             ]
         )
+
+
+def immutability_findings(
+    base: Mapping[tuple[str, str], bytes], current: Mapping[tuple[str, str], bytes], root: str
+) -> tuple[Finding, ...]:
+    """What the catalogue ``current`` does to the ``base`` branch's, each by slug and version
+    with its file's bytes, at ``root``: ``VER-022`` for each version the base holds that is
+    edited or removed, its folder with it or not; ``VER-023`` for each new version that is not
+    higher than every version the base holds for its payload. Several new versions are allowed
+    when each is."""
+    findings = []
+    for slug, version in sorted(base, key=lambda key: (key[0], version_key(key[1]))):
+        path = f"{root}/{slug}/{version}.json"
+        if (slug, version) not in current:
+            findings.append(Finding("VER-022", Severity.BLOCKING, path, "", VERSION_REMOVED))
+        elif current[(slug, version)] != base[(slug, version)]:
+            findings.append(Finding("VER-022", Severity.BLOCKING, path, "", VERSION_CHANGED))
+    highest: dict[str, tuple[int, ...]] = {}
+    for slug, version in base:
+        highest[slug] = max(highest.get(slug, ()), version_key(version))
+    added = sorted(current.keys() - base.keys(), key=lambda key: (key[0], version_key(key[1])))
+    for slug, version in added:
+        if slug in highest and version_key(version) <= highest[slug]:
+            path = f"{root}/{slug}/{version}.json"
+            findings.append(Finding("VER-023", Severity.BLOCKING, path, "", VERSION_NOT_HIGHER))
+    return tuple(findings)

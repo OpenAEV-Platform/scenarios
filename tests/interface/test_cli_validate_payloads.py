@@ -280,3 +280,99 @@ def test_a_catalogue_reached_through_a_link_in_the_repository_is_refused(tmp_pat
     code, found = _run(root / "linked" / "payloads")
     assert code == 1
     assert [c for c, *_ in found] == ["IO-013"]
+
+
+def _against(catalogue: Path, base: Path) -> tuple[int, list[tuple[str, str]]]:
+    arguments = [
+        "--format",
+        "json",
+        "validate-payloads",
+        str(catalogue),
+        "--previous-root",
+        str(base),
+    ]
+    result = CliRunner().invoke(main, arguments)
+    document = json.loads(result.output)
+    return result.exit_code, [(f["code"], f["path"]) for f in document["findings"]]
+
+
+def _base(tmp_path: Path) -> Path:
+    """A checkout of the base branch holding the hand-built catalogue."""
+    base = tmp_path / "base"
+    shutil.copytree(ROOT / "tests" / "golden" / "payloads", base / "payloads")
+    return base
+
+
+def test_a_catalogue_that_keeps_the_base_passes_against_it(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+
+    assert _against(catalogue, _base(tmp_path)) == (0, [])
+
+
+def test_a_version_the_base_holds_edited_or_removed_fails_against_it(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    base = _base(tmp_path)
+    edit(catalogue, PS_LATER, lambda document: document.update(payload_description="Changed."))
+    (catalogue / WHOAMI).unlink()
+    (catalogue / WHOAMI).parent.rmdir()
+
+    code, found = _against(catalogue, base)
+
+    assert code == 1
+    assert found == [
+        ("VER-022", f"payloads/{PS_LATER}"),
+        ("VER-022", f"payloads/{WHOAMI}"),
+    ]
+
+
+def test_a_new_version_below_the_base_s_highest_fails_against_it(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    base = _base(tmp_path)
+    shutil.copyfile(catalogue / PS_LATER, catalogue / PS / "1.0.5.json")
+    edit(
+        catalogue,
+        f"{PS}/1.0.5.json",
+        lambda document: document.update(payload_name="Process Discovery - ps (1.0.5)"),
+    )
+
+    code, found = _against(catalogue, base)
+
+    assert code == 1
+    assert ("VER-023", f"payloads/{PS}/1.0.5.json") in found
+
+
+def test_a_base_without_a_catalogue_is_an_empty_base(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    (tmp_path / "empty").mkdir()
+
+    assert _against(catalogue, tmp_path / "empty") == (0, [])
+
+
+def test_a_copy_of_the_catalogue_is_checked_against_the_base_s_payloads(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    copy = catalogue.parent / "copies" / "payloads"
+    shutil.copytree(catalogue, copy)
+    edit(copy, PS_LATER, lambda document: document.update(payload_description="Changed."))
+
+    assert _against(copy, _base(tmp_path)) == (1, [("VER-022", f"copies/payloads/{PS_LATER}")])
+
+
+@pytest.mark.parametrize("kind", ["link", "file"])
+def test_a_base_whose_payloads_is_no_directory_is_the_environment(
+    tmp_path: Path, kind: str
+) -> None:
+    catalogue = repository(tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    if kind == "link":
+        (base / "payloads").symlink_to(_base(tmp_path / "elsewhere") / "payloads")
+    else:
+        (base / "payloads").write_text("x")
+
+    result = CliRunner().invoke(
+        main,
+        ["--format", "json", "validate-payloads", str(catalogue), "--previous-root", str(base)],
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "the base checkout's payloads is no directory" in result.output
