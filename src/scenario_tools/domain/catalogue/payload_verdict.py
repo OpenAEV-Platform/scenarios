@@ -207,6 +207,7 @@ class Claim:
     based_on: str | None = None
     based_version: str | None = None
     version: str | None = None
+    position: int | None = None  # its place in the request, when not its place in the list
 
 
 @dataclass(frozen=True)
@@ -367,7 +368,7 @@ class _Pass:
             return
         message = f"new version: {slug} {number} (based on {slug} {base_version})"
         self.versions[new_digest] = version
-        self.highest[slug] = number
+        self.highest[slug] = max(number, latest, key=version_key)  # never back
         self.renames[pointer] = name
         self.claimed[digest] = (name, message)
         self.changes[version.path] = _changed(base.document, document)
@@ -431,10 +432,11 @@ def claimed_verdicts(
         f"{at}/{CONTRACT}": contract for at, _, contract in contracts_with_payloads(stored)
     }
     run = _Pass(catalogue, agreed, accepted, scenario, request, contracts)
+    at = [i if claim.position is None else claim.position for i, claim in enumerate(claims)]
     by_name: dict[str, int] = {}
     for position, claim in enumerate(claims):
         if claim.name in by_name:
-            run.refuse_claim(f"/payloads/{position}/name", CLAIMED_TWICE)
+            run.refuse_claim(f"/payloads/{at[position]}/name", CLAIMED_TWICE)
         else:
             by_name[claim.name] = position
     named: set[int] = set()
@@ -461,11 +463,11 @@ def claimed_verdicts(
                 run.hint(embedded.pointer, CLAIM_IGNORED)
             continue
         if index is not None and claims[index].based_on is not None:
-            run.claim(embedded, payload, digest, claims[index], index)
+            run.claim(embedded, payload, digest, claims[index], at[index])
         else:
             run.unclaimed(embedded, payload, digest)
     for position in sorted(set(by_name.values()) - named):
-        run.refuse_claim(f"/payloads/{position}/name", CLAIM_NAMES_NOTHING)
+        run.refuse_claim(f"/payloads/{at[position]}/name", CLAIM_NAMES_NOTHING)
     if len(run.versions) > NEW_PAYLOADS_LIMIT:
         too_many = (Finding("PAY-009", Severity.BLOCKING, scenario, "", TOO_MANY_NEW),)
         return Verdicts(too_many, {}, {}, {})

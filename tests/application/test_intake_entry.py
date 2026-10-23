@@ -25,7 +25,7 @@ from scenario_tools.application.intake_entry import (
     plan_document,
     write_intake,
 )
-from scenario_tools.application.prepare_entry import renormaliser
+from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
@@ -1234,3 +1234,46 @@ def test_an_intake_run_again_with_an_asked_version_finds_a_renamed_copy_already_
     assert again.payload_files == {}
     assert again.scenario_json == first.scenario_json
     assert f"already there: {slug} 2.0.0" in {f.message for f in again.to_complete}
+
+
+def test_a_claim_after_one_resolved_by_its_name_is_still_found_at_its_place() -> None:
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    edited = copy.deepcopy(SALT)
+    there, changed = _salt_payload(edited, 0), _salt_payload(edited, 1)
+    names = (there["payload_name"], changed["payload_name"])
+    slugs = [next(v.slug for v in held_salt.by_hash.values() if v.name == n) for n in names]
+    held_there = next(v for v in held_salt.by_hash.values() if v.name == names[0])
+    there["payload_name"] = f"Copy of {names[0]}"  # the catalogue's content, renamed
+    there["payload_description"] = held_there.document["payload_description"]
+    changed["payload_name"] = f"Copy of {names[1]}"
+    changed["command_content"] += " # tuned"
+    claims = [
+        {"name": f"Copy of {names[0]}", "based_on": {"payload": slugs[0]}},
+        {"name": f"Copy of {names[1]}", "based_on": {"payload": slugs[1]}, "version": "1.0.0"},
+    ]
+
+    result = _intake({**NEW, "payloads": claims}, export=edited, payloads=held_salt)
+
+    assert _codes(result.refusals) == [("ITK-009", REQUEST, "/payloads/1/version")]
+
+
+def test_an_update_finds_the_names_its_claims_adopt_before_matching_its_previous_version() -> None:
+    calls: list[str] = []
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        calls.append("previous" if options.get("previous") is not None else "alone")
+        return prepare_entry(form, *arguments, **options)
+
+    edited, claim, held_steps = _renamed_chaining()
+    first = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held_steps)
+    assert first.scenario_json is not None
+    source = FakeSource(
+        (CatalogueEntry(ENTRY, ID, CHAINING["scenario_information"]["scenario_name"]),),
+        (first.scenario_json, json.loads(first.scenario_json)),
+        declared=first.metadata,
+    )
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        _intake({**UPDATE, "payloads": [claim]}, source, export=edited, payloads=held_steps)
+
+    assert calls == ["alone", "previous"]  # matched once, with the names adopted

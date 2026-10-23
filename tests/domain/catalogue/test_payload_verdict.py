@@ -630,3 +630,27 @@ def test_a_claim_naming_two_contents_is_refused() -> None:
     result = _claimed(_two_copies("A", "A"), Claim("A", PS))
 
     assert ("ITK-009", TWO_CONTENTS) in _codes_of(result)
+
+
+def test_a_version_given_automatically_follows_the_highest_asked_for_before_it() -> None:
+    stored = _two_copies("A", "B")
+    steps = stored["scenario_workflow"]["workflow_steps"]
+    steps.append(copy.deepcopy(steps[0]))
+    third = steps[2]["step_data"]["inject_injector_contract"]["injector_contract_payload"]
+    third.update(payload_name="C", command_content="ps -eo pid")
+    claims = (Claim("A", PS, version="1.3.0"), Claim("B", PS, version="1.2.0"), Claim("C", PS))
+
+    result = _claimed(stored, *claims)
+
+    assert sorted(v.version for v in result.versions.values()) == ["1.2.0", "1.3.0", "1.4.0"]
+
+
+def test_a_claim_s_findings_point_at_its_place_in_the_request() -> None:
+    claims = (Claim("A", PS, version="1.0.0", position=3), Claim("nothing", position=5))
+
+    result = _claimed(_two_copies("A", "B"), *claims)
+
+    assert {f.field for f in result.findings if f.code == "ITK-009"} == {
+        "/payloads/3/version",
+        "/payloads/5/name",
+    }

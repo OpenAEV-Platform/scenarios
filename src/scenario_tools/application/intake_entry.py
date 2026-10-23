@@ -178,6 +178,7 @@ def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
 def _adopting(
     export: Any,
     prepare: Callable[[Any], PreparedEntry],
+    discover: Callable[[Any], PreparedEntry],
     request: IntakeRequest,
     request_path: str,
     payloads: Catalogue,
@@ -190,27 +191,33 @@ def _adopting(
     normalisation derives from a payload's base name (its identifiers, the matching of an
     update's injects and steps, the identifiers it rewrites in values) follows the name the
     entry stores. The verdicts are then given on that form, with every claim as the request
-    gives it, so that the version files are made from what is stored."""
+    gives it, so that the version files are made from what is stored. The names are found on
+    ``discover``'s form, which an update makes without its previous version: the matching of
+    injects with it is done once the names are adopted. Each claim keeps its place in the
+    request, so that a finding points at it."""
+    claims = tuple(
+        dataclasses.replace(claim, position=position)
+        for position, claim in enumerate(_claims(request))
+    )
+    found = discover(export) if claims else None
+    if found is not None and not found.refusals:
+        unnumbered = tuple(dataclasses.replace(claim, version=None) for claim in claims)
+        first = _payloads(
+            found.scenario_json, unnumbered, request, request_path, payloads, data, schema
+        )
+        if first.refusals:
+            return found, first
+        if first.adopted:
+            held_names = {version.name for version in payloads.by_hash.values()}
+            claims = tuple(
+                dataclasses.replace(claim, name=first.adopted.get(claim.name, claim.name))
+                for claim in claims
+                if first.adopted.get(claim.name) not in held_names  # already there: no claim
+            )
+            export = export_renamed(export, first.adopted)
     prepared = prepare(export)
     if prepared.refusals:
         return prepared, None
-    claims = _claims(request)
-    unnumbered = tuple(dataclasses.replace(claim, version=None) for claim in claims)
-    first = _payloads(
-        prepared.scenario_json, unnumbered, request, request_path, payloads, data, schema
-    )
-    if first.refusals:
-        return prepared, first
-    if first.adopted:
-        held_names = {version.name for version in payloads.by_hash.values()}
-        claims = tuple(
-            dataclasses.replace(claim, name=first.adopted.get(claim.name, claim.name))
-            for claim in claims
-            if first.adopted.get(claim.name) not in held_names  # already there: no claim
-        )
-        prepared = prepare(export_renamed(export, first.adopted))
-        if prepared.refusals:
-            return prepared, None
     return prepared, _payloads(
         prepared.scenario_json, claims, request, request_path, payloads, data, schema
     )
@@ -359,6 +366,9 @@ def _new(
         lambda form: prepare_entry(
             form, request.external_id, data, path=export_path, start_at=metadata_path
         ),
+        lambda form: prepare_entry(
+            form, request.external_id, data, path=export_path, start_at=metadata_path
+        ),
         request,
         request_path,
         payloads,
@@ -459,6 +469,7 @@ def _update(
             previous=previous,
             previous_path=stored_path,
         ),
+        lambda form: prepare_entry(form, request.external_id, data, path=export_path),
         request,
         request_path,
         payloads,
