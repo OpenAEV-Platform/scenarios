@@ -14,8 +14,10 @@ from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
 from scenario_tools.domain.catalogue.intake import (
+    FACETS,
     NEW,
     IntakeRequest,
+    completed_facets,
     domain_refusals,
     intake_plan,
     intake_refusals,
@@ -104,6 +106,11 @@ def intake_entry(
     for key in ("domain", "slug"):  # a place in the catalogue, whatever its schema lets through
         if not is_slug(request_document.get(key)):
             why = f"must be kebab-case of at most {SLUG_LIMIT} characters, never a path"
+            return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
+    for key in ("category", "main_focus"):  # a facet as the platform shows it: one clean line
+        value = request_document.get(key)
+        if isinstance(value, str) and (value != value.strip() or len(value.splitlines()) > 1):
+            why = "must be one line, with no blank at either end"
             return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
     request = IntakeRequest.from_document(request_document)
     refusals: tuple[Finding, ...] = ()
@@ -256,6 +263,9 @@ def _new(
     payloads: Catalogue,
 ) -> IntakeResult:
     metadata_path = f"{request.entry}/scenario.yaml"
+    export, missing = completed_facets(export, request.facets, {}, export_path)
+    if missing:
+        return IntakeResult(request, missing)
     prepared = prepare_entry(
         export, request.external_id, data, path=export_path, start_at=metadata_path
     )
@@ -336,6 +346,12 @@ def _update(
             (_refused("SCH-008", stored_path, "", "the entry has no scenario.json to update"),),
         )
     stored, previous = source.read_json(stored_path)
+    held = previous.get("scenario_information") if isinstance(previous, dict) else None
+    export, missing = completed_facets(
+        export, request.facets, held if isinstance(held, dict) else {}, export_path
+    )
+    if missing:
+        return IntakeResult(request, missing)
     prepared = prepare_entry(
         export,
         request.external_id,
@@ -365,8 +381,12 @@ def _update(
     )
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
-        if assigned.metadata != declared:  # its references change: scenario.yaml too
-            metadata = assigned.metadata
+        # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
+        information = assigned.stored.get(INFORMATION) or {}  # as normalised, then stored
+        given = {name: information.get(FACETS[name]) for name in request.facets}
+        wanted = {**assigned.metadata, **given}
+        if wanted != declared:  # its references or its facets change: scenario.yaml too
+            metadata = wanted
             previous_files["scenario.yaml"] = written.encode()
     # Otherwise the entry's check, run once it is written, says why in the plan.
     changed = scenario_json != stored or metadata is not None or bool(verdict.files)

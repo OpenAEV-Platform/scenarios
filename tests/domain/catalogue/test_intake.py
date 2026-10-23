@@ -10,6 +10,7 @@ from scenario_tools.domain.catalogue.intake import (
     BODY_ITEMS_LIMIT,
     CatalogueEntry,
     IntakeRequest,
+    completed_facets,
     domain_refusals,
     intake_plan,
     intake_refusals,
@@ -604,3 +605,111 @@ def test_a_plan_of_many_files_keeps_its_body_within_what_a_pull_request_takes() 
     assert plan["body"].endswith(
         f"- and {1000 - len(shown)} more: the plan's files list them all\n"
     )
+
+
+INFO = "scenario_information"
+
+
+def _export(**information: object) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "scenario_name": "X",
+        "scenario_severity": "low",
+        "scenario_category": "attack-scenario",
+        "scenario_main_focus": "endpoint-protection",
+    }
+    return {INFO: {**base, **information}, "scenario_injects": []}
+
+
+@pytest.mark.parametrize("missing", [None, "", "  ", "absent"])
+def test_a_facet_the_export_lacks_is_taken_from_the_request(missing: object) -> None:
+    export = _export(scenario_severity=missing)
+    if missing == "absent":
+        del export[INFO]["scenario_severity"]
+
+    completed, refused = completed_facets(export, {"severity": "high"}, {}, "export.zip")
+
+    assert refused == ()
+    assert completed[INFO]["scenario_severity"] == "high"
+    assert export[INFO].get("scenario_severity") != "high"  # the export given is left as it is
+
+
+def test_a_facet_the_export_lacks_is_kept_from_the_stored_scenario_on_an_update() -> None:
+    stored = {"scenario_category": "attack-scenario", "scenario_main_focus": "incident-response"}
+
+    completed, refused = completed_facets(
+        _export(scenario_category=None, scenario_main_focus=None), {}, stored, "export.zip"
+    )
+
+    assert refused == ()
+    assert (completed[INFO]["scenario_category"], completed[INFO]["scenario_main_focus"]) == (
+        "attack-scenario",
+        "incident-response",
+    )
+
+
+def test_a_facet_given_nowhere_is_refused_with_what_to_add() -> None:
+    completed, refused = completed_facets(
+        _export(scenario_severity=None, scenario_category=None), {}, {}, "export.zip"
+    )
+
+    assert completed is None
+    assert [(f.code, f.path, f.field, f.message) for f in refused] == [
+        (
+            "ITK-010",
+            "export.zip",
+            f"/{INFO}/scenario_severity",
+            "the export has no severity: give it in the request (severity), or set it on the "
+            "platform and export again",
+        ),
+        (
+            "ITK-010",
+            "export.zip",
+            f"/{INFO}/scenario_category",
+            "the export has no category: give it in the request (category), or set it on the "
+            "platform and export again",
+        ),
+    ]
+
+
+def test_a_request_that_contradicts_the_export_is_refused() -> None:
+    completed, refused = completed_facets(_export(), {"severity": "critical"}, {}, "export.zip")
+
+    assert completed is None
+    assert [(f.code, f.field, f.message) for f in refused] == [
+        (
+            "ITK-010",
+            f"/{INFO}/scenario_severity",
+            "the request gives another severity than the export: leave it out of the request, "
+            "or change it on the platform and export again",
+        )
+    ]
+
+
+def test_a_request_that_agrees_with_the_export_changes_nothing() -> None:
+    export = _export()
+
+    completed, refused = completed_facets(export, {"severity": "low"}, {}, "export.zip")
+
+    assert (completed, refused) == (export, ())
+
+
+@pytest.mark.parametrize("information", [None, "text", ["list"]])
+def test_an_export_without_its_information_is_left_to_its_own_checks(information: object) -> None:
+    export = {INFO: information}
+
+    assert completed_facets(export, {"severity": "low"}, {}, "export.zip") == (export, ())
+
+
+@pytest.mark.parametrize("value", [3, ["attack-scenario"], {"a": 1}])
+def test_a_facet_the_export_holds_as_no_text_is_left_to_its_own_checks(value: object) -> None:
+    export = _export(scenario_category=value)
+
+    assert completed_facets(export, {"category": "attack-scenario"}, {}, "export.zip") == (
+        export,
+        (),
+    )
+
+
+@pytest.mark.parametrize("export", [None, "text", ["list"]])
+def test_an_export_that_is_no_mapping_is_left_to_its_own_checks(export: object) -> None:
+    assert completed_facets(export, {"severity": "low"}, {}, "export.zip") == (export, ())

@@ -857,3 +857,99 @@ def test_a_new_entry_from_a_workflow_starts_as_chained_and_needing_ee() -> None:
     assert result.refusals == ()
     assert result.metadata is not None
     assert (result.metadata["type"], result.metadata["requires"]["edition"]) == ("chained", "EE")
+
+
+def _without_facets(export: Any) -> Any:
+    bare = copy.deepcopy(export)
+    for key in ("scenario_severity", "scenario_category", "scenario_main_focus"):
+        bare["scenario_information"][key] = None
+    return bare
+
+
+FACETS = {"severity": "high", "category": "attack-scenario", "main_focus": "endpoint-protection"}
+
+
+def test_a_new_entry_from_an_export_without_facets_takes_the_request_s() -> None:
+    result = _intake({**NEW, **FACETS}, export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    information = json.loads(result.scenario_json)["scenario_information"]
+    assert (information["scenario_severity"], information["scenario_category"]) == (
+        "high",
+        "attack-scenario",
+    )
+    assert result.metadata is not None
+    assert (result.metadata["severity"], result.metadata["main_focus"]) == (
+        "high",
+        "endpoint-protection",
+    )
+
+
+def test_a_new_entry_from_an_export_without_facets_and_a_request_without_is_refused() -> None:
+    result = _intake(NEW, export=_without_facets(EASM))
+
+    assert (result.scenario_json, result.metadata) == (None, None)
+    assert [(f.code, f.path, f.field) for f in result.refusals] == [
+        ("ITK-010", EXPORT, f"/scenario_information/{key}")
+        for key in ("scenario_severity", "scenario_category", "scenario_main_focus")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("category", " attack-scenario"),
+        ("main_focus", "endpoint "),
+        ("main_focus", "two\nlines"),
+        ("category", "two\u2028lines"),
+    ],
+    ids=["leading blank", "trailing blank", "line break", "line separator"],
+)
+def test_a_request_facet_that_is_not_one_clean_line_is_refused(key: str, value: str) -> None:
+    result = _intake({**NEW, **FACETS, key: value}, export=_without_facets(EASM))
+
+    assert [(f.code, f.path, f.field) for f in result.refusals] == [("SCH-001", REQUEST, f"/{key}")]
+
+
+def test_an_update_from_an_export_without_facets_keeps_the_stored_ones() -> None:
+    result = _intake(UPDATE, _stored(), export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert not result.changed  # the stored facets, the same export otherwise: nothing to propose
+
+
+def test_an_update_whose_request_changes_a_facet_writes_it_in_scenario_yaml_too() -> None:
+    source = _stored()
+    assert source.declared is not None
+    request = {**UPDATE, "severity": "critical", "main_focus": "incident-response"}
+
+    result = _intake(request, source, export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.changed
+    assert result.scenario_json is not None
+    information = json.loads(result.scenario_json)["scenario_information"]
+    assert information["scenario_severity"] == "critical"
+    assert result.metadata is not None
+    assert (result.metadata["severity"], result.metadata["main_focus"]) == (
+        "critical",
+        "incident-response",
+    )
+    assert result.metadata["category"] == source.declared["category"]  # kept, as stored
+    assert result.previous is not None
+    assert "scenario.yaml" in result.previous
+
+
+def test_an_update_writes_a_facet_in_scenario_yaml_as_normalisation_stores_it() -> None:
+    scenario_id = EASM["scenario_information"]["scenario_id"]
+    request = {**UPDATE, "category": f"group-{scenario_id}"}  # an identifier normalisation maps
+
+    result = _intake(request, _stored(), export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    assert result.metadata is not None
+    stored = json.loads(result.scenario_json)["scenario_information"]["scenario_category"]
+    assert result.metadata["category"] == stored
+    assert scenario_id not in stored

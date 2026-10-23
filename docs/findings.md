@@ -79,6 +79,7 @@ written when one of them blocks. See [`intake.md`](intake.md).
 | `ITK-006` | An update's export has another scenario name than the entry, without `rewrite: true`. | Add `rewrite: true` if the scenario was really renamed. |
 | `ITK-007` | The threat or the sources of the request would make `scenario.yaml` break its schema. | Fix them as the `SCH-001` findings that follow say. |
 | `ITK-008` | An entry of the catalogue cannot be read: a link, a hidden name left by an interrupted run, a name with a backslash or a drive, or a `scenario.yaml` that is not a mapping. | Fix or remove that entry first. |
+| `ITK-010` | The export has no severity, category or main focus (absent, null or blank), and the request does not give it; or the request gives another value than the export for one of them. The platform imports these facets from the scenario, so intake writes a facet the request gives in the stored scenario and in `scenario.yaml`. | Give the facet in the request (`severity`, `category`, `main_focus`), or set it on the platform and export again; leave out of the request a facet the export holds. |
 
 ## Versions and identifiers: `VER`
 

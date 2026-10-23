@@ -40,6 +40,9 @@ sources:
     tlp: "TLP:CLEAR"
 generated_by: run 42        # optional
 issue: 12                   # the issue the pull request closes, a whole number
+severity: high              # optional: only for an export without a severity
+category: attack-scenario   # optional: only for an export without a category
+main_focus: endpoint-protection  # optional: only for an export without a main focus
 ```
 
 An update of an existing entry:
@@ -58,6 +61,17 @@ schema bounds the rest: a new entry needs `threat` and `sources`, `threat` holds
 three lists, `sources` at most 50 entries, `generated_by` 1 to 200 characters, and `issue` is
 from 1 to 2^53-1. `domain` and `slug` are names,
 never a path, whatever the schema says.
+
+`severity`, `category` and `main_focus` are the scenario's catalogue facets. The export holds
+them, and the platform imports them from it, so they are read there first. For an export that
+lacks one (absent, null or blank, as a scenario built through the API may be), the request gives
+it: intake writes it in the stored scenario, so the platform imports it, and in `scenario.yaml`.
+An update that lacks one keeps the entry's own, unless the request gives another, which changes
+it (a patch version). A facet given nowhere, or given in the request with another value than the
+export's, is refused (`ITK-010`) before anything is written. `severity` is one of `low`,
+`medium`, `high` and `critical`; the others are 1 to 64 characters, on one line, with no blank at
+either end. A facet the export holds as something other than text is refused as the export's
+(`IO-014`).
 
 A new entry starts its `CHANGELOG.md` with the section of its version and the day of the run,
 `## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request, and gets its sheet, `README.md`,
@@ -106,6 +120,7 @@ Nothing is written when the request is refused:
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
 | `ITK-008` | an entry of the catalogue, or a domain, that is a link, a hidden name a cut run left (`.scenario-tools-<hex>`) or a name a finding cannot show (a backslash, a drive), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
+| `ITK-010` | an export without a severity, category or main focus that the request does not give, or a request that gives another one than the export |
 
 The export is also refused as `normalize` refuses it.
 
