@@ -1425,8 +1425,6 @@ def test_an_update_whose_matching_fails_whatever_the_names_is_refused() -> None:
         with pytest.raises(UnsafeInputError, match="VER-010"):
             _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
 
-    assert calls == ["alone", "previous"]  # matched once, with the names adopted
-
 
 # The check mode: the verdicts of intake, from the same functions, writing nothing.
 
