@@ -1341,8 +1341,12 @@ def intake(
     With --check, write nothing and read no git: give the verdict on each payload EXPORT embeds
     against the catalogue at --payloads, and the findings on the claims at --claims, as intake
     gives them, with the rules at --rules. Exit with 1 if a claim or a payload is refused."""
-    checking: dict[str, object] = {"--payloads": payloads, "--rules": rules, "--claims": claims}
-    checking["--external-id"] = external_id
+    checking: dict[str, object] = {
+        "--payloads": payloads,
+        "--rules": rules,
+        "--claims": claims,
+        "--external-id": external_id,
+    }
     writing = {"--request": request, "--repo": repo, "--plan": plan}
     if check:
         extra = [name for name, value in writing.items() if value is not None]
@@ -1350,11 +1354,13 @@ def intake(
             raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
         if payloads is None or rules is None:
             raise click.UsageError("--check needs --payloads and --rules")
+        if external_id is not None and not _CANONICAL_UUID.fullmatch(external_id):
+            raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
         _intake_check(ctx, export, payloads, rules, claims, external_id)
         return
     extra = [name for name, value in checking.items() if value is not None]
     if extra:
-        raise click.UsageError(f"{', '.join(extra)} go with --check only")
+        raise click.UsageError(f"only with --check: {', '.join(extra)}")
     if request is None or repo is None or plan is None:
         missing = [name for name, value in writing.items() if value is None]
         raise click.UsageError(f"intake needs {', '.join(missing)}, or --check")
@@ -1471,17 +1477,24 @@ def _intake_check(
                 )
         found = intake_check(
             read_export(export),
-            None if claims is None else read_yaml_file(claims, limit=REQUEST_LIMIT),
+            None if claims is None else _claims_document(claims),
             export_path=export.name,  # by their names: no repository holds them
             claims_path="" if claims is None else claims.name,
             data=loader,
             schema=schema,
             payloads=catalogue_of(CatalogueDirectory(catalogue.parent, (catalogue.name,))),
-            external_id=external_id or CHECKED_ID,
+            external_id=CHECKED_ID if external_id is None else external_id,
         )
         return Report("intake", found)
 
     _emit(ctx, "intake", produce, None)
+
+
+def _claims_document(path: Path) -> object:
+    """The claims file's document; an empty one is an empty mapping, which its check refuses,
+    never the absence of claims."""
+    document = read_yaml_file(path, limit=REQUEST_LIMIT)
+    return {} if document is None else document
 
 
 def _validate_written(rules: _Rules, root: Path, entry: str) -> tuple[Finding, ...]:

@@ -107,7 +107,11 @@ def test_a_refused_claim_fails_the_check(tmp_path: Path, monkeypatch: pytest.Mon
     [
         (["--check", "--rules", "r"], "--check needs --payloads and --rules"),
         (["--check", "--payloads", "p", "--rules", "r", "--plan", "x"], "leave out --plan"),
-        (["--claims", "c.yaml"], "--claims go with --check only"),
+        (["--claims", "c.yaml"], "only with --check: --claims"),
+        (
+            ["--check", "--payloads", "p", "--rules", "r", "--external-id", "not a uuid"],
+            "--external-id must be a UUID",
+        ),
         ([], "intake needs --request, --repo, --plan, or --check"),
     ],
 )
@@ -123,3 +127,20 @@ def test_the_options_of_each_mode_are_its_own(
 
     assert result.exit_code == 2
     assert said in result.output
+
+
+@pytest.mark.parametrize("content", ["", "null\n", "# nothing\n"])
+def test_an_empty_claims_file_is_refused_never_read_as_no_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    claims = tmp_path / "claims.yaml"
+    claims.write_text(content)
+
+    code, document = _check(
+        str(CHAINING), "--check", "--payloads", str(payloads), "--rules", str(rules),
+        "--claims", str(claims),
+    )  # fmt: skip
+
+    assert code == 1
+    assert [(f["code"], f["path"]) for f in document["findings"]] == [("SCH-001", "claims.yaml")]
