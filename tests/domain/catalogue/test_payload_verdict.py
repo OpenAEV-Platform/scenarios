@@ -537,26 +537,33 @@ def test_a_new_version_the_catalogue_would_refuse_is_refused_and_not_given() -> 
     assert (result.versions, result.renames, result.changes) == ({}, {}, {})
 
 
+def _held_by(payload: dict[str, Any]) -> dict[str, Any]:
+    """An inject or a step's data holding ``payload`` as its contract's."""
+    return {"inject_injector_contract": {"injector_contract_payload": payload}}
+
+
 def test_an_export_renamed_gives_each_copy_its_name_in_injects_and_step_data() -> None:
-    step = {"inject_injector_contract": {"injector_contract_payload": {"payload_name": "A"}}}
     export = {
         "scenario_injects": [
-            {"payload_name": "A", "payload_description": "kept"},
-            {"payload_name": "B"},
+            _held_by({"payload_name": "A", "payload_description": "kept"}),
+            _held_by({"payload_name": "B"}),
         ],
-        "scenario_workflow": {"workflow_steps": [{"step_data": json.dumps(step)}]},
+        "scenario_workflow": {
+            "workflow_steps": [{"step_data": json.dumps(_held_by({"payload_name": "A"}))}]
+        },
     }
     before = copy.deepcopy(export)
 
     renamed_export: Any = export_renamed(export, {"A": "A (1.1.0)"})
 
     assert renamed_export["scenario_injects"] == [
-        {"payload_name": "A (1.1.0)", "payload_description": "kept"},
-        {"payload_name": "B"},
+        _held_by({"payload_name": "A (1.1.0)", "payload_description": "kept"}),
+        _held_by({"payload_name": "B"}),
     ]
     (data,) = renamed_export["scenario_workflow"]["workflow_steps"]
-    payload = json.loads(data["step_data"])["inject_injector_contract"]["injector_contract_payload"]
-    assert payload == {"payload_name": "A (1.1.0)", "payload_description": "A"}
+    assert json.loads(data["step_data"]) == _held_by(
+        {"payload_name": "A (1.1.0)", "payload_description": "A"}
+    )
     assert export == before
 
 
@@ -564,21 +571,26 @@ def test_an_export_renamed_gives_each_copy_its_name_in_injects_and_step_data() -
 def test_a_renamed_copy_without_a_description_is_described_by_its_first_name(
     description: object,
 ) -> None:
-    renamed_export: Any = export_renamed(
-        [{"payload_name": "A", "payload_description": description}], {"A": "A (2.0.0)"}
-    )
+    export = [_held_by({"payload_name": "A", "payload_description": description})]
 
-    assert renamed_export == [{"payload_name": "A (2.0.0)", "payload_description": "A"}]
+    assert export_renamed(export, {"A": "A (2.0.0)"}) == [
+        _held_by({"payload_name": "A (2.0.0)", "payload_description": "A"})
+    ]
+
+
+def test_an_inject_s_arguments_holding_the_same_key_are_never_renamed() -> None:
+    inject = {
+        "inject_content": {"payload_name": "A"},
+        "inject_injector_contract": {"injector_contract_payload": "not a payload"},
+    }
+
+    assert export_renamed(inject, {"A": "B"}) == inject
 
 
 def test_step_data_that_is_not_json_is_left_to_normalisation() -> None:
-    step = {"step_data": "{not json", "payload_name": "A"}
+    step = {"step_data": "{not json"}
 
-    assert export_renamed(step, {"A": "B"}) == {
-        "step_data": "{not json",
-        "payload_name": "B",
-        "payload_description": "A",
-    }
+    assert export_renamed(step, {"A": "B"}) == step
 
 
 def test_the_name_at_a_pointer_is_the_payload_s() -> None:
@@ -662,3 +674,22 @@ def test_the_base_a_claimed_copy_follows_is_given_even_when_its_claim_is_refused
 
     assert ("ITK-009", NOT_HIGHER.format(payload=PS, version="1.1.0")) in _codes_of(result)
     assert result.bases == {STEP_PAYLOAD.format(0): "Process Discovery - ps"}
+
+
+@pytest.mark.parametrize("unchanged_first", [True, False])
+def test_a_claim_naming_a_catalogue_version_and_another_content_is_refused(
+    unchanged_first: bool,
+) -> None:
+    held = _catalogue(PS).by_slug[PS][0]
+    stored = copy.deepcopy(STORED)
+    payloads = _payloads(stored)
+    unchanged, edited = (
+        (payloads[0], payloads[1]) if unchanged_first else (payloads[1], payloads[0])
+    )
+    unchanged.clear()
+    unchanged.update({k: v for k, v in held.document.items() if k != "payload_attack_patterns"})
+    edited.update(payload_name=held.name, command_content="ps -ef")
+
+    result = _claimed(stored, Claim(held.name, PS))
+
+    assert ("ITK-009", TWO_CONTENTS) in _codes_of(result)

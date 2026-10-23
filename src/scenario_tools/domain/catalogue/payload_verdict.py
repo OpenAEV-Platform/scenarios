@@ -465,6 +465,8 @@ def claimed_verdicts(
         if held is not None:
             run.info(embedded.pointer, f"already there: {held.slug} {held.version}")
             if index is not None and claims[index].based_on is not None:
+                if run.contents.setdefault(at[index], digest) != digest:
+                    run.refuse_claim(f"/payloads/{at[index]}/name", TWO_CONTENTS)
                 run.hint(embedded.pointer, CLAIM_IGNORED)
             continue
         if index is not None and claims[index].based_on is not None:
@@ -491,18 +493,16 @@ def export_renamed(export: object, names: Mapping[str, str]) -> object:
     """A copy of ``export`` in which every payload named by a key of ``names`` takes its value,
     in injects and in the data of chaining steps alike: a claimed copy takes its name before
     the export is normalised, so that what normalisation derives from a name follows it. A
-    payload without a description keeps the one normalisation gives it, its first name."""
+    payload without a description keeps the one normalisation gives it, its first name. Only
+    payloads are renamed, never an inject's arguments that happen to hold the same key."""
     if isinstance(export, list):
         return [export_renamed(item, names) for item in export]
     if not isinstance(export, Mapping):
         return export
-    copied = {key: export_renamed(value, names) for key, value in export.items()}
-    name = copied.get("payload_name")
-    if isinstance(name, str) and name in names:
-        copied["payload_name"] = names[name]
-        described = copied.get("payload_description")
-        if described is None or (isinstance(described, str) and not described.strip()):
-            copied["payload_description"] = name  # as normalisation describes it, by its name
+    copied = {
+        key: _payload_renamed(value, names) if key == _PAYLOAD_KEY else export_renamed(value, names)
+        for key, value in export.items()
+    }
     data = copied.get(STEP_DATA)
     if isinstance(data, str):
         try:
@@ -512,6 +512,21 @@ def export_renamed(export: object, names: Mapping[str, str]) -> object:
         copied[STEP_DATA] = json.dumps(
             export_renamed(decoded, names), ensure_ascii=False, separators=(",", ":")
         )
+    return copied
+
+
+_PAYLOAD_KEY = "injector_contract_payload"
+
+
+def _payload_renamed(payload: object, names: Mapping[str, str]) -> object:
+    """``payload``, a contract's payload, under its new name when ``names`` gives one."""
+    name = payload.get("payload_name") if isinstance(payload, Mapping) else None
+    if not isinstance(payload, Mapping) or not isinstance(name, str) or name not in names:
+        return payload
+    copied = {**payload, "payload_name": names[name]}
+    described = copied.get("payload_description")
+    if described is None or (isinstance(described, str) and not described.strip()):
+        copied["payload_description"] = name  # as normalisation describes it, by its name
     return copied
 
 
