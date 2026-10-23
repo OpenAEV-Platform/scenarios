@@ -73,3 +73,12 @@ highest is `VER-023`. A pull request is compared with the base branch as it is w
 runs: one that is behind it reads a version merged since as removed, until it is brought up to
 date. A release also refuses a version it published before with another content or file, or
 that is gone (`VER-021`).
+
+## The policy rules
+
+The policy rules (`POL-003` to `POL-007`) judge every payload a scenario embeds, in each pull
+request and in `build`: a scenario that runs a payload breaking one of them is refused, unless
+the maintainers grant that scenario an exception. A payload enters the catalogue through
+`intake`, with the scenario that embeds it, so the rules have judged it. The rules do not run on
+the version files themselves yet: a version added to `payloads/` without a scenario is judged by
+the review of its pull request.
