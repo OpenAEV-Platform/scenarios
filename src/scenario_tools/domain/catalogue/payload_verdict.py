@@ -226,9 +226,10 @@ CLAIM_NAMES_NOTHING = "this claim names no payload the export embeds"
 NO_SUCH_PAYLOAD = "based_on names no payload of the catalogue"
 NO_SUCH_VERSION = "based_on names a version {payload} does not have"
 NOT_HIGHER = (
-    "the version asked for is not higher than {payload} {version}, the highest the catalogue "
-    "holds or this run gives"
+    "the version asked for is not higher than {payload} {version}, the highest the catalogue holds"
 )
+GIVEN_TWICE = "the version asked for is given to another payload of this export already"
+TWO_CONTENTS = "this claim names payloads with different contents: give each copy a name of its own"
 CLAIM_IGNORED = "this payload is already in the catalogue: the claim is ignored"
 STALE_BASE = "based on {payload} {version}, whereas the latest version is {payload} {latest}"
 CARRIED_ID = (
@@ -275,6 +276,7 @@ class _Pass:
         self.slugs: set[str] = set()  # the slugs of the new payloads
         self.claimed: dict[str, tuple[str, str]] = {}  # a claimed copy's name and verdict, by hash
         self.highest: dict[str, str] = {}  # the highest version each payload has so far
+        self.contents: dict[int, str] = {}  # the hash each claim names, by its position
 
     def info(self, pointer: str, message: str) -> None:
         self.findings.append(Finding("PAY-010", Severity.INFO, self.scenario, pointer, message))
@@ -306,6 +308,9 @@ class _Pass:
         """The verdict on a payload claimed to be based on a catalogue payload: one of its
         versions under that version's name, or the next version of it."""
         pointer, slug = embedded.pointer, claim.based_on or ""
+        if self.contents.setdefault(index, digest) != digest:
+            self.refuse_claim(f"/payloads/{index}/name", TWO_CONTENTS)
+            return
         if slug not in self.catalogue.by_slug:
             self.refuse_claim(f"/payloads/{index}/based_on/payload", NO_SUCH_PAYLOAD)
             return
@@ -333,9 +338,18 @@ class _Pass:
                 self.info(pointer, message)
                 return
         latest = self.latest(slug)
-        if claim.version is not None and version_key(claim.version) <= version_key(latest):
-            message = NOT_HIGHER.format(payload=slug, version=latest)
+        # A version asked for is judged against the catalogue alone, whatever order the
+        # export's payloads come in; this run only must not give it twice.
+        if claim.version is not None and version_key(claim.version) <= version_key(
+            held[-1].version
+        ):
+            message = NOT_HIGHER.format(payload=slug, version=held[-1].version)
             self.refuse_claim(f"/payloads/{index}/version", message)
+            return
+        if claim.version is not None and any(
+            v.slug == slug and v.version == claim.version for v in self.versions.values()
+        ):
+            self.refuse_claim(f"/payloads/{index}/version", GIVEN_TWICE)
             return
         if base_version != held[-1].version:
             message = STALE_BASE.format(payload=slug, version=base_version, latest=held[-1].version)

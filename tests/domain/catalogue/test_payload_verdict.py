@@ -11,6 +11,7 @@ import pytest
 from scenario_tools.domain.catalogue.payload_verdict import (
     BASE_NAME_TAKEN,
     CLAIM_NAMES_NOTHING,
+    GIVEN_TWICE,
     NO_SLUG,
     NOT_KEPT,
     OUT_OF_SCHEMA,
@@ -18,6 +19,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     SUFFIXED,
     TAKEN_IN_EXPORT,
     TOO_MANY_NEW,
+    TWO_CONTENTS,
     Claim,
     claimed_verdicts,
     export_renamed,
@@ -376,8 +378,7 @@ def test_a_requested_version_not_higher_than_the_highest_is_refused(version: str
             "ITK-009",
             "request.yaml",
             "/payloads/0/version",
-            f"the version asked for is not higher than {PS} 1.1.0, the highest the catalogue "
-            "holds or this run gives",
+            f"the version asked for is not higher than {PS} 1.1.0, the highest the catalogue holds",
         )
     ]
 
@@ -593,3 +594,39 @@ def test_a_payload_that_is_no_object_is_left_to_the_reference_checks() -> None:
     result = _claimed(stored, Claim("Process Discovery - ps", PS))
 
     assert [f.message for f in result.findings] == [CLAIM_NAMES_NOTHING]
+
+
+def _two_copies(first: str, second: str) -> dict[str, Any]:
+    """The stored scenario with its two steps' payloads made two copies of ps, named apart."""
+    stored = copy.deepcopy(STORED)
+    for step, (name, command) in zip(
+        stored["scenario_workflow"]["workflow_steps"],
+        ((first, "ps -e"), (second, "ps -ef")),
+        strict=True,
+    ):
+        payload = step["step_data"]["inject_injector_contract"]["injector_contract_payload"]
+        payload.update(payload_name=name, command_content=command)
+    return stored
+
+
+def test_versions_asked_for_are_taken_whatever_order_the_copies_come_in() -> None:
+    claims = (Claim("B", PS, version="1.3.0"), Claim("A", PS, version="1.2.0"))
+
+    result = _claimed(_two_copies("B", "A"), *claims)  # the higher one met first
+
+    assert sorted(v.version for v in result.versions.values()) == ["1.2.0", "1.3.0"]
+    assert all(f.code == "PAY-010" for f in result.findings)
+
+
+def test_a_version_asked_for_twice_in_one_export_is_refused() -> None:
+    claims = (Claim("A", PS, version="1.2.0"), Claim("B", PS, version="1.2.0"))
+
+    result = _claimed(_two_copies("A", "B"), *claims)
+
+    assert ("ITK-009", GIVEN_TWICE) in _codes_of(result)
+
+
+def test_a_claim_naming_two_contents_is_refused() -> None:
+    result = _claimed(_two_copies("A", "A"), Claim("A", PS))
+
+    assert ("ITK-009", TWO_CONTENTS) in _codes_of(result)
