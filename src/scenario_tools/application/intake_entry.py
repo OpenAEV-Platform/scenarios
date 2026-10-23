@@ -9,7 +9,11 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
+from scenario_tools.application.assign_payloads import (
+    agreed_ids,
+    assigned_entry,
+    no_attached_files,
+)
 from scenario_tools.application.prepare_entry import PreparedEntry, prepare_entry
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -38,7 +42,11 @@ from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
-from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
+from scenario_tools.domain.verification.payload_references import (
+    HeldVersions,
+    PayloadReference,
+    unhashable_findings,
+)
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.plan import PlanSink
@@ -164,8 +172,8 @@ class _Payloads:
     adopted: dict[str, str]  # the base name each claimed copy follows, by the name it had
 
 
-def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
-    """The request's claims, as its schema takes them."""
+def _claims(claims: Iterable[Mapping[str, Any]]) -> tuple[Claim, ...]:
+    """The claims of a request, as its schema takes them."""
     return tuple(
         Claim(
             claim["name"],
@@ -173,7 +181,7 @@ def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
             claim.get("based_on", {}).get("version"),
             claim.get("version"),
         )
-        for claim in request.claims
+        for claim in claims
     )
 
 
@@ -181,8 +189,8 @@ def _adopting(
     export: Any,
     prepare: Callable[[Any], PreparedEntry],
     discover: Callable[[Any], PreparedEntry],
-    request: IntakeRequest,
-    request_path: str,
+    claims: tuple[Claim, ...],
+    places: tuple[str, str],
     payloads: Catalogue,
     data: DataLoader,
     schema: SchemaValidator,
@@ -197,18 +205,16 @@ def _adopting(
     whatever the claim says. The export is
     then prepared, and every claim, as the request gives it, judged on that form alone, so
     that the version files are made from what is stored. Each claim keeps its place in the
-    request, so that a finding points at it."""
+    request, so that a finding points at it. ``places`` are the paths findings name: the
+    stored scenario's and the claims'."""
     claims = tuple(
-        dataclasses.replace(claim, position=position)
-        for position, claim in enumerate(_claims(request))
+        dataclasses.replace(claim, position=position) for position, claim in enumerate(claims)
     )
     if not claims:
         prepared = prepare(export)
         if prepared.refusals:
             return prepared, None
-        return prepared, _payloads(
-            prepared.scenario_json, claims, request, request_path, payloads, data, schema
-        )
+        return prepared, _payloads(prepared.scenario_json, claims, places, payloads, data, schema)
     # Before the names are adopted, matching an update's injects may fail where the adopted
     # names succeed: that failure is provisional, and only the final preparation's counts.
     initial: PreparedEntry | None
@@ -229,9 +235,7 @@ def _adopting(
             if initial is None or initial.refusals
             else names_held(json.loads(initial.scenario_json), payloads)
         )
-        first = _payloads(
-            found.scenario_json, claims, request, request_path, payloads, data, schema
-        )
+        first = _payloads(found.scenario_json, claims, places, payloads, data, schema)
         adopted = {old: base for old, base in first.adopted.items() if old not in there}
         if adopted:
             claims = tuple(
@@ -243,16 +247,13 @@ def _adopting(
     prepared = final if final is not None else prepare(export)
     if prepared.refusals:
         return prepared, None
-    return prepared, _payloads(
-        prepared.scenario_json, claims, request, request_path, payloads, data, schema
-    )
+    return prepared, _payloads(prepared.scenario_json, claims, places, payloads, data, schema)
 
 
 def _payloads(
     scenario_json: bytes,
     claims: tuple[Claim, ...],
-    request: IntakeRequest,
-    request_path: str,
+    places: tuple[str, str],
     payloads: Catalogue,
     data: DataLoader,
     schema: SchemaValidator,
@@ -264,8 +265,8 @@ def _payloads(
         agreed_ids(data),
         accepted=lambda document: not schema.validate("payload", document),
         claims=claims,
-        scenario=f"{request.entry}/scenario.json",
-        request=request_path,
+        scenario=places[0],
+        request=places[1],
     )
     found, new = verdict.findings, verdict.versions
     refusals = tuple(f for f in found if f.severity is Severity.BLOCKING)
@@ -284,6 +285,87 @@ def _payloads(
             if base_name(str(named_at(stored, pointer))) != base
         },
     )
+
+
+# What the check mode needs to normalise an export, and never shows: the entry's external ID
+# and the catalogue facets an export may lack. The verdicts judge the payloads alone.
+CHECKED_ID = "00000000-0000-4000-8000-000000000000"
+_CHECKED_FACETS = dict.fromkeys(FACETS.values(), "check") | {FACETS["severity"]: "low"}
+_CHECKED_REQUEST = {
+    "mode": "update",
+    "external_id": CHECKED_ID,
+    "domain": "check",
+    "slug": "check",
+    "issue": 1,
+}
+
+
+def intake_check(
+    export: Any,
+    claims: object,
+    *,
+    export_path: str,
+    claims_path: str,
+    data: DataLoader,
+    schema: SchemaValidator,
+    payloads: Catalogue,
+    external_id: str,
+    previous: object = None,
+    previous_path: str | None = None,
+) -> tuple[Finding, ...]:
+    """The verdicts ``intake`` gives on the payloads ``export`` embeds against the catalogue
+    ``payloads``, with the findings on ``claims``, a document holding a request's ``payloads``
+    alone (none when it is ``None``): from the same functions, writing nothing. The export is
+    normalised as intake normalises it for the entry ``external_id``, and, for an update, with
+    the entry's stored scenario, ``previous``, read from ``previous_path``: normalisation derives
+    the identifiers it orders injects by, and rewrites in values, from both, so the verdicts
+    are intake's only with them. A facet the export lacks is given a value the verdicts never
+    read."""
+    listed: tuple[Mapping[str, Any], ...] = ()
+    if claims is not None:
+        refused = _claims_refused(claims, claims_path, schema)
+        if refused:
+            return refused
+        listed = tuple(claims["payloads"]) if isinstance(claims, Mapping) else ()
+    export, _ = completed_facets(export, {}, _CHECKED_FACETS, export_path)
+    prepared, verdict = _adopting(
+        export,
+        lambda form: prepare_entry(
+            form,
+            external_id,
+            data,
+            path=export_path,
+            previous=previous,
+            previous_path=previous_path,
+        ),
+        lambda form: prepare_entry(form, external_id, data, path=export_path),
+        _claims(listed),
+        (export_path, claims_path),
+        payloads,
+        data,
+        schema,
+    )
+    if prepared.refusals or verdict is None:
+        return prepared.refusals
+    # A payload that cannot be hashed has no verdict: intake's reference checks refuse it, and
+    # the check says so as they do.
+    refused = unhashable_findings(
+        json.loads(prepared.scenario_json), no_attached_files, export_path
+    )
+    return (*refused, *verdict.refusals, *verdict.told)
+
+
+def _claims_refused(claims: object, path: str, schema: SchemaValidator) -> tuple[Finding, ...]:
+    """Why the claims document at ``path`` is refused: it is a mapping of ``payloads`` alone,
+    the list a request holds, checked against the request's own definition."""
+    hidden = hidden_character_findings(claims, path)
+    if hidden:
+        return hidden
+    if not isinstance(claims, Mapping) or set(claims) != {"payloads"}:
+        why = "the claims must be a mapping holding the request's payloads list alone"
+        return (_refused("SCH-001", path, "", why),)
+    violations = schema.validate("intake-request", {**_CHECKED_REQUEST, **claims})
+    return tuple(_refused("SCH-001", path, v.pointer, v.message) for v in violations)
 
 
 def intake_files(
@@ -394,8 +476,8 @@ def _new(
         lambda form: prepare_entry(
             form, request.external_id, data, path=export_path, start_at=metadata_path
         ),
-        request,
-        request_path,
+        _claims(request.claims),
+        (f"{request.entry}/scenario.json", request_path),
         payloads,
         data,
         schema,
@@ -495,8 +577,8 @@ def _update(
             previous_path=stored_path,
         ),
         lambda form: prepare_entry(form, request.external_id, data, path=export_path),
-        request,
-        request_path,
+        _claims(request.claims),
+        (f"{request.entry}/scenario.json", request_path),
         payloads,
         data,
         schema,

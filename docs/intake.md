@@ -193,6 +193,33 @@ A scenario in chaining can be prepared and checked, with `normalize`, `intake` a
 but none enters the catalogue yet. The repository does not accept one until the platform's
 import does what check 9 of [the consumers' checks](consumers.md) asks.
 
+## Checking the payloads first
+
+`intake --check` gives the verdict on each payload an export embeds, and the findings on the
+claims, as `intake` gives them, from the same code, without git and writing nothing:
+
+```sh
+scenario-tools --format json intake export.zip --check --payloads payloads --rules rules \
+  --claims claims.yaml --external-id 5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42
+```
+
+- `--payloads` is a checkout's `payloads/`, or the version files of a release laid out as
+  `<slug>/<version>.json`: the manifest lists each file with its payload and its version.
+- `--rules` is a directory that holds the repository's `policy/data/` and `schemas/`: a
+  checkout, or a copy of those two folders. The export is normalised as `intake` normalises it,
+  and these are the rules it reads.
+- `--claims`, optional, is a YAML document holding the request's `payloads` list alone.
+- `--external-id` is the entry's. Normalisation derives the identifiers of the injects from it,
+  orders them by these, and rewrites the identifiers a payload's command holds: the verdicts and
+  their pointers are `intake`'s only with it.
+- `--previous`, for an update, is the entry's stored `scenario.json`: as `intake` does, the
+  export is normalised against it, so that an inject keeps the identifier the entry gave it.
+
+A facet the export lacks is not asked for: the verdicts never read it. Where `intake` would
+refuse, it says only what refuses; the check also gives the verdict on every other payload.
+Findings name the export and the claims by their file names. The exit code is `1` when a claim
+or a payload is refused, `0` otherwise.
+
 ## The plan
 
 `plan.json` holds:

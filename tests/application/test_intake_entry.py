@@ -9,7 +9,7 @@ import dataclasses
 import datetime
 import hashlib
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from scenario_tools.adapters.safe_readers import yaml_bytes
 from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.intake_entry import (
     IntakeResult,
+    intake_check,
     intake_entry,
     intake_files,
     plan_document,
@@ -1423,3 +1424,183 @@ def test_an_update_whose_matching_fails_whatever_the_names_is_refused() -> None:
         )
         with pytest.raises(UnsafeInputError, match="VER-010"):
             _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+
+# The check mode: the verdicts of intake, from the same functions, writing nothing.
+
+_VERDICTS = ("PAY-009", "PAY-010", "PAY-011", "ITK-009")
+
+
+def _verdicts(findings: Iterable[Finding]) -> list[tuple[str, str, str]]:
+    return sorted((f.code, f.field, f.message) for f in findings if f.code in _VERDICTS)
+
+
+def _checked(export: Any, claims: object, payloads: Catalogue) -> tuple[Finding, ...]:
+    return intake_check(
+        export,
+        claims,
+        export_path=EXPORT,
+        claims_path=REQUEST,
+        data=DATA,
+        schema=SCHEMA,
+        payloads=payloads,
+        external_id=ID,
+    )
+
+
+def _check_cases() -> list[tuple[Any, list[dict[str, Any]], Catalogue]]:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claim = {"name": name, "based_on": {"payload": slug}}
+    first = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held_salt)
+    return [
+        (SALT, [], EMPTY),  # every payload new
+        (SALT, [], held_salt),  # every payload already there
+        (edited, [], held_salt),  # a taken base name
+        (edited, [claim], held_salt),  # a new version
+        (edited, [claim], _with_files(held_salt, first.payload_files)),  # already there, renamed
+        (edited, [{"name": "nothing"}, claim, claim], held_salt),  # refused claims
+        (CHAINING, [], EMPTY),  # the payloads of chaining steps
+        (*_renamed_chaining()[:1], [_renamed_chaining()[1]], _renamed_chaining()[2]),  # renamed
+    ]
+
+
+@pytest.mark.parametrize("case", range(8))
+def test_the_check_gives_the_verdicts_intake_gives(case: int) -> None:
+    export, claims, payloads = _check_cases()[case]
+    request = {**NEW, "payloads": claims} if claims else NEW
+
+    result = _intake(request, export=export, payloads=payloads)
+    checked = _checked(export, {"payloads": claims} if claims else None, payloads)
+
+    if result.refusals:  # intake says only what refuses; the check says every verdict too
+        blocking = [f for f in checked if f.severity is Severity.BLOCKING]
+        assert _verdicts(blocking) == _verdicts(result.refusals)
+        assert len(_verdicts(checked)) > len(blocking)
+    else:
+        assert _verdicts(checked) == _verdicts(result.to_complete)
+        assert _verdicts(checked)
+
+
+def test_the_check_takes_an_export_without_facets() -> None:
+    assert _verdicts(_checked(_without_facets(EASM), None, EMPTY)) == _verdicts(
+        _intake({**NEW, **FACETS}, export=_without_facets(EASM)).to_complete
+    )
+
+
+@pytest.mark.parametrize(
+    ("claims", "field"),
+    [
+        (["a list"], ""),
+        ({"payloads": [], "mode": "new"}, ""),
+        ({"payloads": [{"name": "x", "version": "2.0.0"}]}, "/payloads/0"),
+        ({"payloads": "not a list"}, "/payloads"),
+    ],
+)
+def test_claims_outside_their_schema_are_refused_before_any_verdict(
+    claims: object, field: str
+) -> None:
+    found = _checked(SALT, claims, EMPTY)
+
+    assert {(f.code, f.path, f.severity) for f in found} == {
+        ("SCH-001", REQUEST, Severity.BLOCKING)
+    }
+    assert field in {f.field for f in found}
+
+
+def test_the_check_refuses_a_payload_that_cannot_be_hashed_and_judges_the_others() -> None:
+    unhashable = copy.deepcopy(SALT)
+    _salt_payload(unhashable)["payload_detection_remediations"] = [{"detection_remediation": "x"}]
+
+    found = _checked(unhashable, None, EMPTY)
+
+    refused = [f for f in found if f.code == "PAY-005"]
+    assert [f.severity for f in refused] == [Severity.BLOCKING]
+    assert refused[0].path == EXPORT
+    assert len([f for f in found if f.code == "PAY-010"]) == 10  # every other payload
+
+
+def test_the_check_of_one_payload_that_cannot_be_hashed_is_refused() -> None:
+    export = copy.deepcopy(EASM)
+    contract = {
+        "injector_contract_payload": {
+            **_salt_payload(copy.deepcopy(SALT)),
+            "payload_detection_remediations": [{"detection_remediation": "x"}],
+        }
+    }
+    assert export["scenario_injects"]
+    export["scenario_injects"][0]["inject_injector_contract"] = {
+        **export["scenario_injects"][0]["inject_injector_contract"],
+        **contract,
+    }
+
+    found = _checked(export, None, EMPTY)
+
+    assert "PAY-005" in {f.code for f in found if f.severity is Severity.BLOCKING}
+
+
+def test_the_check_of_an_update_gives_the_verdicts_the_update_gives() -> None:
+    source = _stored(SALT)
+    assert source.stored is not None
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = [{"name": name, "based_on": {"payload": slug}}]
+
+    result = _intake({**UPDATE, "payloads": claims}, source, export=edited, payloads=held_salt)
+    checked = intake_check(
+        edited,
+        {"payloads": claims},
+        export_path=EXPORT,
+        claims_path=REQUEST,
+        data=DATA,
+        schema=SCHEMA,
+        payloads=held_salt,
+        external_id=ID,
+        previous=source.stored[1],
+        previous_path="scenario.json",
+    )
+
+    assert result.refusals == ()
+    assert _verdicts(checked) == _verdicts(result.to_complete)
+
+
+def test_the_check_of_an_update_needs_the_previous_version_its_identifiers_come_from() -> None:
+    """A command holding its inject's ID: normalisation rewrites it to the ID the previous
+    version gave that inject, so the payload is the catalogue's only with that version."""
+    exported = copy.deepcopy(SALT)
+    inject = next(
+        i
+        for i in exported["scenario_injects"]
+        if (i.get("inject_injector_contract") or {}).get("injector_contract_payload")
+    )
+    payload = inject["inject_injector_contract"]["injector_contract_payload"]
+    payload["command_content"] += f" # {inject['inject_id']}"
+    first = json.loads(_intake(NEW, export=exported).scenario_json or b"")
+    stable = next(
+        i["inject_id"]
+        for i in first["scenario_injects"]
+        if " # "
+        in ((i.get("inject_injector_contract") or {}).get("injector_contract_payload") or {}).get(
+            "command_content", ""
+        )
+    )
+    previous = json.loads(json.dumps(first).replace(stable, "11111111-2222-4333-8444-555555555555"))
+    held_previous = catalogue(previous)
+
+    def there(found: Iterable[Finding]) -> int:
+        return sum(f.message.startswith("already there") for f in found)
+
+    def check(prior: object) -> tuple[Finding, ...]:
+        return intake_check(
+            exported,
+            None,
+            export_path=EXPORT,
+            claims_path="",
+            data=DATA,
+            schema=SCHEMA,
+            payloads=held_previous,
+            external_id=ID,
+            previous=prior,
+            previous_path=None if prior is None else "scenario.json",
+        )
+
+    assert there(check(previous)) == 11
+    assert there(check(None)) == 10  # the one payload is judged on another command

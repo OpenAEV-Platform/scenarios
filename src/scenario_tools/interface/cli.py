@@ -13,7 +13,7 @@ import json
 import os
 import re
 import signal
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import NoReturn
 
@@ -83,7 +83,12 @@ from scenario_tools.application.fixture_expectations import (
     Expectation,
     expectations_from_document,
 )
-from scenario_tools.application.intake_entry import intake_entry, intake_files, write_intake
+from scenario_tools.application.intake_entry import (
+    intake_check,
+    intake_entry,
+    intake_files,
+    write_intake,
+)
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
 from scenario_tools.application.run_fixtures import run_fixtures
@@ -1278,16 +1283,94 @@ _PLANNED = ("scenarios", "payloads", "policy", "schemas")
 _PLANNED_NAMED = ", ".join(f"{path}/" for path in _PLANNED[:-1]) + f" or {_PLANNED[-1]}/"
 
 
+_DIRECTORY = click.Path(path_type=Path, file_okay=False, exists=True)
+
+
 @main.command(name="intake")
 @click.argument("export", type=click.Path(path_type=Path, dir_okay=False))
-@click.option("--request", "request", required=True, type=click.Path(path_type=Path))
-@click.option("--repo", "repo", required=True, type=click.Path(path_type=Path))
-@click.option("--plan", "plan", required=True, type=click.Path(path_type=Path))
+@click.option("--request", "request", type=click.Path(path_type=Path))
+@click.option("--repo", "repo", type=click.Path(path_type=Path))
+@click.option("--plan", "plan", type=click.Path(path_type=Path))
+@click.option(
+    "--check",
+    is_flag=True,
+    help="Write nothing: give the verdicts on the export's payloads against --payloads.",
+)
+@click.option(
+    "--payloads",
+    "payloads",
+    type=_DIRECTORY,
+    help="With --check: a checkout's payloads/, or a release's version files laid out as "
+    "<slug>/<version>.json.",
+)
+@click.option(
+    "--rules",
+    "rules",
+    type=_DIRECTORY,
+    help="With --check: a directory holding the repository's policy/data/ and schemas/.",
+)
+@click.option(
+    "--claims",
+    "claims",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="With --check: a YAML document holding a request's payloads list alone.",
+)
+@click.option(
+    "--external-id",
+    "external_id",
+    help="With --check: the entry's external ID, which normalisation derives identifiers from.",
+)
+@click.option(
+    "--previous",
+    "previous",
+    type=click.Path(path_type=Path, dir_okay=False, exists=True),
+    help="With --check, for an update: the entry's stored scenario.json.",
+)
 @click.pass_context
-def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Path) -> None:
+def intake(
+    ctx: click.Context,
+    export: Path,
+    request: Path | None,
+    repo: Path | None,
+    plan: Path | None,
+    check: bool,
+    payloads: Path | None,
+    rules: Path | None,
+    claims: Path | None,
+    external_id: str | None,
+    previous: Path | None,
+) -> None:
     """Turn EXPORT, a platform export (an archive, or its JSON), and the request at --request
     into an entry of the repository at --repo, written in place, and write at --plan the plan of
-    the pull request that proposes it. A refused request writes nothing."""
+    the pull request that proposes it. A refused request writes nothing.
+
+    With --check, write nothing and read no git: give the verdict on each payload EXPORT embeds
+    against the catalogue at --payloads, and the findings on the claims at --claims, as intake
+    gives them, with the rules at --rules. Exit with 1 if a claim or a payload is refused."""
+    checking: dict[str, object] = {
+        "--payloads": payloads,
+        "--rules": rules,
+        "--claims": claims,
+        "--external-id": external_id,
+        "--previous": previous,
+    }
+    writing = {"--request": request, "--repo": repo, "--plan": plan}
+    if check:
+        extra = [name for name, value in writing.items() if value is not None]
+        if extra:
+            raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
+        if payloads is None or rules is None or external_id is None:
+            raise click.UsageError("--check needs --payloads, --rules and --external-id")
+        if not _CANONICAL_UUID.fullmatch(external_id):
+            raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
+        _intake_check(ctx, export, payloads, rules, claims, external_id, previous)
+        return
+    extra = [name for name, value in checking.items() if value is not None]
+    if extra:
+        raise click.UsageError(f"only with --check: {', '.join(extra)}")
+    if request is None or repo is None or plan is None:
+        missing = [name for name, value in writing.items() if value is None]
+        raise click.UsageError(f"intake needs {', '.join(missing)}, or --check")
     try:
         root = Path(os.path.realpath(repo))  # resolved once: the run holds what it names
         plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
@@ -1369,6 +1452,91 @@ def intake(ctx: click.Context, export: Path, request: Path, repo: Path, plan: Pa
             raise EnvironmentProblemError(_unplaced(str(error), root, plan, inputs)) from error
 
     _emit(ctx, "intake", produce_shown, root)
+
+
+def _intake_check(
+    ctx: click.Context,
+    export: Path,
+    payloads: Path,
+    rules: Path,
+    claims: Path | None,
+    external_id: str,
+    previous: Path | None,
+) -> None:
+    """``intake --check``: the verdicts on EXPORT's payloads, writing nothing and reading no git."""
+    try:
+        root = Path(os.path.realpath(rules))  # resolved once: the run holds what it names
+        catalogue = payloads.absolute()
+        if catalogue.name in ("", ".", ".."):  # no leaf to keep: the directory it names
+            catalogue = Path(os.path.realpath(catalogue))
+        # The parent as the system resolves it, a link or a ".." after one included; the
+        # catalogue itself, and what it holds, are read without following any link.
+        catalogue = Path(os.path.realpath(catalogue.parent)) / catalogue.name
+    except OSError as error:  # a relative path, once the working directory is gone
+        _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
+
+    def produce() -> Report:
+        source = RepositoryEntries(root)  # the rules, read like an entry's, never through a link
+        try:
+            loader = YamlDataLoader(source.directory("policy/data"))
+            schemas = source.directory("schemas")
+            schema = JsonSchemaValidator(schemas)
+        except (OSError, ValueError, UnsafeInputError) as error:
+            raise EnvironmentProblemError(f"the rules cannot be used: {error}") from error
+        for name in ("intake-request", "payload"):
+            if not (schemas / f"{name}.schema.json").is_file():
+                raise EnvironmentProblemError(
+                    f"the rules cannot be used: {name}.schema.json is missing"
+                )
+        found = intake_check(
+            _read_as(export, read_export),
+            None if claims is None else _read_as(claims, _claims_document),
+            export_path=_shown(export),  # by their names: no repository holds them
+            claims_path="" if claims is None else _shown(claims),
+            data=loader,
+            schema=schema,
+            payloads=catalogue_of(CatalogueDirectory(catalogue.parent, (catalogue.name,))),
+            external_id=external_id,
+            previous=None if previous is None else _read_as(previous, _previous_scenario),
+            previous_path=None if previous is None else _shown(previous),
+        )
+        return Report("intake", found)
+
+    _emit(ctx, "intake", produce, None)
+
+
+def _read_as(path: Path, read: Callable[[Path], object]) -> object:
+    """What ``read`` reads from ``path``; a refusal names the file as every finding of the check
+    does, by its name."""
+    try:
+        return read(path)
+    except UnsafeInputError as error:
+        raise UnsafeInputError(error.code, error.message, _shown(path), error.field) from error
+
+
+def _shown(path: Path) -> str:
+    """How a finding names a file the check reads: its name, as a report path takes it."""
+    return repository_path(path.name, Path("/"))
+
+
+def _previous_scenario(path: Path) -> object:
+    """The stored scenario at ``path``: a document of another shape is refused, never read as
+    the absence of a previous version."""
+    _, document = read_stored_scenario(path)
+    if not isinstance(document, Mapping):
+        raise UnsafeInputError(
+            "IO-014",
+            "not a stored scenario: the document must be an object",
+            _shown(path),
+        )
+    return document
+
+
+def _claims_document(path: Path) -> object:
+    """The claims file's document; an empty one is an empty mapping, which its check refuses,
+    never the absence of claims."""
+    document = read_yaml_file(path, limit=REQUEST_LIMIT)
+    return {} if document is None else document
 
 
 def _validate_written(rules: _Rules, root: Path, entry: str) -> tuple[Finding, ...]:

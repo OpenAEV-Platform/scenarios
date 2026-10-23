@@ -31,6 +31,10 @@ Run every command from the root of the checkout.
 Keep the export, the request and the plan outside the checkout, in a directory that exists; the
 plan must not exist yet.
 
+An agent without a checkout can learn what intake will make of an export's payloads first, from
+a release's version files, a copy of the repository's rules and the entry's external ID (and, for an update, its stored `scenario.json`), with `intake --check`
+([`intake.md`](intake.md#checking-the-payloads-first)).
+
 ## The steps
 
 1. **Run `intake`**, asking for JSON so that the result can be read:
