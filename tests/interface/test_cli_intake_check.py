@@ -10,7 +10,8 @@ import pytest
 from click.testing import CliRunner
 
 from scenario_tools.interface.cli import main
-from tests.interface.test_cli_build import CHAINED, ROOT, _build, _chained_entry, _git, _repository
+from tests.interface.test_cli_build import ROOT, _build, _chained_entry, _git, _repository
+from tests.support.chaining import CHAINED
 
 CHAINING = ROOT / "tests" / "golden" / "chaining" / "two-steps.json"
 CHAINED_ID = "5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42"
