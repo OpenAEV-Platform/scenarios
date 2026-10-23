@@ -1466,7 +1466,12 @@ def _intake_check(
     """``intake --check``: the verdicts on EXPORT's payloads, writing nothing and reading no git."""
     try:
         root = Path(os.path.realpath(rules))  # resolved once: the run holds what it names
-        catalogue = payloads.absolute()  # as given: a ".." after a link is the link's parent
+        catalogue = payloads.absolute()
+        if catalogue.name in ("", ".", ".."):  # no leaf to keep: the directory it names
+            catalogue = Path(os.path.realpath(catalogue))
+        # The parent as the system resolves it, a link or a ".." after one included; the
+        # catalogue itself, and what it holds, are read without following any link.
+        catalogue = Path(os.path.realpath(catalogue.parent)) / catalogue.name
     except OSError as error:  # a relative path, once the working directory is gone
         _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
 

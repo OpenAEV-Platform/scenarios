@@ -225,3 +225,34 @@ def test_an_input_refused_as_it_is_read_is_named_by_its_file_name(
 
     assert code == 1
     assert {f["path"] for f in document["findings"]} == {"export.json"}
+
+
+def test_a_catalogue_under_a_linked_parent_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    (tmp_path / "linked-checkout").symlink_to(payloads.parent)
+
+    code, document = _check(
+        str(CHAINING), "--check", "--payloads", str(tmp_path / "linked-checkout" / "payloads"),
+        "--rules", str(rules), "--external-id", CHAINED_ID,
+    )  # fmt: skip
+
+    assert code == 0, document
+    assert {f["message"] for f in document["findings"]} == {
+        "already there: process-discovery-ps 1.0.0"
+    }
+
+
+def test_a_catalogue_that_is_a_link_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    (tmp_path / "catalogue").symlink_to(payloads)
+
+    code, _ = _check(
+        str(CHAINING), "--check", "--payloads", str(tmp_path / "catalogue"),
+        "--rules", str(rules), "--external-id", CHAINED_ID,
+    )  # fmt: skip
+
+    assert code != 0
