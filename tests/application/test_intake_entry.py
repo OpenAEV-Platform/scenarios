@@ -1462,10 +1462,11 @@ def _check_cases() -> list[tuple[Any, list[dict[str, Any]], Catalogue]]:
         (edited, [claim], _with_files(held_salt, first.payload_files)),  # already there, renamed
         (edited, [{"name": "nothing"}, claim, claim], held_salt),  # refused claims
         (CHAINING, [], EMPTY),  # the payloads of chaining steps
+        (*_renamed_chaining()[:1], [_renamed_chaining()[1]], _renamed_chaining()[2]),  # renamed
     ]
 
 
-@pytest.mark.parametrize("case", range(7))
+@pytest.mark.parametrize("case", range(8))
 def test_the_check_gives_the_verdicts_intake_gives(case: int) -> None:
     export, claims, payloads = _check_cases()[case]
     request = {**NEW, "payloads": claims} if claims else NEW
