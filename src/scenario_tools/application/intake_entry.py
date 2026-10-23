@@ -40,7 +40,7 @@ from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.ports.data import DataLoader
-from scenario_tools.ports.errors import EnvironmentProblemError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.plan import PlanSink
 from scenario_tools.ports.repository import EntrySource, EntryWriter
 from scenario_tools.ports.schema import SchemaValidator
@@ -202,15 +202,32 @@ def _adopting(
         dataclasses.replace(claim, position=position)
         for position, claim in enumerate(_claims(request))
     )
-    prepared = prepare(export)
-    found = discover(export) if claims else None
+    if not claims:
+        prepared = prepare(export)
+        if prepared.refusals:
+            return prepared, None
+        return prepared, _payloads(
+            prepared.scenario_json, claims, request, request_path, payloads, data, schema
+        )
+    # Before the names are adopted, matching an update's injects may fail where the adopted
+    # names succeed: that failure is provisional, and only the final preparation's counts.
+    initial: PreparedEntry | None
+    try:
+        initial = prepare(export)
+    except UnsafeInputError:
+        initial = None
+    final = initial
+    try:
+        found: PreparedEntry | None = discover(export)
+    except UnsafeInputError:
+        found = None  # the final preparation says why
     if found is not None and not found.refusals:
         # A payload the catalogue holds as the final form gives it is already there: its name
         # never changes.
         there = (
             frozenset()
-            if prepared.refusals
-            else names_held(json.loads(prepared.scenario_json), payloads)
+            if initial is None or initial.refusals
+            else names_held(json.loads(initial.scenario_json), payloads)
         )
         first = _payloads(
             found.scenario_json, claims, request, request_path, payloads, data, schema
@@ -221,7 +238,9 @@ def _adopting(
                 dataclasses.replace(claim, name=adopted.get(claim.name, claim.name))
                 for claim in claims
             )
-            prepared = prepare(export_renamed(export, adopted))
+            final = prepare(export_renamed(export, adopted))
+    # Without a name adopted, a provisional failure stands: preparing again raises it.
+    prepared = final if final is not None else prepare(export)
     if prepared.refusals:
         return prepared, None
     return prepared, _payloads(

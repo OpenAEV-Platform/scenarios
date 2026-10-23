@@ -34,7 +34,7 @@ from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_hash import embedded_payloads
 from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.domain.verification.payload_version import PayloadVersion
-from scenario_tools.ports.errors import EnvironmentProblemError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from tests.support.catalogue import catalogue, held
 
 ROOT = Path(__file__).parents[2]
@@ -1378,3 +1378,48 @@ def test_an_update_never_renames_a_claimed_payload_the_catalogue_holds_as_finall
     assert "this payload is already in the catalogue: the claim is ignored" in {
         f.message for f in result.to_complete
     }
+
+
+def _matching_fails_with(name: str) -> Any:
+    """A preparation whose matching with the previous version fails while a payload of the
+    export is still named ``name``, as an ambiguous match does before a name is adopted."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        named = {
+            (inject["inject_injector_contract"].get("injector_contract_payload") or {}).get(
+                "payload_name"
+            )
+            for inject in form["scenario_injects"]
+            if isinstance(inject.get("inject_injector_contract"), dict)
+        }
+        if options.get("previous") is not None and name in named:
+            raise UnsafeInputError("VER-010", "two injects match one", EXPORT)
+        return prepare_entry(form, *arguments, **options)
+
+    return prepare
+
+
+def test_an_update_matching_only_once_the_names_are_adopted_is_accepted() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    _salt_payload(edited)["payload_name"] = f"Copy of {name}"
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(
+            "scenario_tools.application.intake_entry.prepare_entry",
+            _matching_fails_with(f"Copy of {name}"),
+        )
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+
+
+def test_an_update_whose_matching_fails_whatever_the_names_is_refused() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(
+            "scenario_tools.application.intake_entry.prepare_entry", _matching_fails_with(name)
+        )
+        with pytest.raises(UnsafeInputError, match="VER-010"):
+            _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
