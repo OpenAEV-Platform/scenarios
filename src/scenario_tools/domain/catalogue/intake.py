@@ -7,7 +7,7 @@ declared with ``rewrite``. The plan is the same for the same inputs, with no tim
 
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,6 +43,8 @@ class IntakeRequest:
     generated_by: str | None = None
     # Catalogue facets for an export that has none, by the request's name of each.
     facets: Mapping[str, str] = field(default_factory=dict)
+    # Hints about the payloads the export embeds, as the request gives them.
+    claims: tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
     def from_document(cls, document: Mapping[str, Any]) -> "IntakeRequest":
@@ -57,6 +59,7 @@ class IntakeRequest:
             sources=tuple(document.get("sources", ())),
             generated_by=document.get("generated_by"),
             facets={name: document[name] for name in FACETS if name in document},
+            claims=tuple(document.get("payloads", ())),
         )
 
     @property
@@ -270,10 +273,13 @@ def intake_plan(
     changed: bool,
     files: Mapping[str, str],
     checklist: Iterable[Finding],
+    changes: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[str, Any]:
     """The plan of the pull request ``request`` leads to: from the commit ``base``, the files
     written (each path to its SHA-256), the title and a body that closes the request's issue and
-    lists what is left to complete or review. Nothing in it depends on the time it is made."""
+    lists what is left to complete or review, then, for each new version of a payload, the
+    fields that differ from its base, never a value. Nothing in it depends on the time it is
+    made."""
     verb = "add" if request.mode == NEW else "update"
     findings = _checklist(checklist)
     lines = [f"Closes #{request.issue}", ""]
@@ -294,8 +300,20 @@ def intake_plan(
     if len(findings) > len(left):
         more = len(findings) - len(left)
         lines.append(f"- and {more} more: run validate on the entry to see them all")
+    changed_fields: list[str] = []
+    for path, pointers in sorted((changes or {}).items()):  # what the checklist leaves
+        item = f"- {_span(path)}: {', '.join(_span(pointer) for pointer in pointers)}"
+        budget -= len(item) + 1
+        if budget < 0:
+            break
+        changed_fields.append(item)
+    if changed_fields:
+        lines += ["", "Changed from the version each new version is based on:", *changed_fields]
+    if changes and len(changes) > len(changed_fields):
+        more = len(changes) - len(changed_fields)
+        lines.append(f"- and {more} more: compare each new version's file with its base's")
     shown: list[str] = []
-    for path in sorted(files):  # what the checklist leaves of the budget
+    for path in sorted(files):  # what the changes leave of the budget
         item = f"- {_span(path)} {_span(files[path])}"
         budget -= len(item) + 1
         if budget < 0:

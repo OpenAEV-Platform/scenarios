@@ -24,6 +24,7 @@ from scenario_tools.adapters.places import (
     not_taken_back,
     open_directory,
     place_back,
+    removing_file,
     take_back,
     untold,
 )
@@ -79,6 +80,29 @@ def _as_written(directory: int, name: str, mine: Identity, data: bytes) -> bool:
     except OSError:
         return False
     return same and (status.st_dev, status.st_ino) == mine
+
+
+def _take_back_created(
+    directory: int, where: str, mine: Identity, data: bytes, failure: BaseException
+) -> list[str]:
+    """Take back the file this run created at ``where`` in an entry that was there: set aside
+    at once, then removed only while it is the file written, ``mine`` holding ``data``; never
+    another's put at its name meanwhile. What is not taken back is said."""
+    name = posixpath.basename(where)
+    try:
+        outcome = take_back(
+            directory,
+            name,
+            mine,
+            removing_file(directory),
+            ours=lambda aside: _as_written(directory, aside, mine, data),
+            where=where,
+            failure=failure,
+        )
+    except EnvironmentProblemError as error:
+        return [str(error)]
+    said = not_taken_back(outcome, where)
+    return [] if said is None else [said]
 
 
 def _holding(directory: int, name: str, where: str, expected: bytes) -> Identity:
@@ -409,10 +433,12 @@ class RepositoryWriter:
     ) -> Iterator[_WrittenEntry]:
         """Write ``files``, by name, in the entry at ``entry``, for as long as the block runs.
         Without ``previous``, the entry is new: it is made where nothing is, its files created
-        in it, with the directories above it that are missing. With it, each file is replaced
-        at once, once it is known to still hold its ``previous`` bytes. If the block does not
-        end, what was written is taken back: a new entry's files, the entry and the directories
-        made for it are removed; a replaced file is given its previous bytes back. Nothing
+        in it, with the directories above it that are missing. With it, the entry is there: each
+        file ``previous`` holds is replaced at once, once it is known to still hold those bytes,
+        and each other file is created where nothing is. If the block does not end, what was
+        written is taken back: a new entry's files, the entry and the directories made for it
+        are removed; a replaced file is given its previous bytes back, a file created in an
+        entry that was there is removed. Nothing
         another put meanwhile is ever removed, and what cannot be taken back is said. Nothing
         to write writes nothing. The block is given a check that what reads the entry by its
         path afterwards reads what was written."""
@@ -539,15 +565,21 @@ class RepositoryWriter:
     def _replaced(
         self, entry: str, files: Mapping[str, bytes], previous: Mapping[str, bytes]
     ) -> Iterator[_WrittenEntry]:
-        if not files.keys() <= previous.keys():
-            raise ValueError("each file an update replaces needs the bytes it was read with")
         directory = self.opened(entry, make=False)
+        # Each file created is held open until the run ends, taken back or kept: no file
+        # another puts at its name meanwhile can then have its identity.
+        held: list[int] = []
         try:
             folder = self._root / entry
             written: dict[str, tuple[Identity, bytes]] = {}
+            created: dict[str, tuple[Identity, bytes]] = {}
             try:
                 for name, data in files.items():
                     where = f"{entry}/{name}"
+                    if name not in previous:  # where nothing is, never over another's
+                        made = create_in(directory, folder / name, data, keep=held)
+                        created[name] = (made, data)
+                        continue
                     mine, left = _replace_checked(
                         directory, folder / name, where, previous[name], data
                     )
@@ -556,9 +588,15 @@ class RepositoryWriter:
                         raise EnvironmentProblemError(
                             f"{left}; the update is taken back: remove it by hand"
                         )
-                yield _WrittenEntry(self, entry, identity(directory, entry), written)
+                yield _WrittenEntry(self, entry, identity(directory, entry), {**written, **created})
             except BaseException as failure:
-                said = []
+                said = [
+                    told
+                    for name, (mine, data) in created.items()
+                    for told in _take_back_created(
+                        directory, f"{entry}/{name}", mine, data, failure
+                    )
+                ]
                 for name, (mine, data) in written.items():
                     said += self._put_back(
                         directory,
@@ -573,6 +611,8 @@ class RepositoryWriter:
                     raise EnvironmentProblemError("; ".join(said) + described(failure)) from failure
                 raise
         finally:
+            for descriptor in held:
+                os.close(descriptor)
             os.close(directory)
 
     @staticmethod

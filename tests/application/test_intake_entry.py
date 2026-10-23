@@ -5,6 +5,7 @@ Characters are written by code point, never raw, so that this file holds none of
 
 import contextlib
 import copy
+import dataclasses
 import datetime
 import hashlib
 import json
@@ -25,11 +26,15 @@ from scenario_tools.application.intake_entry import (
     plan_document,
     write_intake,
 )
+from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
+from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
+from scenario_tools.domain.verification.payload_hash import embedded_payloads
 from scenario_tools.domain.verification.payload_references import AgreedIds
-from scenario_tools.ports.errors import EnvironmentProblemError
+from scenario_tools.domain.verification.payload_version import PayloadVersion
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from tests.support.catalogue import catalogue, held
 
 ROOT = Path(__file__).parents[2]
@@ -953,3 +958,468 @@ def test_an_update_writes_a_facet_in_scenario_yaml_as_normalisation_stores_it() 
     stored = json.loads(result.scenario_json)["scenario_information"]["scenario_category"]
     assert result.metadata["category"] == stored
     assert scenario_id not in stored
+
+
+def _salt_payload(export: Any, position: int = 0) -> dict[str, Any]:
+    injects = [i for i in export["scenario_injects"] if (i.get("inject_injector_contract") or {})]
+    payload: dict[str, Any] = injects[position]["inject_injector_contract"][
+        "injector_contract_payload"
+    ]
+    return payload
+
+
+def _copy_of_salt() -> tuple[Any, str, str, Catalogue]:
+    """SALT with its first payload edited as a copy of the catalogue's would be, its name, the
+    slug of that payload, and the catalogue that holds SALT's payloads."""
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    edited = copy.deepcopy(SALT)
+    payload = _salt_payload(edited)
+    payload["command_content"] += " # tuned"
+    slug = next(v.slug for v in held_salt.by_hash.values() if v.name == payload["payload_name"])
+    return edited, payload["payload_name"], slug, held_salt
+
+
+def _with_files(base: Catalogue, files: Mapping[str, bytes]) -> Catalogue:
+    """``base`` with the version ``files`` an intake wrote."""
+    written = [
+        PayloadVersion(path.split("/")[1], path.split("/")[2][: -len(".json")], path, json.loads(d))
+        for path, d in files.items()
+    ]
+    return Catalogue.of([*base.by_hash.values(), *written])
+
+
+def _at(stored: object, name: str) -> str:
+    """The pointer of the one payload named ``name`` that ``stored`` embeds."""
+    (pointer,) = (
+        p.pointer
+        for p in embedded_payloads(stored)
+        if isinstance(p.payload, Mapping) and p.payload.get("payload_name") == name
+    )
+    return pointer
+
+
+def _pointers(left: object, right: object, at: str = "") -> set[str]:
+    """The pointers at which ``left`` and ``right`` differ."""
+    if isinstance(left, dict) and isinstance(right, dict):
+        found: set[str] = set()
+        for key in left.keys() | right.keys():
+            found |= _pointers(left.get(key), right.get(key), f"{at}/{key}")
+        return found
+    if isinstance(left, list) and isinstance(right, list) and len(left) == len(right):
+        return set().union(
+            *(
+                _pointers(a, b, f"{at}/{i}")
+                for i, (a, b) in enumerate(zip(left, right, strict=True))
+            )
+        )
+    return set() if left == right else {at}
+
+
+def test_a_copy_claimed_as_based_on_a_catalogue_payload_is_its_next_version() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    path = f"payloads/{slug}/1.1.0.json"
+    assert list(result.payload_files) == [path]
+    assert result.payload_changes == {path: ("/command_content",)}
+    assert json.loads(result.payload_files[path])["payload_name"] == f"{name} (1.1.0)"
+    assert result.scenario_json is not None
+    at = _at(json.loads(result.scenario_json), f"{name} (1.1.0)")
+    assert ("PAY-010", f"{ENTRY}/scenario.json", at) in _codes(result.to_complete)
+    body = plan_document(result, intake_files(result, _render), "0" * 40, ())["body"]
+    assert f"- `{path}`: `/command_content`" in body
+
+
+def test_the_claimed_copy_keeps_every_other_field_and_identifier_of_the_stored_scenario() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    plain = _intake(NEW, export=SALT, payloads=held_salt)
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    at = _at(json.loads(result.scenario_json or b""), f"{name} (1.1.0)")
+    assert _pointers(
+        json.loads(plain.scenario_json or b""), json.loads(result.scenario_json or b"")
+    ) == {f"{at}/command_content", f"{at}/payload_name", f"{at}/payload_external_id"}
+
+
+def test_an_intake_run_again_once_its_new_version_is_written_writes_nothing_more() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    request = {**NEW, "payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    first = _intake(request, export=edited, payloads=held_salt)
+
+    again = _intake(request, export=edited, payloads=_with_files(held_salt, first.payload_files))
+
+    assert again.refusals == ()
+    assert (again.payload_files, again.payload_changes) == ({}, {})
+    assert again.scenario_json == first.scenario_json
+    assert f"already there: {slug} 1.1.0" in {f.message for f in again.to_complete}
+
+
+def test_a_claim_that_cannot_hold_is_refused_at_the_request() -> None:
+    edited, name, _, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": "no-such-payload"}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert _codes(result.refusals) == [("ITK-009", REQUEST, "/payloads/0/based_on/payload")]
+    assert result.payload_files == {}
+
+
+def test_a_requested_version_without_its_base_is_refused_by_the_schema() -> None:
+    result = _intake({**NEW, "payloads": [{"name": "x", "version": "2.0.0"}]})
+
+    assert [(f.code, f.path) for f in result.refusals] == [("SCH-001", REQUEST)]
+
+
+def test_an_update_takes_claims_too() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}, "version": "2.0.0"}]}
+
+    result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/2.0.0.json"]
+
+
+def test_a_claim_on_a_payload_of_a_chaining_step_gives_it_a_new_version() -> None:
+    held_steps = catalogue(json.loads(_intake(NEW, export=CHAINING).scenario_json or b""))
+    edited = copy.deepcopy(CHAINING)
+    for step in edited["scenario_workflow"]["workflow_steps"]:  # one payload, in both steps
+        data = json.loads(step["step_data"])
+        payload = data["inject_injector_contract"]["injector_contract_payload"]
+        payload["command_content"] += " -ef"
+        step["step_data"] = json.dumps(data)
+    slug = next(v.slug for v in held_steps.by_hash.values() if v.name == payload["payload_name"])
+    claims = {"payloads": [{"name": payload["payload_name"], "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_steps)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+    assert result.scenario_json is not None
+    stored = json.loads(result.scenario_json)
+    step_payload = stored["scenario_workflow"]["workflow_steps"][0]["step_data"][
+        "inject_injector_contract"
+    ]["injector_contract_payload"]
+    assert step_payload["payload_name"] == f"{payload['payload_name']} (1.1.0)"
+
+
+def test_a_claimed_copy_takes_the_id_its_new_content_has_in_the_scenario_and_its_file() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    stored = json.loads(result.scenario_json or b"")
+    (written,) = (json.loads(data) for data in result.payload_files.values())
+    (embedded,) = (
+        p.payload
+        for p in embedded_payloads(stored)
+        if isinstance(p.payload, Mapping) and p.payload.get("payload_name") == f"{name} (1.1.0)"
+    )
+    assert embedded["payload_external_id"] == written["payload_external_id"]
+    assert written["payload_external_id"] not in {v.identifier for v in held_salt.by_hash.values()}
+
+
+def test_an_update_whose_ids_cannot_be_assigned_still_writes_each_copy_under_its_name() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    source = _stored(SALT)
+    source.declared = ["not a mapping"]  # type: ignore[assignment]
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+
+    result = _intake({**UPDATE, **claims}, source, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+    names = {
+        p.payload.get("payload_name")
+        for p in embedded_payloads(json.loads(result.scenario_json or b""))
+        if isinstance(p.payload, Mapping)
+    }
+    assert f"{name} (1.1.0)" in names
+    assert name not in names
+
+
+def test_a_claimed_copy_under_another_base_name_is_stored_as_normalisation_gives_it() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    _salt_payload(edited)["payload_name"] = f"Copy of {name}"
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+    assert result.scenario_json is not None
+    stored = json.loads(result.scenario_json)
+    assert _at(stored, f"{name} (1.1.0)")
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+    plain = json.loads(_intake(NEW, export=SALT, payloads=held_salt).scenario_json or b"")
+    assert sorted(i["inject_id"] for i in stored["scenario_injects"]) == sorted(
+        i["inject_id"] for i in plain["scenario_injects"]
+    )  # the injects keep their identifiers
+
+
+def test_a_renamed_copy_whose_command_holds_its_own_id_matches_its_version_file() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {name}"
+    payload["command_content"] += f" # {payload['payload_id']}"  # rewritten by normalisation
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    stored = json.loads(result.scenario_json)
+    with_files = _with_files(held_salt, result.payload_files)
+    assert payload_findings(result.metadata, stored, ENTRY, AgreedIds({}), with_files.held()) == ()
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+
+
+def _renamed_chaining() -> tuple[Any, dict[str, Any], Catalogue]:
+    """The chaining export whose step payload is a changed copy named otherwise, the claim on
+    it, and the catalogue that holds the original."""
+    held_steps = catalogue(json.loads(_intake(NEW, export=CHAINING).scenario_json or b""))
+    edited = copy.deepcopy(CHAINING)
+    for step in edited["scenario_workflow"]["workflow_steps"]:  # one payload, in both steps
+        data = json.loads(step["step_data"])
+        payload = data["inject_injector_contract"]["injector_contract_payload"]
+        original = payload["payload_name"]
+        payload["payload_name"] = f"Copy of {original}"
+        payload["command_content"] += " -ef"
+        step["step_data"] = json.dumps(data)
+    slug = next(v.slug for v in held_steps.by_hash.values() if v.name == original)
+    claim = {"name": f"Copy of {original}", "based_on": {"payload": slug}}
+    return edited, claim, held_steps
+
+
+def test_an_update_from_the_same_renamed_chaining_export_keeps_its_steps() -> None:
+    edited, claim, held_steps = _renamed_chaining()
+    first = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held_steps)
+    assert first.scenario_json is not None
+    name = CHAINING["scenario_information"]["scenario_name"]
+    source = FakeSource(
+        (CatalogueEntry(ENTRY, ID, name),),
+        (first.scenario_json, json.loads(first.scenario_json)),
+        declared=first.metadata,
+    )
+
+    again = _intake(
+        {**UPDATE, "payloads": [claim]},
+        source,
+        export=edited,
+        payloads=_with_files(held_steps, first.payload_files),
+    )
+
+    assert again.refusals == ()
+    assert (again.changed, again.payload_files) == (False, {})
+    assert "VER-012" not in {f.code for f in again.to_complete}
+
+
+def test_an_intake_run_again_with_an_asked_version_finds_a_renamed_copy_already_there() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {name}"
+    payload["command_content"] += f" # {payload['payload_id']}"  # rewritten from the base name
+    claim = {"name": f"Copy of {name}", "based_on": {"payload": slug}, "version": "2.0.0"}
+    request = {**NEW, "payloads": [claim]}
+    first = _intake(request, export=edited, payloads=held_salt)
+    assert list(first.payload_files) == [f"payloads/{slug}/2.0.0.json"]
+
+    again = _intake(request, export=edited, payloads=_with_files(held_salt, first.payload_files))
+
+    assert again.refusals == ()
+    assert again.payload_files == {}
+    assert again.scenario_json == first.scenario_json
+    assert f"already there: {slug} 2.0.0" in {f.message for f in again.to_complete}
+
+
+def test_a_claim_after_one_resolved_by_its_name_is_still_found_at_its_place() -> None:
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    edited = copy.deepcopy(SALT)
+    there, changed = _salt_payload(edited, 0), _salt_payload(edited, 1)
+    names = (there["payload_name"], changed["payload_name"])
+    slugs = [next(v.slug for v in held_salt.by_hash.values() if v.name == n) for n in names]
+    held_there = next(v for v in held_salt.by_hash.values() if v.name == names[0])
+    there["payload_name"] = f"Copy of {names[0]}"  # the catalogue's content, renamed
+    there["payload_description"] = held_there.document["payload_description"]
+    changed["payload_name"] = f"Copy of {names[1]}"
+    changed["command_content"] += " # tuned"
+    claims = [
+        {"name": f"Copy of {names[0]}", "based_on": {"payload": slugs[0]}},
+        {"name": f"Copy of {names[1]}", "based_on": {"payload": slugs[1]}, "version": "1.0.0"},
+    ]
+
+    result = _intake({**NEW, "payloads": claims}, export=edited, payloads=held_salt)
+
+    assert _codes(result.refusals) == [("ITK-009", REQUEST, "/payloads/1/version")]
+
+
+def test_an_update_finds_the_names_its_claims_adopt_before_matching_its_previous_version() -> None:
+    calls: list[str] = []
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        calls.append("previous" if options.get("previous") is not None else "alone")
+        return prepare_entry(form, *arguments, **options)
+
+    edited, claim, held_steps = _renamed_chaining()
+    first = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held_steps)
+    assert first.scenario_json is not None
+    source = FakeSource(
+        (CatalogueEntry(ENTRY, ID, CHAINING["scenario_information"]["scenario_name"]),),
+        (first.scenario_json, json.loads(first.scenario_json)),
+        declared=first.metadata,
+    )
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        _intake({**UPDATE, "payloads": [claim]}, source, export=edited, payloads=held_steps)
+
+    assert calls == ["previous", "alone", "previous"]  # matched last with the names adopted
+
+
+def test_what_the_names_are_found_on_never_refuses_the_request() -> None:
+    """The form the adopted names are found on has no previous version and no version asked
+    for: a payload refused there may be valid in the final form, which alone decides."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        prepared = prepare_entry(form, *arguments, **options)
+        if options.get("previous") is not None:
+            return prepared
+        stored = json.loads(prepared.scenario_json)
+        _salt_payload(stored, 1)["command_content"] += " # only here"  # its name is taken
+        return dataclasses.replace(prepared, scenario_json=stored_form(stored))
+
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+
+
+def test_a_renamed_copy_of_a_long_named_payload_takes_the_version_asked_for() -> None:
+    long = "L" * 192
+    exported = copy.deepcopy(SALT)
+    _salt_payload(exported)["payload_name"] = long
+    held_long = catalogue(json.loads(_intake(NEW, export=exported).scenario_json or b""))
+    first = next(v for v in held_long.by_hash.values() if v.name == long)
+    later = {
+        **first.document,
+        "payload_name": f"{long} (1.9.0)",
+        "command_content": f"{first.document['command_content']} # 1.9.0",
+        "payload_external_id": "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b",
+    }
+    path = f"payloads/{first.slug}/1.9.0.json"
+    held = Catalogue.of(
+        [*held_long.by_hash.values(), PayloadVersion(first.slug, "1.9.0", path, later)]
+    )
+    edited = copy.deepcopy(exported)
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {long}"[:200]
+    payload["command_content"] += " # tuned"
+    claim = {
+        "name": payload["payload_name"],
+        "based_on": {"payload": first.slug},
+        "version": "2.0.0",
+    }
+
+    result = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{first.slug}/2.0.0.json"]
+    stored = json.loads(result.scenario_json or b"")
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+
+
+def test_a_renamed_copy_already_there_claimed_twice_is_refused() -> None:
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    edited = copy.deepcopy(SALT)
+    there = _salt_payload(edited)
+    held_there = next(v for v in held_salt.by_hash.values() if v.name == there["payload_name"])
+    claim = {"name": f"Copy of {there['payload_name']}", "based_on": {"payload": held_there.slug}}
+    there["payload_name"] = claim["name"]
+    there["payload_description"] = held_there.document["payload_description"]
+
+    result = _intake({**NEW, "payloads": [claim, claim]}, export=edited, payloads=held_salt)
+
+    assert ("ITK-009", REQUEST, "/payloads/1/name") in _codes(result.refusals)
+
+
+def test_an_update_never_renames_a_claimed_payload_the_catalogue_holds_as_finally_prepared() -> (
+    None
+):
+    """The form names are found on has no previous version: a payload that differs there only
+    by what the previous version gives back is already there, and its claim is ignored."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        prepared = prepare_entry(form, *arguments, **options)
+        if options.get("previous") is not None:
+            return prepared
+        stored = json.loads(prepared.scenario_json)
+        _salt_payload(stored)["command_content"] += " # another inject ID"
+        return dataclasses.replace(prepared, scenario_json=stored_form(stored))
+
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    there = _salt_payload(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    other = next(v for v in held_salt.by_hash.values() if v.name != there["payload_name"])
+    claims = {"payloads": [{"name": there["payload_name"], "based_on": {"payload": other.slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=SALT, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert result.payload_files == {}
+    assert "this payload is already in the catalogue: the claim is ignored" in {
+        f.message for f in result.to_complete
+    }
+
+
+def _matching_fails_with(name: str) -> Any:
+    """A preparation whose matching with the previous version fails while a payload of the
+    export is still named ``name``, as an ambiguous match does before a name is adopted."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        named = {
+            (inject["inject_injector_contract"].get("injector_contract_payload") or {}).get(
+                "payload_name"
+            )
+            for inject in form["scenario_injects"]
+            if isinstance(inject.get("inject_injector_contract"), dict)
+        }
+        if options.get("previous") is not None and name in named:
+            raise UnsafeInputError("VER-010", "two injects match one", EXPORT)
+        return prepare_entry(form, *arguments, **options)
+
+    return prepare
+
+
+def test_an_update_matching_only_once_the_names_are_adopted_is_accepted() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    _salt_payload(edited)["payload_name"] = f"Copy of {name}"
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(
+            "scenario_tools.application.intake_entry.prepare_entry",
+            _matching_fails_with(f"Copy of {name}"),
+        )
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+
+
+def test_an_update_whose_matching_fails_whatever_the_names_is_refused() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(
+            "scenario_tools.application.intake_entry.prepare_entry", _matching_fails_with(name)
+        )
+        with pytest.raises(UnsafeInputError, match="VER-010"):
+            _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)

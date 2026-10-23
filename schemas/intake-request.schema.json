@@ -86,6 +86,14 @@
     "rewrite": {
       "description": "For an update: true when the scenario was renamed on the platform.",
       "type": "boolean"
+    },
+    "payloads": {
+      "description": "Hints about the payloads the export embeds. Intake checks every one; a hint never decides.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/payload_claim"
+      }
     }
   },
   "allOf": [
@@ -139,5 +147,59 @@
         }
       }
     }
-  ]
+  ],
+  "$defs": {
+    "payload_claim": {
+      "description": "A hint about one payload the export embeds, by its name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "The payload's name as the export holds it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "based_on": {
+          "description": "The payload of the catalogue this one was made from.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payload"
+          ],
+          "properties": {
+            "payload": {
+              "description": "The slug of a payload of the catalogue.",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            },
+            "version": {
+              "description": "The version that was duplicated; the latest when absent.",
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+            }
+          }
+        },
+        "version": {
+          "description": "The version wanted for a new version of the payload; it must be higher than the highest the catalogue holds.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+        }
+      },
+      "if": {
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "required": [
+          "based_on"
+        ]
+      }
+    }
+  }
 }

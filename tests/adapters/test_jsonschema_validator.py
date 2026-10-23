@@ -1008,3 +1008,36 @@ def test_a_facet_of_a_request_outside_its_schema_is_refused(
     assert pointer in {
         v.pointer for v in validator.validate("intake-request", {**INTAKE, **change})
     }
+
+
+CLAIM = {"name": "Process Discovery - ps", "based_on": {"payload": "process-discovery-ps"}}
+
+
+def test_an_intake_request_may_claim_what_its_payloads_are_based_on(
+    validator: JsonSchemaValidator,
+) -> None:
+    full = {**CLAIM, "based_on": {"payload": "ps", "version": "1.2.0"}, "version": "2.0.0"}
+    update = {key: INTAKE[key] for key in ("external_id", "domain", "slug", "issue")}
+
+    assert validator.validate("intake-request", {**INTAKE, "payloads": [CLAIM, full]}) == ()
+    assert validator.validate("intake-request", {**update, "mode": "update", "payloads": []}) == ()
+
+
+@pytest.mark.parametrize(
+    ("claims", "pointer"),
+    [
+        ([{"name": "x", "version": "2.0.0"}], "/payloads/0"),
+        ([{**CLAIM, "other": 1}], "/payloads/0/other"),
+        ([{"based_on": {"payload": "ps"}}], "/payloads/0"),
+        ([{**CLAIM, "based_on": {"payload": "Not A Slug"}}], "/payloads/0/based_on/payload"),
+        ([{**CLAIM, "version": "1.0"}], "/payloads/0/version"),
+        ([CLAIM] * 101, "/payloads"),
+    ],
+    ids=["version without base", "unknown key", "no name", "base no slug", "no semver", "101"],
+)
+def test_a_claim_outside_its_schema_is_refused(
+    validator: JsonSchemaValidator, claims: list[object], pointer: str
+) -> None:
+    assert pointer in {
+        v.pointer for v in validator.validate("intake-request", {**INTAKE, "payloads": claims})
+    }

@@ -2,6 +2,7 @@
 anything is written, so that a refused request leaves the repository as it was."""
 
 import contextlib
+import dataclasses
 import datetime
 import json
 from collections.abc import Callable, Iterable, Mapping
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
-from scenario_tools.application.prepare_entry import prepare_entry
+from scenario_tools.application.prepare_entry import PreparedEntry, prepare_entry
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
@@ -23,15 +24,23 @@ from scenario_tools.domain.catalogue.intake import (
     intake_refusals,
     same_name,
 )
-from scenario_tools.domain.catalogue.payload_verdict import verdicts
+from scenario_tools.domain.catalogue.payload_verdict import (
+    Claim,
+    claimed_verdicts,
+    export_renamed,
+    named_at,
+    names_held,
+    renamed,
+)
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.ports.data import DataLoader
-from scenario_tools.ports.errors import EnvironmentProblemError
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.plan import PlanSink
 from scenario_tools.ports.repository import EntrySource, EntryWriter
 from scenario_tools.ports.schema import SchemaValidator
@@ -54,6 +63,8 @@ class IntakeResult:
     changelog: bytes | None = None  # a new entry's starting CHANGELOG.md
     sheet: bytes | None = None  # a new entry's README.md
     payload_files: dict[str, bytes] = field(default_factory=dict)  # new versions, by their path
+    # For each new version of a payload, the pointers of the fields that differ from its base.
+    payload_changes: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def _scenario_name(export: Any) -> str:
@@ -134,38 +145,144 @@ def intake_entry(
         return IntakeResult(request, refusals)
     if request.mode == NEW:
         return _new(request, export, export_path, request_path, data, schema, today, payloads)
-    return _update(request, export, name, export_path, data, source, schema, payloads)
+    return _update(request, export, name, export_path, request_path, data, source, schema, payloads)
 
 
 @dataclass(frozen=True)
 class _Payloads:
-    """The verdicts on the payloads of an entry: the refusals (a new payload's name taken), the
-    information, the versions held once the new ones are written, and their files by path."""
+    """The verdicts on the payloads of an entry: the refusals (a new payload's name taken, a
+    claim that cannot hold), the information, the stored scenario with each claimed copy under
+    its name, the versions held once the new ones are written, their files by path, and what
+    each new version of a payload changes from its base."""
 
     refusals: tuple[Finding, ...]
     told: tuple[Finding, ...]
+    stored: dict[str, Any]
     held: HeldVersions
     files: dict[str, bytes]
+    changes: dict[str, tuple[str, ...]]
+    adopted: dict[str, str]  # the base name each claimed copy follows, by the name it had
+
+
+def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
+    """The request's claims, as its schema takes them."""
+    return tuple(
+        Claim(
+            claim["name"],
+            claim.get("based_on", {}).get("payload"),
+            claim.get("based_on", {}).get("version"),
+            claim.get("version"),
+        )
+        for claim in request.claims
+    )
+
+
+def _adopting(
+    export: Any,
+    prepare: Callable[[Any], PreparedEntry],
+    discover: Callable[[Any], PreparedEntry],
+    request: IntakeRequest,
+    request_path: str,
+    payloads: Catalogue,
+    data: DataLoader,
+    schema: SchemaValidator,
+) -> tuple[PreparedEntry, _Payloads | None]:
+    """The export prepared, and the verdicts on its payloads (none when it is refused). What
+    normalisation derives from a payload's name (its identifiers, the matching of an update's
+    injects and steps, the identifiers it rewrites in values) follows its base name: a claimed
+    copy whose base name is not that of the catalogue payload it is based on is first given
+    that base name in the export, found on ``discover``'s form, which an update makes without
+    its previous version. Only those names are taken from it, never a finding, and never for a
+    payload the catalogue holds as the export is finally prepared: that one is already there,
+    whatever the claim says. The export is
+    then prepared, and every claim, as the request gives it, judged on that form alone, so
+    that the version files are made from what is stored. Each claim keeps its place in the
+    request, so that a finding points at it."""
+    claims = tuple(
+        dataclasses.replace(claim, position=position)
+        for position, claim in enumerate(_claims(request))
+    )
+    if not claims:
+        prepared = prepare(export)
+        if prepared.refusals:
+            return prepared, None
+        return prepared, _payloads(
+            prepared.scenario_json, claims, request, request_path, payloads, data, schema
+        )
+    # Before the names are adopted, matching an update's injects may fail where the adopted
+    # names succeed: that failure is provisional, and only the final preparation's counts.
+    initial: PreparedEntry | None
+    try:
+        initial = prepare(export)
+    except UnsafeInputError:
+        initial = None
+    final = initial
+    try:
+        found: PreparedEntry | None = discover(export)
+    except UnsafeInputError:
+        found = None  # the final preparation says why
+    if found is not None and not found.refusals:
+        # A payload the catalogue holds as the final form gives it is already there: its name
+        # never changes.
+        there = (
+            frozenset()
+            if initial is None or initial.refusals
+            else names_held(json.loads(initial.scenario_json), payloads)
+        )
+        first = _payloads(
+            found.scenario_json, claims, request, request_path, payloads, data, schema
+        )
+        adopted = {old: base for old, base in first.adopted.items() if old not in there}
+        if adopted:
+            claims = tuple(
+                dataclasses.replace(claim, name=adopted.get(claim.name, claim.name))
+                for claim in claims
+            )
+            final = prepare(export_renamed(export, adopted))
+    # Without a name adopted, a provisional failure stands: preparing again raises it.
+    prepared = final if final is not None else prepare(export)
+    if prepared.refusals:
+        return prepared, None
+    return prepared, _payloads(
+        prepared.scenario_json, claims, request, request_path, payloads, data, schema
+    )
 
 
 def _payloads(
-    scenario_json: bytes, entry: str, payloads: Catalogue, data: DataLoader, schema: SchemaValidator
+    scenario_json: bytes,
+    claims: tuple[Claim, ...],
+    request: IntakeRequest,
+    request_path: str,
+    payloads: Catalogue,
+    data: DataLoader,
+    schema: SchemaValidator,
 ) -> _Payloads:
-    found, new = verdicts(
-        json.loads(scenario_json),
+    stored = json.loads(scenario_json)
+    verdict = claimed_verdicts(
+        stored,
         payloads,
         agreed_ids(data),
         accepted=lambda document: not schema.validate("payload", document),
-        scenario=f"{entry}/scenario.json",
+        claims=claims,
+        scenario=f"{request.entry}/scenario.json",
+        request=request_path,
     )
+    found, new = verdict.findings, verdict.versions
     refusals = tuple(f for f in found if f.severity is Severity.BLOCKING)
     held = [*payloads.held().by_id.values()]
     held += [PayloadReference(v.identifier, v.version, digest) for digest, v in new.items()]
     return _Payloads(
         refusals,
         tuple(f for f in found if f.severity is Severity.INFO),
+        renamed(stored, verdict.renames),
         HeldVersions.of(held),
         {version.path: stored_form(version.document) for version in new.values()},
+        verdict.changes,
+        {
+            str(named_at(stored, pointer)): base
+            for pointer, base in verdict.bases.items()
+            if base_name(str(named_at(stored, pointer))) != base
+        },
     )
 
 
@@ -204,6 +321,7 @@ def plan_document(
         changed=result.changed,
         files=digests,
         checklist=(*result.to_complete, *findings),
+        changes=result.payload_changes,
     )
 
 
@@ -231,13 +349,15 @@ def write_intake(
     entry = result.request.entry
     with plan.reserving() as reservation, contextlib.ExitStack() as stack:
         files = intake_files(result, render)
-        # The new payload versions first, each in a folder of its own: the entry's check reads
-        # them, and they are taken back with it if anything stops the run.
+        # The new payload versions first: a new payload's in a folder of its own, a new version
+        # of a payload in that payload's folder. The entry's check reads them, and they are
+        # taken back with it if anything stops the run.
         versions = []
         for path, data in sorted(result.payload_files.items()):
             folder, name = path.rsplit("/", 1)
+            held: dict[str, bytes] | None = {} if path in result.payload_changes else None
             versions.append(
-                stack.enter_context(entries.writing(folder, {name: data}, previous=None))
+                stack.enter_context(entries.writing(folder, {name: data}, previous=held))
             )
         written = stack.enter_context(entries.writing(entry, files, previous=result.previous))
         findings = validate(entry)
@@ -266,10 +386,21 @@ def _new(
     export, missing = completed_facets(export, request.facets, {}, export_path)
     if missing:
         return IntakeResult(request, missing)
-    prepared = prepare_entry(
-        export, request.external_id, data, path=export_path, start_at=metadata_path
+    prepared, verdict = _adopting(
+        export,
+        lambda form: prepare_entry(
+            form, request.external_id, data, path=export_path, start_at=metadata_path
+        ),
+        lambda form: prepare_entry(
+            form, request.external_id, data, path=export_path, start_at=metadata_path
+        ),
+        request,
+        request_path,
+        payloads,
+        data,
+        schema,
     )
-    if prepared.refusals:
+    if prepared.refusals or verdict is None:
         return IntakeResult(request, prepared.refusals)
     given = request.metadata()
     metadata = {**(prepared.metadata or {}), **given}  # a first preparation always starts one
@@ -289,13 +420,12 @@ def _new(
     left = tuple(
         finding for finding in prepared.to_complete if finding.field.strip("/") not in given
     )
-    scenario_json = prepared.scenario_json
-    verdict = _payloads(scenario_json, request.entry, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
+    scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
     left += verdict.told
     assigned = assigned_entry(
-        metadata, json.loads(scenario_json), request.entry, agreed_ids(data), verdict.held
+        metadata, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
         metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
@@ -326,6 +456,7 @@ def _new(
         changelog=changelog,
         sheet=sheet,
         payload_files=verdict.files,
+        payload_changes=verdict.changes,
     )
 
 
@@ -334,6 +465,7 @@ def _update(
     export: Any,
     name: str,
     export_path: str,
+    request_path: str,
     data: DataLoader,
     source: EntrySource,
     schema: SchemaValidator,
@@ -352,15 +484,24 @@ def _update(
     )
     if missing:
         return IntakeResult(request, missing)
-    prepared = prepare_entry(
+    prepared, verdict = _adopting(
         export,
-        request.external_id,
+        lambda form: prepare_entry(
+            form,
+            request.external_id,
+            data,
+            path=export_path,
+            previous=previous,
+            previous_path=stored_path,
+        ),
+        lambda form: prepare_entry(form, request.external_id, data, path=export_path),
+        request,
+        request_path,
+        payloads,
         data,
-        path=export_path,
-        previous=previous,
-        previous_path=stored_path,
+        schema,
     )
-    if prepared.refusals:
+    if prepared.refusals or verdict is None:
         return IntakeResult(request, prepared.refusals)
     metadata_path = f"{request.entry}/scenario.yaml"
     scenario_json = prepared.scenario_json
@@ -373,11 +514,11 @@ def _update(
     if "scenario.yaml" in source.names(request.entry):
         written = source.read_text(metadata_path)
         declared = source.read_yaml(metadata_path)
-    verdict = _payloads(scenario_json, request.entry, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
+    scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
     assigned = assigned_entry(
-        declared, json.loads(scenario_json), request.entry, agreed_ids(data), verdict.held
+        declared, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
@@ -443,4 +584,5 @@ def _update(
         changed,
         previous_files,
         payload_files=verdict.files,
+        payload_changes=verdict.changes,
     )
