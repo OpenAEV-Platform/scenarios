@@ -43,6 +43,9 @@ issue: 12                   # the issue the pull request closes, a whole number
 severity: high              # optional: only for an export without a severity
 category: attack-scenario   # optional: only for an export without a category
 main_focus: endpoint-protection  # optional: only for an export without a main focus
+payloads:                   # optional: hints about the payloads the export embeds
+  - name: Process Discovery - ps          # the payload's name, as the export holds it
+    based_on: {payload: process-discovery-ps}   # the catalogue payload it was copied from
 ```
 
 An update of an existing entry:
@@ -90,7 +93,20 @@ payload folder, its slug proposed from the payload's name, and lists the file in
 its hash. A new payload whose name or slug the catalogue, or another new payload of the export,
 already has, whose name gives no slug or carries a version suffix, or whose file the payload
 schema would refuse, is refused before anything is written (`PAY-009`): rename or complete it
-in OpenAEV and export again. A payload without a description is given its name as one, in the
+in OpenAEV and export again.
+
+A payload copied from a catalogue payload on the platform and changed there keeps that payload's
+name, which the catalogue already holds. The request then says so in `payloads`, by the copy's
+name: `based_on.payload` is the catalogue payload's slug, `based_on.version` the version copied
+(the latest when absent), and `version` the number wanted (the next minor version of the
+highest when absent; it must be higher). Intake writes the copy as that payload's new version,
+`payloads/<payload>/<version>.json`, named `<base name> (<version>)` in the version file and in
+the stored scenario, with the ID its content has (`PAY-010`, `new version: ...`), and the plan's
+body lists the fields that differ from the version it is based on, never a value. Run again on
+the same export once that file is in the checkout, intake finds the copy already there under
+that version's name and writes nothing more. A claim is a hint: one that cannot hold is refused
+(`ITK-009`); the others are checked as any payload is, and a hint about them is `PAY-011`. A
+`version` needs `based_on`, and a request holds at most 100 claims. A payload without a description is given its name as one, in the
 scenario and in its version file alike, so that both keep one hash. Nothing under `payloads/`
 may differ from the commit when intake runs, as for `scenarios/`, `policy/` and `schemas/`.
 
@@ -120,6 +136,7 @@ Nothing is written when the request is refused:
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
 | `ITK-008` | an entry of the catalogue, or a domain, that is a link, a hidden name a cut run left (`.scenario-tools-<hex>`) or a name a finding cannot show (a backslash, a drive), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
+| `ITK-009` | a claim of `payloads` that names no embedded payload or one already claimed, whose `based_on` names no catalogue payload or version, or whose `version` is not higher than the payload's highest |
 | `ITK-010` | an export without a severity, category or main focus that the request does not give, or a request that gives another one than the export |
 
 The export is also refused as `normalize` refuses it.

@@ -20,7 +20,9 @@ Run every command from the root of the checkout.
   for a new version of an entry, whose `external_id`, `domain` and `slug` are the entry's, with
   `rewrite: true` only when the scenario was renamed on the platform. For a scenario built
   without a severity, category or main focus, the request gives them (`severity`, `category`,
-  `main_focus`), and intake writes them where the platform reads them. Its fields are in
+  `main_focus`), and intake writes them where the platform reads them. For a payload copied
+  from a catalogue payload and changed, the request says which one in `payloads`
+  (`based_on`), and intake writes it as that payload's next version. Its fields are in
   [`intake.md`](intake.md#the-request).
 - **A base checkout**, for an update: a separate worktree of the project's `main`, which
   `--previous-root` points at below, made and removed as

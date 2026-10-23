@@ -713,3 +713,30 @@ def test_a_facet_the_export_holds_as_no_text_is_left_to_its_own_checks(value: ob
 @pytest.mark.parametrize("export", [None, "text", ["list"]])
 def test_an_export_that_is_no_mapping_is_left_to_its_own_checks(export: object) -> None:
     assert completed_facets(export, {"severity": "low"}, {}, "export.zip") == (export, ())
+
+
+CHANGES = {"payloads/ps/1.1.0.json": ("/command_content", "/payload_platforms")}
+
+
+def test_the_body_says_which_fields_each_new_payload_version_changes_never_a_value() -> None:
+    assert _plan(changes=CHANGES)["body"] == (
+        "Closes #12\n\nEntry `scenarios/ransomware/akira-crisis`, from a platform export.\n\n"
+        "Changed from the version each new version is based on:\n"
+        "- `payloads/ps/1.1.0.json`: `/command_content`, `/payload_platforms`\n\n" + FILES_BODY
+    )
+    assert _plan(changes={})["body"] == _plan()["body"]
+
+
+@pytest.mark.parametrize(("spare", "shown"), [(0, True), (-1, False)])
+def test_the_changed_fields_take_what_the_checklist_leaves_of_the_budget(
+    spare: int, shown: bool
+) -> None:
+    item = "- `payloads/ps/1.1.0.json`: `/command_content`, `/payload_platforms`"
+    findings = [_taking(index, 614) for index in range(97)]
+    findings.append(_taking(97, BODY_ITEMS_LIMIT - 97 * 614 - len(item) - 1 - spare))
+
+    body = _plan(checklist=findings, changes=CHANGES)["body"]
+
+    assert body.count("- [ ] ") == 98
+    assert (item in body) is shown
+    assert ("- and 1 more: compare each new version's file with its base's" in body) is not shown

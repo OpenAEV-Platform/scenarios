@@ -1197,11 +1197,101 @@ def test_a_file_written_that_another_changed_in_place_is_never_taken_back(
     assert written_file.read_bytes() == b"{} edited"  # never lost
 
 
-def test_an_update_without_the_bytes_it_replaces_is_a_mistake(tmp_path: Path) -> None:
-    _entry(tmp_path)
+def test_a_file_an_update_gives_without_the_bytes_it_replaces_is_never_written_over(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
 
-    with pytest.raises(ValueError, match="bytes it was read with"):
+    with pytest.raises(EnvironmentProblemError, match="it already exists"):
         _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"other.json": b""})
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+
+
+def _adding(root: Path, files: dict[str, bytes]) -> AbstractContextManager[WrittenEntry]:
+    """Add ``files`` to the entry that is there, as intake adds a version to a payload's folder."""
+    return RepositoryWriter(RepositoryEntries(root)).writing(ENTRY, files, previous={})
+
+
+def test_a_file_added_to_an_entry_that_is_there_is_created_beside_its_files(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+
+    with _adding(tmp_path, {"1.1.0.json": b"{}\n"}) as written:
+        written.check()
+
+    assert (directory / "1.1.0.json").read_bytes() == b"{}\n"
+    assert (directory / "scenario.json").read_text() == '{"a": 1}'
+    assert _names(directory) == ["1.1.0.json", "README.md", "scenario.json", "scenario.yaml"]
+
+
+def test_a_file_added_is_removed_when_the_run_does_not_end(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+
+    with pytest.raises(KeyboardInterrupt), _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
+        raise KeyboardInterrupt
+
+    assert _names(directory) == ["README.md", "scenario.json", "scenario.yaml"]
+
+
+@pytest.mark.parametrize("gone", [False, True], ids=["changed", "gone"])
+def test_a_file_added_that_another_changed_meanwhile_is_left_and_said(
+    tmp_path: Path, gone: bool
+) -> None:
+    directory = _entry(tmp_path)
+
+    def run() -> None:
+        with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
+            if gone:
+                (directory / "1.1.0.json").unlink()
+            else:
+                (directory / "1.1.0.json").write_bytes(b"another's")
+            raise KeyboardInterrupt
+
+    with pytest.raises((EnvironmentProblemError, KeyboardInterrupt)) as error:
+        run()
+
+    if gone:  # nothing of the run is left: nothing to say
+        assert error.type is KeyboardInterrupt
+        assert "1.1.0.json" not in _names(directory)
+    else:
+        assert f"cannot take back {ENTRY}/1.1.0.json: it changed meanwhile" in str(error.value)
+        assert (directory / "1.1.0.json").read_bytes() == b"another's"
+
+
+def test_a_file_added_that_cannot_be_removed_is_said(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = _entry(tmp_path)
+    unlink = os.unlink
+
+    def refused(path: str, *, dir_fd: int | None = None) -> None:
+        if path == "1.1.0.json":
+            raise PermissionError(13, "Permission denied")
+        unlink(path, dir_fd=dir_fd)
+
+    def run() -> None:
+        with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
+            monkeypatch.setattr(os, "unlink", refused)
+            raise KeyboardInterrupt
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        run()
+
+    assert f"cannot take back {ENTRY}/1.1.0.json" in str(error.value)
+    assert (directory / "1.1.0.json").exists()
+
+
+def test_a_file_added_where_one_already_is_writes_nothing(tmp_path: Path) -> None:
+    directory = _entry(tmp_path)
+    (directory / "1.1.0.json").write_bytes(b"there")
+
+    with (
+        pytest.raises(EnvironmentProblemError, match="it already exists"),
+        _adding(tmp_path, {"1.1.0.json": b"{}\n"}),
+    ):
+        pass
+    assert (directory / "1.1.0.json").read_bytes() == b"there"
 
 
 def test_a_directory_another_made_then_removed_meanwhile_is_the_environment_s_fault(

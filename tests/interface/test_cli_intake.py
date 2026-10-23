@@ -1291,3 +1291,73 @@ def test_a_new_entry_with_new_payloads_gives_the_same_plan_twice(
     _intake(monkeypatch, root, request, second, SALT)
 
     assert first.read_bytes() == second.read_bytes()
+
+
+def _first_salt_payload(root: Path) -> tuple[str, str]:
+    """The name of the first payload of the Salt Typhoon export as the catalogue stores it, and
+    the slug of its folder in ``root``."""
+    stored = json.loads((NORMALISED / "salt-typhoon-cve-ttps-validation.json").read_bytes())
+    name = next(
+        inject["inject_injector_contract"]["injector_contract_payload"]["payload_name"]
+        for inject in stored["scenario_injects"]
+        if (inject.get("inject_injector_contract") or {}).get("injector_contract_payload")
+    )
+    (slug,) = {
+        path.parent.name
+        for path in root.glob("payloads/*/*.json")
+        if json.loads(path.read_bytes())["payload_name"] == name
+    }
+    return name, slug
+
+
+def test_a_copy_claimed_in_the_request_is_written_as_a_new_version_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    _salt_catalogue(root, lambda payload: payload.update(command_content="echo other"))
+    name, slug = _first_salt_payload(root)
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    request = _request(tmp_path, {**SALT_REQUEST, **claims})
+    first, again = tmp_path / "first.json", tmp_path / "again.json"
+
+    result = _intake(monkeypatch, root, request, first, SALT)
+
+    assert first.exists(), result.output  # written, with what the entry's checks find in it
+    version = root / "payloads" / slug / "1.1.0.json"
+    assert json.loads(version.read_bytes())["payload_name"] == f"{name} (1.1.0)"
+    plan = json.loads(first.read_text(encoding="utf-8"))
+    assert f"payloads/{slug}/1.1.0.json" in {file["path"] for file in plan["files"]}
+    assert f"- `payloads/{slug}/1.1.0.json`: `/command_content`" in plan["body"]
+    # Run again once the new version is merged: it is already there, and nothing more is written.
+    shutil.rmtree(root / "scenarios")
+    _commit(root)
+    held = {path: path.read_bytes() for path in root.glob("payloads/*/*")}
+
+    result = _intake(monkeypatch, root, request, again, SALT)
+
+    assert again.exists(), result.output
+    assert {path: path.read_bytes() for path in root.glob("payloads/*/*")} == held
+    messages = {f["message"] for f in json.loads(result.stdout)["findings"]}
+    assert f"already there: {slug} 1.1.0" in messages
+    assert not [
+        f for f in json.loads(again.read_text())["files"] if f["path"].startswith("payloads")
+    ]
+
+
+def test_a_claimed_copy_gives_the_same_plan_twice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    _salt_catalogue(root, lambda payload: payload.update(command_content="echo other"))
+    name, slug = _first_salt_payload(root)
+    request = _request(
+        tmp_path, {**SALT_REQUEST, "payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    )
+    first, second = tmp_path / "first.json", tmp_path / "second.json"
+
+    _intake(monkeypatch, root, request, first, SALT)
+    shutil.rmtree(root / "scenarios")
+    (root / "payloads" / slug / "1.1.0.json").unlink()
+    _intake(monkeypatch, root, request, second, SALT)
+
+    assert first.read_bytes() == second.read_bytes()

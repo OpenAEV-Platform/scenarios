@@ -81,6 +81,28 @@ def _as_written(directory: int, name: str, mine: Identity, data: bytes) -> bool:
     return same and (status.st_dev, status.st_ino) == mine
 
 
+def _removed_if_mine(directory: int, name: str, mine: Identity, data: bytes) -> bool:
+    """Remove ``name`` from ``directory`` while it is the file written, ``mine`` holding
+    ``data``; whether it is gone, never another's put at its name."""
+    if not _as_written(directory, name, mine, data):
+        return not _exists(directory, name)
+    try:
+        os.unlink(name, dir_fd=directory)
+    except OSError as error:
+        return error.errno == errno.ENOENT  # gone meanwhile all the same
+    return True
+
+
+def _exists(directory: int, name: str) -> bool:
+    """Whether anything is at ``name`` in ``directory``, a link included; one that cannot be
+    looked at may be."""
+    try:
+        os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except OSError as error:
+        return error.errno != errno.ENOENT
+    return True
+
+
 def _holding(directory: int, name: str, where: str, expected: bytes) -> Identity:
     """The identity of ``name`` in ``directory``, once it is known to hold ``expected``, a
     regular file read never through a link and without waiting."""
@@ -409,10 +431,12 @@ class RepositoryWriter:
     ) -> Iterator[_WrittenEntry]:
         """Write ``files``, by name, in the entry at ``entry``, for as long as the block runs.
         Without ``previous``, the entry is new: it is made where nothing is, its files created
-        in it, with the directories above it that are missing. With it, each file is replaced
-        at once, once it is known to still hold its ``previous`` bytes. If the block does not
-        end, what was written is taken back: a new entry's files, the entry and the directories
-        made for it are removed; a replaced file is given its previous bytes back. Nothing
+        in it, with the directories above it that are missing. With it, the entry is there: each
+        file ``previous`` holds is replaced at once, once it is known to still hold those bytes,
+        and each other file is created where nothing is. If the block does not end, what was
+        written is taken back: a new entry's files, the entry and the directories made for it
+        are removed; a replaced file is given its previous bytes back, a file created in an
+        entry that was there is removed. Nothing
         another put meanwhile is ever removed, and what cannot be taken back is said. Nothing
         to write writes nothing. The block is given a check that what reads the entry by its
         path afterwards reads what was written."""
@@ -539,15 +563,17 @@ class RepositoryWriter:
     def _replaced(
         self, entry: str, files: Mapping[str, bytes], previous: Mapping[str, bytes]
     ) -> Iterator[_WrittenEntry]:
-        if not files.keys() <= previous.keys():
-            raise ValueError("each file an update replaces needs the bytes it was read with")
         directory = self.opened(entry, make=False)
         try:
             folder = self._root / entry
             written: dict[str, tuple[Identity, bytes]] = {}
+            created: dict[str, tuple[Identity, bytes]] = {}
             try:
                 for name, data in files.items():
                     where = f"{entry}/{name}"
+                    if name not in previous:  # where nothing is, never over another's
+                        created[name] = (create_in(directory, folder / name, data), data)
+                        continue
                     mine, left = _replace_checked(
                         directory, folder / name, where, previous[name], data
                     )
@@ -556,9 +582,13 @@ class RepositoryWriter:
                         raise EnvironmentProblemError(
                             f"{left}; the update is taken back: remove it by hand"
                         )
-                yield _WrittenEntry(self, entry, identity(directory, entry), written)
+                yield _WrittenEntry(self, entry, identity(directory, entry), {**written, **created})
             except BaseException as failure:
-                said = []
+                said = [
+                    f"cannot take back {entry}/{name}: it changed meanwhile, and is left as it is"
+                    for name, (mine, data) in created.items()
+                    if not _removed_if_mine(directory, name, mine, data)
+                ]
                 for name, (mine, data) in written.items():
                     said += self._put_back(
                         directory,
