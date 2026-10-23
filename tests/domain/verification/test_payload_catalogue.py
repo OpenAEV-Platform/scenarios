@@ -412,7 +412,9 @@ def test_a_new_version_not_higher_than_the_base_s_highest_is_refused(version: st
 
 
 def test_every_finding_of_immutability_blocks() -> None:
-    found = immutability_findings(BASE, {("ps", "0.1.0"): b"x"}, "payloads")
+    found = immutability_findings(BASE, {("ps", "1.0.0"): b"x", ("ps", "0.1.0"): b"x"}, "payloads")
+
+    assert {f.message for f in found} == {VERSION_CHANGED, VERSION_REMOVED, VERSION_NOT_HIGHER}
 
     assert {f.severity for f in found} == {Severity.BLOCKING}
     assert {f.field for f in found} == {""}
@@ -426,3 +428,33 @@ def test_versions_are_compared_by_their_numbers_never_as_text() -> None:
     assert [
         f.code for f in immutability_findings(later, {**later, ("ps", "1.9.5"): b"c"}, "payloads")
     ] == ["VER-023"]
+
+
+def test_immutability_findings_are_in_the_order_of_the_slugs_then_of_the_numbers() -> None:
+    base = {("b", "3.0.0"): b"b", ("a", "1.10.0"): b"a", ("a", "1.9.0"): b"a", ("a", "2.0.0"): b"a"}
+    current = {("a", "2.0.0"): b"a", ("b", "1.0.0"): b"", ("a", "1.11.0"): b"", ("a", "1.2.0"): b""}
+
+    assert [f.path for f in immutability_findings(base, current, "p")] == [
+        "p/a/1.9.0.json",
+        "p/a/1.10.0.json",
+        "p/b/3.0.0.json",
+        "p/a/1.2.0.json",
+        "p/a/1.11.0.json",
+        "p/b/1.0.0.json",
+    ]
+
+
+def test_the_highest_version_of_the_base_is_its_highest_whatever_the_order_it_is_read_in() -> None:
+    base = {("ps", "2.0.0"): b"two", ("ps", "1.0.0"): b"one"}
+
+    assert [f.code for f in immutability_findings(base, {**base, ("ps", "1.5.0"): b""}, "p")] == [
+        "VER-023"
+    ]
+
+
+def test_a_new_version_the_same_number_as_the_highest_written_otherwise_is_not_higher() -> None:
+    base = {("ps", "1.1.0"): b"one"}
+
+    assert [f.code for f in immutability_findings(base, {**base, ("ps", "1.01.0"): b""}, "p")] == [
+        "VER-023"
+    ]
