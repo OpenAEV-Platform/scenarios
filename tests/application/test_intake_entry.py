@@ -1155,3 +1155,7 @@ def test_a_claimed_copy_under_another_base_name_is_stored_as_normalisation_gives
     stored = json.loads(result.scenario_json)
     assert _at(stored, f"{name} (1.1.0)")
     assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+    plain = json.loads(_intake(NEW, export=SALT, payloads=held_salt).scenario_json or b"")
+    assert sorted(i["inject_id"] for i in stored["scenario_injects"]) == sorted(
+        i["inject_id"] for i in plain["scenario_injects"]
+    )  # the injects keep their identifiers
