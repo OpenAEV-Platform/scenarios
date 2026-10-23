@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.verification.payload_catalogue import (
     BASE_NAME_DIFFERS,
     BASE_NAME_TAKEN,
@@ -20,11 +21,15 @@ from scenario_tools.domain.verification.payload_catalogue import (
     ID_TWICE,
     OUT_OF_SCHEMA,
     OVER_SIZE,
+    VERSION_CHANGED,
+    VERSION_NOT_HIGHER,
+    VERSION_REMOVED,
     Catalogue,
     CatalogueCollisionError,
     EntryKind,
     TreeEntry,
     catalogue_findings,
+    immutability_findings,
     layout,
     schema_findings,
 )
@@ -359,3 +364,65 @@ def test_the_catalogue_gives_each_version_as_the_reference_that_names_it() -> No
         (PayloadReference(v.identifier, v.version, v.digest()) for v in versions),
         key=lambda r: (r.id, r.version),
     )
+
+
+BASE = {("ps", "1.0.0"): b"one\n", ("ps", "1.1.0"): b"two\n", ("whoami", "1.0.0"): b"me\n"}
+
+
+def _immutability(current: dict[tuple[str, str], bytes]) -> list[tuple[str, str, str]]:
+    return [(f.code, f.path, f.message) for f in immutability_findings(BASE, current, "payloads")]
+
+
+def test_a_catalogue_that_keeps_the_base_and_adds_higher_versions_is_accepted() -> None:
+    current = {
+        **BASE,
+        ("ps", "1.2.0"): b"three\n",
+        ("ps", "2.0.0"): b"four\n",
+        ("new", "1.0.0"): b"",
+    }
+
+    assert _immutability(current) == []
+
+
+def test_an_empty_base_accepts_any_catalogue() -> None:
+    assert immutability_findings({}, BASE, "payloads") == ()
+
+
+def test_a_version_the_base_holds_edited_or_removed_is_refused() -> None:
+    current = {("ps", "1.0.0"): b"changed\n", ("whoami", "1.0.0"): b"me\n"}
+
+    assert _immutability(current) == [
+        ("VER-022", "payloads/ps/1.0.0.json", VERSION_CHANGED),
+        ("VER-022", "payloads/ps/1.1.0.json", VERSION_REMOVED),
+    ]
+
+
+def test_a_payload_folder_the_base_holds_removed_is_refused_for_each_version() -> None:
+    assert _immutability({("whoami", "1.0.0"): b"me\n"}) == [
+        ("VER-022", "payloads/ps/1.0.0.json", VERSION_REMOVED),
+        ("VER-022", "payloads/ps/1.1.0.json", VERSION_REMOVED),
+    ]
+
+
+@pytest.mark.parametrize("version", ["1.0.1", "0.9.0", "1.0.9"])
+def test_a_new_version_not_higher_than_the_base_s_highest_is_refused(version: str) -> None:
+    assert _immutability({**BASE, ("ps", version): b"late\n"}) == [
+        ("VER-023", f"payloads/ps/{version}.json", VERSION_NOT_HIGHER)
+    ]
+
+
+def test_every_finding_of_immutability_blocks() -> None:
+    found = immutability_findings(BASE, {("ps", "0.1.0"): b"x"}, "payloads")
+
+    assert {f.severity for f in found} == {Severity.BLOCKING}
+    assert {f.field for f in found} == {""}
+
+
+def test_versions_are_compared_by_their_numbers_never_as_text() -> None:
+    base = {("ps", "1.9.0"): b"a"}
+    later = {("ps", "1.10.0"): b"b"}
+
+    assert immutability_findings(base, {**base, **later}, "payloads") == ()
+    assert [
+        f.code for f in immutability_findings(later, {**later, ("ps", "1.9.5"): b"c"}, "payloads")
+    ] == ["VER-023"]

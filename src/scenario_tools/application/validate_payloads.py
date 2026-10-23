@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from scenario_tools.domain.shared.finding import Finding, Report
 from scenario_tools.domain.verification.payload_catalogue import (
     catalogue_findings,
+    immutability_findings,
     layout,
     schema_findings,
 )
@@ -38,9 +39,26 @@ def checked_payloads(
     return tuple(findings), tuple(versions)
 
 
+def _held(files: CatalogueFiles, root: str) -> dict[tuple[str, str], bytes]:
+    """The bytes of each version file the catalogue ``files`` hold, by slug and version."""
+    _, places = layout(root, files.entries())
+    return {
+        (place.slug, place.version): files.read((place.slug, f"{place.version}.json"))[0]
+        for place in places
+    }
+
+
 def validate_payloads(
-    files: CatalogueFiles, schema: SchemaValidator, agreed: AgreedIds, root: str
+    files: CatalogueFiles,
+    schema: SchemaValidator,
+    agreed: AgreedIds,
+    root: str,
+    base: CatalogueFiles | None = None,
 ) -> Report:
     """The report on the catalogue ``files`` hold, at ``root`` in the repository, as
-    ``checked_payloads`` checks it."""
-    return Report("validate-payloads", checked_payloads(files, schema, agreed, root)[0])
+    ``checked_payloads`` checks it; with ``base``, the catalogue of the base branch, also what
+    it does to the versions the base holds (``VER-022``, ``VER-023``)."""
+    findings, _ = checked_payloads(files, schema, agreed, root)
+    if base is not None:
+        findings += immutability_findings(_held(base, root), _held(files, root), root)
+    return Report("validate-payloads", findings)

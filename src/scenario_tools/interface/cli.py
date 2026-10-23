@@ -126,7 +126,7 @@ from scenario_tools.domain.shared.finding import (
     shorten,
 )
 from scenario_tools.domain.shared.workflow import ExportKeys
-from scenario_tools.domain.verification.payload_catalogue import Catalogue
+from scenario_tools.domain.verification.payload_catalogue import Catalogue, TreeEntry
 from scenario_tools.domain.verification.payload_references import (
     AgreedIds,
     HeldVersions,
@@ -134,6 +134,7 @@ from scenario_tools.domain.verification.payload_references import (
 )
 from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT
 from scenario_tools.domain.verification.release_output import payload_reference_findings
+from scenario_tools.ports.catalogue import CatalogueFiles
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
@@ -1057,10 +1058,29 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
     _emit(ctx, "validate", produce, root)
 
 
+class _EmptyCatalogue:
+    """The catalogue of a base branch that holds no ``payloads/``."""
+
+    def entries(self) -> tuple[TreeEntry, ...]:
+        return ()
+
+    def read(self, path: tuple[str, ...]) -> tuple[bytes, object]:
+        raise EnvironmentProblemError(f"an empty catalogue holds no {'/'.join(path)}")
+
+
 @main.command(name="validate-payloads")
 @click.argument("directory", type=click.Path(path_type=Path, file_okay=False, exists=True))
+@click.option(
+    "--previous-root",
+    "previous_root",
+    type=click.Path(path_type=Path, file_okay=False, exists=True),
+    default=None,
+    help="The root of a checkout of the base branch: a version it holds must stay as it is.",
+)
 @click.pass_context
-def validate_payloads_command(ctx: click.Context, directory: Path) -> None:
+def validate_payloads_command(
+    ctx: click.Context, directory: Path, previous_root: Path | None
+) -> None:
     """Check DIRECTORY, the payload catalogue of a repository (its payloads/ or a copy): one
     folder per payload, named by its slug, one file per version, named by its version, and nothing
     else; each file against schemas/payload.schema.json, in the stored form, its name carrying
@@ -1093,7 +1113,15 @@ def validate_payloads_command(ctx: click.Context, directory: Path) -> None:
             raise EnvironmentProblemError(f"schemas cannot be used: {error}") from error
         parts = directory.relative_to(root).parts
         catalogue = CatalogueDirectory(root, parts)
-        return validate_payloads(catalogue, schema, agreed, "/".join(parts))
+        base: CatalogueFiles | None = None
+        if previous_root is not None:
+            held = Path(os.path.normpath(previous_root.absolute()))
+            base = (
+                CatalogueDirectory(held, parts)
+                if (held / Path(*parts)).is_dir()
+                else _EmptyCatalogue()
+            )
+        return validate_payloads(catalogue, schema, agreed, "/".join(parts), base)
 
     _emit(ctx, "validate-payloads", produce, root)
 

@@ -65,7 +65,11 @@ version of a payload keeps them.
 ## A published version is never edited
 
 A version file, once merged, is frozen: a change of any field, the domains included, is a new
-version with a higher number, in a file of its own. A version is never removed. For now the
-review of each pull request is what holds this rule, and a release refuses a version it published
-before with another content or file (`VER-021`); the checks of a pull request do not compare its
-version files with the base branch's yet.
+version with a higher number, in a file of its own. A version is never removed. The checks of
+every pull request hold this rule against the base branch, with
+`scenario-tools validate-payloads payloads --previous-root <base checkout>`: a version the base
+holds that is edited or removed is `VER-022`, a new version that is not higher than the base's
+highest is `VER-023`. A pull request is compared with the base branch as it is when the check
+runs: one that is behind it reads a version merged since as removed until it is brought up to
+date, as merging requires anyway. A release also refuses a version it published before with another content
+or file, or that is gone (`VER-021`).
