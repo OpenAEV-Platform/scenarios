@@ -708,3 +708,8 @@ def test_a_facet_the_export_holds_as_no_text_is_left_to_its_own_checks(value: ob
         export,
         (),
     )
+
+
+@pytest.mark.parametrize("export", [None, "text", ["list"]])
+def test_an_export_that_is_no_mapping_is_left_to_its_own_checks(export: object) -> None:
+    assert completed_facets(export, {"severity": "low"}, {}, "export.zip") == (export, ())
