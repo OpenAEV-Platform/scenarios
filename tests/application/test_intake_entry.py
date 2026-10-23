@@ -917,3 +917,25 @@ def test_an_update_from_an_export_without_facets_keeps_the_stored_ones() -> None
 
     assert result.refusals == ()
     assert not result.changed  # the stored facets, the same export otherwise: nothing to propose
+
+
+def test_an_update_whose_request_changes_a_facet_writes_it_in_scenario_yaml_too() -> None:
+    source = _stored()
+    assert source.declared is not None
+    request = {**UPDATE, "severity": "critical", "main_focus": "incident-response"}
+
+    result = _intake(request, source, export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.changed
+    assert result.scenario_json is not None
+    information = json.loads(result.scenario_json)["scenario_information"]
+    assert information["scenario_severity"] == "critical"
+    assert result.metadata is not None
+    assert (result.metadata["severity"], result.metadata["main_focus"]) == (
+        "critical",
+        "incident-response",
+    )
+    assert result.metadata["category"] == source.declared["category"]  # kept, as stored
+    assert result.previous is not None
+    assert "scenario.yaml" in result.previous

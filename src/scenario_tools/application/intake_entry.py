@@ -380,8 +380,10 @@ def _update(
     )
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
-        if assigned.metadata != declared:  # its references change: scenario.yaml too
-            metadata = assigned.metadata
+        # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
+        wanted = {**assigned.metadata, **request.facets}
+        if wanted != declared:  # its references or its facets change: scenario.yaml too
+            metadata = wanted
             previous_files["scenario.yaml"] = written.encode()
     # Otherwise the entry's check, run once it is written, says why in the plan.
     changed = scenario_json != stored or metadata is not None or bool(verdict.files)
