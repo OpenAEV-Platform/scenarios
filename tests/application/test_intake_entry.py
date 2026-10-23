@@ -1278,7 +1278,7 @@ def test_an_update_finds_the_names_its_claims_adopt_before_matching_its_previous
         patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
         _intake({**UPDATE, "payloads": [claim]}, source, export=edited, payloads=held_steps)
 
-    assert calls == ["alone", "previous"]  # matched once, with the names adopted
+    assert calls == ["previous", "alone", "previous"]  # matched last with the names adopted
 
 
 def test_what_the_names_are_found_on_never_refuses_the_request() -> None:
@@ -1349,3 +1349,32 @@ def test_a_renamed_copy_already_there_claimed_twice_is_refused() -> None:
     result = _intake({**NEW, "payloads": [claim, claim]}, export=edited, payloads=held_salt)
 
     assert ("ITK-009", REQUEST, "/payloads/1/name") in _codes(result.refusals)
+
+
+def test_an_update_never_renames_a_claimed_payload_the_catalogue_holds_as_finally_prepared() -> (
+    None
+):
+    """The form names are found on has no previous version: a payload that differs there only
+    by what the previous version gives back is already there, and its claim is ignored."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        prepared = prepare_entry(form, *arguments, **options)
+        if options.get("previous") is not None:
+            return prepared
+        stored = json.loads(prepared.scenario_json)
+        _salt_payload(stored)["command_content"] += " # another inject ID"
+        return dataclasses.replace(prepared, scenario_json=stored_form(stored))
+
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    there = _salt_payload(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    other = next(v for v in held_salt.by_hash.values() if v.name != there["payload_name"])
+    claims = {"payloads": [{"name": there["payload_name"], "based_on": {"payload": other.slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=SALT, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert result.payload_files == {}
+    assert "this payload is already in the catalogue: the claim is ignored" in {
+        f.message for f in result.to_complete
+    }

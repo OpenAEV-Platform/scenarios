@@ -29,6 +29,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     claimed_verdicts,
     export_renamed,
     named_at,
+    names_held,
     renamed,
 )
 from scenario_tools.domain.catalogue.structure import INFORMATION
@@ -191,7 +192,9 @@ def _adopting(
     injects and steps, the identifiers it rewrites in values) follows its base name: a claimed
     copy whose base name is not that of the catalogue payload it is based on is first given
     that base name in the export, found on ``discover``'s form, which an update makes without
-    its previous version. Only those names are taken from it, never a finding. The export is
+    its previous version. Only those names are taken from it, never a finding, and never for a
+    payload the catalogue holds as the export is finally prepared: that one is already there,
+    whatever the claim says. The export is
     then prepared, and every claim, as the request gives it, judged on that form alone, so
     that the version files are made from what is stored. Each claim keeps its place in the
     request, so that a finding points at it."""
@@ -199,18 +202,26 @@ def _adopting(
         dataclasses.replace(claim, position=position)
         for position, claim in enumerate(_claims(request))
     )
+    prepared = prepare(export)
     found = discover(export) if claims else None
     if found is not None and not found.refusals:
+        # A payload the catalogue holds as the final form gives it is already there: its name
+        # never changes.
+        there = (
+            frozenset()
+            if prepared.refusals
+            else names_held(json.loads(prepared.scenario_json), payloads)
+        )
         first = _payloads(
             found.scenario_json, claims, request, request_path, payloads, data, schema
         )
-        if first.adopted:
+        adopted = {old: base for old, base in first.adopted.items() if old not in there}
+        if adopted:
             claims = tuple(
-                dataclasses.replace(claim, name=first.adopted.get(claim.name, claim.name))
+                dataclasses.replace(claim, name=adopted.get(claim.name, claim.name))
                 for claim in claims
             )
-            export = export_renamed(export, first.adopted)
-    prepared = prepare(export)
+            prepared = prepare(export_renamed(export, adopted))
     if prepared.refusals:
         return prepared, None
     return prepared, _payloads(

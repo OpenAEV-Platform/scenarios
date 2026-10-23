@@ -25,6 +25,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     claimed_verdicts,
     export_renamed,
     named_at,
+    names_held,
     proposed_slug,
     renamed,
     verdicts,
@@ -726,3 +727,27 @@ def test_a_claim_naming_a_catalogue_version_and_another_content_is_refused(
     result = _claimed(stored, Claim(held.name, PS))
 
     assert ("ITK-009", TWO_CONTENTS) in _codes_of(result)
+
+
+def test_the_names_held_are_those_of_payloads_the_catalogue_holds_as_they_are() -> None:
+    catalogue = _catalogue(PS)
+    held = catalogue.by_slug[PS][0]
+    stored = copy.deepcopy(STORED)
+    first, second = _payloads(stored)
+    first.clear()
+    first.update({k: v for k, v in held.document.items() if k != "payload_attack_patterns"})
+    second["payload_elevation_required"] = "yes"  # cannot be hashed
+
+    assert names_held(stored, catalogue) == {held.name}
+    assert names_held({"scenario_injects": [{"inject_injector_contract": {}}]}, catalogue) == set()
+
+
+def test_no_name_is_held_for_a_payload_that_is_no_object_or_another_content() -> None:
+    stored = copy.deepcopy(STORED)
+    first, _ = _payloads(stored)
+    stored["scenario_workflow"]["workflow_steps"][0]["step_data"]["inject_injector_contract"][
+        "injector_contract_payload"
+    ] = "text"
+    first["command_content"] = "ps -e"  # no longer referenced: the step holds text now
+
+    assert names_held(stored, _catalogue(PS)) == set()

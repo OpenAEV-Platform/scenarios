@@ -481,6 +481,23 @@ def claimed_verdicts(
     return Verdicts(tuple(run.findings), run.versions, run.renames, run.changes, run.bases)
 
 
+def names_held(stored: object, catalogue: Catalogue) -> frozenset[str]:
+    """The names of the payloads ``stored`` embeds whose content the catalogue holds as it is."""
+    found: set[str] = set()
+    for embedded in embedded_payloads(stored):
+        payload = embedded.payload
+        name = payload.get("payload_name") if isinstance(payload, Mapping) else None
+        if not isinstance(payload, Mapping) or not isinstance(name, str):
+            continue
+        try:
+            digest = payload_hash(payload, embedded.attack_patterns, _ATTACHED.get).hex
+        except UnhashablePayloadError:
+            continue
+        if digest in catalogue.by_hash:
+            found.add(name)
+    return frozenset(found)
+
+
 def named_at(stored: Mapping[str, Any], pointer: str) -> object:
     """The name of the payload at ``pointer`` in ``stored``, a pointer the verdicts give."""
     node: Any = stored
