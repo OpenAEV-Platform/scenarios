@@ -77,8 +77,10 @@ that is gone (`VER-021`).
 ## The policy rules
 
 The policy rules (`POL-003` to `POL-007`) judge every payload a scenario embeds, in each pull
-request and in `build`: a scenario that runs a payload breaking one of them is refused, unless
-the maintainers grant that scenario an exception. A payload enters the catalogue through
+request and in `build`. A target outside the allowed ones (`POL-003`) is refused, with no
+exception; a breach of `POL-004`, `POL-005` or `POL-006` is refused unless the maintainers grant
+that scenario an exception; an elevated privilege (`POL-007`) is said to the reviewer and never
+blocks. [`findings.md`](findings.md) gives each rule. A payload enters the catalogue through
 `intake`, with the scenario that embeds it, so the rules have judged it. The rules do not run on
 the version files themselves yet: a version added to `payloads/` without a scenario is judged by
 the review of its pull request.
