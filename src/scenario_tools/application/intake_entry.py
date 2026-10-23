@@ -9,7 +9,11 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
+from scenario_tools.application.assign_payloads import (
+    agreed_ids,
+    assigned_entry,
+    no_attached_files,
+)
 from scenario_tools.application.prepare_entry import PreparedEntry, prepare_entry
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -38,7 +42,11 @@ from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
-from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
+from scenario_tools.domain.verification.payload_references import (
+    HeldVersions,
+    PayloadReference,
+    unhashable_findings,
+)
 from scenario_tools.ports.data import DataLoader
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 from scenario_tools.ports.plan import PlanSink
@@ -328,7 +336,12 @@ def intake_check(
     )
     if prepared.refusals or verdict is None:
         return prepared.refusals
-    return (*verdict.refusals, *verdict.told)
+    # A payload that cannot be hashed has no verdict: intake's reference checks refuse it, and
+    # the check says so as they do.
+    refused = unhashable_findings(
+        json.loads(prepared.scenario_json), no_attached_files, export_path
+    )
+    return (*refused, *verdict.refusals, *verdict.told)
 
 
 def _claims_refused(claims: object, path: str, schema: SchemaValidator) -> tuple[Finding, ...]:

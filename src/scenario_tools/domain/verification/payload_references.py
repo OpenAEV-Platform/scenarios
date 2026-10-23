@@ -169,6 +169,12 @@ def _carried(payload: object) -> object:
     return payload.get(_EXTERNAL_ID) if isinstance(payload, Mapping) else None
 
 
+def unhashable_findings(stored: object, files: FileHash, scenario: str) -> tuple[Finding, ...]:
+    """A blocking finding for each payload ``stored``, at ``scenario``, embeds that cannot be
+    hashed, as the reference checks give it."""
+    return tuple(_hashed(stored, files, scenario)[1])
+
+
 def _hashed(
     stored: object, files: FileHash, scenario: str
 ) -> tuple[list[_Hashed], list[Finding], set[str]]:

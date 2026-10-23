@@ -1505,3 +1505,34 @@ def test_claims_outside_their_schema_are_refused_before_any_verdict(
         ("SCH-001", REQUEST, Severity.BLOCKING)
     }
     assert field in {f.field for f in found}
+
+
+def test_the_check_refuses_a_payload_that_cannot_be_hashed_and_judges_the_others() -> None:
+    unhashable = copy.deepcopy(SALT)
+    _salt_payload(unhashable)["payload_detection_remediations"] = [{"detection_remediation": "x"}]
+
+    found = _checked(unhashable, None, EMPTY)
+
+    refused = [f for f in found if f.code == "PAY-005"]
+    assert [f.severity for f in refused] == [Severity.BLOCKING]
+    assert refused[0].path == EXPORT
+    assert len([f for f in found if f.code == "PAY-010"]) == 10  # every other payload
+
+
+def test_the_check_of_one_payload_that_cannot_be_hashed_is_refused() -> None:
+    export = copy.deepcopy(EASM)
+    contract = {
+        "injector_contract_payload": {
+            **_salt_payload(copy.deepcopy(SALT)),
+            "payload_detection_remediations": [{"detection_remediation": "x"}],
+        }
+    }
+    assert export["scenario_injects"]
+    export["scenario_injects"][0]["inject_injector_contract"] = {
+        **export["scenario_injects"][0]["inject_injector_contract"],
+        **contract,
+    }
+
+    found = _checked(export, None, EMPTY)
+
+    assert "PAY-005" in {f.code for f in found if f.severity is Severity.BLOCKING}
