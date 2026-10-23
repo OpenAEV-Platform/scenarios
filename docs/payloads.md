@@ -70,6 +70,6 @@ every pull request hold this rule against the base branch, with
 `scenario-tools validate-payloads payloads --previous-root <base checkout>`: a version the base
 holds that is edited or removed is `VER-022`, a new version that is not higher than the base's
 highest is `VER-023`. A pull request is compared with the base branch as it is when the check
-runs: one that is behind it reads a version merged since as removed until it is brought up to
-date, as merging requires anyway. A release also refuses a version it published before with another content
-or file, or that is gone (`VER-021`).
+runs: one that is behind it reads a version merged since as removed, until it is brought up to
+date. A release also refuses a version it published before with another content or file, or
+that is gone (`VER-021`).
