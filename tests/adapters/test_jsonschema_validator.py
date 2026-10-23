@@ -998,12 +998,9 @@ def test_an_intake_request_may_give_the_facets_an_export_lacks(
     [
         ({"severity": "extreme"}, "/severity"),
         ({"category": ""}, "/category"),
-        ({"category": " attack"}, "/category"),
-        ({"main_focus": "endpoint "}, "/main_focus"),
-        ({"main_focus": "two\nlines"}, "/main_focus"),
         ({"category": "x" * 65}, "/category"),
     ],
-    ids=["severity", "empty", "leading blank", "trailing blank", "line break", "too long"],
+    ids=["severity", "empty", "too long"],
 )
 def test_a_facet_of_a_request_outside_its_schema_is_refused(
     validator: JsonSchemaValidator, change: dict[str, object], pointer: str

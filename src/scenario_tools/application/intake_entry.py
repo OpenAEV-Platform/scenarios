@@ -106,6 +106,11 @@ def intake_entry(
         if not is_slug(request_document.get(key)):
             why = f"must be kebab-case of at most {SLUG_LIMIT} characters, never a path"
             return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
+    for key in ("category", "main_focus"):  # a facet as the platform shows it: one clean line
+        value = request_document.get(key)
+        if isinstance(value, str) and (value != value.strip() or len(value.splitlines()) > 1):
+            why = "must be one line, with no blank at either end"
+            return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
     request = IntakeRequest.from_document(request_document)
     refusals: tuple[Finding, ...] = ()
     name = _scenario_name(export)

@@ -896,6 +896,22 @@ def test_a_new_entry_from_an_export_without_facets_and_a_request_without_is_refu
     ]
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("category", " attack-scenario"),
+        ("main_focus", "endpoint "),
+        ("main_focus", "two\nlines"),
+        ("category", "two\u2028lines"),
+    ],
+    ids=["leading blank", "trailing blank", "line break", "line separator"],
+)
+def test_a_request_facet_that_is_not_one_clean_line_is_refused(key: str, value: str) -> None:
+    result = _intake({**NEW, **FACETS, key: value}, export=_without_facets(EASM))
+
+    assert [(f.code, f.path, f.field) for f in result.refusals] == [("SCH-001", REQUEST, f"/{key}")]
+
+
 def test_an_update_from_an_export_without_facets_keeps_the_stored_ones() -> None:
     result = _intake(UPDATE, _stored(), export=_without_facets(EASM))
 
