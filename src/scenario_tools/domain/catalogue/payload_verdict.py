@@ -122,13 +122,13 @@ def contract_domains(contract: Mapping[str, Any]) -> list[dict[str, str]]:
     """The domains a contract's own copy declares, by name and colour, as a version file holds
     them: an export holds a payload's domains on its contract, never on the payload. None when
     the copy names none, or not as normalisation reads it."""
-    copy = contract.get("convertedContent")
-    if copy is None and isinstance(contract.get("injector_contract_content"), str):
+    declared = contract.get("convertedContent")
+    if declared is None and isinstance(contract.get("injector_contract_content"), str):
         try:
-            copy = json.loads(contract["injector_contract_content"])
+            declared = json.loads(contract["injector_contract_content"])
         except ValueError:
             return []
-    domains = copy.get("domains") if isinstance(copy, Mapping) else None
+    domains = declared.get("domains") if isinstance(declared, Mapping) else None
     if not isinstance(domains, list):
         return []
     return [
@@ -225,7 +225,8 @@ CLAIM_NAMES_NOTHING = "this claim names no payload the export embeds"
 NO_SUCH_PAYLOAD = "based_on names no payload of the catalogue"
 NO_SUCH_VERSION = "based_on names a version {payload} does not have"
 NOT_HIGHER = (
-    "the version asked for is not higher than {payload} {version}, the highest the catalogue holds"
+    "the version asked for is not higher than {payload} {version}, the highest the catalogue "
+    "holds or this run gives"
 )
 CLAIM_IGNORED = "this payload is already in the catalogue: the claim is ignored"
 STALE_BASE = "based on {payload} {version}, whereas the latest version is {payload} {latest}"
@@ -426,14 +427,14 @@ def claimed_verdicts(
         payload = embedded.payload
         if not isinstance(payload, Mapping):
             continue
+        name = payload.get("payload_name")
+        index: int | None = by_name.get(name) if isinstance(name, str) else None
+        if index is not None:  # named, even by a payload the reference checks refuse
+            named.add(index)
         try:
             digest = payload_hash(payload, embedded.attack_patterns, _ATTACHED.get).hex
         except UnhashablePayloadError:
             continue  # the reference checks say why
-        name = payload.get("payload_name")
-        index: int | None = by_name.get(name) if isinstance(name, str) else None
-        if index is not None:
-            named.add(index)
         carried = catalogue.by_id.get(str(payload.get("payload_external_id")))
         if carried is not None and carried.digest() != digest:
             message = CARRIED_ID.format(payload=carried.slug, version=carried.version)

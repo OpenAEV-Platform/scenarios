@@ -326,6 +326,7 @@ def _new(
     verdict = _payloads(scenario_json, request, request_path, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
+    scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
     left += verdict.told
     assigned = assigned_entry(
         metadata, verdict.stored, request.entry, agreed_ids(data), verdict.held
@@ -411,6 +412,7 @@ def _update(
     verdict = _payloads(scenario_json, request, request_path, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
+    scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
     assigned = assigned_entry(
         declared, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )

@@ -1234,29 +1234,41 @@ def test_a_file_added_is_removed_when_the_run_does_not_end(tmp_path: Path) -> No
     assert _names(directory) == ["README.md", "scenario.json", "scenario.yaml"]
 
 
-@pytest.mark.parametrize("gone", [False, True], ids=["changed", "gone"])
+def _replaced_by_a_copy(path: Path) -> None:
+    """Put another file with the same bytes at ``path``, made before the first goes."""
+    copy = path.with_name("copy")
+    copy.write_bytes(path.read_bytes())
+    copy.replace(path)
+
+
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        (lambda p: p.write_bytes(b"another's"), "another was put at its place meanwhile"),
+        (_replaced_by_a_copy, "another was put at its place meanwhile"),
+        (lambda p: p.unlink(), "another moved or removed it meanwhile"),
+    ],
+    ids=["changed", "same bytes, another file", "gone"],
+)
 def test_a_file_added_that_another_changed_meanwhile_is_left_and_said(
-    tmp_path: Path, gone: bool
+    tmp_path: Path, change: Callable[[Path], object], said: str
 ) -> None:
     directory = _entry(tmp_path)
+    added = directory / "1.1.0.json"
 
     def run() -> None:
         with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
-            if gone:
-                (directory / "1.1.0.json").unlink()
-            else:
-                (directory / "1.1.0.json").write_bytes(b"another's")
-            raise KeyboardInterrupt
+            change(added)
+            raise RuntimeError("the plan cannot be written")
 
-    with pytest.raises((EnvironmentProblemError, KeyboardInterrupt)) as error:
+    with pytest.raises(EnvironmentProblemError) as error:
         run()
 
-    if gone:  # nothing of the run is left: nothing to say
-        assert error.type is KeyboardInterrupt
-        assert "1.1.0.json" not in _names(directory)
-    else:
-        assert f"cannot take back {ENTRY}/1.1.0.json: it changed meanwhile" in str(error.value)
-        assert (directory / "1.1.0.json").read_bytes() == b"another's"
+    assert f"cannot take back {ENTRY}/1.1.0.json: {said}" in str(error.value)
+    assert isinstance(error.value.__cause__, RuntimeError)
+    before = None if not added.exists() else added.read_bytes()
+    assert before in (None, b"another's", b"{}\n")  # another's stays, whatever it holds
+    assert [n for n in _names(directory) if n.startswith(".")] == []
 
 
 def test_a_file_added_that_cannot_be_removed_is_said(
@@ -1266,20 +1278,20 @@ def test_a_file_added_that_cannot_be_removed_is_said(
     unlink = os.unlink
 
     def refused(path: str, *, dir_fd: int | None = None) -> None:
-        if path == "1.1.0.json":
+        if path.startswith(".scenario-tools-"):  # the file set aside, to be removed
             raise PermissionError(13, "Permission denied")
         unlink(path, dir_fd=dir_fd)
 
     def run() -> None:
         with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
             monkeypatch.setattr(os, "unlink", refused)
-            raise KeyboardInterrupt
+            raise RuntimeError("the plan cannot be written")
 
     with pytest.raises(EnvironmentProblemError) as error:
         run()
 
-    assert f"cannot take back {ENTRY}/1.1.0.json" in str(error.value)
-    assert (directory / "1.1.0.json").exists()
+    assert f"cannot take back {ENTRY}/1.1.0.json: Permission denied" in str(error.value)
+    assert (directory / "1.1.0.json").read_bytes() == b"{}\n"  # put back where it is looked for
 
 
 def test_a_file_added_where_one_already_is_writes_nothing(tmp_path: Path) -> None:

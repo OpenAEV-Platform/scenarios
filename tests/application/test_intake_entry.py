@@ -1103,3 +1103,39 @@ def test_a_claim_on_a_payload_of_a_chaining_step_gives_it_a_new_version() -> Non
         "inject_injector_contract"
     ]["injector_contract_payload"]
     assert step_payload["payload_name"] == f"{payload['payload_name']} (1.1.0)"
+
+
+def test_a_claimed_copy_takes_the_id_its_new_content_has_in_the_scenario_and_its_file() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    stored = json.loads(result.scenario_json or b"")
+    (written,) = (json.loads(data) for data in result.payload_files.values())
+    (embedded,) = (
+        p.payload
+        for p in embedded_payloads(stored)
+        if isinstance(p.payload, Mapping) and p.payload.get("payload_name") == f"{name} (1.1.0)"
+    )
+    assert embedded["payload_external_id"] == written["payload_external_id"]
+    assert written["payload_external_id"] not in {v.identifier for v in held_salt.by_hash.values()}
+
+
+def test_an_update_whose_ids_cannot_be_assigned_still_writes_each_copy_under_its_name() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    source = _stored(SALT)
+    source.declared = ["not a mapping"]  # type: ignore[assignment]
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+
+    result = _intake({**UPDATE, **claims}, source, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+    names = {
+        p.payload.get("payload_name")
+        for p in embedded_payloads(json.loads(result.scenario_json or b""))
+        if isinstance(p.payload, Mapping)
+    }
+    assert f"{name} (1.1.0)" in names
+    assert name not in names

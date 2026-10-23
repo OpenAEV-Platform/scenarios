@@ -373,7 +373,8 @@ def test_a_requested_version_not_higher_than_the_highest_is_refused(version: str
             "ITK-009",
             "request.yaml",
             "/payloads/0/version",
-            f"the version asked for is not higher than {PS} 1.1.0, the highest the catalogue holds",
+            f"the version asked for is not higher than {PS} 1.1.0, the highest the catalogue "
+            "holds or this run gives",
         )
     ]
 
@@ -505,3 +506,14 @@ def test_a_renamed_copy_changes_only_the_names_at_the_pointers_given() -> None:
     }
     assert stored == before
     assert renamed(stored, {}) == before
+
+
+def test_a_claim_on_a_payload_that_cannot_be_hashed_names_it_and_leaves_it_to_its_checks() -> None:
+    stored = copy.deepcopy(STORED)
+    for payload in _payloads(stored):
+        payload["payload_elevation_required"] = "yes"  # the reference checks say why
+
+    result = _claimed(stored, Claim("Process Discovery - ps", PS))
+
+    assert result.findings == ()
+    assert (result.versions, result.renames) == ({}, {})

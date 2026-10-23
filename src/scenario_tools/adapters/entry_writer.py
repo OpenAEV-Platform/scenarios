@@ -24,6 +24,7 @@ from scenario_tools.adapters.places import (
     not_taken_back,
     open_directory,
     place_back,
+    removing_file,
     take_back,
     untold,
 )
@@ -81,26 +82,27 @@ def _as_written(directory: int, name: str, mine: Identity, data: bytes) -> bool:
     return same and (status.st_dev, status.st_ino) == mine
 
 
-def _removed_if_mine(directory: int, name: str, mine: Identity, data: bytes) -> bool:
-    """Remove ``name`` from ``directory`` while it is the file written, ``mine`` holding
-    ``data``; whether it is gone, never another's put at its name."""
-    if not _as_written(directory, name, mine, data):
-        return not _exists(directory, name)
+def _take_back_created(
+    directory: int, where: str, mine: Identity, data: bytes, failure: BaseException
+) -> list[str]:
+    """Take back the file this run created at ``where`` in an entry that was there: set aside
+    at once, then removed only while it is the file written, ``mine`` holding ``data``; never
+    another's put at its name meanwhile. What is not taken back is said."""
+    name = posixpath.basename(where)
     try:
-        os.unlink(name, dir_fd=directory)
-    except OSError as error:
-        return error.errno == errno.ENOENT  # gone meanwhile all the same
-    return True
-
-
-def _exists(directory: int, name: str) -> bool:
-    """Whether anything is at ``name`` in ``directory``, a link included; one that cannot be
-    looked at may be."""
-    try:
-        os.stat(name, dir_fd=directory, follow_symlinks=False)
-    except OSError as error:
-        return error.errno != errno.ENOENT
-    return True
+        outcome = take_back(
+            directory,
+            name,
+            mine,
+            removing_file(directory),
+            ours=lambda aside: _as_written(directory, aside, mine, data),
+            where=where,
+            failure=failure,
+        )
+    except EnvironmentProblemError as error:
+        return [str(error)]
+    said = not_taken_back(outcome, where)
+    return [] if said is None else [said]
 
 
 def _holding(directory: int, name: str, where: str, expected: bytes) -> Identity:
@@ -585,9 +587,11 @@ class RepositoryWriter:
                 yield _WrittenEntry(self, entry, identity(directory, entry), {**written, **created})
             except BaseException as failure:
                 said = [
-                    f"cannot take back {entry}/{name}: it changed meanwhile, and is left as it is"
+                    told
                     for name, (mine, data) in created.items()
-                    if not _removed_if_mine(directory, name, mine, data)
+                    for told in _take_back_created(
+                        directory, f"{entry}/{name}", mine, data, failure
+                    )
                 ]
                 for name, (mine, data) in written.items():
                     said += self._put_back(
