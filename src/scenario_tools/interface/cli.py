@@ -1075,7 +1075,8 @@ class _EmptyCatalogue:
     "previous_root",
     type=click.Path(path_type=Path, file_okay=False, exists=True),
     default=None,
-    help="The root of a checkout of the base branch: a version it holds must stay as it is.",
+    help="The root of a checkout of the base branch: a version its payloads/ holds must stay "
+    "as it is.",
 )
 @click.pass_context
 def validate_payloads_command(
@@ -1114,13 +1115,12 @@ def validate_payloads_command(
         parts = directory.relative_to(root).parts
         catalogue = CatalogueDirectory(root, parts)
         base: CatalogueFiles | None = None
-        if previous_root is not None:
+        if previous_root is not None:  # its payloads/, wherever DIRECTORY is
             held = Path(os.path.normpath(previous_root.absolute()))
-            base = (
-                CatalogueDirectory(held, parts)
-                if (held / Path(*parts)).is_dir()
-                else _EmptyCatalogue()
-            )
+            folder = held / "payloads"
+            if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
+                raise EnvironmentProblemError("the base checkout's payloads is no directory")
+            base = CatalogueDirectory(held, ("payloads",)) if folder.is_dir() else _EmptyCatalogue()
         return validate_payloads(catalogue, schema, agreed, "/".join(parts), base)
 
     _emit(ctx, "validate-payloads", produce, root)

@@ -346,3 +346,33 @@ def test_a_base_without_a_catalogue_is_an_empty_base(tmp_path: Path) -> None:
     (tmp_path / "empty").mkdir()
 
     assert _against(catalogue, tmp_path / "empty") == (0, [])
+
+
+def test_a_copy_of_the_catalogue_is_checked_against_the_base_s_payloads(tmp_path: Path) -> None:
+    catalogue = repository(tmp_path)
+    copy = catalogue.parent / "copies" / "payloads"
+    shutil.copytree(catalogue, copy)
+    edit(copy, PS_LATER, lambda document: document.update(payload_description="Changed."))
+
+    assert _against(copy, _base(tmp_path)) == (1, [("VER-022", f"copies/payloads/{PS_LATER}")])
+
+
+@pytest.mark.parametrize("kind", ["link", "file"])
+def test_a_base_whose_payloads_is_no_directory_is_the_environment(
+    tmp_path: Path, kind: str
+) -> None:
+    catalogue = repository(tmp_path)
+    base = tmp_path / "base"
+    base.mkdir()
+    if kind == "link":
+        (base / "payloads").symlink_to(_base(tmp_path / "elsewhere") / "payloads")
+    else:
+        (base / "payloads").write_text("x")
+
+    result = CliRunner().invoke(
+        main,
+        ["--format", "json", "validate-payloads", str(catalogue), "--previous-root", str(base)],
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "the base checkout's payloads is no directory" in result.output
