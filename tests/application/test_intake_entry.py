@@ -5,6 +5,7 @@ Characters are written by code point, never raw, so that this file holds none of
 
 import contextlib
 import copy
+import dataclasses
 import datetime
 import hashlib
 import json
@@ -27,6 +28,7 @@ from scenario_tools.application.intake_entry import (
 )
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.domain.catalogue.intake import CatalogueEntry
+from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_hash import embedded_payloads
@@ -1277,3 +1279,25 @@ def test_an_update_finds_the_names_its_claims_adopt_before_matching_its_previous
         _intake({**UPDATE, "payloads": [claim]}, source, export=edited, payloads=held_steps)
 
     assert calls == ["alone", "previous"]  # matched once, with the names adopted
+
+
+def test_what_the_names_are_found_on_never_refuses_the_request() -> None:
+    """The form the adopted names are found on has no previous version and no version asked
+    for: a payload refused there may be valid in the final form, which alone decides."""
+
+    def prepare(form: Any, *arguments: Any, **options: Any) -> Any:
+        prepared = prepare_entry(form, *arguments, **options)
+        if options.get("previous") is not None:
+            return prepared
+        stored = json.loads(prepared.scenario_json)
+        _salt_payload(stored, 1)["command_content"] += " # only here"  # its name is taken
+        return dataclasses.replace(prepared, scenario_json=stored_form(stored))
+
+    edited, name, slug, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": slug}}]}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr("scenario_tools.application.intake_entry.prepare_entry", prepare)
+        result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]

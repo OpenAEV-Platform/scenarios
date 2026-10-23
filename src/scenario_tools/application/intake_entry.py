@@ -193,8 +193,8 @@ def _adopting(
     entry stores. The verdicts are then given on that form, with every claim as the request
     gives it, so that the version files are made from what is stored. The names are found on
     ``discover``'s form, which an update makes without its previous version: the matching of
-    injects with it is done once the names are adopted. Each claim keeps its place in the
-    request, so that a finding points at it."""
+    injects with it is done once the names are adopted. Nothing is refused on that form. Each
+    claim keeps its place in the request, so that a finding points at it."""
     claims = tuple(
         dataclasses.replace(claim, position=position)
         for position, claim in enumerate(_claims(request))
@@ -205,8 +205,8 @@ def _adopting(
         first = _payloads(
             found.scenario_json, unnumbered, request, request_path, payloads, data, schema
         )
-        if first.refusals:
-            return found, first
+        # Only the names are taken from it: its findings are provisional, the final form's are
+        # given below, its versions asked for and its previous version applied.
         if first.adopted:
             held_names = {version.name for version in payloads.by_hash.values()}
             claims = tuple(
