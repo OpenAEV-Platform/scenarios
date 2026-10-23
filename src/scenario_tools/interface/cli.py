@@ -13,7 +13,7 @@ import json
 import os
 import re
 import signal
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import NoReturn
 
@@ -1486,18 +1486,36 @@ def _intake_check(
         found = intake_check(
             read_export(export),
             None if claims is None else _claims_document(claims),
-            export_path=export.name,  # by their names: no repository holds them
-            claims_path="" if claims is None else claims.name,
+            export_path=_shown(export),  # by their names: no repository holds them
+            claims_path="" if claims is None else _shown(claims),
             data=loader,
             schema=schema,
             payloads=catalogue_of(CatalogueDirectory(catalogue.parent, (catalogue.name,))),
             external_id=external_id,
-            previous=None if previous is None else read_stored_scenario(previous)[1],
-            previous_path=None if previous is None else previous.name,
+            previous=None if previous is None else _previous_scenario(previous),
+            previous_path=None if previous is None else _shown(previous),
         )
         return Report("intake", found)
 
     _emit(ctx, "intake", produce, None)
+
+
+def _shown(path: Path) -> str:
+    """How a finding names a file the check reads: its name, as a report path takes it."""
+    return repository_path(path.name, Path("/"))
+
+
+def _previous_scenario(path: Path) -> object:
+    """The stored scenario at ``path``: a document of another shape is refused, never read as
+    the absence of a previous version."""
+    _, document = read_stored_scenario(path)
+    if not isinstance(document, Mapping):
+        raise UnsafeInputError(
+            "IO-014",
+            "not a stored scenario: the document must be an object",
+            _shown(path),
+        )
+    return document
 
 
 def _claims_document(path: Path) -> object:

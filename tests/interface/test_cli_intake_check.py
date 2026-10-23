@@ -149,3 +149,39 @@ def test_an_empty_claims_file_is_refused_never_read_as_no_claims(
 
     assert code == 1
     assert [(f["code"], f["path"]) for f in document["findings"]] == [("SCH-001", "claims.yaml")]
+
+
+@pytest.mark.parametrize("content", ["null\n", "[]\n"])
+def test_a_previous_version_that_is_no_stored_scenario_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    previous = tmp_path / "scenario.json"
+    previous.write_text(content)
+
+    code, document = _check(
+        str(CHAINING), "--check", "--payloads", str(payloads), "--rules", str(rules),
+        "--external-id", CHAINED_ID, "--previous", str(previous),
+    )  # fmt: skip
+
+    assert code == 1
+    assert [(f["code"], f["path"]) for f in document["findings"]] == [("IO-014", "scenario.json")]
+
+
+@pytest.mark.parametrize(
+    ("name", "shown"), [("C:export.json", ""), ("copy\\export.json", "export.json")]
+)
+def test_files_named_as_no_report_path_takes_them_are_still_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, shown: str
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    export = tmp_path / name
+    shutil.copyfile(CHAINING, export)
+
+    code, document = _check(
+        str(export), "--check", "--payloads", str(payloads), "--rules", str(rules),
+        "--external-id", CHAINED_ID,
+    )  # fmt: skip
+
+    assert code == 0, document
+    assert {f["path"] for f in document["findings"]} == {shown}
