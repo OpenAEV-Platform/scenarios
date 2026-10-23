@@ -34,6 +34,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
@@ -159,7 +160,7 @@ class _Payloads:
     held: HeldVersions
     files: dict[str, bytes]
     changes: dict[str, tuple[str, ...]]
-    adopted: dict[str, str]  # the name each claimed copy takes, by the name it had
+    adopted: dict[str, str]  # the base name each claimed copy follows, by the name it had
 
 
 def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
@@ -185,34 +186,28 @@ def _adopting(
     data: DataLoader,
     schema: SchemaValidator,
 ) -> tuple[PreparedEntry, _Payloads | None]:
-    """The export prepared, and the verdicts on its payloads (none when it is refused). A first
-    pass, the versions asked for left aside, finds the name each claimed copy takes. When one
-    takes another name, it is given that name in the export, which is prepared again: what
-    normalisation derives from a payload's base name (its identifiers, the matching of an
-    update's injects and steps, the identifiers it rewrites in values) follows the name the
-    entry stores. The verdicts are then given on that form, with every claim as the request
-    gives it, so that the version files are made from what is stored. The names are found on
-    ``discover``'s form, which an update makes without its previous version: the matching of
-    injects with it is done once the names are adopted. Nothing is refused on that form. Each
-    claim keeps its place in the request, so that a finding points at it."""
+    """The export prepared, and the verdicts on its payloads (none when it is refused). What
+    normalisation derives from a payload's name (its identifiers, the matching of an update's
+    injects and steps, the identifiers it rewrites in values) follows its base name: a claimed
+    copy whose base name is not that of the catalogue payload it is based on is first given
+    that base name in the export, found on ``discover``'s form, which an update makes without
+    its previous version. Only those names are taken from it, never a finding. The export is
+    then prepared, and every claim, as the request gives it, judged on that form alone, so
+    that the version files are made from what is stored. Each claim keeps its place in the
+    request, so that a finding points at it."""
     claims = tuple(
         dataclasses.replace(claim, position=position)
         for position, claim in enumerate(_claims(request))
     )
     found = discover(export) if claims else None
     if found is not None and not found.refusals:
-        unnumbered = tuple(dataclasses.replace(claim, version=None) for claim in claims)
         first = _payloads(
-            found.scenario_json, unnumbered, request, request_path, payloads, data, schema
+            found.scenario_json, claims, request, request_path, payloads, data, schema
         )
-        # Only the names are taken from it: its findings are provisional, the final form's are
-        # given below, its versions asked for and its previous version applied.
         if first.adopted:
-            held_names = {version.name for version in payloads.by_hash.values()}
             claims = tuple(
                 dataclasses.replace(claim, name=first.adopted.get(claim.name, claim.name))
                 for claim in claims
-                if first.adopted.get(claim.name) not in held_names  # already there: no claim
             )
             export = export_renamed(export, first.adopted)
     prepared = prepare(export)
@@ -254,9 +249,9 @@ def _payloads(
         {version.path: stored_form(version.document) for version in new.values()},
         verdict.changes,
         {
-            str(named_at(stored, pointer)): name
-            for pointer, name in verdict.renames.items()
-            if named_at(stored, pointer) != name
+            str(named_at(stored, pointer)): base
+            for pointer, base in verdict.bases.items()
+            if base_name(str(named_at(stored, pointer))) != base
         },
     )
 

@@ -9,7 +9,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.domain.catalogue.intake import name_key
@@ -213,13 +213,16 @@ class Claim:
 @dataclass(frozen=True)
 class Verdicts:
     """The verdicts on the payloads a stored scenario embeds: the findings, the version files to
-    write by hash, the name each claimed copy takes by its pointer, and, for each new version
-    of a payload, the pointers of the fields that differ from the version it was based on."""
+    write by hash, the name each claimed copy takes by its pointer, for each new version of a
+    payload, the pointers of the fields that differ from the version it was based on, and the
+    base name of the catalogue payload each claim names, by the pointer of its copy, whatever
+    else the claim's verdict is."""
 
     findings: tuple[Finding, ...]
     versions: dict[str, PayloadVersion]
     renames: dict[str, str]
     changes: dict[str, tuple[str, ...]]
+    bases: dict[str, str] = field(default_factory=dict)
 
 
 CLAIMED_TWICE = "this payload is claimed twice: claim each payload once"
@@ -278,6 +281,7 @@ class _Pass:
         self.claimed: dict[str, tuple[str, str]] = {}  # a claimed copy's name and verdict, by hash
         self.highest: dict[str, str] = {}  # the highest version each payload has so far
         self.contents: dict[int, str] = {}  # the hash each claim names, by its position
+        self.bases: dict[str, str] = {}  # the base name each claimed copy follows, by pointer
 
     def info(self, pointer: str, message: str) -> None:
         self.findings.append(Finding("PAY-010", Severity.INFO, self.scenario, pointer, message))
@@ -322,6 +326,7 @@ class _Pass:
             message = NO_SUCH_VERSION.format(payload=slug)
             self.refuse_claim(f"/payloads/{index}/based_on/version", message)
             return
+        self.bases[pointer] = base.base_name  # its identifiers follow it, whatever comes next
         if digest in self.claimed:  # the same copy embedded again: one verdict, one file
             name, message = self.claimed[digest]
             self.renames[pointer] = name
@@ -470,8 +475,8 @@ def claimed_verdicts(
         run.refuse_claim(f"/payloads/{at[position]}/name", CLAIM_NAMES_NOTHING)
     if len(run.versions) > NEW_PAYLOADS_LIMIT:
         too_many = (Finding("PAY-009", Severity.BLOCKING, scenario, "", TOO_MANY_NEW),)
-        return Verdicts(too_many, {}, {}, {})
-    return Verdicts(tuple(run.findings), run.versions, run.renames, run.changes)
+        return Verdicts(too_many, {}, {}, {}, run.bases)
+    return Verdicts(tuple(run.findings), run.versions, run.renames, run.changes, run.bases)
 
 
 def named_at(stored: Mapping[str, Any], pointer: str) -> object:

@@ -1301,3 +1301,51 @@ def test_what_the_names_are_found_on_never_refuses_the_request() -> None:
 
     assert result.refusals == ()
     assert list(result.payload_files) == [f"payloads/{slug}/1.1.0.json"]
+
+
+def test_a_renamed_copy_of_a_long_named_payload_takes_the_version_asked_for() -> None:
+    long = "L" * 192
+    exported = copy.deepcopy(SALT)
+    _salt_payload(exported)["payload_name"] = long
+    held_long = catalogue(json.loads(_intake(NEW, export=exported).scenario_json or b""))
+    first = next(v for v in held_long.by_hash.values() if v.name == long)
+    later = {
+        **first.document,
+        "payload_name": f"{long} (1.9.0)",
+        "command_content": f"{first.document['command_content']} # 1.9.0",
+        "payload_external_id": "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b",
+    }
+    path = f"payloads/{first.slug}/1.9.0.json"
+    held = Catalogue.of(
+        [*held_long.by_hash.values(), PayloadVersion(first.slug, "1.9.0", path, later)]
+    )
+    edited = copy.deepcopy(exported)
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {long}"[:200]
+    payload["command_content"] += " # tuned"
+    claim = {
+        "name": payload["payload_name"],
+        "based_on": {"payload": first.slug},
+        "version": "2.0.0",
+    }
+
+    result = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held)
+
+    assert result.refusals == ()
+    assert list(result.payload_files) == [f"payloads/{first.slug}/2.0.0.json"]
+    stored = json.loads(result.scenario_json or b"")
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+
+
+def test_a_renamed_copy_already_there_claimed_twice_is_refused() -> None:
+    held_salt = catalogue(json.loads(_intake(NEW, export=SALT).scenario_json or b""))
+    edited = copy.deepcopy(SALT)
+    there = _salt_payload(edited)
+    held_there = next(v for v in held_salt.by_hash.values() if v.name == there["payload_name"])
+    claim = {"name": f"Copy of {there['payload_name']}", "based_on": {"payload": held_there.slug}}
+    there["payload_name"] = claim["name"]
+    there["payload_description"] = held_there.document["payload_description"]
+
+    result = _intake({**NEW, "payloads": [claim, claim]}, export=edited, payloads=held_salt)
+
+    assert ("ITK-009", REQUEST, "/payloads/1/name") in _codes(result.refusals)

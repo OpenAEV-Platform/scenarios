@@ -13,6 +13,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     CLAIM_NAMES_NOTHING,
     GIVEN_TWICE,
     NO_SLUG,
+    NOT_HIGHER,
     NOT_KEPT,
     OUT_OF_SCHEMA,
     OVER_SIZE,
@@ -654,3 +655,10 @@ def test_a_claim_s_findings_point_at_its_place_in_the_request() -> None:
         "/payloads/3/version",
         "/payloads/5/name",
     }
+
+
+def test_the_base_a_claimed_copy_follows_is_given_even_when_its_claim_is_refused() -> None:
+    result = _claimed(_two_copies("A", "B"), Claim("A", PS, version="1.0.0"))
+
+    assert ("ITK-009", NOT_HIGHER.format(payload=PS, version="1.1.0")) in _codes_of(result)
+    assert result.bases == {STEP_PAYLOAD.format(0): "Process Discovery - ps"}
