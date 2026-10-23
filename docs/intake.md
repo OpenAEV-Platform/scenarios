@@ -66,9 +66,12 @@ never a path, whatever the schema says.
 them, and the platform imports them from it, so they are read there first. For an export that
 lacks one (absent, null or blank, as a scenario built through the API may be), the request gives
 it: intake writes it in the stored scenario, so the platform imports it, and in `scenario.yaml`.
-An update that lacks one keeps the entry's own, unless the request gives another, which changes it (a patch version). A facet given nowhere, or given in the request
-with another value than the export's, is refused (`ITK-010`) before anything is written.
-`severity` is one of `low`, `medium`, `high` and `critical`; the others are 1 to 64 characters, on one line, with no blank at either end. A facet the export holds as something other than text is refused as the export's (`IO-014`).
+An update that lacks one keeps the entry's own, unless the request gives another, which changes
+it (a patch version). A facet given nowhere, or given in the request with another value than the
+export's, is refused (`ITK-010`) before anything is written. `severity` is one of `low`,
+`medium`, `high` and `critical`; the others are 1 to 64 characters, on one line, with no blank at
+either end. A facet the export holds as something other than text is refused as the export's
+(`IO-014`).
 
 A new entry starts its `CHANGELOG.md` with the section of its version and the day of the run,
 `## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request, and gets its sheet, `README.md`,
