@@ -90,10 +90,11 @@ def completed_facets(
 ) -> tuple[Any, tuple[Finding, ...]]:
     """``export``, a copy, with each catalogue facet its information lacks (absent, null or
     blank) taken from the request, ``given``, or else from the entry's stored scenario, ``held``,
-    on an update; or nothing, and why, when a facet is given nowhere, or when the request gives
-    another one than the export. The export holds what the platform imports: a facet written
-    there reaches it and ``scenario.yaml`` alike. An export without its information is left to
-    its own checks."""
+    on an update, a facet the request gives changing the stored one; or nothing, and why, when
+    a facet is given nowhere, or when the request gives another one than the export. The export
+    holds what the platform imports: a facet written there reaches it and ``scenario.yaml``
+    alike. An export without its information, or with a facet that is not text, is left to its
+    own checks."""
     if not isinstance(export, Mapping):
         return export, ()
     information = export.get(_INFORMATION)
@@ -104,6 +105,8 @@ def completed_facets(
     for name, key in FACETS.items():
         field = f"/{_INFORMATION}/{key}"
         value, asked = information.get(key), given.get(name)
+        if value is not None and not isinstance(value, str):
+            continue  # not a missing facet but a malformed one: its own check refuses it
         if _held(value):
             if asked is not None and asked != value:
                 message = (

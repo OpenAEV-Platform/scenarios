@@ -69,13 +69,15 @@
       "description": "The scenario's category, for an export that has none, written as the severity is.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 64
+      "maxLength": 64,
+      "pattern": "^[^\\s](?:[^\\r\\n]*[^\\s])?$"
     },
     "main_focus": {
       "description": "The scenario's main focus, for an export that has none, written as the severity is.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 64
+      "maxLength": 64,
+      "pattern": "^[^\\s](?:[^\\r\\n]*[^\\s])?$"
     },
     "issue": {
       "description": "The number of the issue the pull request closes.",

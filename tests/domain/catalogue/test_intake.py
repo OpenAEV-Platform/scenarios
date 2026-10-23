@@ -698,3 +698,13 @@ def test_an_export_without_its_information_is_left_to_its_own_checks(information
     export = {INFO: information}
 
     assert completed_facets(export, {"severity": "low"}, {}, "export.zip") == (export, ())
+
+
+@pytest.mark.parametrize("value", [3, ["attack-scenario"], {"a": 1}])
+def test_a_facet_the_export_holds_as_no_text_is_left_to_its_own_checks(value: object) -> None:
+    export = _export(scenario_category=value)
+
+    assert completed_facets(export, {"category": "attack-scenario"}, {}, "export.zip") == (
+        export,
+        (),
+    )

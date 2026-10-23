@@ -981,3 +981,33 @@ def test_a_manifest_without_its_payload_list_is_refused(validator: JsonSchemaVal
     document = {key: value for key, value in MANIFEST.items() if key != "payloads"}
 
     assert [v.pointer for v in validator.validate("manifest", document)] == [""]
+
+
+def test_an_intake_request_may_give_the_facets_an_export_lacks(
+    validator: JsonSchemaValidator,
+) -> None:
+    facets = {"severity": "high", "category": "attack-scenario", "main_focus": "a b"}
+    update = {key: INTAKE[key] for key in ("external_id", "domain", "slug", "issue")}
+
+    assert validator.validate("intake-request", {**INTAKE, **facets}) == ()
+    assert validator.validate("intake-request", {**update, "mode": "update", **facets}) == ()
+
+
+@pytest.mark.parametrize(
+    ("change", "pointer"),
+    [
+        ({"severity": "extreme"}, "/severity"),
+        ({"category": ""}, "/category"),
+        ({"category": " attack"}, "/category"),
+        ({"main_focus": "endpoint "}, "/main_focus"),
+        ({"main_focus": "two\nlines"}, "/main_focus"),
+        ({"category": "x" * 65}, "/category"),
+    ],
+    ids=["severity", "empty", "leading blank", "trailing blank", "line break", "too long"],
+)
+def test_a_facet_of_a_request_outside_its_schema_is_refused(
+    validator: JsonSchemaValidator, change: dict[str, object], pointer: str
+) -> None:
+    assert pointer in {
+        v.pointer for v in validator.validate("intake-request", {**INTAKE, **change})
+    }
