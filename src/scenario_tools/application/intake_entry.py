@@ -160,7 +160,6 @@ class _Payloads:
     files: dict[str, bytes]
     changes: dict[str, tuple[str, ...]]
     adopted: dict[str, str]  # the name each claimed copy takes, by the name it had
-    numbers: dict[str, str]  # the version of each new version, by its name
 
 
 def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
@@ -185,38 +184,35 @@ def _adopting(
     data: DataLoader,
     schema: SchemaValidator,
 ) -> tuple[PreparedEntry, _Payloads | None]:
-    """The export prepared, and the verdicts on its payloads (none when it is refused). When a
-    claimed copy takes another name, the name is given to it in the export, which is prepared
-    again: what normalisation derives from a payload's name, and the matching of an update's
-    injects and steps, follow the name the entry stores. The verdicts are then given again on
-    that form, each claim of a new version pinned to its version, so that the version files
-    are made from what is stored."""
+    """The export prepared, and the verdicts on its payloads (none when it is refused). A first
+    pass, the versions asked for left aside, finds the name each claimed copy takes. When one
+    takes another name, it is given that name in the export, which is prepared again: what
+    normalisation derives from a payload's base name (its identifiers, the matching of an
+    update's injects and steps, the identifiers it rewrites in values) follows the name the
+    entry stores. The verdicts are then given on that form, with every claim as the request
+    gives it, so that the version files are made from what is stored."""
     prepared = prepare(export)
     if prepared.refusals:
         return prepared, None
     claims = _claims(request)
-    verdict = _payloads(
-        prepared.scenario_json, claims, request, request_path, payloads, data, schema
+    unnumbered = tuple(dataclasses.replace(claim, version=None) for claim in claims)
+    first = _payloads(
+        prepared.scenario_json, unnumbered, request, request_path, payloads, data, schema
     )
-    if verdict.refusals or not verdict.adopted:
-        return prepared, verdict
-    held_names = {version.name for version in payloads.by_hash.values()}
-    pinned = tuple(
-        claim
-        if claim.name not in verdict.adopted
-        else dataclasses.replace(
-            claim,
-            name=verdict.adopted[claim.name],
-            version=verdict.numbers.get(verdict.adopted[claim.name]),
+    if first.refusals:
+        return prepared, first
+    if first.adopted:
+        held_names = {version.name for version in payloads.by_hash.values()}
+        claims = tuple(
+            dataclasses.replace(claim, name=first.adopted.get(claim.name, claim.name))
+            for claim in claims
+            if first.adopted.get(claim.name) not in held_names  # already there: no claim
         )
-        for claim in claims
-        if verdict.adopted.get(claim.name) not in held_names  # already there: nothing to claim
-    )
-    prepared = prepare(export_renamed(export, verdict.adopted))
-    if prepared.refusals:
-        return prepared, None
+        prepared = prepare(export_renamed(export, first.adopted))
+        if prepared.refusals:
+            return prepared, None
     return prepared, _payloads(
-        prepared.scenario_json, pinned, request, request_path, payloads, data, schema
+        prepared.scenario_json, claims, request, request_path, payloads, data, schema
     )
 
 
@@ -255,7 +251,6 @@ def _payloads(
             for pointer, name in verdict.renames.items()
             if named_at(stored, pointer) != name
         },
-        {version.name: version.version for version in new.values()},
     )
 
 

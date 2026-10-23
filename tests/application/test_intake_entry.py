@@ -1216,3 +1216,21 @@ def test_an_update_from_the_same_renamed_chaining_export_keeps_its_steps() -> No
     assert again.refusals == ()
     assert (again.changed, again.payload_files) == (False, {})
     assert "VER-012" not in {f.code for f in again.to_complete}
+
+
+def test_an_intake_run_again_with_an_asked_version_finds_a_renamed_copy_already_there() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {name}"
+    payload["command_content"] += f" # {payload['payload_id']}"  # rewritten from the base name
+    claim = {"name": f"Copy of {name}", "based_on": {"payload": slug}, "version": "2.0.0"}
+    request = {**NEW, "payloads": [claim]}
+    first = _intake(request, export=edited, payloads=held_salt)
+    assert list(first.payload_files) == [f"payloads/{slug}/2.0.0.json"]
+
+    again = _intake(request, export=edited, payloads=_with_files(held_salt, first.payload_files))
+
+    assert again.refusals == ()
+    assert again.payload_files == {}
+    assert again.scenario_json == first.scenario_json
+    assert f"already there: {slug} 2.0.0" in {f.message for f in again.to_complete}
