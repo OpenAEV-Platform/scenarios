@@ -10,6 +10,7 @@ import pytest
 
 from scenario_tools.domain.catalogue.payload_verdict import (
     BASE_NAME_TAKEN,
+    CLAIM_NAMES_NOTHING,
     NO_SLUG,
     NOT_KEPT,
     OUT_OF_SCHEMA,
@@ -19,6 +20,8 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     TOO_MANY_NEW,
     Claim,
     claimed_verdicts,
+    export_renamed,
+    named_at,
     proposed_slug,
     renamed,
     verdicts,
@@ -530,3 +533,63 @@ def test_a_new_version_the_catalogue_would_refuse_is_refused_and_not_given() -> 
 
     assert {f.code for f in result.findings} == {"PAY-009"}
     assert (result.versions, result.renames, result.changes) == ({}, {}, {})
+
+
+def test_an_export_renamed_gives_each_copy_its_name_in_injects_and_step_data() -> None:
+    step = {"inject_injector_contract": {"injector_contract_payload": {"payload_name": "A"}}}
+    export = {
+        "scenario_injects": [
+            {"payload_name": "A", "payload_description": "kept"},
+            {"payload_name": "B"},
+        ],
+        "scenario_workflow": {"workflow_steps": [{"step_data": json.dumps(step)}]},
+    }
+    before = copy.deepcopy(export)
+
+    renamed_export: Any = export_renamed(export, {"A": "A (1.1.0)"})
+
+    assert renamed_export["scenario_injects"] == [
+        {"payload_name": "A (1.1.0)", "payload_description": "kept"},
+        {"payload_name": "B"},
+    ]
+    (data,) = renamed_export["scenario_workflow"]["workflow_steps"]
+    payload = json.loads(data["step_data"])["inject_injector_contract"]["injector_contract_payload"]
+    assert payload == {"payload_name": "A (1.1.0)", "payload_description": "A"}
+    assert export == before
+
+
+@pytest.mark.parametrize("description", [None, "", "  "])
+def test_a_renamed_copy_without_a_description_is_described_by_its_first_name(
+    description: object,
+) -> None:
+    renamed_export: Any = export_renamed(
+        [{"payload_name": "A", "payload_description": description}], {"A": "A (2.0.0)"}
+    )
+
+    assert renamed_export == [{"payload_name": "A (2.0.0)", "payload_description": "A"}]
+
+
+def test_step_data_that_is_not_json_is_left_to_normalisation() -> None:
+    step = {"step_data": "{not json", "payload_name": "A"}
+
+    assert export_renamed(step, {"A": "B"}) == {
+        "step_data": "{not json",
+        "payload_name": "B",
+        "payload_description": "A",
+    }
+
+
+def test_the_name_at_a_pointer_is_the_payload_s() -> None:
+    stored = {"a": [{"payload_name": "x"}, {"b": {"payload_name": "y"}}]}
+
+    assert (named_at(stored, "/a/0"), named_at(stored, "/a/1/b")) == ("x", "y")
+
+
+def test_a_payload_that_is_no_object_is_left_to_the_reference_checks() -> None:
+    stored = copy.deepcopy(STORED)
+    for step in stored["scenario_workflow"]["workflow_steps"]:
+        step["step_data"]["inject_injector_contract"]["injector_contract_payload"] = "text"
+
+    result = _claimed(stored, Claim("Process Discovery - ps", PS))
+
+    assert [f.message for f in result.findings] == [CLAIM_NAMES_NOTHING]

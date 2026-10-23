@@ -2,6 +2,7 @@
 anything is written, so that a refused request leaves the repository as it was."""
 
 import contextlib
+import dataclasses
 import datetime
 import json
 from collections.abc import Callable, Iterable, Mapping
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
-from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
+from scenario_tools.application.prepare_entry import PreparedEntry, prepare_entry
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
@@ -23,7 +24,13 @@ from scenario_tools.domain.catalogue.intake import (
     intake_refusals,
     same_name,
 )
-from scenario_tools.domain.catalogue.payload_verdict import Claim, claimed_verdicts, renamed
+from scenario_tools.domain.catalogue.payload_verdict import (
+    Claim,
+    claimed_verdicts,
+    export_renamed,
+    named_at,
+    renamed,
+)
 from scenario_tools.domain.catalogue.structure import INFORMATION
 from scenario_tools.domain.shared.canonical import ContentHash, stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -152,19 +159,8 @@ class _Payloads:
     held: HeldVersions
     files: dict[str, bytes]
     changes: dict[str, tuple[str, ...]]
-    renamed: bool = False  # whether a claimed copy takes another name
-
-
-def _named(
-    stored: Mapping[str, Any], verdict: _Payloads, request: IntakeRequest, data: DataLoader
-) -> bytes:
-    """``stored``, its payload IDs assigned, as normalisation writes it once a claimed copy took
-    another name: the identifiers derived from a payload's base name follow its new name, the
-    others stay, the scenario being its own previous version."""
-    if not verdict.renamed:
-        return stored_form(stored)
-    path = f"{request.entry}/scenario.json"
-    return renormaliser(data)(stored, request.external_id, path)
+    adopted: dict[str, str]  # the name each claimed copy takes, by the name it had
+    numbers: dict[str, str]  # the version of each new version, by its name
 
 
 def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
@@ -180,8 +176,53 @@ def _claims(request: IntakeRequest) -> tuple[Claim, ...]:
     )
 
 
+def _adopting(
+    export: Any,
+    prepare: Callable[[Any], PreparedEntry],
+    request: IntakeRequest,
+    request_path: str,
+    payloads: Catalogue,
+    data: DataLoader,
+    schema: SchemaValidator,
+) -> tuple[PreparedEntry, _Payloads | None]:
+    """The export prepared, and the verdicts on its payloads (none when it is refused). When a
+    claimed copy takes another name, the name is given to it in the export, which is prepared
+    again: what normalisation derives from a payload's name, and the matching of an update's
+    injects and steps, follow the name the entry stores. The verdicts are then given again on
+    that form, each claim of a new version pinned to its version, so that the version files
+    are made from what is stored."""
+    prepared = prepare(export)
+    if prepared.refusals:
+        return prepared, None
+    claims = _claims(request)
+    verdict = _payloads(
+        prepared.scenario_json, claims, request, request_path, payloads, data, schema
+    )
+    if verdict.refusals or not verdict.adopted:
+        return prepared, verdict
+    held_names = {version.name for version in payloads.by_hash.values()}
+    pinned = tuple(
+        claim
+        if claim.name not in verdict.adopted
+        else dataclasses.replace(
+            claim,
+            name=verdict.adopted[claim.name],
+            version=verdict.numbers.get(verdict.adopted[claim.name]),
+        )
+        for claim in claims
+        if verdict.adopted.get(claim.name) not in held_names  # already there: nothing to claim
+    )
+    prepared = prepare(export_renamed(export, verdict.adopted))
+    if prepared.refusals:
+        return prepared, None
+    return prepared, _payloads(
+        prepared.scenario_json, pinned, request, request_path, payloads, data, schema
+    )
+
+
 def _payloads(
     scenario_json: bytes,
+    claims: tuple[Claim, ...],
     request: IntakeRequest,
     request_path: str,
     payloads: Catalogue,
@@ -194,7 +235,7 @@ def _payloads(
         payloads,
         agreed_ids(data),
         accepted=lambda document: not schema.validate("payload", document),
-        claims=_claims(request),
+        claims=claims,
         scenario=f"{request.entry}/scenario.json",
         request=request_path,
     )
@@ -209,7 +250,12 @@ def _payloads(
         HeldVersions.of(held),
         {version.path: stored_form(version.document) for version in new.values()},
         verdict.changes,
-        bool(verdict.renames),
+        {
+            str(named_at(stored, pointer)): name
+            for pointer, name in verdict.renames.items()
+            if named_at(stored, pointer) != name
+        },
+        {version.name: version.version for version in new.values()},
     )
 
 
@@ -313,10 +359,18 @@ def _new(
     export, missing = completed_facets(export, request.facets, {}, export_path)
     if missing:
         return IntakeResult(request, missing)
-    prepared = prepare_entry(
-        export, request.external_id, data, path=export_path, start_at=metadata_path
+    prepared, verdict = _adopting(
+        export,
+        lambda form: prepare_entry(
+            form, request.external_id, data, path=export_path, start_at=metadata_path
+        ),
+        request,
+        request_path,
+        payloads,
+        data,
+        schema,
     )
-    if prepared.refusals:
+    if prepared.refusals or verdict is None:
         return IntakeResult(request, prepared.refusals)
     given = request.metadata()
     metadata = {**(prepared.metadata or {}), **given}  # a first preparation always starts one
@@ -336,8 +390,6 @@ def _new(
     left = tuple(
         finding for finding in prepared.to_complete if finding.field.strip("/") not in given
     )
-    scenario_json = prepared.scenario_json
-    verdict = _payloads(scenario_json, request, request_path, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
     scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
@@ -346,7 +398,7 @@ def _new(
         metadata, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
-        metadata, scenario_json = assigned.metadata, _named(assigned.stored, verdict, request, data)
+        metadata, scenario_json = assigned.metadata, stored_form(assigned.stored)
     # Otherwise the entry's check, run once it is written, says why in the plan.
     changelog = (
         f"# Changelog\n\n## {metadata['version']} \u2014 {today.isoformat()}\n\n"
@@ -402,15 +454,23 @@ def _update(
     )
     if missing:
         return IntakeResult(request, missing)
-    prepared = prepare_entry(
+    prepared, verdict = _adopting(
         export,
-        request.external_id,
+        lambda form: prepare_entry(
+            form,
+            request.external_id,
+            data,
+            path=export_path,
+            previous=previous,
+            previous_path=stored_path,
+        ),
+        request,
+        request_path,
+        payloads,
         data,
-        path=export_path,
-        previous=previous,
-        previous_path=stored_path,
+        schema,
     )
-    if prepared.refusals:
+    if prepared.refusals or verdict is None:
         return IntakeResult(request, prepared.refusals)
     metadata_path = f"{request.entry}/scenario.yaml"
     scenario_json = prepared.scenario_json
@@ -423,7 +483,6 @@ def _update(
     if "scenario.yaml" in source.names(request.entry):
         written = source.read_text(metadata_path)
         declared = source.read_yaml(metadata_path)
-    verdict = _payloads(scenario_json, request, request_path, payloads, data, schema)
     if verdict.refusals:
         return IntakeResult(request, verdict.refusals)
     scenario_json = stored_form(verdict.stored)  # each claimed copy under its name, as written
@@ -431,7 +490,7 @@ def _update(
         declared, verdict.stored, request.entry, agreed_ids(data), verdict.held
     )
     if assigned.metadata is not None and assigned.stored is not None:
-        scenario_json = _named(assigned.stored, verdict, request, data)
+        scenario_json = stored_form(assigned.stored)
         # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
         information = assigned.stored.get(INFORMATION) or {}  # as normalised, then stored
         given = {name: information.get(FACETS[name]) for name in request.facets}

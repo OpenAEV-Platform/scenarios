@@ -22,6 +22,7 @@ from scenario_tools.domain.shared.payload_names import (
     version_key,
     versioned_name,
 )
+from scenario_tools.domain.shared.stored import STEP_DATA
 from scenario_tools.domain.verification.payload_catalogue import Catalogue, is_slug
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
@@ -455,6 +456,42 @@ def claimed_verdicts(
         too_many = (Finding("PAY-009", Severity.BLOCKING, scenario, "", TOO_MANY_NEW),)
         return Verdicts(too_many, {}, {}, {})
     return Verdicts(tuple(run.findings), run.versions, run.renames, run.changes)
+
+
+def named_at(stored: Mapping[str, Any], pointer: str) -> object:
+    """The name of the payload at ``pointer`` in ``stored``, a pointer the verdicts give."""
+    node: Any = stored
+    for part in pointer.lstrip("/").split("/"):
+        node = node[int(part)] if isinstance(node, list) else node[part]
+    return node.get("payload_name")
+
+
+def export_renamed(export: object, names: Mapping[str, str]) -> object:
+    """A copy of ``export`` in which every payload named by a key of ``names`` takes its value,
+    in injects and in the data of chaining steps alike: a claimed copy takes its name before
+    the export is normalised, so that what normalisation derives from a name follows it. A
+    payload without a description keeps the one normalisation gives it, its first name."""
+    if isinstance(export, list):
+        return [export_renamed(item, names) for item in export]
+    if not isinstance(export, Mapping):
+        return export
+    copied = {key: export_renamed(value, names) for key, value in export.items()}
+    name = copied.get("payload_name")
+    if isinstance(name, str) and name in names:
+        copied["payload_name"] = names[name]
+        described = copied.get("payload_description")
+        if described is None or (isinstance(described, str) and not described.strip()):
+            copied["payload_description"] = name  # as normalisation describes it, by its name
+    data = copied.get(STEP_DATA)
+    if isinstance(data, str):
+        try:
+            decoded = json.loads(data)
+        except ValueError:
+            return copied  # normalisation refuses it
+        copied[STEP_DATA] = json.dumps(
+            export_renamed(decoded, names), ensure_ascii=False, separators=(",", ":")
+        )
+    return copied
 
 
 def renamed(stored: Mapping[str, Any], renames: Mapping[str, str]) -> dict[str, Any]:

@@ -1159,3 +1159,60 @@ def test_a_claimed_copy_under_another_base_name_is_stored_as_normalisation_gives
     assert sorted(i["inject_id"] for i in stored["scenario_injects"]) == sorted(
         i["inject_id"] for i in plain["scenario_injects"]
     )  # the injects keep their identifiers
+
+
+def test_a_renamed_copy_whose_command_holds_its_own_id_matches_its_version_file() -> None:
+    edited, name, slug, held_salt = _copy_of_salt()
+    payload = _salt_payload(edited)
+    payload["payload_name"] = f"Copy of {name}"
+    payload["command_content"] += f" # {payload['payload_id']}"  # rewritten by normalisation
+    claims = {"payloads": [{"name": f"Copy of {name}", "based_on": {"payload": slug}}]}
+
+    result = _intake({**NEW, **claims}, export=edited, payloads=held_salt)
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    stored = json.loads(result.scenario_json)
+    with_files = _with_files(held_salt, result.payload_files)
+    assert payload_findings(result.metadata, stored, ENTRY, AgreedIds({}), with_files.held()) == ()
+    assert renormaliser(DATA)(stored, ID, f"{ENTRY}/scenario.json") == result.scenario_json
+
+
+def _renamed_chaining() -> tuple[Any, dict[str, Any], Catalogue]:
+    """The chaining export whose step payload is a changed copy named otherwise, the claim on
+    it, and the catalogue that holds the original."""
+    held_steps = catalogue(json.loads(_intake(NEW, export=CHAINING).scenario_json or b""))
+    edited = copy.deepcopy(CHAINING)
+    for step in edited["scenario_workflow"]["workflow_steps"]:  # one payload, in both steps
+        data = json.loads(step["step_data"])
+        payload = data["inject_injector_contract"]["injector_contract_payload"]
+        original = payload["payload_name"]
+        payload["payload_name"] = f"Copy of {original}"
+        payload["command_content"] += " -ef"
+        step["step_data"] = json.dumps(data)
+    slug = next(v.slug for v in held_steps.by_hash.values() if v.name == original)
+    claim = {"name": f"Copy of {original}", "based_on": {"payload": slug}}
+    return edited, claim, held_steps
+
+
+def test_an_update_from_the_same_renamed_chaining_export_keeps_its_steps() -> None:
+    edited, claim, held_steps = _renamed_chaining()
+    first = _intake({**NEW, "payloads": [claim]}, export=edited, payloads=held_steps)
+    assert first.scenario_json is not None
+    name = CHAINING["scenario_information"]["scenario_name"]
+    source = FakeSource(
+        (CatalogueEntry(ENTRY, ID, name),),
+        (first.scenario_json, json.loads(first.scenario_json)),
+        declared=first.metadata,
+    )
+
+    again = _intake(
+        {**UPDATE, "payloads": [claim]},
+        source,
+        export=edited,
+        payloads=_with_files(held_steps, first.payload_files),
+    )
+
+    assert again.refusals == ()
+    assert (again.changed, again.payload_files) == (False, {})
+    assert "VER-012" not in {f.code for f in again.to_complete}
