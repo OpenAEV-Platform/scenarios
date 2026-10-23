@@ -16,6 +16,7 @@ from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
 from scenario_tools.domain.catalogue.intake import (
     NEW,
     IntakeRequest,
+    completed_facets,
     domain_refusals,
     intake_plan,
     intake_refusals,
@@ -256,6 +257,9 @@ def _new(
     payloads: Catalogue,
 ) -> IntakeResult:
     metadata_path = f"{request.entry}/scenario.yaml"
+    export, missing = completed_facets(export, request.facets, {}, export_path)
+    if missing:
+        return IntakeResult(request, missing)
     prepared = prepare_entry(
         export, request.external_id, data, path=export_path, start_at=metadata_path
     )
@@ -336,6 +340,12 @@ def _update(
             (_refused("SCH-008", stored_path, "", "the entry has no scenario.json to update"),),
         )
     stored, previous = source.read_json(stored_path)
+    held = previous.get("scenario_information") if isinstance(previous, dict) else None
+    export, missing = completed_facets(
+        export, request.facets, held if isinstance(held, dict) else {}, export_path
+    )
+    if missing:
+        return IntakeResult(request, missing)
     prepared = prepare_entry(
         export,
         request.external_id,

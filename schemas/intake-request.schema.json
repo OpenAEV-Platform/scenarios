@@ -56,6 +56,27 @@
       "minLength": 1,
       "maxLength": 200
     },
+    "severity": {
+      "description": "The scenario's severity, for an export that has none: it is written in the stored scenario, so the platform imports it, and in scenario.yaml.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "category": {
+      "description": "The scenario's category, for an export that has none, written as the severity is.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "main_focus": {
+      "description": "The scenario's main focus, for an export that has none, written as the severity is.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "issue": {
       "description": "The number of the issue the pull request closes.",
       "type": "integer",

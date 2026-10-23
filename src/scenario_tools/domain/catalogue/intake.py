@@ -41,6 +41,8 @@ class IntakeRequest:
     threat: Mapping[str, Any] = field(default_factory=dict)
     sources: tuple[Any, ...] = ()
     generated_by: str | None = None
+    # Catalogue facets for an export that has none, by the request's name of each.
+    facets: Mapping[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_document(cls, document: Mapping[str, Any]) -> "IntakeRequest":
@@ -54,6 +56,7 @@ class IntakeRequest:
             threat=document.get("threat", {}),
             sources=tuple(document.get("sources", ())),
             generated_by=document.get("generated_by"),
+            facets={name: document[name] for name in FACETS if name in document},
         )
 
     @property
@@ -67,6 +70,62 @@ class IntakeRequest:
         if self.generated_by is not None:
             given["generated_by"] = self.generated_by
         return given
+
+
+# The catalogue facets a request may give, each with the key of the export's information.
+FACETS = {
+    "severity": "scenario_severity",
+    "category": "scenario_category",
+    "main_focus": "scenario_main_focus",
+}
+_INFORMATION = "scenario_information"
+
+
+def _held(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def completed_facets(
+    export: object, given: Mapping[str, str], held: Mapping[str, object], path: str
+) -> tuple[Any, tuple[Finding, ...]]:
+    """``export``, a copy, with each catalogue facet its information lacks (absent, null or
+    blank) taken from the request, ``given``, or else from the entry's stored scenario, ``held``,
+    on an update; or nothing, and why, when a facet is given nowhere, or when the request gives
+    another one than the export. The export holds what the platform imports: a facet written
+    there reaches it and ``scenario.yaml`` alike. An export without its information is left to
+    its own checks."""
+    if not isinstance(export, Mapping):
+        return export, ()
+    information = export.get(_INFORMATION)
+    if not isinstance(information, Mapping):
+        return export, ()
+    filled = dict(information)
+    refused = []
+    for name, key in FACETS.items():
+        field = f"/{_INFORMATION}/{key}"
+        value, asked = information.get(key), given.get(name)
+        if _held(value):
+            if asked is not None and asked != value:
+                message = (
+                    f"the request gives another {name} than the export: leave it out of the "
+                    "request, or change it on the platform and export again"
+                )
+                refused.append(Finding("ITK-010", Severity.BLOCKING, path, field, message))
+            continue
+        fill = asked if asked is not None else held.get(key)
+        if not _held(fill):
+            message = (
+                f"the export has no {name}: give it in the request ({name}), or set it on the "
+                "platform and export again"
+            )
+            refused.append(Finding("ITK-010", Severity.BLOCKING, path, field, message))
+            continue
+        filled[key] = fill
+    if refused:
+        return None, tuple(refused)
+    if filled == information:
+        return export, ()
+    return {**export, _INFORMATION: filled}, ()
 
 
 def name_key(name: str) -> str:

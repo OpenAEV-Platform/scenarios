@@ -857,3 +857,47 @@ def test_a_new_entry_from_a_workflow_starts_as_chained_and_needing_ee() -> None:
     assert result.refusals == ()
     assert result.metadata is not None
     assert (result.metadata["type"], result.metadata["requires"]["edition"]) == ("chained", "EE")
+
+
+def _without_facets(export: Any) -> Any:
+    bare = copy.deepcopy(export)
+    for key in ("scenario_severity", "scenario_category", "scenario_main_focus"):
+        bare["scenario_information"][key] = None
+    return bare
+
+
+FACETS = {"severity": "high", "category": "attack-scenario", "main_focus": "endpoint-protection"}
+
+
+def test_a_new_entry_from_an_export_without_facets_takes_the_request_s() -> None:
+    result = _intake({**NEW, **FACETS}, export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    information = json.loads(result.scenario_json)["scenario_information"]
+    assert (information["scenario_severity"], information["scenario_category"]) == (
+        "high",
+        "attack-scenario",
+    )
+    assert result.metadata is not None
+    assert (result.metadata["severity"], result.metadata["main_focus"]) == (
+        "high",
+        "endpoint-protection",
+    )
+
+
+def test_a_new_entry_from_an_export_without_facets_and_a_request_without_is_refused() -> None:
+    result = _intake(NEW, export=_without_facets(EASM))
+
+    assert (result.scenario_json, result.metadata) == (None, None)
+    assert [(f.code, f.path, f.field) for f in result.refusals] == [
+        ("ITK-010", EXPORT, f"/scenario_information/{key}")
+        for key in ("scenario_severity", "scenario_category", "scenario_main_focus")
+    ]
+
+
+def test_an_update_from_an_export_without_facets_keeps_the_stored_ones() -> None:
+    result = _intake(UPDATE, _stored(), export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert not result.changed  # the stored facets, the same export otherwise: nothing to propose

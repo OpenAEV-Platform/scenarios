@@ -18,7 +18,9 @@ Run every command from the root of the checkout.
 - **A request**, a short YAML file: `mode: new` with the entry's `external_id` (a lower-case
   UUID, chosen once), `domain`, `slug`, `threat`, `sources` and the `issue`; or `mode: update`
   for a new version of an entry, whose `external_id`, `domain` and `slug` are the entry's, with
-  `rewrite: true` only when the scenario was renamed on the platform. Its fields are in
+  `rewrite: true` only when the scenario was renamed on the platform. For a scenario built
+  without a severity, category or main focus, the request gives them (`severity`, `category`,
+  `main_focus`), and intake writes them where the platform reads them. Its fields are in
   [`intake.md`](intake.md#the-request).
 - **A base checkout**, for an update: a separate worktree of the project's `main`, which
   `--previous-root` points at below, made and removed as
