@@ -185,3 +185,43 @@ def test_files_named_as_no_report_path_takes_them_are_still_reported(
 
     assert code == 0, document
     assert {f["path"] for f in document["findings"]} == {shown}
+
+
+def test_the_catalogue_read_is_the_one_given_a_link_and_its_parent_included(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    other = tmp_path / "other"
+    (other / "child").mkdir(parents=True)
+    shutil.copytree(payloads, other / "payloads")
+    work = tmp_path / "work"
+    (work / "payloads").mkdir(parents=True)  # empty: never the one meant
+    (work / "link").symlink_to(other / "child")
+
+    code, document = _check(
+        str(CHAINING), "--check", "--payloads", str(work / "link" / ".." / "payloads"),
+        "--rules", str(rules), "--external-id", CHAINED_ID,
+    )  # fmt: skip
+
+    assert code == 0, document
+    assert {f["message"] for f in document["findings"]} == {
+        "already there: process-discovery-ps 1.0.0"
+    }
+
+
+def test_an_input_refused_as_it_is_read_is_named_by_its_file_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads, rules = _released(tmp_path, monkeypatch), _rules(tmp_path)
+    export = tmp_path / "incoming" / "export.json"
+    export.parent.mkdir()
+    export.write_text("{not json")
+    monkeypatch.chdir(tmp_path)
+
+    code, document = _check(
+        "incoming/export.json", "--check", "--payloads", str(payloads), "--rules", str(rules),
+        "--external-id", CHAINED_ID,
+    )  # fmt: skip
+
+    assert code == 1
+    assert {f["path"] for f in document["findings"]} == {"export.json"}

@@ -1466,7 +1466,7 @@ def _intake_check(
     """``intake --check``: the verdicts on EXPORT's payloads, writing nothing and reading no git."""
     try:
         root = Path(os.path.realpath(rules))  # resolved once: the run holds what it names
-        catalogue = Path(os.path.normpath(payloads.absolute()))
+        catalogue = payloads.absolute()  # as given: a ".." after a link is the link's parent
     except OSError as error:  # a relative path, once the working directory is gone
         _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
 
@@ -1484,20 +1484,29 @@ def _intake_check(
                     f"the rules cannot be used: {name}.schema.json is missing"
                 )
         found = intake_check(
-            read_export(export),
-            None if claims is None else _claims_document(claims),
+            _read_as(export, read_export),
+            None if claims is None else _read_as(claims, _claims_document),
             export_path=_shown(export),  # by their names: no repository holds them
             claims_path="" if claims is None else _shown(claims),
             data=loader,
             schema=schema,
             payloads=catalogue_of(CatalogueDirectory(catalogue.parent, (catalogue.name,))),
             external_id=external_id,
-            previous=None if previous is None else _previous_scenario(previous),
+            previous=None if previous is None else _read_as(previous, _previous_scenario),
             previous_path=None if previous is None else _shown(previous),
         )
         return Report("intake", found)
 
     _emit(ctx, "intake", produce, None)
+
+
+def _read_as(path: Path, read: Callable[[Path], object]) -> object:
+    """What ``read`` reads from ``path``; a refusal names the file as every finding of the check
+    does, by its name."""
+    try:
+        return read(path)
+    except UnsafeInputError as error:
+        raise UnsafeInputError(error.code, error.message, _shown(path), error.field) from error
 
 
 def _shown(path: Path) -> str:
