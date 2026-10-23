@@ -276,3 +276,41 @@ def test_an_export_of_more_new_payloads_than_one_intake_writes_is_refused() -> N
     ]
     assert given == {}
     assert len(written) == 100
+
+
+def test_a_new_payload_takes_the_domains_its_contract_declares() -> None:
+    """An export holds a payload's domains on its contract, in the contract's own copy: the
+    version file carries them as the payload's, by name and colour, sorted."""
+    stored = copy.deepcopy(STORED)
+    for step in stored["scenario_workflow"]["workflow_steps"]:
+        contract = step["step_data"]["inject_injector_contract"]
+        copy_of = json.loads(contract["injector_contract_content"])
+        copy_of["domains"] = [
+            {"domain_color": "#FF0000", "domain_id": "x", "domain_name": "Network"},
+            {"domain_color": "#389CFF", "domain_id": "y", "domain_name": "Endpoint"},
+        ]
+        contract["injector_contract_content"] = json.dumps(copy_of)
+        contract["convertedContent"] = copy_of
+
+    _, given = verdicts(stored, _catalogue(), NONE, accepted=ANY)
+
+    (version,) = given.values()
+    assert version.document["payload_domains"] == [
+        {"domain_color": "#389CFF", "domain_name": "Endpoint"},
+        {"domain_color": "#FF0000", "domain_name": "Network"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "content", ["not json", json.dumps({"domains": "Endpoint"}), json.dumps({"domains": [5]})]
+)
+def test_a_contract_whose_copy_names_no_domain_gives_the_payload_none(content: str) -> None:
+    stored = copy.deepcopy(STORED)
+    for step in stored["scenario_workflow"]["workflow_steps"]:
+        contract = step["step_data"]["inject_injector_contract"]
+        contract["injector_contract_content"] = content
+        contract.pop("convertedContent")
+
+    _, given = verdicts(stored, _catalogue(), NONE, accepted=ANY)
+
+    assert all("payload_domains" not in version.document for version in given.values())

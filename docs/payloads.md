@@ -26,7 +26,8 @@ exports, cleaned:
   architecture, elevation, expectations and the security platforms each expects, arguments,
   prerequisites, cleanup, command and output parsers;
 - its techniques by their external IDs (`payload_attack_patterns`) and its domains
-  (`payload_domains`, name and colour), both sorted;
+  (`payload_domains`, name and colour), both sorted; a platform export holds a payload's domains
+  on its contract, so `intake` takes them from the contract's own copy;
 - the ID of this version (`payload_external_id`).
 
 A payload exported without a description is given its name as one when the scenario is
