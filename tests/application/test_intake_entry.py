@@ -939,3 +939,17 @@ def test_an_update_whose_request_changes_a_facet_writes_it_in_scenario_yaml_too(
     assert result.metadata["category"] == source.declared["category"]  # kept, as stored
     assert result.previous is not None
     assert "scenario.yaml" in result.previous
+
+
+def test_an_update_writes_a_facet_in_scenario_yaml_as_normalisation_stores_it() -> None:
+    scenario_id = EASM["scenario_information"]["scenario_id"]
+    request = {**UPDATE, "category": f"group-{scenario_id}"}  # an identifier normalisation maps
+
+    result = _intake(request, _stored(), export=_without_facets(EASM))
+
+    assert result.refusals == ()
+    assert result.scenario_json is not None
+    assert result.metadata is not None
+    stored = json.loads(result.scenario_json)["scenario_information"]["scenario_category"]
+    assert result.metadata["category"] == stored
+    assert scenario_id not in stored

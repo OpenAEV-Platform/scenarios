@@ -14,6 +14,7 @@ from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
 from scenario_tools.domain.catalogue.entry import SLUG_LIMIT, is_slug
 from scenario_tools.domain.catalogue.intake import (
+    FACETS,
     NEW,
     IntakeRequest,
     completed_facets,
@@ -381,7 +382,9 @@ def _update(
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
         # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
-        wanted = {**assigned.metadata, **request.facets}
+        information = assigned.stored.get(INFORMATION) or {}  # as normalised, then stored
+        given = {name: information.get(FACETS[name]) for name in request.facets}
+        wanted = {**assigned.metadata, **given}
         if wanted != declared:  # its references or its facets change: scenario.yaml too
             metadata = wanted
             previous_files["scenario.yaml"] = written.encode()
