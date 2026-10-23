@@ -22,7 +22,7 @@ from scenario_tools.domain.shared.payload_names import (
     version_key,
     versioned_name,
 )
-from scenario_tools.domain.shared.stored import STEP_DATA
+from scenario_tools.domain.shared.stored import INJECTS, STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.verification.payload_catalogue import Catalogue, is_slug
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
@@ -491,30 +491,52 @@ def named_at(stored: Mapping[str, Any], pointer: str) -> object:
 
 def export_renamed(export: object, names: Mapping[str, str]) -> object:
     """A copy of ``export`` in which every payload named by a key of ``names`` takes its value,
-    in injects and in the data of chaining steps alike: a claimed copy takes its name before
-    the export is normalised, so that what normalisation derives from a name follows it. A
-    payload without a description keeps the one normalisation gives it, its first name. Only
-    payloads are renamed, never an inject's arguments that happen to hold the same key."""
-    if isinstance(export, list):
-        return [export_renamed(item, names) for item in export]
+    in its injects and in the data of its chaining steps alike: a claimed copy takes its name
+    before the export is normalised, so that what normalisation derives from a name follows
+    it. A payload without a description keeps the one normalisation gives it, its first name.
+    Only the payloads of contracts are renamed: an inject's content, its arguments, is never
+    read nor rewritten."""
     if not isinstance(export, Mapping):
         return export
-    copied = {
-        key: _payload_renamed(value, names) if key == _PAYLOAD_KEY else export_renamed(value, names)
-        for key, value in export.items()
-    }
-    data = copied.get(STEP_DATA)
-    if isinstance(data, str):
-        try:
-            decoded = json.loads(data)
-        except ValueError:
-            return copied  # normalisation refuses it
-        copied[STEP_DATA] = json.dumps(
-            export_renamed(decoded, names), ensure_ascii=False, separators=(",", ":")
-        )
+    copied = dict(export)
+    injects = export.get(INJECTS)
+    if isinstance(injects, list):
+        copied[INJECTS] = [_inject_renamed(inject, names) for inject in injects]
+    workflow = export.get(WORKFLOW)
+    steps = workflow.get(STEPS) if isinstance(workflow, Mapping) else None
+    if isinstance(workflow, Mapping) and isinstance(steps, list):
+        copied[WORKFLOW] = {**workflow, STEPS: [_step_renamed(step, names) for step in steps]}
     return copied
 
 
+def _step_renamed(step: object, names: Mapping[str, str]) -> object:
+    """``step`` with the payload of its data renamed: data as an export holds it, JSON text,
+    or decoded, as a stored scenario holds it."""
+    data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
+    if not isinstance(step, Mapping) or data is None:
+        return step
+    if not isinstance(data, str):
+        return {**step, STEP_DATA: _inject_renamed(data, names)}
+    try:
+        decoded = json.loads(data)
+    except ValueError:
+        return step  # normalisation refuses it
+    text = json.dumps(_inject_renamed(decoded, names), ensure_ascii=False, separators=(",", ":"))
+    return {**step, STEP_DATA: text}
+
+
+def _inject_renamed(inject: object, names: Mapping[str, str]) -> object:
+    """``inject`` with its contract's payload renamed."""
+    contract = inject.get(_CONTRACT_KEY) if isinstance(inject, Mapping) else None
+    if not isinstance(inject, Mapping) or not isinstance(contract, Mapping):
+        return inject
+    payload = _payload_renamed(contract.get(_PAYLOAD_KEY), names)
+    if payload is contract.get(_PAYLOAD_KEY):
+        return inject
+    return {**inject, _CONTRACT_KEY: {**contract, _PAYLOAD_KEY: payload}}
+
+
+_CONTRACT_KEY = "inject_injector_contract"
 _PAYLOAD_KEY = "injector_contract_payload"
 
 

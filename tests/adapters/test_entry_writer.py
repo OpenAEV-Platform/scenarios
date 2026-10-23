@@ -1733,3 +1733,40 @@ def test_a_stop_as_a_directory_is_made_says_it_may_be_left_when_it_cannot_look(
     assert f"what was made at {ENTRY} cannot be told" in str(error.value)
     assert isinstance(error.value.__cause__, KeyboardInterrupt)
     assert (tmp_path / ENTRY).is_dir()
+
+
+def _open_descriptors() -> int:
+    return len(list(Path("/proc/self/fd").iterdir()))
+
+
+def test_a_file_added_then_replaced_by_another_once_removed_is_never_taken_back(
+    tmp_path: Path,
+) -> None:
+    directory = _entry(tmp_path)
+    added = directory / "1.1.0.json"
+
+    def run() -> None:
+        with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
+            added.unlink()
+            added.write_bytes(b"{}\n")  # another's, made once this run's is gone
+            raise RuntimeError("the plan cannot be written")
+
+    with pytest.raises(EnvironmentProblemError) as error:
+        run()
+
+    assert f"cannot take back {ENTRY}/1.1.0.json: another was put at its place" in str(error.value)
+    assert added.read_bytes() == b"{}\n"
+
+
+def test_a_file_added_leaves_no_descriptor_open_whatever_the_run_ends_with(
+    tmp_path: Path,
+) -> None:
+    _entry(tmp_path)
+    before = _open_descriptors()
+
+    with _adding(tmp_path, {"1.1.0.json": b"{}\n"}):
+        pass
+    with pytest.raises(KeyboardInterrupt), _adding(tmp_path, {"1.2.0.json": b"{}\n"}):
+        raise KeyboardInterrupt
+
+    assert _open_descriptors() == before

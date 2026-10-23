@@ -537,7 +537,7 @@ def test_a_new_version_the_catalogue_would_refuse_is_refused_and_not_given() -> 
     assert (result.versions, result.renames, result.changes) == ({}, {}, {})
 
 
-def _held_by(payload: dict[str, Any]) -> dict[str, Any]:
+def _held_by(payload: object) -> dict[str, Any]:
     """An inject or a step's data holding ``payload`` as its contract's."""
     return {"inject_injector_contract": {"injector_contract_payload": payload}}
 
@@ -571,26 +571,59 @@ def test_an_export_renamed_gives_each_copy_its_name_in_injects_and_step_data() -
 def test_a_renamed_copy_without_a_description_is_described_by_its_first_name(
     description: object,
 ) -> None:
-    export = [_held_by({"payload_name": "A", "payload_description": description})]
-
-    assert export_renamed(export, {"A": "A (2.0.0)"}) == [
-        _held_by({"payload_name": "A (2.0.0)", "payload_description": "A"})
-    ]
-
-
-def test_an_inject_s_arguments_holding_the_same_key_are_never_renamed() -> None:
-    inject = {
-        "inject_content": {"payload_name": "A"},
-        "inject_injector_contract": {"injector_contract_payload": "not a payload"},
+    export = {
+        "scenario_injects": [_held_by({"payload_name": "A", "payload_description": description})]
     }
 
-    assert export_renamed(inject, {"A": "B"}) == inject
+    assert export_renamed(export, {"A": "A (2.0.0)"}) == {
+        "scenario_injects": [_held_by({"payload_name": "A (2.0.0)", "payload_description": "A"})]
+    }
 
 
-def test_step_data_that_is_not_json_is_left_to_normalisation() -> None:
-    step = {"step_data": "{not json"}
+def test_an_inject_s_content_is_never_read_nor_rewritten() -> None:
+    content = {"payload_name": "A", "step_data": '{"a":1,"a":2}', "x": '{ "spaced": 1 }'}
+    inject = {**_held_by({"payload_name": "A"}), "inject_content": content}
+    step_inject = {**_held_by({"payload_name": "A"}), "inject_content": content}
+    export = {
+        "scenario_injects": [inject, {"inject_content": content}, "not an inject"],
+        "scenario_workflow": {
+            "workflow_steps": [
+                {"step_data": json.dumps(step_inject)},
+                {"step_data": step_inject},  # as a stored scenario holds it
+                {"step_id": "no data"},
+            ]
+        },
+    }
 
-    assert export_renamed(step, {"A": "B"}) == step
+    renamed_export: Any = export_renamed(export, {"A": "B"})
+
+    first, second, third = renamed_export["scenario_injects"]
+    assert first["inject_content"] == content
+    assert first["inject_injector_contract"]["injector_contract_payload"]["payload_name"] == "B"
+    assert (second, third) == ({"inject_content": content}, "not an inject")
+    text, stored, bare = renamed_export["scenario_workflow"]["workflow_steps"]
+    assert json.loads(text["step_data"])["inject_content"] == content
+    assert stored["step_data"]["inject_content"] == content
+    assert (
+        stored["step_data"]["inject_injector_contract"]["injector_contract_payload"]["payload_name"]
+        == "B"
+    )
+    assert bare == {"step_id": "no data"}
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        {"scenario_workflow": {"workflow_steps": [{"step_data": "{not json"}]}},
+        {"scenario_workflow": "not a workflow"},
+        {"scenario_injects": [_held_by("not a payload")]},
+        {"scenario_injects": [_held_by({"payload_name": "C"})]},
+        "not an export",
+    ],
+    ids=["step data not json", "no workflow", "payload no object", "another name", "no export"],
+)
+def test_what_names_no_claimed_copy_is_left_as_it_is(export: object) -> None:
+    assert export_renamed(export, {"A": "B"}) == export
 
 
 def test_the_name_at_a_pointer_is_the_payload_s() -> None:

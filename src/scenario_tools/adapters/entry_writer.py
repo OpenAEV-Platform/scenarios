@@ -566,6 +566,9 @@ class RepositoryWriter:
         self, entry: str, files: Mapping[str, bytes], previous: Mapping[str, bytes]
     ) -> Iterator[_WrittenEntry]:
         directory = self.opened(entry, make=False)
+        # Each file created is held open until the run ends, taken back or kept: no file
+        # another puts at its name meanwhile can then have its identity.
+        held: list[int] = []
         try:
             folder = self._root / entry
             written: dict[str, tuple[Identity, bytes]] = {}
@@ -574,7 +577,8 @@ class RepositoryWriter:
                 for name, data in files.items():
                     where = f"{entry}/{name}"
                     if name not in previous:  # where nothing is, never over another's
-                        created[name] = (create_in(directory, folder / name, data), data)
+                        made = create_in(directory, folder / name, data, keep=held)
+                        created[name] = (made, data)
                         continue
                     mine, left = _replace_checked(
                         directory, folder / name, where, previous[name], data
@@ -607,6 +611,8 @@ class RepositoryWriter:
                     raise EnvironmentProblemError("; ".join(said) + described(failure)) from failure
                 raise
         finally:
+            for descriptor in held:
+                os.close(descriptor)
             os.close(directory)
 
     @staticmethod

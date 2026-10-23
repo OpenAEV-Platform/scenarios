@@ -129,11 +129,15 @@ def write_all(descriptor: int, data: bytes) -> None:
         view = view[os.write(descriptor, view) :]
 
 
-def create_in(directory: int, path: Path, data: bytes) -> Identity:
+def create_in(
+    directory: int, path: Path, data: bytes, *, keep: list[int] | None = None
+) -> Identity:
     """Create ``path``'s name in ``directory`` with ``data``, only where nothing is, a link
     included, with mode 0644 whatever the umask; a file that cannot be written whole is taken
     back, never another put at its name, and one whose identity cannot be read is left, and
-    said. The identity of the file written is given; ``path`` names it in what is reported."""
+    said. The identity of the file written is given; ``path`` names it in what is reported.
+    With ``keep``, a descriptor of the file written is added to it, for the caller to close:
+    while it is open, no other file can take the identity of this one."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         descriptor = os.open(path.name, flags, 0o600, dir_fd=directory)
@@ -149,6 +153,8 @@ def create_in(directory: int, path: Path, data: bytes) -> Identity:
             write_all(descriptor, data)
             os.fchmod(descriptor, 0o644)
             os.fsync(descriptor)
+            if keep is not None:
+                keep.append(os.dup(descriptor))
         finally:
             os.close(descriptor)
     except BaseException as failure:  # an interruption too: the file goes, if it is known
