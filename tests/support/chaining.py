@@ -24,7 +24,7 @@ sources:
   title: 'MITRE ATT&CK T1057: Process Discovery'
 targets: []
 requires:
-  openaev: '>=3.261005.0'
+  openaev: '>=3.261024.0'
   edition: EE
   injectors:
   - openaev_implant

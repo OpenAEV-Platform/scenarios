@@ -187,7 +187,9 @@ that `intake` starts writes `type: chained` and `requires.edition: EE`, since ch
 Enterprise edition. `scenario-tools validate` blocks an entry whose type does not agree with its
 stored scenario, either way, and an entry whose stored scenario holds a workflow without
 `requires.edition: EE` (`SCH-013`); a time-based scenario may still require the Enterprise
-edition.
+edition. It also writes `requires.openaev` as at least `>=3.261024.0`, the first OpenAEV release
+whose import points each step's dependency at the step it creates, and `validate` blocks a
+scenario in chaining that allows an earlier release (`SCH-015`).
 
 A scenario in chaining can be prepared and checked, with `normalize`, `intake` and `validate`,
 but none enters the catalogue yet. The repository does not accept one until the platform's
