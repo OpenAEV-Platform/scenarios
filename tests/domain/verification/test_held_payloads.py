@@ -301,3 +301,49 @@ def test_an_embedded_payload_that_is_no_object_and_is_not_held_is_nothing_to_say
 )
 def test_a_workflow_of_another_shape_is_nothing_to_compare(scenario: dict[str, Any]) -> None:
     assert _found(scenario, {"c-1": HeldContract(payload("id"))}) == []
+
+
+PARSERS = [{"output_parser_mode": "STDOUT", "output_parser_type": "REGEX"}]
+
+
+def _with_parsers(content: str = "whoami", external_id: str = "ext-1") -> dict[str, Any]:
+    return {**payload(content, external_id), "payload_output_parsers": PARSERS}
+
+
+@pytest.mark.parametrize("held", [None, payload()], ids=["no payload", "no parsers"])
+def test_a_step_with_parsers_looks_past_a_contract_without_them_to_the_external_id(
+    held: Any,
+) -> None:
+    inject = stored(("c-1", _with_parsers()))["scenario_injects"][0]
+    contracts = {"c-1": HeldContract(held)}
+
+    assert _found(_in_steps(inject), contracts, {"ext-1": _with_parsers()}) == []
+    assert _found(_in_steps(inject), contracts, {"ext-1": _with_parsers("id")}) == [
+        (STEP_POINTER.format(0), OTHER_PAYLOAD.format(by="payload external ID"))
+    ]
+    assert _found(_in_steps(inject), contracts) == []  # the import creates it
+
+
+def test_a_step_with_parsers_uses_a_held_contract_that_has_parsers() -> None:
+    inject = stored(("c-1", _with_parsers()))["scenario_injects"][0]
+    contracts = {"c-1": HeldContract(_with_parsers("id"))}
+
+    assert _found(_in_steps(inject), contracts, {"ext-1": _with_parsers()}) == [
+        (STEP_POINTER.format(0), OTHER_PAYLOAD.format(by="contract ID"))
+    ]
+
+
+@pytest.mark.parametrize("parsers", [None, []], ids=["none", "empty"])
+def test_a_step_without_parsers_uses_the_held_contract(parsers: object) -> None:
+    item = {**payload(), "payload_output_parsers": parsers}
+    inject = stored(("c-1", item))["scenario_injects"][0]
+
+    assert _found(_in_steps(inject), {"c-1": HeldContract(None)}) == [
+        (STEP_POINTER.format(0), NO_PAYLOAD)
+    ]
+
+
+def test_an_inject_with_parsers_uses_the_held_contract_without_them() -> None:
+    assert _found(stored(("c-1", _with_parsers())), {"c-1": HeldContract(None)}) == [
+        (POINTER.format(0), NO_PAYLOAD)
+    ]

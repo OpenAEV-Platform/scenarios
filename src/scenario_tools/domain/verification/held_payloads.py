@@ -16,7 +16,7 @@ from typing import Any
 from scenario_tools.domain.catalogue.normalisation import decoded_step_data
 from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD, contracts_with_payloads
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.stored import steps_decoded
+from scenario_tools.domain.shared.stored import Origin, injects, steps_decoded
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
     embedded_payloads,
@@ -25,6 +25,7 @@ from scenario_tools.domain.verification.payload_hash import (
 
 CONTRACT_ID = "injector_contract_id"
 EXTERNAL_ID = "payload_external_id"
+OUTPUT_PARSERS = "payload_output_parsers"
 
 OTHER_PAYLOAD = (
     "the platform holds another payload under this {by}: importing would run it instead of the "
@@ -86,9 +87,11 @@ def reuse_findings(
         f"{pointer}/{CONTRACT}": contract
         for pointer, _, contract in contracts_with_payloads(stored)
     }
+    steps = {found.pointer for found in injects(stored) if found.origin is Origin.STEP}
     for embedded in embedded_payloads(stored):
         contract = contract_of[embedded.contract]  # each embedded payload sits in a contract
-        reused = _held(contract, embedded.payload, contracts, payloads)
+        in_step = embedded.contract.removesuffix(f"/{CONTRACT}") in steps
+        reused = _held(contract, embedded.payload, in_step, contracts, payloads)
         if reused is None:
             continue
         held, by = reused
@@ -114,20 +117,28 @@ def reuse_findings(
 def _held(
     contract: Mapping[str, Any],
     payload: object,
+    in_step: bool,
     contracts: Mapping[str, HeldContract],
     payloads: Mapping[str, object],
 ) -> tuple[HeldContract | object, str] | None:
     """What the import would reuse for ``payload``, in the order it looks: the contract under its
     contract ID, then a payload under its external ID. For a step whose payload has output
-    parsers, the import looks past a held contract whose payload has none: such a contract never
-    has the archive's hash, which counts the parsers, so it is reported before that."""
+    parsers, the import looks past a held contract whose payload has none, as it does."""
     contract_id = contract.get(CONTRACT_ID)
     if isinstance(contract_id, str) and contract_id in contracts:
-        return contracts[contract_id], "contract ID"
+        held = contracts[contract_id]
+        if not (in_step and _parses(payload) and not _parses(held.payload)):
+            return held, "contract ID"
     external_id = payload.get(EXTERNAL_ID) if isinstance(payload, Mapping) else None
     if isinstance(external_id, str) and external_id in payloads:
         return payloads[external_id], "payload external ID"
     return None
+
+
+def _parses(payload: object) -> bool:
+    """Whether ``payload`` has output parsers: a list that is not empty."""
+    parsers = payload.get(OUTPUT_PARSERS) if isinstance(payload, Mapping) else None
+    return isinstance(parsers, list) and bool(parsers)
 
 
 def _no_files(document: str) -> str | None:
