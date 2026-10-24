@@ -43,7 +43,7 @@ imports:
 
 # The tests run on every core (pytest-xdist); the timing tests stay out, run alone below.
 tests:
-	$(SHARED) uv run pytest -n auto -m "not timing" --cov --cov-report=term-missing
+	SCENARIOS_HYPOTHESIS_PROFILE=repository $(SHARED) uv run pytest -n auto -m "not timing" --cov --cov-report=term-missing
 
 # The domain layer must be fully covered (branches included), measured on the run above.
 coverage-domain: tests
@@ -82,8 +82,11 @@ workflows:
 MUTANTS ?=
 mutation:
 	@if find $(MUTATION_PATHS) -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -q .; then \
-		$(SHARED) uv run mutmut run $(addsuffix *,$(MUTANTS)) && \
-		survivors=$$(uv run mutmut results$(if $(MUTANTS), | { grep -F $(addprefix -e ,$(MUTANTS)) || true; })) && \
+		SCENARIOS_HYPOTHESIS_PROFILE=repository $(SHARED) uv run mutmut run $(foreach prefix,$(MUTANTS),'$(prefix)*') && \
+		survivors=$$(uv run mutmut results) && \
+		if [ -n "$(MUTANTS)" ]; then \
+			survivors=$$(printf '%s\n' "$$survivors" | grep -F $(foreach prefix,$(MUTANTS),-e '$(prefix)') || true); \
+		fi; \
 		if [ -n "$$survivors" ]; then echo "$$survivors"; echo "mutation: surviving mutants"; exit 1; fi; \
 	else \
 		echo "mutation: no policy or verification module yet, skipped"; \

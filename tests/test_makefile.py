@@ -192,6 +192,9 @@ def test_the_shares_of_the_mutation_in_ci_are_every_package_it_mutates_once() ->
 
     assert len(prefixes) == len(set(prefixes))
     assert set(prefixes) == {f"scenario_tools.domain.{name}." for name in _mutated_packages()}
+    # A module beside the packages would be mutated in no share.
+    domain = ROOT / "src" / "scenario_tools" / "domain"
+    assert sorted(path.name for path in domain.glob("*.py")) == ["__init__.py"]
 
 
 def test_the_required_check_passes_only_when_every_job_has() -> None:
