@@ -6,7 +6,7 @@
   ],
   "payload_cleanup_command": "dir=/var/tmp/openaev-created-art\n# Only the state this payload's run left: a directory of root's, holding the UID record it wrote.\n[ -e \"$dir\" ] || [ -L \"$dir\" ] || exit 0\nif ! { [ -d \"$dir\" ] && [ ! -L \"$dir\" ] && [ \"$(stat -c %u \"$dir\")\" = 0 ] \\\n    && [ -f \"$dir/uid\" ] && [ ! -L \"$dir/uid\" ] && [ \"$(stat -c %u:%a \"$dir/uid\")\" = 0:600 ]; }; then\n  echo \"$dir is not the state this payload leaves: nothing is removed, check it by hand\" >&2\n  exit 1\nfi\nuid=$(cat \"$dir/uid\")\nif [ \"$(id -u art 2>/dev/null)\" = \"$uid\" ]; then\n  userdel art || { echo \"the account art could not be removed: its state is kept in $dir\" >&2; exit 1; }\nfi\nrm -rf \"$dir\"\n",
   "payload_cleanup_executor": "bash",
-  "payload_description": "Create a local account named art with the password art, its home in a directory of the run's own, switch to it to run whoami, then remove both: an account named art that already exists, or anything already where the run keeps its state, is left as it is, and nothing is created.",
+  "payload_description": "Create a local account named art with the password art, its home in a directory of the run's own, switch to it to run whoami, then remove both: an account named art that already exists, or anything already where the run keeps its state, is left as it is, and nothing is created. Run it once at a time on an endpoint: the cleanup of a run that created nothing removes the account of another run still holding it.",
   "payload_domains": [
     {
       "domain_color": "#389CFF",
@@ -30,7 +30,7 @@
       "XDR"
     ]
   },
-  "payload_external_id": "5dbb6479-d9f8-5087-88bd-23e76609eb05",
+  "payload_external_id": "d8b64542-22c5-5b64-8828-f578fdf02b05",
   "payload_name": "Create local account (1.1.0)",
   "payload_platforms": [
     "Linux"
