@@ -1,0 +1,10 @@
+mode: new
+external_id: 7a2c4e61-8b3d-4f5a-9c1e-2b4d6f8a0c13
+domain: ransomware
+slug: akira
+threat:
+  ttps: [T1486]
+sources:
+  - url: https://attack.mitre.org/techniques/T1486/
+    tlp: "TLP:CLEAR"
+issue: 2

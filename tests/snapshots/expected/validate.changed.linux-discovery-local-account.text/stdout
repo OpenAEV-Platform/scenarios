@@ -1,0 +1,4 @@
+BLOCKING GEN-001 scenarios/techniques/linux-discovery-local-account/README.md: README.md is not the sheet scenario.yaml and scenario.json give: render it again with `scenario-tools render` rather than edit it
+INFO POL-007 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload/payload_elevation_required: this payload asks for elevated privileges: check why it needs them
+BLOCKING VER-001 scenarios/techniques/linux-discovery-local-account/scenario.yaml /version: this change needs a patch version (an inject's text changed): raise the version to 1.0.1 at least, and add its section on top of CHANGELOG.md
+validate: 2 blocking findings

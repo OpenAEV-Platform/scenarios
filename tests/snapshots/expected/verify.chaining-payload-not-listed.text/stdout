@@ -1,0 +1,3 @@
+BLOCKING VRF-008 7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip /scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload: the archive embeds the payload c3424b24-d49a-5bb5-aea3-e90d42048332, which the manifest does not list
+BLOCKING VRF-008 7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload: the archive embeds the payload c3424b24-d49a-5bb5-aea3-e90d42048332, which the manifest does not list
+verify: 2 blocking findings

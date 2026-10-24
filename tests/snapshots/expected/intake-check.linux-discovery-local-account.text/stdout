@@ -1,0 +1,3 @@
+INFO PAY-010 linux-discovery-local-account.zip /scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload: already there: create-local-account 1.0.0
+INFO PAY-010 linux-discovery-local-account.zip /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload: already there: process-discovery-ps 1.0.0
+intake: ok

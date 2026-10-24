@@ -1,0 +1,1 @@
+{"command": "check-title", "ok": false, "findings": [{"code": "TTL-001", "severity": "blocking", "path": "", "field": "", "message": "the prefix must be type(scope?)!?: with a type among feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert. Expected: type(scope?)!?: description (#issue)"}]}

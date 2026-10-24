@@ -1,0 +1,130 @@
+# Forbidden actions (POL-004): what a shared scenario must never do on an endpoint.
+#
+# A command is read in lower case, without the escapes and quotes a shell removes, then cut into
+# statements at ";", "&&", "||", "&" and line ends (a pipe stays inside its statement). An action
+# is a list of steps, each a regular expression found in order inside one statement, however far
+# apart. An action that removes a protection names, as `restore`, the steps of what restores it:
+# a statement of the payload's cleanup command must start with them, and the action is never
+# allowed in the cleanup command itself.
+actions:
+  - steps: ['\bvssadmin(\.exe)?\b', '\b(delete|resize)\b']
+    why: deletes shadow copies, which cannot be undone
+  - steps: ['\bwmic(\.exe)?\b', '\bshadowcopy\b', '\bdelete\b']
+    why: deletes shadow copies, which cannot be undone
+  - steps: ['\bwin32_shadowcopy\b', '\.delete\(|\|\s?(remove-ciminstance|remove-wmiobject)\b']
+    why: deletes shadow copies, which cannot be undone
+  - steps: ['\bwbadmin(\.exe)?\b', '\bdelete\b']
+    why: deletes backups, which cannot be undone
+  - steps: ['\bbcdedit(\.exe)?\b', '\b(recoveryenabled[\s:]+(no|off|false|0)|bootstatuspolicy[\s:]+ignoreallfailures)\b']
+    why: turns off system recovery
+    restore: ['bcdedit(\.exe)?\b', '\b(recoveryenabled[\s:]+(yes|on|true|1)|bootstatuspolicy[\s:]+displayallfailures)\b']
+  - steps: ['(?<![-\w])format(\.com|\.exe)?(?![-\w])', '\s[a-z]:']
+    why: formats a disk
+  - steps: ['\b(mkfs(\.\w{1,10})?|diskpart|format-volume|clear-disk|wipefs)\b']
+    why: formats or wipes a disk
+  - steps: ['\bcipher(\.exe)?\s/w']
+    why: wipes the free space of a disk
+  - steps: ['\b(shred|sdelete(64)?)\b']
+    why: destroys files beyond recovery
+  - steps: ['\bdd\b', '\bof=/dev/(?!null\b)']
+    why: overwrites a disk
+  - steps: ['\b(rm|del|erase|rd|rmdir|ri|remove-item)\b', '\s(/\*?|/(etc|bin|boot|usr|var|lib|lib64|sbin|opt|root)(/\*?)?|[a-z]:\\?\*?|[a-z]:\\(windows|program files|users)\\?\*?|~/?|\$\{?home\}?/?)(\s|$)']
+    why: deletes a whole drive, a system directory or a home directory
+  - steps: ['>{1,2}+\s*+/dev/(sd|hd|nvme|xvd|vd|mmcblk)']
+    why: overwrites a disk
+  - steps: ['\b(wevtutil(\.exe)?\s(cl|clear-log)|clear-eventlog|clear-winevent|remove-eventlog)\b']
+    why: clears event logs, which cannot be undone
+  - steps: ['\bfsutil(\.exe)?\s+usn\s+deletejournal\b']
+    why: deletes a file system journal, which cannot be undone
+  - steps: ['\bcipher(\.exe)?\s/e\b']
+    why: encrypts data
+  - steps: ['\bopenssl\s+enc\b(?!.{0,300}\s(-d|--decrypt)\b)']
+    why: encrypts data
+  - steps: ['\bgpg\b', '\s(-c|--symmetric|-e|--encrypt)\b']
+    why: encrypts data
+  - steps: ['\b(powershell|pwsh)(\.exe)?\b', '\s-e(c|nc|ncodedcommand)?\s+[a-z0-9+/=]{16}']
+    why: runs an encoded command, which a reviewer cannot read
+  - steps: ['\b(frombase64string|base64\s+(-d|--decode))\b']
+    why: decodes a command, which a reviewer cannot read
+  - steps: ['\b(set|add)-mppreference\b', '\s-disable\w{0,40}[\s:]+(\$true|1|true)\b']
+    why: turns off an antivirus protection
+    restore: ['set-mppreference\b', '\s-disable\w{0,40}[\s:]+(\$false|0|false)\b']
+  - steps: ['\b(set|add)-mppreference\b', '\s-exclusion\w{0,20}[\s:]']
+    why: excludes files from antivirus scanning
+    restore: ['remove-mppreference\b', '\s-exclusion\w{0,20}[\s:]']
+  - steps: ['\b(set|add)-mppreference\b', '\s-(mapsreporting[\s:]+0|puaprotection[\s:]+0|enablecontrolledfolderaccess[\s:]+disabled|submitsamplesconsent[\s:]+2)\b']
+    why: narrows an antivirus protection
+    restore: ['set-mppreference\b', '\s-(mapsreporting[\s:]+[12]|puaprotection[\s:]+1|enablecontrolledfolderaccess[\s:]+enabled|submitsamplesconsent[\s:]+[01])\b']
+  - steps: ['\bnetsh(\.exe)?\b', '\b(firewall|advfirewall)\b', '\bset\b', '\b(state\s+off|opmode\s+(mode=)?disable)\b']
+    why: turns off the firewall
+    restore: ['netsh(\.exe)?\b', '\b(firewall|advfirewall)\b', '\bset\b', '\b(state\s+on|opmode\s+(mode=)?enable)\b']
+  - steps: ['\bset-netfirewallprofile\b', '-enabled[\s:]+(\$?false|0)\b']
+    why: turns off the firewall
+    restore: ['set-netfirewallprofile\b', '-enabled[\s:]+(\$?true|1)\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\bwindefend\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bwindefend\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\bmpssvc\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bmpssvc\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\bwscsvc\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bwscsvc\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\bsense\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bsense\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\beventlog\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\beventlog\b']
+  - steps: ['\b(sc(\.exe)?(\s\\\\\S{1,255})?\s+(stop|config)|net(\.exe)?\s+stop|stop-service|set-service)\b', '\bwdnissvc\b']
+    why: stops a security service
+    restore: ['(sc(\.exe)?(\s\\\\\S{1,255})?\s+(start|config)|net(\.exe)?\s+start|start-service|set-service)\b', '\bwdnissvc\b']
+  - steps: ['\btaskkill(\.exe)?\b', '\bmsmpeng(\.exe)?\b']
+    why: stops a security service
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bfirewalld\b']
+    why: stops a security control
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bfirewalld\b']
+  - steps: ['\bservice\s+firewalld\s+stop\b']
+    why: stops a security control
+    restore: ['service\s+firewalld\s+start\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bauditd\b']
+    why: stops a security control
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bauditd\b']
+  - steps: ['\bservice\s+auditd\s+stop\b']
+    why: stops a security control
+    restore: ['service\s+auditd\s+start\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bapparmor\b']
+    why: stops a security control
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bapparmor\b']
+  - steps: ['\bservice\s+apparmor\s+stop\b']
+    why: stops a security control
+    restore: ['service\s+apparmor\s+start\b']
+  - steps: ['\b(systemctl|service)\b', '\s(stop|disable|mask)\b', '\bufw\b']
+    why: stops a security control
+    restore: ['(systemctl|service)\b', '\s(start|enable|unmask)\b', '\bufw\b']
+  - steps: ['\bservice\s+ufw\s+stop\b']
+    why: stops a security control
+    restore: ['service\s+ufw\s+start\b']
+  - steps: ['\b(auditctl\s+-e\s+0|setenforce\s+(0|permissive))\b']
+    why: turns off a security control
+    restore: ['(auditctl\s+-e\s+1|setenforce\s+(1|enforcing))\b']
+  - steps: ['\bufw\s+(--force\s+)?disable\b']
+    why: turns off the firewall
+    restore: ['ufw\s+(--force\s+)?enable\b']
+  - steps: ['\b(iptables|ip6tables)\b', '\s(-f|--flush)\b']
+    why: removes every firewall rule
+    restore: ['(iptables-restore|ip6tables-restore)\b']
+  - steps: ['\bnft\b', '\sflush\b', '\sruleset\b']
+    why: removes every firewall rule
+    restore: ['nft\b', '\s-f\b']
+  - steps: ['\bdism(\.exe)?\b', '/disable-feature\b', 'defender']
+    why: removes the antivirus
+  - steps: ['\breg(\.exe)?\s+add\b', '\bdisable(antispyware|antivirus|realtimemonitoring|behaviormonitoring)\b', '/d\s+1\b']
+    why: turns off an antivirus protection
+    restore: ['reg(\.exe)?\s+(delete|add)\b', '\bdisable(antispyware|antivirus|realtimemonitoring|behaviormonitoring)\b']
+  - steps: ['\becho\s+0\b', '>\s*/sys/fs/selinux/enforce\b']
+    why: turns off a security control
+    restore: ['echo\s+1\b', '>\s*/sys/fs/selinux/enforce\b']
+  - steps: ['\bget-service\b', '\b(windefend|mpssvc|wscsvc|sense|eventlog|wdnissvc)\b', '\|\s?(stop-service|set-service)\b']
+    why: stops a security service
+    restore: ['(get-service\b.{0,300}\|\s?)?start-service\b|(get-service\b.{0,300}\|\s?)?set-service\b']

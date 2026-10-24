@@ -1,0 +1,1 @@
+validate: without --previous-root, each entry is checked as a new one: its version is not compared with the base branch's

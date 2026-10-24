@@ -1,0 +1,2 @@
+BLOCKING VRF-008 manifest.json /payloads/1: fixture-command 1.0.0 is listed twice
+verify: 1 blocking finding

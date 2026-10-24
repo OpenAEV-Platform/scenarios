@@ -1,0 +1,24 @@
+{
+  "command_content": "echo fixture",
+  "command_executor": "sh",
+  "payload_attack_patterns": [
+    "T1059"
+  ],
+  "payload_description": "Prints a word, and does nothing else.",
+  "payload_domains": [
+    {
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "PREVENTION"
+  ],
+  "payload_external_id": "c3424b24-d49a-5bb5-aea3-e90d42048332",
+  "payload_name": "Fixture command",
+  "payload_platforms": [
+    "Linux"
+  ],
+  "payload_type": "Command"
+}

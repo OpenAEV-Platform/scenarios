@@ -1,0 +1,1 @@
+{"command": "verify", "ok": false, "findings": [{"code": "VRF-006", "severity": "blocking", "path": "notes.txt", "field": "", "message": "the manifest does not list it, and it would be published"}]}

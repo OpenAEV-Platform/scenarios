@@ -1,0 +1,46 @@
+{
+  "command_content": "net user #{guest_user} /active:yes\n",
+  "command_executor": "cmd",
+  "payload_arguments": [
+    {
+      "default_value": "guest",
+      "key": "guest_user",
+      "type": "text"
+    }
+  ],
+  "payload_attack_patterns": [
+    "T1078.001"
+  ],
+  "payload_cleanup_command": "net user #{guest_user} /active:no\n",
+  "payload_cleanup_executor": "cmd",
+  "payload_description": "The Adversaries can activate the default Guest user. The guest account is inactivated by default\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "8b8ecda8-7cfd-4b3e-9f22-f052c8119106",
+  "payload_name": "Activate Guest Account",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

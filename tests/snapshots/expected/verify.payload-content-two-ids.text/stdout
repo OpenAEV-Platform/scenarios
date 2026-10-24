@@ -1,0 +1,2 @@
+BLOCKING VRF-008 manifest.json /payloads/1: this content is listed under another ID in /payloads/0
+verify: 1 blocking finding

@@ -1,0 +1,2 @@
+BLOCKING VRF-006 unused-1.0.0.json: the manifest does not list it, and it would be published
+verify: 1 blocking finding

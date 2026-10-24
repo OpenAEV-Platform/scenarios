@@ -1,0 +1,142 @@
+# The keys and versions a scenario export may hold, as the platform's exporter writes them. A key
+# outside these lists may carry a behaviour no reviewer saw, so the export is refused rather than
+# the key dropped. A new export version, or a key the exporter adds, is a change to this file.
+export_versions: [1]
+workflow:
+  keys:
+    - workflow_version
+    - workflow_steps
+    - workflow_rate_limit_enabled
+    - workflow_max_attempts
+    - workflow_max_temporal_rate_seconds
+    - workflow_timeout_enabled
+    - workflow_timeout_seconds
+    - workflow_safe_mode_enabled
+    - workflow_scope_rules
+    - workflow_scope_variables
+    - workflow_standalone_conditions
+    # Added by the exporter next to the scope rules, outside its list of workflow keys; the
+    # scope checks refuse it unless it is empty.
+    - workflow_scope_rule_team_members
+step:
+  keys:
+    - step_id
+    - step_action_class
+    - step_output
+    - step_output_parser
+    - step_input
+    - step_data
+    - step_limit_execution
+    - step_condition_executed
+    - step_conditions
+condition:
+  keys:
+    - condition_id
+    - condition_key
+    - condition_key_types
+    - condition_type
+    - condition_mapping_type
+    - condition_value
+    - condition_name
+    - condition_description
+    - condition_parent_id
+    - condition_step_from_id
+    - condition_is_root
+  # Written by older exports; read no longer, so refused by name.
+  legacy:
+    - condition_key_type
+  # The types of condition a step may hold: a step waits for one step, or for none. Filters and
+  # their AND / OR groups keep their keys above and join this list once they are checked; a
+  # MAPPER is refused whatever this list says.
+  supported_types:
+    - DEPEND_ON
+    - AND
+    - OR
+    - EQ
+    - NEQ
+    - GT
+    - GTE
+    - LT
+    - LTE
+    - IN
+    - NIN
+    - IS_NULL
+    - IS_NOT_NULL
+scope_rule:
+  keys:
+    - workflow_scope_rule_selected_mode
+    - workflow_scope_rule_source
+    - workflow_scope_rule_value
+    - workflow_scope_rule_value_type
+    - workflow_scope_rule_value_label
+scope_variable:
+  keys:
+    - scope_variable_key
+    - scope_variable_type
+    - scope_variable_value
+    - scope_variable_description
+# The inject a step runs, as the exporter writes it in step_data: every key is classified
+# (checked against the platform's exporter of October 2026).
+step_data:
+  # Execution state, authorship and export times: removed when the step is stored.
+  removed:
+    - inject_date
+    - inject_created_at
+    - inject_updated_at
+    - inject_sent_at
+    - inject_status
+    - inject_collect_status
+    - inject_trigger_now_date
+    - inject_testable
+    - inject_users_number
+    - inject_communications
+    - inject_communications_number
+    - inject_communications_not_ack_number
+    - inject_expectations_drift_dismissed
+    - inject_authorisation
+    - inject_user
+    - inject_launched_by
+    - inject_scheduled_by
+    - listened
+    # Rebuilt by the platform's importer from the contract the step runs.
+    - inject_attack_patterns
+    - inject_kill_chain_phases
+  # Keys whose value must be one of these; an absent key counts as the first one. Targets,
+  # teams, documents and assets belong to where the scenario is installed.
+  must_equal:
+    inject_id: [null]
+    inject_scenario: [null]
+    inject_exercise: [null]
+    inject_depends_on: [[]]
+    inject_depends_duration: [null, 0]
+    inject_recurrence: [null]
+    inject_recurrence_start: [null]
+    inject_recurrence_end: [null]
+    inject_enabled: [true]
+    inject_expectations: [[]]
+    inject_secret_references: [[]]
+    inject_teams: [[]]
+    inject_documents: [[]]
+    inject_all_teams: [false]
+    inject_assets: [[]]
+    inject_asset_groups: [[]]
+  kept:
+    - inject_title
+    - inject_description
+    - inject_country
+    - inject_city
+    - inject_tags
+    - inject_content
+    - inject_injector_contract
+    - inject_contract_domains
+    - inject_injector
+    - inject_type
+  # Read by the platform when a step runs, never written by its exporter.
+  refused_by_name:
+    - _chaining_target
+  # The injectors a step may use: an endpoint implant that runs a command payload.
+  injectors:
+    - {type: openaev_implant, id: 49229430-b5b5-431f-ba5b-f36f599b0144}
+  # Keys of a step's inject content that name targets: they must be empty.
+  # Fields typed as assets in the contract are targets too; a target selector set to manual is.
+  content_target_keys: [targets, targets_assets, assets, asset_groups]

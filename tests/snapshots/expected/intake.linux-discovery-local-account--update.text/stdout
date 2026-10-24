@@ -1,0 +1,6 @@
+INFO PAY-010 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload: already there: process-discovery-ps 1.0.0
+INFO POL-008 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload/payload_external_id: a payload this scenario did not run before: review what it runs
+INFO PAY-010 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload: already there: create-local-account 1.0.0
+INFO POL-007 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload/payload_elevation_required: this payload asks for elevated privileges: check why it needs them
+INFO POL-008 scenarios/techniques/linux-discovery-local-account/scenario.json /scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload/payload_external_id: a payload this scenario did not run before: review what it runs
+intake: ok

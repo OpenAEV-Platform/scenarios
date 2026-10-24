@@ -1,0 +1,3 @@
+BLOCKING GEN-001 scenarios/techniques/easm/README.md: README.md is not the sheet scenario.yaml and scenario.json give: render it again with `scenario-tools render` rather than edit it
+BLOCKING VER-001 scenarios/techniques/easm/scenario.yaml /version: this change needs a patch version (its description changed): raise the version to 1.0.1 at least, and add its section on top of CHANGELOG.md
+validate: 2 blocking findings

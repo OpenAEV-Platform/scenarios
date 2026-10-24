@@ -1,0 +1,6 @@
+INFO SCH-007 scenarios/ransomware/akira/CHANGELOG.md: a starting section for this version: say what it holds before the pull request
+INFO SCH-007 scenarios/ransomware/akira/scenario.yaml /requires/edition: default CE: give EE if the scenario needs the Enterprise Edition
+INFO SCH-007 scenarios/ransomware/akira/scenario.yaml /requires/openaev: default: the platform version the built-in contracts were recorded on; give the oldest version the scenario works on
+INFO SCH-007 scenarios/ransomware/akira/scenario.yaml /status: default VERIFIED: review it before the pull request
+INFO SCH-007 scenarios/ransomware/akira/scenario.yaml /version: default 1.0.0: give this entry's version, the next one for a new version
+intake: ok

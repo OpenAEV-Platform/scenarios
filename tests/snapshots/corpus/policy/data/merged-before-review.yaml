@@ -1,0 +1,8 @@
+# Pull requests merged before reviews were required, each with why.
+#
+# A release lists, for each scenario, the pull request that last changed it and those who
+# approved it, and build refuses a scenario whose pull request has no approver. One merged
+# before the review rules were in place is admitted once it is listed here; each entry is
+# reviewed by the maintainers. A later change of the scenario goes through a reviewed pull
+# request, which then names its approvers.
+pull_requests: []

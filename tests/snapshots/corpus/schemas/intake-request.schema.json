@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/intake-request.schema.json",
+  "title": "OpenAEV scenario intake request",
+  "description": "What intake needs beside a platform export to add or update an entry. Threat and sources are checked fully as part of scenario.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "external_id",
+    "domain",
+    "slug",
+    "issue"
+  ],
+  "properties": {
+    "mode": {
+      "description": "new to add an entry, update to replace the scenario.json of an existing one.",
+      "enum": [
+        "new",
+        "update"
+      ]
+    },
+    "external_id": {
+      "description": "The entry's identifier: a new UUID in lower case for a new entry, the entry's own for an update.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "domain": {
+      "description": "The catalogue domain of the entry, one of policy/data/domains.yaml.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "slug": {
+      "description": "The entry's short name in its domain, in kebab-case.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "threat": {
+      "description": "For a new entry: the threat the scenario reproduces, as in scenario.yaml.",
+      "type": "object",
+      "maxProperties": 3
+    },
+    "sources": {
+      "description": "For a new entry: public sources about the threat, as in scenario.yaml.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object"
+      }
+    },
+    "generated_by": {
+      "description": "For a new entry: a short label of the tool or pipeline that generated the scenario, if any.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "severity": {
+      "description": "The scenario's severity, for an export that has none: it is written in the stored scenario, so the platform imports it, and in scenario.yaml.",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "category": {
+      "description": "The scenario's category, for an export that has none, written as the severity is.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "main_focus": {
+      "description": "The scenario's main focus, for an export that has none, written as the severity is.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "issue": {
+      "description": "The number of the issue the pull request closes.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "rewrite": {
+      "description": "For an update: true when the scenario was renamed on the platform.",
+      "type": "boolean"
+    },
+    "payloads": {
+      "description": "Hints about the payloads the export embeds. Intake checks every one; a hint never decides.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/payload_claim"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "new"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "threat",
+          "sources"
+        ],
+        "not": {
+          "required": [
+            "rewrite"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "update"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "threat"
+              ]
+            },
+            {
+              "required": [
+                "sources"
+              ]
+            },
+            {
+              "required": [
+                "generated_by"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "payload_claim": {
+      "description": "A hint about one payload the export embeds, by its name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "The payload's name as the export holds it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "based_on": {
+          "description": "The payload of the catalogue this one was made from.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payload"
+          ],
+          "properties": {
+            "payload": {
+              "description": "The slug of a payload of the catalogue.",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            },
+            "version": {
+              "description": "The version that was duplicated; the latest when absent.",
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+            }
+          }
+        },
+        "version": {
+          "description": "The version wanted for a new version of the payload; it must be higher than the highest the catalogue holds.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+        }
+      },
+      "if": {
+        "required": [
+          "version"
+        ]
+      },
+      "then": {
+        "required": [
+          "based_on"
+        ]
+      }
+    }
+  }
+}

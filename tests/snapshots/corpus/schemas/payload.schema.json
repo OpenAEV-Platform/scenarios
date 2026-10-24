@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/payload.schema.json",
+  "title": "OpenAEV catalogue payload version",
+  "description": "One frozen version of one payload of the catalogue: payloads/<payload>/<version>.json. The fields are the ones the canonical payload hash covers, under the names the platform exports them, plus the payload's ID for this version, its techniques by external ID and its domains. Identifiers of the instance, sources, statuses, authors, tags and dates are not stored; the domains are (payload_domains), outside the hash. A null or empty value is absent; false and 0 are kept. V1 holds Command payloads only; payloads that attach a file are not in the catalogue yet. The rules that need more than one file (name, ID, version order, immutability) are findings of validate-payloads, not schema rules.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/$defs/common"
+    },
+    {
+      "$ref": "#/$defs/command"
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536
+    },
+    "short_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "text_set": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/short_text"
+      }
+    },
+    "common": {
+      "type": "object",
+      "required": [
+        "payload_type",
+        "payload_name",
+        "payload_description",
+        "payload_platforms",
+        "payload_external_id",
+        "payload_attack_patterns"
+      ],
+      "properties": {
+        "payload_type": {
+          "description": "The payload's type. V1 holds Command payloads only; the other types (DnsResolution, NetworkTraffic, AiAttack) are added to this schema after V1, and Executable and FileDrop attach a file and are not in the catalogue yet.",
+          "enum": [
+            "Command"
+          ]
+        },
+        "payload_name": {
+          "description": "The payload's name as the platform shows it. The first version (1.0.0) carries the plain name; every other version ends with ' (<version>)', its own version. The version is part of the name, so of the hash.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "payload_description": {
+          "description": "What the payload does, in words.",
+          "$ref": "#/$defs/text"
+        },
+        "payload_external_id": {
+          "description": "The payload ID of this version: the ID derived from its hash, or the one policy/data/payload-ids.yaml agrees for it. It is not part of the hash.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9:._-]*$"
+        },
+        "payload_attack_patterns": {
+          "description": "The external IDs of the techniques the payload covers (for example T1057 or T1059.001), sorted, each once.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        },
+        "payload_platforms": {
+          "description": "The platforms the payload runs on, as the platform names them (Linux, Windows, MacOS), sorted, each once.",
+          "$ref": "#/$defs/text_set"
+        },
+        "payload_execution_arch": {
+          "description": "The architecture the payload runs on, or every one.",
+          "enum": [
+            "x86_64",
+            "arm64",
+            "ALL_ARCHITECTURES"
+          ]
+        },
+        "payload_elevation_required": {
+          "description": "Whether the payload needs elevated privileges to run.",
+          "type": "boolean"
+        },
+        "payload_expectations": {
+          "description": "What the platform expects of a run of the payload (prevention, detection), sorted, each once.",
+          "$ref": "#/$defs/text_set"
+        },
+        "payload_expected_security_platforms": {
+          "description": "From an expectation to the set of security platform types that should react.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 20,
+          "additionalProperties": {
+            "$ref": "#/$defs/text_set"
+          }
+        },
+        "payload_arguments": {
+          "description": "In order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "key"
+            ],
+            "properties": {
+              "type": {
+                "description": "The argument's type, as the platform names it (text, for instance).",
+                "$ref": "#/$defs/short_text"
+              },
+              "key": {
+                "description": "The name the commands give the argument, in #{<key>}.",
+                "$ref": "#/$defs/short_text"
+              },
+              "default_value": {
+                "description": "The value the argument takes when the inject gives none.",
+                "$ref": "#/$defs/text"
+              },
+              "description": {
+                "description": "What the argument is, in words.",
+                "$ref": "#/$defs/text"
+              },
+              "separator": {
+                "description": "What separates the values of an argument that holds several.",
+                "$ref": "#/$defs/short_text"
+              }
+            }
+          }
+        },
+        "payload_prerequisites": {
+          "description": "In order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "executor": {
+                "description": "The executor that runs the prerequisite's commands.",
+                "$ref": "#/$defs/short_text"
+              },
+              "get_command": {
+                "description": "The command that installs the prerequisite.",
+                "$ref": "#/$defs/text"
+              },
+              "check_command": {
+                "description": "The command that checks whether the prerequisite is there.",
+                "$ref": "#/$defs/text"
+              },
+              "description": {
+                "description": "What the prerequisite is, in words.",
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        },
+        "payload_cleanup_executor": {
+          "description": "The executor that runs the cleanup command.",
+          "$ref": "#/$defs/short_text"
+        },
+        "payload_cleanup_command": {
+          "description": "The command that undoes what the payload changed on the endpoint.",
+          "$ref": "#/$defs/text"
+        },
+        "payload_output_parsers": {
+          "description": "How the platform reads what the payload's command writes: each parser in order.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "output_parser_mode": {
+                "description": "Which output the parser reads (STDOUT, for instance).",
+                "$ref": "#/$defs/short_text"
+              },
+              "output_parser_type": {
+                "description": "How the parser reads it (REGEX, for instance).",
+                "$ref": "#/$defs/short_text"
+              },
+              "output_parser_contract_output_elements": {
+                "description": "The values the parser finds in the output, each in order.",
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "contract_output_element_key": {
+                      "description": "The key the value is found under.",
+                      "$ref": "#/$defs/short_text"
+                    },
+                    "contract_output_element_name": {
+                      "description": "The value's name, as the platform shows it.",
+                      "$ref": "#/$defs/short_text"
+                    },
+                    "contract_output_element_rule": {
+                      "description": "The rule that finds the value, a regular expression for a REGEX parser.",
+                      "$ref": "#/$defs/text"
+                    },
+                    "contract_output_element_type": {
+                      "description": "The value's type, as the platform names it (text, number, for instance).",
+                      "$ref": "#/$defs/short_text"
+                    },
+                    "contract_output_element_is_finding": {
+                      "description": "Whether the platform shows the value as a finding.",
+                      "type": "boolean"
+                    },
+                    "contract_output_element_regex_groups": {
+                      "description": "Which groups of the rule give the value's fields, each in order.",
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "regex_group_field": {
+                            "description": "The field of the value the group gives.",
+                            "$ref": "#/$defs/short_text"
+                          },
+                          "regex_group_index_values": {
+                            "description": "Which group of the rule, as $<number>.",
+                            "$ref": "#/$defs/short_text"
+                          }
+                        },
+                        "minProperties": 1
+                      }
+                    }
+                  },
+                  "minProperties": 1
+                }
+              }
+            },
+            "minProperties": 1
+          }
+        },
+        "payload_domains": {
+          "description": "The domains the platform shows for the payload (it holds them on the injector contract and projects them onto the payload in an export), sorted by name. Stored here for the collector; left out of the payload hash by name, so a change of domains is no change of content. The file as a whole stays frozen (its bytes are listed in the release).",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "domain_name",
+              "domain_color"
+            ],
+            "properties": {
+              "domain_name": {
+                "description": "The domain's name, as the platform shows it.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "domain_color": {
+                "description": "The colour the platform shows the domain in, as a hexadecimal RGB code.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20,
+                "pattern": "^#[0-9A-Fa-f]{3,8}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "payload_type",
+        "command_executor",
+        "command_content"
+      ],
+      "properties": {
+        "payload_type": {
+          "description": "A Command payload.",
+          "const": "Command"
+        },
+        "command_executor": {
+          "description": "The executor that runs the command (sh, bash, psh, cmd, for instance).",
+          "$ref": "#/$defs/short_text"
+        },
+        "command_content": {
+          "description": "The command the payload runs, with its arguments as #{<key>}.",
+          "$ref": "#/$defs/text"
+        }
+      }
+    }
+  }
+}

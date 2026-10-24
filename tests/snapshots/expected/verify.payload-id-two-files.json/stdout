@@ -1,0 +1,1 @@
+{"command": "verify", "ok": false, "findings": [{"code": "VRF-008", "severity": "blocking", "path": "manifest.json", "field": "/payloads/1", "message": "the payload ID c3424b24-d49a-5bb5-aea3-e90d42048332 is listed with another payload, version, hash or file than in /payloads/0"}]}

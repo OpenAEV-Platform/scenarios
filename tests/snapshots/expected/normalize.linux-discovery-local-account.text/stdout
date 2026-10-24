@@ -1,0 +1,8 @@
+INFO SCH-007 out/scenario.yaml /requires/edition: EE: the scenario holds a workflow, which only EE runs
+INFO SCH-007 out/scenario.yaml /requires/executors: injects run through an executor on Linux, MacOS: name the executors they need
+INFO SCH-007 out/scenario.yaml /requires/openaev: at least 3.261024.0: the scenario holds a workflow, whose step dependencies only that release or a later one imports; give the oldest version the scenario works on
+INFO SCH-007 out/scenario.yaml /sources: give at least one public source: {url: https://…, tlp: TLP:CLEAR}
+INFO SCH-007 out/scenario.yaml /status: default VERIFIED: review it before the pull request
+INFO SCH-007 out/scenario.yaml /threat: give at least one of threat.cves (CVE-YYYY-NNNN), threat.intrusion_sets (names) or threat.ttps (MITRE ATT&CK IDs such as T1595)
+INFO SCH-007 out/scenario.yaml /version: default 1.0.0: give this entry's version, the next one for a new version
+normalize: ok

