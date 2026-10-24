@@ -27,7 +27,7 @@ checks: lint format types imports tests coverage-domain security audit secrets s
 # A quicker loop while working, never a gate: the static checks, then the tests on every core,
 # without coverage and with fewer generated examples. check runs before every pull request.
 check-fast: lint format types imports
-	SCENARIOS_HYPOTHESIS_PROFILE=fast uv run pytest -n auto -m "not timing" -q
+	SCENARIOS_HYPOTHESIS_PROFILE=fast $(SHARED) uv run pytest -n auto -m "not timing" -q
 
 lint:
 	uv run ruff check .
@@ -84,9 +84,8 @@ mutation:
 	@if find $(MUTATION_PATHS) -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -q .; then \
 		SCENARIOS_HYPOTHESIS_PROFILE=repository $(SHARED) uv run mutmut run $(foreach prefix,$(MUTANTS),'$(prefix)*') && \
 		survivors=$$(uv run mutmut results) && \
-		if [ -n "$(MUTANTS)" ]; then \
-			survivors=$$(printf '%s\n' "$$survivors" | grep -F $(foreach prefix,$(MUTANTS),-e '$(prefix)') || true); \
-		fi; \
+		{ [ -z "$(MUTANTS)" ] || \
+			survivors=$$(printf '%s\n' "$$survivors" | grep -F $(foreach prefix,$(MUTANTS),-e '$(prefix)') || true); } && \
 		if [ -n "$$survivors" ]; then echo "$$survivors"; echo "mutation: surviving mutants"; exit 1; fi; \
 	else \
 		echo "mutation: no policy or verification module yet, skipped"; \

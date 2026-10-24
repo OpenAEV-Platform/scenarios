@@ -205,3 +205,40 @@ def test_the_required_check_passes_only_when_every_job_has() -> None:
     assert set(pipeline["needs"]) == set(workflow["jobs"]) - {"pipeline"}
     assert pipeline["if"] == "always()"
     assert '[ "$CHECKS" = success ] && [ "$MUTATION" = success ]' in pipeline["steps"][-1]["run"]
+
+
+_MUTMUT_STUB = """#!/bin/sh
+case "$*" in
+  "run mutmut run"*) exit {run};;
+  "run mutmut results") printf '%s' '{results}'; exit {status};;
+esac
+exit 0
+"""
+_SURVIVOR = "    scenario_tools.domain.policy.rules.x_f__mutmut_1: survived\n"
+_OTHER_SHARE = "    scenario_tools.domain.verification.versioning.x_f__mutmut_1: not checked\n"
+
+
+@pytest.mark.parametrize(
+    ("run", "results", "status", "share", "passes"),
+    [
+        (3, "", 0, "scenario_tools.domain.policy.", False),  # the run fails
+        (0, "", 4, "scenario_tools.domain.policy.", False),  # its results cannot be read
+        (0, _SURVIVOR, 0, "scenario_tools.domain.policy.", False),  # a mutant of the share lives
+        (0, _OTHER_SHARE, 0, "scenario_tools.domain.policy.", True),  # another share's, unrun
+        (0, _OTHER_SHARE, 0, "", False),  # every mutant judged: one was never run
+        (0, "", 0, "", True),
+    ],
+    ids=["run fails", "results fail", "survivor", "other share", "unchecked", "all killed"],
+)
+def test_the_mutation_fails_unless_every_mutant_it_judges_was_killed(
+    tmp_path: Path, run: int, results: str, status: int, share: str, passes: bool
+) -> None:
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "uv").write_text(_MUTMUT_STUB.format(run=run, results=results, status=status))
+    (stub / "uv").chmod(0o755)
+    path = f"{stub}{os.pathsep}{os.environ['PATH']}"
+
+    done = _make("mutation", f"MUTANTS={share}", path=path, lock=tmp_path / "lock", dry=False)
+
+    assert (done.returncode == 0) is passes, done.stdout + done.stderr
