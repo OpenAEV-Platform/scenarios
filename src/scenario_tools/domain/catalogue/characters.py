@@ -155,6 +155,25 @@ def _messages(
     if first_left is not None:
         wanted.append((_DECODINGS, first_left.start()))
     sources = _sources(views, wanted)
+    characters = _character_messages(found, sources, written, where, to_do)
+    if first_left is not None:
+        what = f"escape sequence encoded more than {_DECODINGS} levels deep"
+        first = sources[(_DECODINGS, first_left.start())][0]
+        count = 1 + sum(1 for _ in left_matches)
+        fewer = f"encode it fewer times, or {to_do}"
+        characters.append((first, what, _message(what, count, first, fewer)))
+    return [message for _, _, message in sorted(characters)]
+
+
+def _character_messages(
+    found: list[dict[str, Hidden]],
+    sources: dict[tuple[int, int], tuple[int, bool]],
+    written: Collection[str],
+    where: str,
+    to_do: str,
+) -> list[tuple[int, str, str]]:
+    """Each hidden character ``found`` in a view, once, with its first place in the source, its
+    label and its message; those labelled in ``written`` left out."""
     characters = []
     for label in dict.fromkeys(label for view in found for label in view if label not in written):
         seen = [(level, view[label]) for level, view in enumerate(found) if label in view]
@@ -163,13 +182,7 @@ def _messages(
         what = f"invisible or bidirectional control character {label}{place}"
         count = max(hidden.count for _, hidden in seen)
         characters.append((first, label, _message(what, count, first, to_do)))
-    if first_left is not None:
-        what = f"escape sequence encoded more than {_DECODINGS} levels deep"
-        first = sources[(_DECODINGS, first_left.start())][0]
-        count = 1 + sum(1 for _ in left_matches)
-        fewer = f"encode it fewer times, or {to_do}"
-        characters.append((first, what, _message(what, count, first, fewer)))
-    return [message for _, _, message in sorted(characters)]
+    return characters
 
 
 def _breaks(text: str) -> tuple[Hidden, ...]:
