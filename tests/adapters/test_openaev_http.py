@@ -1220,10 +1220,17 @@ def test_the_reading_stops_at_the_last_page(platform: Platform, body: bytes) -> 
     [
         _page([_payload(1), _payload(2)], True, 3),  # one payload of the count never seen
         _page([_payload(1), _payload(1)], True, 2),  # one seen twice, as a shifted page gives
+        _page([_payload(1), _payload(1), _payload(2)], True, 2),  # twice, yet the count agrees
         _page([], False, 1),  # no payload, and yet not the last page
         _page([{"payload_name": "no ID"}], True, 1),
     ],
-    ids=["one missed", "one seen twice", "empty page", "no payload ID"],
+    ids=[
+        "one missed",
+        "one seen twice",
+        "twice, the count agreeing",
+        "empty page",
+        "no payload ID",
+    ],
 )
 def test_a_reading_that_may_have_missed_a_payload_is_an_environment_problem(
     platform: Platform, body: bytes
