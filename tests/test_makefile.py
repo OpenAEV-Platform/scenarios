@@ -1,12 +1,15 @@
 """The local pipeline, which the tools CI runs as it is: what it checks of the catalogue itself."""
 
+import fnmatch
 import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).parents[1]
 MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -21,9 +24,9 @@ def _recipe(target: str) -> str:
 def test_the_pipeline_checks_every_sheet_of_the_catalogue() -> None:
     """A sheet left out of date by a change elsewhere, an exception granted say, is seen on every
     run, not only when its entry changes."""
-    (check,) = re.findall(r"^check:(.*)$", MAKEFILE, re.MULTILINE)
+    (checks,) = re.findall(r"^checks:(.*)$", MAKEFILE, re.MULTILINE)
 
-    assert "sheets" in check.split()
+    assert "sheets" in checks.split()
     assert "scenario-tools render --check -- {} +" in _recipe("sheets")
 
 
@@ -151,3 +154,91 @@ def test_the_timing_tests_wait_for_another_checkout_s_tests_to_end(tmp_path: Pat
 
     assert result.returncode == 0, result.stderr
     assert log.read_text().split() == ["released", "timing"]
+
+
+def test_check_runs_every_check_the_ci_jobs_run_and_the_mutation() -> None:
+    (check,) = re.findall(r"^check:(.*)$", MAKEFILE, re.MULTILINE)
+    (checks,) = re.findall(r"^checks:(.*)$", MAKEFILE, re.MULTILINE)
+
+    assert check.split() == ["checks", "mutation"]
+    assert set(checks.split()) == {
+        "lint", "format", "types", "imports", "tests", "coverage-domain", "security", "audit",
+        "secrets", "sheets", "workflows",
+    }  # fmt: skip
+
+
+def _mutated_packages() -> set[str]:
+    """The packages of the domain mutmut mutates: each that holds code and that no pattern of
+    do_not_mutate leaves out."""
+    settings = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    left_out = settings["tool"]["mutmut"]["do_not_mutate"]
+    domain = ROOT / "src" / "scenario_tools" / "domain"
+    return {
+        package.name
+        for package in domain.iterdir()
+        if package.is_dir()
+        and any(
+            not any(fnmatch.fnmatch(str(path), pattern) for pattern in left_out)
+            for path in package.rglob("*.py")
+            if path.name != "__init__.py"
+        )
+    }
+
+
+def test_the_shares_of_the_mutation_in_ci_are_every_package_it_mutates_once() -> None:
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "tools-ci.yml").read_text())
+    shares = workflow["jobs"]["mutation"]["strategy"]["matrix"]["include"]
+    prefixes = [prefix for share in shares for prefix in share["mutants"].split()]
+
+    assert len(prefixes) == len(set(prefixes))
+    assert set(prefixes) == {f"scenario_tools.domain.{name}." for name in _mutated_packages()}
+    # A module beside the packages would be mutated in no share.
+    domain = ROOT / "src" / "scenario_tools" / "domain"
+    assert sorted(path.name for path in domain.glob("*.py")) == ["__init__.py"]
+
+
+def test_the_required_check_passes_only_when_every_job_has() -> None:
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "tools-ci.yml").read_text())
+    pipeline = workflow["jobs"]["pipeline"]
+
+    assert pipeline["name"] == "Local pipeline (lint, types, contracts, tests, security)"
+    assert set(pipeline["needs"]) == set(workflow["jobs"]) - {"pipeline"}
+    assert pipeline["if"] == "always()"
+    assert '[ "$CHECKS" = success ] && [ "$MUTATION" = success ]' in pipeline["steps"][-1]["run"]
+
+
+_MUTMUT_STUB = """#!/bin/sh
+case "$*" in
+  "run mutmut run"*) exit {run};;
+  "run mutmut results") printf '%s' '{results}'; exit {status};;
+esac
+exit 0
+"""
+_SURVIVOR = "    scenario_tools.domain.policy.rules.x_f__mutmut_1: survived\n"
+_OTHER_SHARE = "    scenario_tools.domain.verification.versioning.x_f__mutmut_1: not checked\n"
+
+
+@pytest.mark.parametrize(
+    ("run", "results", "status", "share", "passes"),
+    [
+        (3, "", 0, "scenario_tools.domain.policy.", False),  # the run fails
+        (0, "", 4, "scenario_tools.domain.policy.", False),  # its results cannot be read
+        (0, _SURVIVOR, 0, "scenario_tools.domain.policy.", False),  # a mutant of the share lives
+        (0, _OTHER_SHARE, 0, "scenario_tools.domain.policy.", True),  # another share's, unrun
+        (0, _OTHER_SHARE, 0, "", False),  # every mutant judged: one was never run
+        (0, "", 0, "", True),
+    ],
+    ids=["run fails", "results fail", "survivor", "other share", "unchecked", "all killed"],
+)
+def test_the_mutation_fails_unless_every_mutant_it_judges_was_killed(
+    tmp_path: Path, run: int, results: str, status: int, share: str, passes: bool
+) -> None:
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "uv").write_text(_MUTMUT_STUB.format(run=run, results=results, status=status))
+    (stub / "uv").chmod(0o755)
+    path = f"{stub}{os.pathsep}{os.environ['PATH']}"
+
+    done = _make("mutation", f"MUTANTS={share}", path=path, lock=tmp_path / "lock", dry=False)
+
+    assert (done.returncode == 0) is passes, done.stdout + done.stderr

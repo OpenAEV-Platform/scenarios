@@ -14,8 +14,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # make check, in jobs that run side by side: the checks and the timing tests in one, the
+  # mutation in shares of its own. The last job, the check the default branch requires, passes
+  # only when every one of them has.
   checks:
-    name: Local pipeline (lint, types, contracts, tests, security)
+    name: Checks and timing tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -57,10 +60,62 @@ jobs:
           sudo install -m 755 actionlint /usr/local/bin/actionlint
           rm -f "$archive" actionlint
 
-      - name: Local pipeline
+      - name: Checks, then the timing tests
         env:
           # The internal terms the hygiene test refuses, never committed; required on main and on
           # pull requests from this repository, as a fork never receives a secret.
           SCENARIOS_HYGIENE_TERMS: ${{ secrets.HYGIENE_TERMS }}
           SCENARIOS_HYGIENE_REQUIRED: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: make check
+        run: |
+          make checks
+          make timing
+
+  mutation:
+    name: Mutation (${{ matrix.share }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every package make mutation mutates, in one share; tests/test_makefile.py checks it.
+        include:
+          - share: verification
+            mutants: scenario_tools.domain.verification.
+          - share: policy
+            mutants: scenario_tools.domain.policy.
+          - share: sheet and release
+            mutants: scenario_tools.domain.sheet. scenario_tools.domain.release.
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Mutation of the share
+        env:
+          MUTANTS: ${{ matrix.mutants }}
+        run: make mutation MUTANTS="$MUTANTS"
+
+  pipeline:
+    name: Local pipeline (lint, types, contracts, tests, security)
+    needs: [checks, mutation]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          MUTATION: ${{ needs.mutation.result }}
+        run: |
+          echo "checks: $CHECKS, mutation: $MUTATION"
+          [ "$CHECKS" = success ] && [ "$MUTATION" = success ]
