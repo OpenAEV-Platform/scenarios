@@ -32,6 +32,7 @@ from scenario_tools.adapters.data_files import (
     read_mapping,
     read_stored_scenario,
     scenario_from_archive,
+    scenario_from_export,
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
@@ -92,7 +93,7 @@ from scenario_tools.application.intake_entry import (
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
 from scenario_tools.application.run_fixtures import run_fixtures
-from scenario_tools.application.transfer import export_scenario, import_archive
+from scenario_tools.application.transfer import check_reuse, export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.application.validate_payloads import checked_payloads, validate_payloads
 from scenario_tools.application.verify_release import verify_release
@@ -1772,18 +1773,44 @@ def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
 @click.argument("archive", type=click.Path(path_type=Path))
 @click.pass_context
 def openaev_import(ctx: click.Context, archive: Path) -> None:
-    """Import ARCHIVE, once it passes the archive checks; each inject the platform skips is a
-    blocking finding."""
+    """Import ARCHIVE, once it passes the archive checks and nothing it embeds would be replaced
+    by another payload the platform holds under the same identifier (OAV-002, as openaev check
+    says); each inject the platform skips is a blocking finding."""
     archive = Path(os.path.normpath(archive.absolute()))  # without "..", links left as they are
 
     def produce() -> Report:
         platform = HttpOpenAEV.from_environment(os.environ)
         data = read_export_archive(archive)
-        return import_archive(platform, data, repository_path(str(archive), Path.cwd()))
+        path = repository_path(str(archive), Path.cwd())
+        return import_archive(platform, data, path, scenario_from_export(data, str(archive)))
 
     _emit(
         ctx,
         "openaev import",
+        produce,
+        hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
+    )
+
+
+@openaev.command(name="check")
+@click.argument("archive", type=click.Path(path_type=Path))
+@click.pass_context
+def openaev_check(ctx: click.Context, archive: Path) -> None:
+    """Say, without importing anything, what importing ARCHIVE would reuse on the platform with
+    another content: each payload the platform holds under the contract ID or the payload
+    external ID the archive gives, and whose canonical hash is not the archive's, is a blocking
+    finding (OAV-002). The platform is only read."""
+    archive = Path(os.path.normpath(archive.absolute()))
+
+    def produce() -> Report:
+        platform = HttpOpenAEV.from_environment(os.environ)
+        data = read_export_archive(archive)
+        path = repository_path(str(archive), Path.cwd())
+        return check_reuse(platform, scenario_from_export(data, str(archive)), path)
+
+    _emit(
+        ctx,
+        "openaev check",
         produce,
         hidden=usable_token(os.environ.get("OPENAEV_TOKEN")),
     )

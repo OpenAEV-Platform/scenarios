@@ -673,3 +673,119 @@ def test_import_needs_the_platform_in_the_environment(tmp_path: Path) -> None:
 
     assert result.exit_code == 3
     assert "OPENAEV_URL is not set" in result.stdout
+
+
+# What the platform would reuse
+
+
+CONTRACT = "6d0d3c1e-3f5a-4c9b-9d0e-1f2a3b4c5d6e"
+
+
+def _with_payload(command: str) -> dict[str, object]:
+    return {
+        "payload_type": "Command",
+        "payload_name": "who",
+        "command_executor": "sh",
+        "command_content": command,
+    }
+
+
+EMBEDDING = _archive(
+    (
+        "Who.json",
+        json.dumps(
+            {
+                "scenario_injects": [
+                    {
+                        "inject_injector_contract": {
+                            "injector_contract_id": CONTRACT,
+                            "injector_contract_payload": _with_payload("whoami"),
+                        }
+                    }
+                ]
+            }
+        ).encode(),
+    )
+)
+REUSED = (
+    "BLOCKING OAV-002 build/scenario.zip "
+    "/scenario_injects/0/inject_injector_contract/injector_contract_payload: the platform "
+    "holds another payload under this contract ID: importing would run it instead of the one "
+    "released; remove or rename it on the platform, then install again"
+)
+
+
+def _holding(platform: Platform, command: str) -> None:
+    contract = json.dumps({"injector_contract_payload": _with_payload(command)}).encode()
+    platform.routes.append(("GET", "/api/injector_contracts/", lambda _: (200, contract)))
+
+
+@pytest.mark.parametrize("command", ["check", "import"])
+def test_a_payload_the_platform_holds_otherwise_is_a_blocking_finding(
+    platform: Platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "scenario.zip").write_bytes(EMBEDDING)
+    _holding(platform, "id")
+
+    code, stdout, _ = _run(platform, "openaev", command, "build/scenario.zip")
+
+    assert code == 1
+    assert stdout.splitlines() == [REUSED, f"openaev {command}: 1 blocking finding"]
+    assert [(r.method, r.path) for r in platform.received] == [
+        ("GET", f"/api/injector_contracts/{CONTRACT}")
+    ]  # nothing is imported
+
+
+def test_the_check_of_an_archive_the_platform_would_not_change_is_ok(
+    platform: Platform, tmp_path: Path
+) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EMBEDDING)
+    _holding(platform, "whoami")
+
+    code, stdout, _ = _run(platform, "openaev", "check", str(archive))
+
+    assert (code, stdout.strip()) == (0, "openaev check: ok")
+    assert [r.method for r in platform.received] == ["GET"]
+
+
+def test_an_archive_the_platform_would_not_change_is_imported(
+    platform: Platform, tmp_path: Path
+) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EMBEDDING)
+    _holding(platform, "whoami")
+    platform.answer(200, b'{"missingActions": []}')
+
+    code, stdout, _ = _run(platform, "openaev", "import", str(archive))
+
+    assert (code, stdout.strip()) == (0, "openaev import: ok")
+    assert EMBEDDING in platform.received[-1].body
+
+
+def test_the_check_refuses_an_archive_that_fails_the_archive_checks(
+    platform: Platform, tmp_path: Path
+) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(b"not a zip")
+
+    code, stdout, _ = _run(platform, "--format", "json", "openaev", "check", str(archive))
+
+    assert code == 1
+    assert [finding["code"] for finding in json.loads(stdout)["findings"]] == ["IO-007"]
+    assert platform.received == []
+
+
+def test_the_check_never_shows_the_token(platform: Platform, tmp_path: Path) -> None:
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(EMBEDDING)
+    platform.routes.append(
+        ("GET", "/api/injector_contracts/", lambda _: (500, f'{{"message": "{TOKEN}"}}'.encode()))
+    )
+
+    code, stdout, stderr = _run(platform, "--format", "json", "openaev", "check", str(archive))
+
+    assert code == 3
+    assert TOKEN not in stdout + stderr

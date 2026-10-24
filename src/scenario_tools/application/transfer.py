@@ -2,12 +2,14 @@
 
 An export is checked before it is written, so that a refused archive never reaches the output.
 Each inject the platform skips at import is a blocking finding: a partial import never reads as
-a success.
+a success. Before an import, each payload the platform would reuse under an identifier the archive
+gives must have the archive's content: otherwise nothing is sent.
 """
 
 from collections.abc import Callable
 
 from scenario_tools.domain.shared.finding import Finding, Report, Severity
+from scenario_tools.domain.verification.held_payloads import identifiers, reuse_findings
 from scenario_tools.ports.errors import OutcomeUnknownError, UnsafeInputError
 from scenario_tools.ports.openaev import OpenAEV, SkippedInject
 
@@ -31,9 +33,27 @@ def export_scenario(
     return Report("openaev export")
 
 
-def import_archive(platform: OpenAEV, archive: bytes, path: str) -> Report:
-    """Import an archive already checked; ``path`` is the archive, relative to the repository
-    root."""
+def check_reuse(platform: OpenAEV, scenario: object, path: str) -> Report:
+    """What importing the archive at ``path``, holding ``scenario``, would reuse on the platform
+    with another content than the archive's: each such payload is a blocking finding. Nothing is
+    written on the platform."""
+    contract_ids, external_ids = identifiers(scenario)
+    contracts = {
+        contract_id: held
+        for contract_id in sorted(contract_ids)
+        if (held := platform.held_contract(contract_id)) is not None
+    }
+    payloads = platform.held_payloads(external_ids) if external_ids else {}
+    return Report("openaev check", reuse_findings(scenario, contracts, payloads, path))
+
+
+def import_archive(platform: OpenAEV, archive: bytes, path: str, scenario: object) -> Report:
+    """Import an archive already checked, holding ``scenario``, once nothing it embeds would be
+    replaced by another payload the platform holds under the same identifier; ``path`` is the
+    archive, relative to the repository root."""
+    reused = check_reuse(platform, scenario, path)
+    if not reused.ok:
+        return Report("openaev import", reused.findings)  # nothing is sent
     try:
         result = platform.import_scenario(archive)
     except OutcomeUnknownError as error:  # the archive may have been taken all the same
