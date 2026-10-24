@@ -4,7 +4,7 @@
 
 Version 1\.0\.0 · VERIFIED · chained
 
-List the running processes on the endpoint\, then\, once that step has run\, create a local account and remove it again\: a short chain from process discovery \(T1057\) to a local account \(T1078\.003\)\. The second step runs on Linux only\, and the agent must run as root\; an account named art that already exists is left as it is\.
+List the running processes on the endpoint\, then create a local account and remove it again\, the second step started once the platform has started the first\: a short chain from process discovery \(T1057\) to a local account \(T1078\.003\)\. The second step runs on Linux only\, and the agent must run as root\; an account named art that already exists is left as it is\.
 
 ## At a glance
 

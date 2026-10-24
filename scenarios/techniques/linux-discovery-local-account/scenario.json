@@ -8,7 +8,7 @@
     "scenario_category": "attack-scenario",
     "scenario_default_kill_chain": null,
     "scenario_dependencies": [],
-    "scenario_description": "On a Linux endpoint, list the running processes, then, once that step has run, create a local account and remove it again: a short chain from process discovery (T1057) to a local account (T1078.003).",
+    "scenario_description": "On a Linux endpoint, list the running processes, then create a local account and remove it again, the second step started once the platform has started the first: a short chain from process discovery (T1057) to a local account (T1078.003).",
     "scenario_documents": [],
     "scenario_id": "8c07587b-6c31-5c36-8cb4-7d1265475b5f",
     "scenario_lessons_anonymized": false,
