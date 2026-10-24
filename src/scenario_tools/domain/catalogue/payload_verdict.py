@@ -25,6 +25,7 @@ from scenario_tools.domain.shared.payload_names import (
 from scenario_tools.domain.shared.stored import injects_replaced
 from scenario_tools.domain.verification.payload_catalogue import Catalogue, is_slug
 from scenario_tools.domain.verification.payload_hash import (
+    EmbeddedPayload,
     UnhashablePayloadError,
     embedded_payloads,
     payload_hash,
@@ -438,12 +439,7 @@ def claimed_verdicts(
     }
     run = _Pass(catalogue, agreed, accepted, scenario, request, contracts)
     at = [i if claim.position is None else claim.position for i, claim in enumerate(claims)]
-    by_name: dict[str, int] = {}
-    for position, claim in enumerate(claims):
-        if claim.name in by_name:
-            run.refuse_claim(f"/payloads/{at[position]}/name", CLAIMED_TWICE)
-        else:
-            by_name[claim.name] = position
+    by_name = _claims_by_name(run, claims, at)
     named: set[int] = set()
     for embedded in embedded_payloads(stored):
         payload = embedded.payload
@@ -453,32 +449,56 @@ def claimed_verdicts(
         index: int | None = by_name.get(name) if isinstance(name, str) else None
         if index is not None:  # named, even by a payload the reference checks refuse
             named.add(index)
-        try:
-            digest = payload_hash(payload, embedded.attack_patterns, _ATTACHED.get).hex
-        except UnhashablePayloadError:
-            continue  # the reference checks say why
-        carried = catalogue.by_id.get(str(payload.get("payload_external_id")))
-        if carried is not None and carried.digest() != digest:
-            message = CARRIED_ID.format(payload=carried.slug, version=carried.version)
-            run.hint(embedded.pointer, message)
-        held = catalogue.by_hash.get(digest)
-        if held is not None:
-            run.info(embedded.pointer, f"already there: {held.slug} {held.version}")
-            if index is not None and claims[index].based_on is not None:
-                if run.contents.setdefault(at[index], digest) != digest:
-                    run.refuse_claim(f"/payloads/{at[index]}/name", TWO_CONTENTS)
-                run.hint(embedded.pointer, CLAIM_IGNORED)
-            continue
-        if index is not None and claims[index].based_on is not None:
-            run.claim(embedded, payload, digest, claims[index], at[index])
-        else:
-            run.unclaimed(embedded, payload, digest)
+        claim = None if index is None else (claims[index], at[index])
+        _judge(run, catalogue, embedded, payload, claim)
     for position in sorted(set(by_name.values()) - named):
         run.refuse_claim(f"/payloads/{at[position]}/name", CLAIM_NAMES_NOTHING)
     if len(run.versions) > NEW_PAYLOADS_LIMIT:
         too_many = (Finding("PAY-009", Severity.BLOCKING, scenario, "", TOO_MANY_NEW),)
         return Verdicts(too_many, {}, {}, {}, run.bases)
     return Verdicts(tuple(run.findings), run.versions, run.renames, run.changes, run.bases)
+
+
+def _claims_by_name(run: _Pass, claims: Sequence[Claim], at: list[int]) -> dict[str, int]:
+    """The position of the claim of each name; a name claimed twice is refused."""
+    by_name: dict[str, int] = {}
+    for position, claim in enumerate(claims):
+        if claim.name in by_name:
+            run.refuse_claim(f"/payloads/{at[position]}/name", CLAIMED_TWICE)
+        else:
+            by_name[claim.name] = position
+    return by_name
+
+
+def _judge(
+    run: _Pass,
+    catalogue: Catalogue,
+    embedded: EmbeddedPayload,
+    payload: Mapping[str, Any],
+    claim: tuple[Claim, int] | None,
+) -> None:
+    """The verdict on one embedded payload, with the claim that names it and its position."""
+    try:
+        digest = payload_hash(payload, embedded.attack_patterns, _ATTACHED.get).hex
+    except UnhashablePayloadError:
+        return  # the reference checks say why
+    carried = catalogue.by_id.get(str(payload.get("payload_external_id")))
+    if carried is not None and carried.digest() != digest:
+        message = CARRIED_ID.format(payload=carried.slug, version=carried.version)
+        run.hint(embedded.pointer, message)
+    based = claim if claim is not None and claim[0].based_on is not None else None
+    held = catalogue.by_hash.get(digest)
+    if held is not None:
+        run.info(embedded.pointer, f"already there: {held.slug} {held.version}")
+        if based is not None:
+            if run.contents.setdefault(based[1], digest) != digest:
+                run.refuse_claim(f"/payloads/{based[1]}/name", TWO_CONTENTS)
+            run.hint(embedded.pointer, CLAIM_IGNORED)
+        return
+    if based is not None:
+        run.claim(embedded, payload, digest, based[0], based[1])
+    else:
+        run.unclaimed(embedded, payload, digest)
 
 
 def names_held(stored: object, catalogue: Catalogue) -> frozenset[str]:
