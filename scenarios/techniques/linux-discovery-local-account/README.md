@@ -56,11 +56,12 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(033df011\-a278\-5034\-8d2d\-82f9209e41d8\)
+- Payload: Create local account \(1\.1\.0\) \(5dbb6479\-d9f8\-5087\-88bd\-23e76609eb05\)
 
 Command (bash):
 
 ```
+umask 077
 dir=/var/tmp/openaev-created-art
 id art >/dev/null 2>&1 && { echo "an account named art already exists: nothing is created" >&2; exit 1; }
 mkdir -m 711 "$dir" 2>/dev/null || { echo "$dir already exists: nothing is created" >&2; exit 1; }
@@ -76,8 +77,12 @@ Cleanup (bash):
 ```
 dir=/var/tmp/openaev-created-art
 # Only the state this payload's run left: a directory of root's, holding the UID record it wrote.
-[ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ] || exit 0
-[ -f "$dir/uid" ] && [ ! -L "$dir/uid" ] && [ "$(stat -c %u "$dir/uid")" = 0 ] || exit 0
+[ -e "$dir" ] || [ -L "$dir" ] || exit 0
+if ! { [ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ] \
+    && [ -f "$dir/uid" ] && [ ! -L "$dir/uid" ] && [ "$(stat -c %u:%a "$dir/uid")" = 0:600 ]; }; then
+  echo "$dir is not the state this payload leaves: nothing is removed, check it by hand" >&2
+  exit 1
+fi
 uid=$(cat "$dir/uid")
 if [ "$(id -u art 2>/dev/null)" = "$uid" ]; then
   userdel art || { echo "the account art could not be removed: its state is kept in $dir" >&2; exit 1; }
@@ -95,7 +100,7 @@ rm -rf "$dir"
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | 033df011\-a278\-5034\-8d2d\-82f9209e41d8 | Command | Linux |
+| Create local account \(1\.1\.0\) | 5dbb6479\-d9f8\-5087\-88bd\-23e76609eb05 | Command | Linux |
 | Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in
