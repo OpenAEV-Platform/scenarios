@@ -59,6 +59,26 @@ def _listing(path: Path) -> list[tuple[str, bool]]:
         raise EnvironmentProblemError(f"cannot read {path}: {error.strerror}") from error
 
 
+def _declared(path: str, metadata: Path) -> CatalogueEntry | None:
+    """What the entry at ``path`` declares in ``metadata``, or nothing where it declares neither
+    an identifier nor a name."""
+    try:
+        document = read_yaml_file(metadata)
+    except UnsafeInputError:  # its own check says why; what it declares is unknown
+        document = None
+    if not isinstance(document, dict):
+        return CatalogueEntry(path, "", "", False)
+    external_id, name = document.get("external_id"), document.get("name")
+    if isinstance(external_id, str) or isinstance(name, str):
+        # Its name counts even when its identifier does not: no other may take it.
+        return CatalogueEntry(
+            path,
+            external_id if isinstance(external_id, str) else "",
+            name if isinstance(name, str) else "",
+        )
+    return None
+
+
 def _holds_hidden(path: Path) -> bool:
     """Whether the directory ``path`` holds one of the tool's own hidden names: what a run cut
     short left in it."""
@@ -253,41 +273,30 @@ class RepositoryEntries:
             raise UnsafeInputError("IO-013", "a symbolic link, never followed", "scenarios")
         for domain, linked in _listing(base):
             # A name a finding cannot name is no entry: never read, as a hidden name.
-            unnamed = not reportable(f"scenarios/{domain}")
-            if (is_hidden_name(domain) or unnamed) and not self._strict:
+            hidden = is_hidden_name(domain) or not reportable(f"scenarios/{domain}")
+            if hidden and not self._strict:
                 continue
-            if linked or is_hidden_name(domain) or unnamed:  # never read: unknown, so taken
+            if linked or hidden:  # never read: unknown, so taken
                 found.append(CatalogueEntry(f"scenarios/{domain}", "", "", False))
                 continue
-            for slug, linked in _listing(base / domain):
-                path = f"scenarios/{domain}/{slug}"
-                unnamed = not reportable(path)
-                if (is_hidden_name(slug) or unnamed) and not self._strict:
-                    continue
-                if linked or is_hidden_name(slug) or unnamed:
-                    found.append(CatalogueEntry(path, "", "", False))
-                    continue
-                if self._strict and _holds_hidden(base / domain / slug):
-                    found.append(CatalogueEntry(path, "", "", False))  # cut short: unknown
-                    continue
-                metadata = base / domain / slug / "scenario.yaml"
-                if not _exists(metadata):
-                    continue  # not an entry, or one its own check reports as incomplete
-                try:
-                    document = read_yaml_file(metadata)
-                except UnsafeInputError:  # its own check says why; what it declares is unknown
-                    document = None
-                if not isinstance(document, dict):
-                    found.append(CatalogueEntry(path, "", "", False))
-                    continue
-                external_id, name = document.get("external_id"), document.get("name")
-                if isinstance(external_id, str) or isinstance(name, str):
-                    # Its name counts even when its identifier does not: no other may take it.
-                    found.append(
-                        CatalogueEntry(
-                            path,
-                            external_id if isinstance(external_id, str) else "",
-                            name if isinstance(name, str) else "",
-                        )
-                    )
+            for slug, linked_slug in _listing(base / domain):
+                entry = self._read_entry(
+                    base / domain / slug, f"scenarios/{domain}/{slug}", linked_slug
+                )
+                if entry is not None:
+                    found.append(entry)
         return tuple(found)
+
+    def _read_entry(self, directory: Path, path: str, linked: bool) -> CatalogueEntry | None:
+        """The entry at ``path``, or nothing where none is."""
+        hidden = is_hidden_name(directory.name) or not reportable(path)
+        if hidden and not self._strict:
+            return None
+        if linked or hidden:
+            return CatalogueEntry(path, "", "", False)
+        if self._strict and _holds_hidden(directory):
+            return CatalogueEntry(path, "", "", False)  # cut short: unknown
+        metadata = directory / "scenario.yaml"
+        if not _exists(metadata):
+            return None  # not an entry, or one its own check reports as incomplete
+        return _declared(path, metadata)
