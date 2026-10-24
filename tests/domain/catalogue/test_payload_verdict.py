@@ -10,7 +10,6 @@ import pytest
 
 from scenario_tools.domain.catalogue.payload_verdict import (
     BASE_NAME_TAKEN,
-    CLAIM_IGNORED,
     CLAIM_NAMES_NOTHING,
     GIVEN_TWICE,
     NO_SLUG,
