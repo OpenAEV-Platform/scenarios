@@ -468,52 +468,13 @@ class HttpOpenAEV:
         seen: set[object] = set()
         total: object = None
         for page in range(PAGES):
-            body = json.dumps({"page": page, "size": PAGE_SIZE}).encode()
-            data = self._call(
-                "POST",
-                "/api/payloads/search",
-                PAGE_LIMIT,
-                body=body,
-                content_type="application/json",
-            )
-            if len(data) > PAGE_LIMIT:
-                raise EnvironmentProblemError(
-                    f"a page of the platform's payloads is larger than {PAGE_LIMIT} bytes"
-                )
-            document = _answer(data, PAGE_LIMIT, "a page of payloads")
-            content = document.get("content") if isinstance(document, dict) else None
-            last = document.get("last") if isinstance(document, dict) else None
-            count = document.get("totalElements") if isinstance(document, dict) else None
-            if (
-                not isinstance(content, list)
-                or not isinstance(last, bool)
-                or not isinstance(count, int)
-                or isinstance(count, bool)
-            ):
-                raise EnvironmentProblemError(
-                    "the platform's page of payloads is not the expected JSON object"
-                )
+            content, last, count = _payload_page(self._payload_page_document(page))
             if page == 0:
                 total = count
             if count != total or (not content and not last):
                 raise EnvironmentProblemError(_PAYLOADS_CHANGED)
             for payload in content:
-                if not isinstance(payload, dict):
-                    raise EnvironmentProblemError(
-                        "the platform's page of payloads holds something else than a payload"
-                    )
-                payload_id = payload.get("payload_id")
-                if not isinstance(payload_id, str) or payload_id in seen:
-                    raise EnvironmentProblemError(_PAYLOADS_CHANGED)
-                seen.add(payload_id)
-                external_id = payload.get("payload_external_id")
-                if isinstance(external_id, str) and external_id in external_ids:
-                    if external_id in held:
-                        raise EnvironmentProblemError(
-                            "the platform holds two payloads under one external ID: the one the "
-                            "import would reuse cannot be told"
-                        )
-                    held[external_id] = payload
+                _hold(payload, external_ids, seen, held)
             if last:
                 if len(seen) != total:
                     raise EnvironmentProblemError(_PAYLOADS_CHANGED)
@@ -522,10 +483,67 @@ class HttpOpenAEV:
             f"the platform holds more than {PAGES * PAGE_SIZE} payloads: they cannot all be read"
         )
 
+    def _payload_page_document(self, page: int) -> object:
+        """The JSON document of one page of the platform's payloads, bounded."""
+        body = json.dumps({"page": page, "size": PAGE_SIZE}).encode()
+        data = self._call(
+            "POST",
+            "/api/payloads/search",
+            PAGE_LIMIT,
+            body=body,
+            content_type="application/json",
+        )
+        if len(data) > PAGE_LIMIT:
+            raise EnvironmentProblemError(
+                f"a page of the platform's payloads is larger than {PAGE_LIMIT} bytes"
+            )
+        return _answer(data, PAGE_LIMIT, "a page of payloads")
+
 
 _PAYLOADS_CHANGED = (
     "the platform's payloads changed while they were read, or a page lacks one: read them again"
 )
+
+
+def _payload_page(document: object) -> tuple[list[object], bool, int]:
+    """The payloads of a page, whether it is the last, and how many payloads the platform holds:
+    a page of another shape is the platform's fault."""
+    content = document.get("content") if isinstance(document, dict) else None
+    last = document.get("last") if isinstance(document, dict) else None
+    count = document.get("totalElements") if isinstance(document, dict) else None
+    if (
+        not isinstance(content, list)
+        or not isinstance(last, bool)
+        or not isinstance(count, int)
+        or isinstance(count, bool)
+    ):
+        raise EnvironmentProblemError(
+            "the platform's page of payloads is not the expected JSON object"
+        )
+    return content, last, count
+
+
+def _hold(
+    payload: object, external_ids: frozenset[str], seen: set[object], held: dict[str, object]
+) -> None:
+    """One payload of a page: seen once by its ID, and kept when it is the only one the platform
+    holds under an external ID asked for."""
+    if not isinstance(payload, dict):
+        raise EnvironmentProblemError(
+            "the platform's page of payloads holds something else than a payload"
+        )
+    payload_id = payload.get("payload_id")
+    if not isinstance(payload_id, str) or payload_id in seen:
+        raise EnvironmentProblemError(_PAYLOADS_CHANGED)
+    seen.add(payload_id)
+    external_id = payload.get("payload_external_id")
+    if isinstance(external_id, str) and external_id in external_ids:
+        if external_id in held:
+            raise EnvironmentProblemError(
+                "the platform holds two payloads under one external ID: the one the "
+                "import would reuse cannot be told"
+            )
+        held[external_id] = payload
 
 
 class _Missing(Exception):  # noqa: N818 - a signal between two methods, never raised further
