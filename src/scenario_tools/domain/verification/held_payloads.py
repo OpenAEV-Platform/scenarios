@@ -5,15 +5,18 @@ The platform's import reuses, without comparing it, a contract it holds under th
 inject names, or the contract of a payload it holds under the payload's external ID. Each such
 payload must have the content the archive embeds, by the canonical hash, or installing would run
 another payload than the one released. The techniques are taken from the archive on both sides:
-they do not change what runs.
+they do not change what runs. Any export is read, not only a release: a step's inject may be JSON
+text, as the platform exports it, and an embedded payload may not be hashable.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from scenario_tools.domain.catalogue.normalisation import ExportStructureError, decoded_step_data
 from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD, contracts_with_payloads
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
     embedded_payloads,
@@ -30,6 +33,14 @@ OTHER_PAYLOAD = (
 NO_PAYLOAD = (
     "the platform holds a contract without a payload under this contract ID: importing would "
     "use it instead of the payload released; remove it on the platform, then install again"
+)
+NOT_HASHED = (
+    "this payload cannot be hashed, and the platform holds one under its {by}: they cannot be "
+    "compared; make the archive's payload one that can be hashed, then install again"
+)
+UNREADABLE_STEP = (
+    "this step's inject is JSON text that cannot be read: what importing it would reuse on the "
+    "platform cannot be told"
 )
 UNCOMPARABLE = (
     "the platform holds a payload under this {by} that cannot be hashed: it cannot be told from "
@@ -48,7 +59,7 @@ def identifiers(stored: object) -> tuple[frozenset[str], frozenset[str]]:
     """The contract IDs and the payload external IDs the payloads ``stored`` embeds are given."""
     contracts: set[str] = set()
     external: set[str] = set()
-    for _, _, contract in contracts_with_payloads(stored):
+    for _, _, contract in contracts_with_payloads(_readable(stored)[0]):
         contract_id = contract.get(CONTRACT_ID)
         if isinstance(contract_id, str):
             contracts.add(contract_id)
@@ -69,21 +80,23 @@ def reuse_findings(
     embeds that the platform would replace on import: one it holds under the contract ID, in
     ``contracts``, or under the payload's external ID, in ``payloads``, with other content. A
     payload the platform holds under neither is created by the import: nothing to say."""
-    found: list[Finding] = []
+    stored, unreadable = _readable(stored)
+    found = [_finding(path, pointer, UNREADABLE_STEP) for pointer in unreadable]
     contract_of = {
         f"{pointer}/{CONTRACT}": contract
         for pointer, _, contract in contracts_with_payloads(stored)
     }
     for embedded in embedded_payloads(stored):
         contract = contract_of[embedded.contract]  # each embedded payload sits in a contract
-        try:
-            digest = payload_hash(embedded.payload, embedded.attack_patterns, _no_files).hex
-        except UnhashablePayloadError:
-            continue  # the archive's own checks refuse it
         reused = _held(contract, embedded.payload, contracts, payloads)
         if reused is None:
             continue
         held, by = reused
+        try:
+            digest = payload_hash(embedded.payload, embedded.attack_patterns, _no_files).hex
+        except UnhashablePayloadError:
+            found.append(_finding(path, embedded.pointer, NOT_HASHED.format(by=by)))
+            continue
         if isinstance(held, HeldContract) and held.payload is None:
             found.append(_finding(path, embedded.pointer, NO_PAYLOAD))
             continue
@@ -100,7 +113,7 @@ def reuse_findings(
 
 def _held(
     contract: Mapping[str, Any],
-    payload: Any,  # hashed already: a JSON object
+    payload: object,
     contracts: Mapping[str, HeldContract],
     payloads: Mapping[str, object],
 ) -> tuple[HeldContract | object, str] | None:
@@ -111,10 +124,34 @@ def _held(
     contract_id = contract.get(CONTRACT_ID)
     if isinstance(contract_id, str) and contract_id in contracts:
         return contracts[contract_id], "contract ID"
-    external_id = payload.get(EXTERNAL_ID)
+    external_id = payload.get(EXTERNAL_ID) if isinstance(payload, Mapping) else None
     if isinstance(external_id, str) and external_id in payloads:
         return payloads[external_id], "payload external ID"
     return None
+
+
+def _readable(stored: object) -> tuple[object, tuple[str, ...]]:
+    """``stored`` with each step's inject given as JSON text decoded, in new objects for the parts
+    that change, and the pointers of the steps whose text cannot be read."""
+    if not isinstance(stored, Mapping):
+        return stored, ()
+    workflow = stored.get(WORKFLOW)
+    if not isinstance(workflow, Mapping):
+        return stored, ()
+    steps = workflow.get(STEPS)
+    if not isinstance(steps, list):
+        return stored, ()
+    unreadable: list[str] = []
+    decoded: list[object] = []
+    for index, step in enumerate(steps):
+        data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
+        if isinstance(data, str):
+            try:
+                step = {**step, STEP_DATA: decoded_step_data(data)}
+            except ExportStructureError:
+                unreadable.append(f"/{WORKFLOW}/{STEPS}/{index}/{STEP_DATA}")
+        decoded.append(step)
+    return {**stored, WORKFLOW: {**workflow, STEPS: decoded}}, tuple(unreadable)
 
 
 def _no_files(document: str) -> str | None:

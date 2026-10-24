@@ -115,7 +115,10 @@ A release with any finding below is not used at all.
      contract the platform holds under each contract ID the archive gives, then every payload
      the platform holds, for those under a payload external ID the archive gives. It compares
      each with the payload the archive embeds there, by the canonical hash, the techniques taken
-     from the archive on both sides, and reports each one that differs (`OAV-002`).
+     from the archive on both sides, and reports each one that differs (`OAV-002`). It reads any
+     export, a step's inject given as JSON text included. A platform's answer it cannot read
+     stops it, importing nothing: before OpenAEV 3.261009.0, the platform could cut short the
+     answer for a contract whose payload has a collector type.
      `openaev import` runs the same check first. The token it uses must read every contract
      and every payload of the platform, as an administrator's does: what it cannot see, it
      cannot compare. What the platform gains between the check and the import is not seen

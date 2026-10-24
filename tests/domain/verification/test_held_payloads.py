@@ -2,6 +2,7 @@
 archive gives must have the content the archive embeds."""
 
 import copy
+import json
 from typing import Any
 
 import pytest
@@ -9,8 +10,10 @@ import pytest
 from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.verification.held_payloads import (
     NO_PAYLOAD,
+    NOT_HASHED,
     OTHER_PAYLOAD,
     UNCOMPARABLE,
+    UNREADABLE_STEP,
     HeldContract,
     identifiers,
     reuse_findings,
@@ -30,7 +33,7 @@ def payload(content: str = "whoami", external_id: str = "ext-1") -> dict[str, An
     }
 
 
-def stored(*contracts: tuple[str, dict[str, Any]]) -> dict[str, Any]:
+def stored(*contracts: tuple[str, object]) -> dict[str, Any]:
     return {
         "scenario_injects": [
             {
@@ -136,10 +139,24 @@ def test_a_held_payload_that_cannot_be_hashed_is_refused(
     ]
 
 
-def test_an_embedded_payload_that_cannot_be_hashed_is_left_to_the_archive_checks() -> None:
+def test_an_embedded_payload_that_cannot_be_hashed_and_is_held_is_refused() -> None:
     unhashable = {**payload(), "unknown": 1}
 
-    assert _found(stored(("c-1", unhashable)), payloads={"ext-1": payload("id")}) == []
+    assert _found(stored(("c-1", unhashable)), payloads={"ext-1": payload()}) == [
+        (POINTER.format(0), NOT_HASHED.format(by="payload external ID"))
+    ]
+
+
+def test_an_embedded_payload_that_cannot_be_hashed_and_is_not_held_is_nothing_to_say() -> None:
+    unhashable = {**payload(), "unknown": 1}
+
+    assert _found(stored(("c-1", unhashable)), {"c-2": HeldContract(payload())}) == []
+
+
+def test_an_embedded_payload_that_is_no_object_is_refused_when_its_contract_is_held() -> None:
+    assert _found(stored(("c-1", "x")), {"c-1": HeldContract(payload())}) == [
+        (POINTER.format(0), NOT_HASHED.format(by="contract ID"))
+    ]
 
 
 def test_each_payload_is_judged_at_its_own_pointer() -> None:
@@ -168,12 +185,14 @@ def test_a_payload_without_identifiers_is_nothing_to_compare() -> None:
     assert _found(scenario, {"c-1": HeldContract(payload("id"))}, {"ext-1": payload("id")}) == []
 
 
-def test_an_embedded_payload_with_a_file_is_left_to_the_archive_checks() -> None:
+def test_an_embedded_payload_with_a_file_cannot_be_compared() -> None:
     with_file = {**payload(), "payload_type": "Executable", "executable_file": "doc-1"}
     with_file.pop("command_executor")
     with_file.pop("command_content")
 
-    assert _found(stored(("c-1", with_file)), payloads={"ext-1": payload("id")}) == []
+    assert _found(stored(("c-1", with_file)), payloads={"ext-1": payload("id")}) == [
+        (POINTER.format(0), NOT_HASHED.format(by="payload external ID"))
+    ]
 
 
 def test_each_payload_is_judged_whatever_the_payloads_before_it_give() -> None:
@@ -198,6 +217,7 @@ def test_each_payload_is_judged_whatever_the_payloads_before_it_give() -> None:
     }
 
     assert _found(scenario, contracts) == [
+        (POINTER.format(0), NOT_HASHED.format(by="contract ID")),
         (POINTER.format(2), NO_PAYLOAD),
         (POINTER.format(3), UNCOMPARABLE.format(by="contract ID")),
         (POINTER.format(5), OTHER_PAYLOAD.format(by="contract ID")),
@@ -215,3 +235,69 @@ def test_a_held_payload_with_a_file_cannot_be_compared() -> None:
     assert _found(stored(("c-1", payload())), {"c-1": HeldContract(held)}) == [
         (POINTER.format(0), UNCOMPARABLE.format(by="contract ID"))
     ]
+
+
+STEP_POINTER = (
+    "/scenario_workflow/workflow_steps/{}/step_data"
+    "/inject_injector_contract/injector_contract_payload"
+)
+
+
+def _in_steps(*data: object) -> dict[str, Any]:
+    return {"scenario_workflow": {"workflow_steps": [{"step_data": item} for item in data]}}
+
+
+@pytest.mark.parametrize("as_text", [False, True], ids=["object", "JSON text"])
+def test_a_step_is_judged_whether_its_inject_is_an_object_or_json_text(as_text: bool) -> None:
+    inject = stored(("c-1", payload()))["scenario_injects"][0]
+    scenario = _in_steps(json.dumps(inject) if as_text else inject)
+
+    assert _found(scenario, {"c-1": HeldContract(payload("id"))}) == [
+        (STEP_POINTER.format(0), OTHER_PAYLOAD.format(by="contract ID"))
+    ]
+
+
+def test_the_identifiers_of_a_step_given_as_json_text_are_read() -> None:
+    inject = stored(("c-1", payload()))["scenario_injects"][0]
+
+    assert identifiers(_in_steps(json.dumps(inject))) == (
+        frozenset({"c-1"}),
+        frozenset({"ext-1"}),
+    )
+
+
+@pytest.mark.parametrize("text", ["{", '{"a": 1, "a": 2}'], ids=["not JSON", "a key twice"])
+def test_a_step_whose_json_text_cannot_be_read_is_refused(text: str) -> None:
+    inject = stored(("c-1", payload()))["scenario_injects"][0]
+
+    assert _found(_in_steps(text, json.dumps(inject)), {"c-1": HeldContract(payload("id"))}) == [
+        ("/scenario_workflow/workflow_steps/0/step_data", UNREADABLE_STEP),
+        (STEP_POINTER.format(1), OTHER_PAYLOAD.format(by="contract ID")),
+    ]
+
+
+def test_a_step_given_as_json_text_is_left_as_it_is() -> None:
+    inject = stored(("c-1", payload()))["scenario_injects"][0]
+    scenario = _in_steps(json.dumps(inject))
+    before = copy.deepcopy(scenario)
+
+    _found(scenario, {"c-1": HeldContract(payload("id"))})
+
+    assert scenario == before
+
+
+def test_an_embedded_payload_that_is_no_object_and_is_not_held_is_nothing_to_say() -> None:
+    assert _found(stored(("c-1", "x")), payloads={"ext-1": payload()}) == []
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        {"scenario_workflow": "x"},
+        {"scenario_workflow": {"workflow_steps": "x"}},
+        {"scenario_workflow": {"workflow_steps": ["x", {"step_data": None}]}},
+    ],
+    ids=["workflow", "steps", "a step"],
+)
+def test_a_workflow_of_another_shape_is_nothing_to_compare(scenario: dict[str, Any]) -> None:
+    assert _found(scenario, {"c-1": HeldContract(payload("id"))}) == []

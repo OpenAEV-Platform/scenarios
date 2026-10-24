@@ -789,3 +789,29 @@ def test_the_check_never_shows_the_token(platform: Platform, tmp_path: Path) -> 
 
     assert code == 3
     assert TOKEN not in stdout + stderr
+
+
+def test_a_step_exported_as_json_text_is_checked(platform: Platform, tmp_path: Path) -> None:
+    inject = {
+        "inject_injector_contract": {
+            "injector_contract_id": CONTRACT,
+            "injector_contract_payload": _with_payload("whoami"),
+        }
+    }
+    scenario = {"scenario_workflow": {"workflow_steps": [{"step_data": json.dumps(inject)}]}}
+    archive = tmp_path / "scenario.zip"
+    archive.write_bytes(_archive(("Who.json", json.dumps(scenario).encode())))
+    _holding(platform, "id")
+    platform.answer(200, b'{"missingActions": []}')
+
+    code, stdout, _ = _run(platform, "--format", "json", "openaev", "import", str(archive))
+
+    assert code == 1
+    assert [(f["code"], f["field"]) for f in json.loads(stdout)["findings"]] == [
+        (
+            "OAV-002",
+            "/scenario_workflow/workflow_steps/0/step_data/inject_injector_contract"
+            "/injector_contract_payload",
+        )
+    ]
+    assert [r.method for r in platform.received] == ["GET"]  # nothing is imported
