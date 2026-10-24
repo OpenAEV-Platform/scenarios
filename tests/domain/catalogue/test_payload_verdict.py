@@ -823,10 +823,8 @@ def test_a_claim_without_a_base_leaves_a_new_payload_new() -> None:
 
 
 def test_a_claim_without_a_base_on_a_payload_already_there_is_not_ignored() -> None:
-    result = claimed_verdicts(
-        STORED, _catalogue(PS), NONE, accepted=ANY, claims=(Claim("Process Discovery - ps"),)
-    )
+    name = "Process Discovery - ps (1.1.0)"
+    result = _claimed(_as_version("1.1.0", name), Claim(name))
 
-    assert result.versions == {}
-    assert CLAIM_IGNORED not in [f.message for f in result.findings]
-    assert "ITK-009" not in [f.code for f in result.findings]
+    assert _codes_of(result) == [("PAY-010", f"already there: {PS} 1.1.0")] * 2
+    assert (result.versions, result.renames, result.bases) == ({}, {}, {})
