@@ -20,3 +20,8 @@ class EnvironmentProblemError(Exception):
 
 class OutcomeUnknownError(EnvironmentProblemError):
     """A service failed after the request may have reached it: what it did is not known."""
+
+
+class UsageProblemError(Exception):
+    """A command was given what it cannot take, such as an identifier that contradicts the
+    entry's: the interface says so as a usage error (exit code 2), before anything is done."""

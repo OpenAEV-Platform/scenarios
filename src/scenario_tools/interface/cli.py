@@ -11,7 +11,6 @@ import dataclasses
 import datetime
 import json
 import os
-import re
 import signal
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
@@ -80,6 +79,7 @@ from scenario_tools.application.build_release import (
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.collect_approvals import collect_approvals
 from scenario_tools.application.diff_entry import diff_entry
+from scenario_tools.application.entry_external_id import CANONICAL_UUID, entry_external_id
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.fixture_expectations import (
     Expectation,
@@ -146,7 +146,11 @@ from scenario_tools.domain.verification.payload_references import (
 from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT
 from scenario_tools.domain.verification.release_output import payload_reference_findings
 from scenario_tools.ports.catalogue import CatalogueFiles
-from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from scenario_tools.ports.errors import (
+    EnvironmentProblemError,
+    UnsafeInputError,
+    UsageProblemError,
+)
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
 
@@ -259,30 +263,17 @@ def changed_entries_command(ctx: click.Context, checkout: Path, base: str) -> No
     click.echo("".join(f"{entry}\0" for entry in entries), nl=False)
 
 
-_CANONICAL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-
-
 def _entry_external_id(out: Path, given: str | None) -> str:
-    """The external ID of the entry: from its ``scenario.yaml`` when it exists, otherwise given
-    on the command line. Anything else is a usage error, raised before anything is written."""
-    declared = None
+    """The external ID of the entry, as ``entry_external_id`` chooses it from what its
+    ``scenario.yaml`` declares, if it has one, and what is given; a refusal is a usage error."""
     metadata = out / "scenario.yaml"
+    declared = None
     if metadata.exists() or metadata.is_symlink():
         declared = _declared_external_id(metadata)
-    if given is not None and declared is not None and given != declared:
-        raise click.UsageError(f"--external-id contradicts {metadata}: {shorten(repr(declared))}")
-    if given is None and declared is not None:
-        if not isinstance(declared, str) or not _CANONICAL_UUID.fullmatch(declared):
-            raise click.UsageError(
-                f"the external_id of {metadata} is not a UUID in lower case with hyphens: "
-                f"{shorten(repr(declared))}"
-            )
-        return declared
-    if given is None or not _CANONICAL_UUID.fullmatch(given):
-        raise click.UsageError(
-            "give --external-id, a UUID in lower case with hyphens, for a first preparation"
-        )
-    return given
+    try:
+        return entry_external_id(metadata, declared, given)
+    except UsageProblemError as error:
+        raise click.UsageError(str(error)) from None
 
 
 def _refused(error: Exception) -> Callable[[], Report]:
@@ -374,7 +365,7 @@ def _entry_archive(
     scenario, metadata = entry / "scenario.json", entry / "scenario.yaml"
     declared = read_yaml_file(metadata)
     external_id = declared.get("external_id") if isinstance(declared, dict) else None
-    if not isinstance(external_id, str) or not _CANONICAL_UUID.fullmatch(external_id):
+    if not isinstance(external_id, str) or not CANONICAL_UUID.fullmatch(external_id):
         message = "external_id must be a UUID in lower case with hyphens"
         where = repository_path(str(metadata), root)
         refused = Finding("SCH-001", Severity.BLOCKING, where, "/external_id", message)
@@ -1240,7 +1231,7 @@ def intake(
             raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
         if payloads is None or rules is None or external_id is None:
             raise click.UsageError("--check needs --payloads, --rules and --external-id")
-        if not _CANONICAL_UUID.fullmatch(external_id):
+        if not CANONICAL_UUID.fullmatch(external_id):
             raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
         _intake_check(ctx, export, payloads, rules, claims, external_id, previous)
         return
@@ -1613,7 +1604,7 @@ def openaev() -> None:
 @click.pass_context
 def openaev_export(ctx: click.Context, scenario_id: str, out: Path) -> None:
     """Write the export archive of SCENARIO_ID to OUT, once it passes the archive checks."""
-    if not _CANONICAL_UUID.fullmatch(scenario_id):
+    if not CANONICAL_UUID.fullmatch(scenario_id):
         raise click.UsageError("SCENARIO_ID must be a UUID in lower case with hyphens")
     out = Path(os.path.normpath(out.absolute()))  # without "..", links left as they are
 
