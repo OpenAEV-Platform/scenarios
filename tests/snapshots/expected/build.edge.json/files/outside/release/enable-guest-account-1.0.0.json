@@ -1,0 +1,39 @@
+{
+  "command_content": "sudo sysadminctl -guestAccount on",
+  "command_executor": "sh",
+  "payload_attack_patterns": [
+    "T1078.001"
+  ],
+  "payload_cleanup_command": "sudo sysadminctl -guestAccount off",
+  "payload_cleanup_executor": "sh",
+  "payload_description": "This test enables the guest account on macOS using sysadminctl utility.",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "3bf77fd9-fdda-41d2-82b0-0da5744a5f69",
+  "payload_name": "Enable Guest Account",
+  "payload_platforms": [
+    "MacOS"
+  ],
+  "payload_type": "Command"
+}

@@ -1,0 +1,2 @@
+BLOCKING VRF-008 fixture-command-1.0.0.json: its content has another hash than the one the manifest lists
+verify: 1 blocking finding

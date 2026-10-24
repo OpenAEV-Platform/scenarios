@@ -1,0 +1,4 @@
+Usage: scenario-tools validate [OPTIONS] ENTRIES...
+Try 'scenario-tools validate --help' for help.
+
+Error: Missing argument 'ENTRIES...'.

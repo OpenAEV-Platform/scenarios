@@ -1,0 +1,2 @@
+BLOCKING VRF-008 7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip /scenario_workflow/workflow_steps/0/step_data/inject_content/carried: the archive embeds a payload outside an inject's contract, where no reference can name it
+verify: 1 blocking finding

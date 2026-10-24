@@ -1,0 +1,30 @@
+schema_version: 1
+external_id: 5b9a2c84-3a0e-4c55-9a8c-2a6f0d7e1b42
+version: 1.0.0
+status: VERIFIED
+name: Tabletop Exercise - Akira Ransomware Crisis
+description: |-
+  The goal of this table-top exercise is to simulate a realistic Akira ransomware crisis impacting a CAC 40 company, focusing on the critical role of communication (especially via email) and clear role expectations throughout the incident lifecycle.
+  Specifically, it aims to:
+  - Test and evaluate the company's incident response plan in a simulated environment.
+  - Clarify roles and responsibilities of different teams (IT Security, Legal, Communications, Executive Leadership) during a ransomware attack.
+  - Assess the effectiveness of internal and external communication strategies in a high-pressure situation.
+  - Identify potential gaps and areas for improvement in the company's preparedness for a cyber incident.
+  - Practice decision-making processes under the constraints of a ransomware attack.
+  - Understand the legal, technical, and communication implications of such an event.
+  - Familiarize relevant personnel with the steps involved in responding to a ransomware attack, including initial detection, containment, investigation, recovery, and external communication.
+severity: high
+category: global-crisis
+main_focus: incident-response
+type: time-based
+platforms:
+- Generic
+threat: {}
+sources: []
+requires:
+  openaev: '>=3.261005.0'
+  edition: CE
+  injectors:
+  - openaev_email
+  executors: []
+payloads: []

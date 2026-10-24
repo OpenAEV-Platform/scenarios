@@ -33,6 +33,7 @@ dev = [
     "pytest-cov>=6.0",
     "pytest-xdist>=3.6",
     "ruff>=0.8",
+    "time-machine>=2.16",
     "types-jsonschema>=4.25",
     "types-pyyaml>=6.0.12",
     "zizmor>=1.30.1",

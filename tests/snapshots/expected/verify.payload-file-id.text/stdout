@@ -1,0 +1,2 @@
+BLOCKING VRF-008 fixture-command-1.0.0.json: it holds another ID than the openaev_id the manifest lists
+verify: 1 blocking finding

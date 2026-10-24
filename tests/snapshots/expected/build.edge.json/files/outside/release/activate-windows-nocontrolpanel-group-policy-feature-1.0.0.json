@@ -1,0 +1,39 @@
+{
+  "command_content": "reg add \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /t REG_DWORD /d 1 /f\n",
+  "command_executor": "cmd",
+  "payload_attack_patterns": [
+    "T1112"
+  ],
+  "payload_cleanup_command": "reg delete \"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /f >nul 2>&1\n",
+  "payload_cleanup_executor": "cmd",
+  "payload_description": "Modify the registry of the currently logged in user using reg.exe via cmd console to Disable Control Panel Group Policy. \nTake note that some Group Policy changes might require a restart to take effect.\nSee how Trojan abuses this technique- https://www.sophos.com/de-de/threat-center/threat-analyses/viruses-and-spyware/Troj~Krotten-N/detailed-analysis\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "0ca8c46c-3f2c-4c5f-9f32-cf6b68eeb3d7",
+  "payload_name": "Activate Windows NoControlPanel Group Policy Feature",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

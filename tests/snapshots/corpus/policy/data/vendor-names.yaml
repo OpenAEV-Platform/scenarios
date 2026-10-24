@@ -1,0 +1,31 @@
+# Security products a shared scenario never names (POL-006): a scenario emulates an attacker's
+# behaviour, whatever product defends the endpoint. Names are matched without case in a
+# payload's commands, name and output parsers, their words joined by a blank, an underscore, a
+# dot, a hyphen or nothing at all. The components built into an operating system are not listed:
+# emulation commands need them.
+
+# Names found anywhere, even fused to other letters (CrowdStrikeFalcon, crowdstrike's).
+products:
+  - crowdstrike
+  - sentinel one
+  - carbon black
+  - cylance
+  - sophos
+  - kaspersky
+  - trend micro
+  - mcafee
+  - trellix
+  - symantec
+  - bitdefender
+  - cortex xdr
+  - cybereason
+  - harfanglab
+  - qualys
+  - rapid7
+  - splunk
+  - defender for endpoint
+
+# Short names other words hold (reset, titanium): found only as whole words.
+words:
+  - eset
+  - tanium

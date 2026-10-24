@@ -1,0 +1,1 @@
+{"command": "diff", "ok": true, "findings": [{"code": "VER-014", "severity": "info", "path": "scenarios/techniques/easm", "field": "", "message": "nothing changed that needs a new version"}]}

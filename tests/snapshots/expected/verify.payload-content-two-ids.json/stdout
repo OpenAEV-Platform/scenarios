@@ -1,0 +1,1 @@
+{"command": "verify", "ok": false, "findings": [{"code": "VRF-008", "severity": "blocking", "path": "manifest.json", "field": "/payloads/1", "message": "this content is listed under another ID in /payloads/0"}]}

@@ -1,0 +1,2 @@
+BLOCKING VRF-009 manifest.json /channel: does not meet the manifest's schema: 'nightly' is not one of ['edge', 'stable']
+verify: 1 blocking finding

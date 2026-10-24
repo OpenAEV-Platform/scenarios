@@ -1,0 +1,4 @@
+Usage: scenario-tools [OPTIONS] COMMAND [ARGS]...
+Try 'scenario-tools --help' for help.
+
+Error: No such command 'nonexistent'.

@@ -1,0 +1,7 @@
+INFO SCH-007 out/scenario.yaml /requires/edition: default CE: give EE if the scenario needs the Enterprise Edition
+INFO SCH-007 out/scenario.yaml /requires/openaev: default: the platform version the built-in contracts were recorded on; give the oldest version the scenario works on
+INFO SCH-007 out/scenario.yaml /sources: give at least one public source: {url: https://…, tlp: TLP:CLEAR}
+INFO SCH-007 out/scenario.yaml /status: default VERIFIED: review it before the pull request
+INFO SCH-007 out/scenario.yaml /threat: give at least one of threat.cves (CVE-YYYY-NNNN), threat.intrusion_sets (names) or threat.ttps (MITRE ATT&CK IDs such as T1595)
+INFO SCH-007 out/scenario.yaml /version: default 1.0.0: give this entry's version, the next one for a new version
+normalize: ok

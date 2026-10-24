@@ -1,0 +1,39 @@
+{
+  "command_content": "REG ADD HKCU\\Software\\Classes\\CLSID\\{fdb00e52-a214-4aa1-8fba-4357bb0072ec}\\InProcServer32 /ve /t REG_SZ /d C:\\IDontExist.dll /f",
+  "command_executor": "cmd",
+  "payload_attack_patterns": [
+    "T1562.001"
+  ],
+  "payload_cleanup_command": "REG DELETE HKCU\\Software\\Classes\\CLSID\\{fdb00e52-a214-4aa1-8fba-4357bb0072ec}\\InProcServer32 /f",
+  "payload_cleanup_executor": "cmd",
+  "payload_description": "With administrative rights, an adversary can disable AMSI via registry value in HKCU\\Software\\Classes\\CLSID\\{fdb00e52-a214-4aa1-8fba-4357bb0072ec} by overriding the Microsoft Defender COM object for AMSI and points it to a DLL that does not exist.\nThis is currently being used by AsyncRAT and others. \nhttps://strontic.github.io/xcyclopedia/library/clsid_fdb00e52-a214-4aa1-8fba-4357bb0072ec.html\nhttps://securitynews.sonicwall.com/xmlpost/asyncrat-variant-includes-cryptostealer-capabilites/\n",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "ac0de8fe-a821-499c-ba22-591bbe84b06f",
+  "payload_name": "AMSI Bypass - Override AMSI via COM",
+  "payload_platforms": [
+    "Windows"
+  ],
+  "payload_type": "Command"
+}

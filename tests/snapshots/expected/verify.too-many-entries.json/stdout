@@ -1,0 +1,1 @@
+{"command": "verify", "ok": false, "findings": [{"code": "VRF-007", "severity": "blocking", "path": "5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip", "field": "", "message": "IO-009: more than 1000 entries"}]}

@@ -1,0 +1,2 @@
+BLOCKING VRF-008 5f0c7a3e-1b2d-4c8e-9f60-0a1b2c3d4e5f-1.0.0.zip /scenario_injects/0/inject_injector_contract/injector_contract_payload/payload_platforms: the payload c3424b24-d49a-5bb5-aea3-e90d42048332 cannot be hashed: /payload_platforms: a value of an unexpected type
+verify: 1 blocking finding
