@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from scenario_tools.interface.cli import main
+from tests.support.interface import patch_interface
 
 ROOT = Path(__file__).parents[2]
 EASM = "scenarios/techniques/easm"
@@ -76,7 +77,7 @@ def _run(
         def reviews_of(self, number: int) -> Any:
             return (reviews or {})[number]
 
-    monkeypatch.setattr("scenario_tools.interface.cli.HttpGitHub", GitHub)
+    patch_interface(monkeypatch, "HttpGitHub", GitHub)
     environment = {"GITHUB_TOKEN": TOKEN, **env}
     result = CliRunner(env=environment).invoke(
         main, ["--format", "json", "approvals", "--repo", str(root), "--out", str(out)]

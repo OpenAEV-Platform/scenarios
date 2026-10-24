@@ -26,10 +26,10 @@ from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
 from scenario_tools.application import intake_entry
 from scenario_tools.domain.shared.finding import Report
 from scenario_tools.domain.shared.title import check_pull_request_title
-from scenario_tools.interface import cli as cli_module
 from scenario_tools.interface.cli import main
 from scenario_tools.ports.errors import EnvironmentProblemError
 from tests.support.catalogue import write_catalogue
+from tests.support.interface import interface_attribute, patch_interface
 
 REPOSITORY = Path(__file__).parents[2]
 EASM = REPOSITORY / "tests" / "golden" / "exports" / "easm-scenario.zip"
@@ -478,7 +478,7 @@ def test_a_plan_that_appears_before_it_is_reserved_stops_the_run_unwritten(
         plan.write_text("another run's")
         return read_export(path)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.read_export", racing)
+    patch_interface(monkeypatch, "read_export", racing)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -640,7 +640,7 @@ def test_a_checkout_swapped_while_git_reads_it_is_seen_before_anything_is_writte
     checkout held, or what git said is of another."""
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    reading = getattr(cli_module, read)
+    reading = interface_attribute(read)
     swaps: list[str] = []
 
     def swapped(*arguments: Any) -> Any:
@@ -655,10 +655,10 @@ def test_a_checkout_swapped_while_git_reads_it_is_seen_before_anything_is_writte
     def never(*arguments: Any, **options: Any) -> Any:
         raise AssertionError("nothing is written once the checkout is another")
 
-    monkeypatch.setattr(f"scenario_tools.interface.cli.{read}", swapped)
-    monkeypatch.setattr("scenario_tools.interface.cli.write_intake", never)
+    patch_interface(monkeypatch, read, swapped)
+    patch_interface(monkeypatch, "write_intake", never)
     if read == "uncommitted":  # seen once the commit and the changes are read, before the rest
-        monkeypatch.setattr("scenario_tools.interface.cli.intake_entry", never)
+        patch_interface(monkeypatch, "intake_entry", never)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -790,13 +790,13 @@ def test_a_run_asked_to_stop_before_writing_writes_nothing(
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
     handlers = {name: signal.getsignal(name) for name in _STOPS}
-    real = getattr(cli_module, when)
+    real = interface_attribute(when)
 
     def stopped(path: Path) -> object:
         signal.pthread_kill(threading.get_ident(), stop)
         return real(path)
 
-    monkeypatch.setattr(f"scenario_tools.interface.cli.{when}", stopped)
+    patch_interface(monkeypatch, when, stopped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -872,7 +872,7 @@ def test_a_run_asked_to_stop_once_all_is_written_says_so(
             signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
         return reported(command, findings)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.Report", stopped)
+    patch_interface(monkeypatch, "Report", stopped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -902,7 +902,7 @@ def test_a_run_asked_to_stop_as_its_writing_ends_says_all_stands(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    held = cli_module._stop_requests_held
+    held = interface_attribute("_stop_requests_held")
 
     @contextlib.contextmanager
     def then_stopped() -> Iterator[None]:
@@ -910,7 +910,7 @@ def test_a_run_asked_to_stop_as_its_writing_ends_says_all_stands(
             yield
         signal.pthread_kill(threading.get_ident(), signal.SIGTERM)  # the moment the hold ends
 
-    monkeypatch.setattr("scenario_tools.interface.cli._stop_requests_held", then_stopped)
+    patch_interface(monkeypatch, "_stop_requests_held", then_stopped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -931,7 +931,7 @@ def test_a_stop_already_ignored_stays_ignored(
         signal.pthread_kill(threading.get_ident(), signal.SIGHUP)
         return real(path)
 
-    monkeypatch.setattr("scenario_tools.interface.cli.read_export", hung_up)
+    patch_interface(monkeypatch, "read_export", hung_up)
     try:
         result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
         assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
@@ -1070,7 +1070,7 @@ def test_a_commit_that_changes_while_the_checkout_is_checked_stops_the_run(
         _commit(root)  # another checks out or commits meanwhile
         return found
 
-    monkeypatch.setattr("scenario_tools.interface.cli.uncommitted", then_moved)
+    patch_interface(monkeypatch, "uncommitted", then_moved)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -1106,7 +1106,7 @@ def test_attributes_that_would_convert_the_files_to_write_are_refused_before_wri
     def never(*arguments: Any, **options: Any) -> Any:
         raise AssertionError("nothing may be written")
 
-    monkeypatch.setattr("scenario_tools.interface.cli.write_intake", never)
+    patch_interface(monkeypatch, "write_intake", never)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
