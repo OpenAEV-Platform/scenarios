@@ -108,12 +108,6 @@ class PayloadVersion:
     def domains(self) -> tuple[Mapping[str, Any], ...]:
         return tuple(self.document.get(_DOMAINS, ()))
 
-    def hash_input(self) -> tuple[dict[str, Any], tuple[str, ...]]:
-        """What the canonical payload hash reads of this version: its fields without its ID, its
-        techniques and its domains, and its techniques as a contract's."""
-        fields = {key: value for key, value in self.document.items() if key not in _NOT_HASHED}
-        return fields, self.techniques
-
     def digest(self) -> str:
         """The hash of this version, as ``content_digest`` gives it."""
         return content_digest(self.document)

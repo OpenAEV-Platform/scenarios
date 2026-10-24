@@ -573,17 +573,3 @@ def renamed(stored: Mapping[str, Any], renames: Mapping[str, str]) -> dict[str, 
             node = node[int(part)] if isinstance(node, list) else node[part]
         node["payload_name"] = name
     return document
-
-
-def verdicts(
-    stored: object,
-    catalogue: Catalogue,
-    agreed: AgreedIds,
-    *,
-    accepted: Callable[[object], bool],
-    scenario: str = _PATH,
-) -> tuple[tuple[Finding, ...], dict[str, PayloadVersion]]:
-    """The verdicts of ``claimed_verdicts`` without a claim: the findings and the version files
-    of the new payloads, by hash."""
-    found = claimed_verdicts(stored, catalogue, agreed, accepted=accepted, scenario=scenario)
-    return found.findings, found.versions
