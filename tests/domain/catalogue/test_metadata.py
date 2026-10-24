@@ -10,13 +10,16 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from scenario_tools.domain.catalogue.metadata import (
+    CHAINING_OPENAEV,
     DESCRIPTION_LIMIT,
     FACET_LIMIT,
     INJECTORS_LIMIT,
     NAME_LIMIT,
     STARTING_EDITION_OF_A_WORKFLOW,
+    STARTING_OPENAEV_OF_A_WORKFLOW,
     TYPE_WITHOUT_WORKFLOW,
     WORKFLOW_NEEDS_EE,
+    WORKFLOW_NEEDS_OPENAEV,
     WORKFLOW_NOT_CHAINED,
     ExportFacts,
     InjectFacts,
@@ -958,3 +961,77 @@ def test_the_starting_metadata_of_a_workflow_is_chained_and_needs_ee() -> None:
     assert _asks_nothing(findings, "/requires/edition")
     complete = {**metadata, **{k: _document()[k] for k in ("threat", "sources")}}
     assert cross_check(ScenarioMetadata.from_document(complete), CHAINED, PATH) == ()
+
+
+# The platform version a scenario in chaining needs
+
+
+def _sch_015(openaev: str, facts: ExportFacts = CHAINED) -> list[tuple[str, str]]:
+    metadata = _metadata(
+        type="chained", requires=replace(_metadata().requires, openaev=openaev, edition="EE")
+    )
+    return [(f.field, f.message) for f in cross_check(metadata, facts, PATH) if f.code == "SCH-015"]
+
+
+def test_the_chaining_minimum_is_the_first_release_after_the_step_dependency_fix() -> None:
+    assert CHAINING_OPENAEV == "3.261024.0"
+
+
+@pytest.mark.parametrize("operator", [">=", ">", "==", "~="])
+@pytest.mark.parametrize("version", ["3.261024.0", "3.261024", "3.261024.0.0", "3.261030.1", "4"])
+def test_a_workflow_needing_the_minimum_or_later_passes(operator: str, version: str) -> None:
+    assert _sch_015(f"{operator}{version}") == []
+
+
+@pytest.mark.parametrize("operator", [">=", ">", "==", "~="])
+@pytest.mark.parametrize(
+    "version", ["3.261023.9", "3.261023", "3.261005.0", "3", "2.999999.9", "03.0261023.9"]
+)
+def test_a_workflow_allowing_an_earlier_platform_is_refused(operator: str, version: str) -> None:
+    assert _sch_015(f"{operator}{version}") == [("/requires/openaev", WORKFLOW_NEEDS_OPENAEV)]
+
+
+def test_a_scenario_without_a_workflow_may_need_an_earlier_platform() -> None:
+    assert _sch_015(">=3.261005.0", FACTS) == []
+
+
+def test_the_refusal_names_the_minimum() -> None:
+    assert CHAINING_OPENAEV in WORKFLOW_NEEDS_OPENAEV
+
+
+def test_the_starting_metadata_of_a_workflow_needs_the_chaining_minimum() -> None:
+    metadata, findings = _start(CHAINED, platform_version="3.261005.0")
+
+    assert metadata["requires"]["openaev"] == f">={CHAINING_OPENAEV}"
+    assert _message(findings, "/requires/openaev") == STARTING_OPENAEV_OF_A_WORKFLOW
+
+
+def test_the_starting_metadata_of_a_workflow_recorded_later_keeps_its_version() -> None:
+    metadata, _ = _start(CHAINED, platform_version="3.261030.0")
+
+    assert metadata["requires"]["openaev"] == ">=3.261030.0"
+
+
+def test_the_starting_metadata_without_a_workflow_keeps_the_recorded_version() -> None:
+    metadata, findings = _start(FACTS, platform_version="3.261005.0")
+
+    assert metadata["requires"]["openaev"] == ">=3.261005.0"
+    assert _message(findings, "/requires/openaev") != STARTING_OPENAEV_OF_A_WORKFLOW
+
+
+@pytest.mark.parametrize(("digits", "refused"), [("1" * 5000, False), ("0" * 4999 + "3", True)])
+def test_a_version_of_any_length_is_compared(digits: str, refused: bool) -> None:
+    assert bool(_sch_015(f">={digits}")) is refused
+
+
+def test_a_strictly_higher_constraint_on_the_last_release_without_the_fix_is_refused() -> None:
+    assert _sch_015(">3.261023.9") == [("/requires/openaev", WORKFLOW_NEEDS_OPENAEV)]
+
+
+def test_a_workflow_recorded_on_an_earlier_platform_starts_with_no_sch_015() -> None:
+    metadata, _ = _start(CHAINED, platform_version="3.261005.0")
+    complete = {**metadata, **{k: _document()[k] for k in ("threat", "sources")}}
+
+    found = cross_check(ScenarioMetadata.from_document(complete), CHAINED, PATH)
+
+    assert [f.code for f in found if f.code == "SCH-015"] == []

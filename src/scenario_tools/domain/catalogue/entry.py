@@ -6,7 +6,12 @@ import re
 from collections.abc import Iterable, Mapping
 
 from scenario_tools.domain.catalogue.intake import name_key
-from scenario_tools.domain.catalogue.metadata import TRUNCATION_MARK, clean
+from scenario_tools.domain.catalogue.metadata import (
+    CONSTRAINT,
+    TRUNCATION_MARK,
+    clean,
+    release_key,
+)
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 
 REQUIRED = ("scenario.yaml", "scenario.json")
@@ -22,7 +27,6 @@ def is_slug(value: object) -> bool:
     )
 
 
-_CONSTRAINT = re.compile(r"(?:>=|>|==|~=)([0-9]+(?:\.[0-9]+)*)")
 _NAMED = 3  # entries a duplicate finding names, so that none is cut out of its message
 
 
@@ -93,22 +97,12 @@ def truncation_findings(description: str, path: str) -> tuple[Finding, ...]:
     return (Finding("SCH-009", Severity.BLOCKING, path, "/description", message),)
 
 
-def _version(text: str) -> tuple[tuple[int, str], ...]:
-    """A version that compares as its numbers do, however many digits they have: each as its
-    length and digits, leading zeros dropped; without the zeros ending it, so that 3.2 and
-    3.2.0 are equal."""
-    numbers = [part.lstrip("0") for part in text.split(".")]
-    while numbers and not numbers[-1]:
-        numbers.pop()
-    return tuple((len(number), number) for number in numbers)
-
-
 def version_findings(constraint: str, recorded: str, path: str) -> tuple[Finding, ...]:
     """An ``SCH-011`` information when the minimum of ``constraint``, a ``requires.openaev``
     the schema accepted, is older than ``recorded``, the version the built-in contracts were
     recorded on: they were checked on that version only."""
-    match = _CONSTRAINT.fullmatch(constraint)
-    if match is None or _version(match.group(1)) >= _version(recorded):
+    match = CONSTRAINT.fullmatch(constraint)
+    if match is None or release_key(match.group(1)) >= release_key(recorded):
         return ()
     message = (
         f"requires.openaev allows versions older than {recorded}, where the built-in contracts "

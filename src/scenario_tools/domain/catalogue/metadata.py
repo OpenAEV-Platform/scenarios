@@ -153,15 +153,56 @@ WORKFLOW_NEEDS_EE = (
 )
 
 
+# The first OpenAEV release whose import points each DEPEND_ON condition at the step it creates:
+# without it, a step that waits for another never starts. Releases are numbered by their date, and
+# the fix reached the main branch after the release of 23 October 2026.
+CHAINING_OPENAEV = "3.261024.0"
+WORKFLOW_NEEDS_OPENAEV = (
+    "scenario.json holds a workflow, whose step dependencies only OpenAEV "
+    f"{CHAINING_OPENAEV} or later imports: requires.openaev allows no earlier release"
+)
+STARTING_OPENAEV_OF_A_WORKFLOW = (
+    f"at least {CHAINING_OPENAEV}: the scenario holds a workflow, whose step dependencies only "
+    "that release or a later one imports; give the oldest version the scenario works on"
+)
+
+
+# A constraint of the schema on the platform version: an operator and the release it names, the
+# lowest release it allows, or just under it for ``>``.
+CONSTRAINT = re.compile(r"(?:>=|>|==|~=)([0-9]+(?:\.[0-9]+)*)")
+
+
+def release_key(text: str) -> tuple[tuple[int, str], ...]:
+    """A version that compares as its numbers do, however many digits they have: each as its
+    length and digits, leading zeros dropped; without the zeros ending it, so that 3.2 and
+    3.2.0 are equal."""
+    numbers = [part.lstrip("0") for part in text.split(".")]
+    while numbers and not numbers[-1]:
+        numbers.pop()
+    return tuple((len(number), number) for number in numbers)
+
+
+def _allows_earlier(constraint: str, release: str) -> bool:
+    """Whether ``constraint`` allows a release earlier than ``release``; one the schema does not
+    allow is left to the schema."""
+    match = CONSTRAINT.fullmatch(constraint)
+    return match is not None and release_key(match.group(1)) < release_key(release)
+
+
 def _chaining(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> Iterator[Finding]:
     """``SCH-013``: the type and the edition agree with whether the stored scenario has a
-    workflow, one finding per case."""
+    workflow, one finding per case. ``SCH-015``: a workflow allows no release earlier than
+    ``CHAINING_OPENAEV``."""
     if facts.holds_workflow and metadata.type != "chained":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/type", WORKFLOW_NOT_CHAINED)
     elif not facts.holds_workflow and metadata.type == "chained":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/type", TYPE_WITHOUT_WORKFLOW)
     if facts.holds_workflow and metadata.requires.edition != "EE":
         yield Finding("SCH-013", Severity.BLOCKING, path, "/requires/edition", WORKFLOW_NEEDS_EE)
+    if facts.holds_workflow and _allows_earlier(metadata.requires.openaev, CHAINING_OPENAEV):
+        yield Finding(
+            "SCH-015", Severity.BLOCKING, path, "/requires/openaev", WORKFLOW_NEEDS_OPENAEV
+        )
 
 
 def cross_check(metadata: ScenarioMetadata, facts: ExportFacts, path: str) -> tuple[Finding, ...]:
@@ -450,6 +491,9 @@ def starting_metadata(
     if facts.holds_workflow:  # said, and nothing to choose
         todo["/requires/edition"] = STARTING_EDITION_OF_A_WORKFLOW
         asking_nothing.add("/requires/edition")
+        todo["/requires/openaev"] = STARTING_OPENAEV_OF_A_WORKFLOW
+        if release_key(platform_version) < release_key(CHAINING_OPENAEV):
+            platform_version = CHAINING_OPENAEV
     injectors = sorted({inject.injector_type for inject in facts.injects})
     if len(injectors) > INJECTORS_LIMIT:
         todo["/requires/injectors"] = (
