@@ -25,12 +25,12 @@ from scenario_tools.domain.catalogue.structure import (
 )
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.domain.shared.workflow import holds_workflow
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 INJECTOR_TYPE_LIMIT = 64  # characters, as the schema says for requires.injectors
 _VERSION = re.compile(r"[0-9]+(?:\.[0-9]+)*")
-_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _IMPLANT = "openaev_implant"
 _FACETS = ("scenario_name", "scenario_severity", "scenario_category", "scenario_main_focus")
 
@@ -72,7 +72,7 @@ class BuiltinContracts:
             if not isinstance(item, Mapping):
                 raise fail("each contract must be a mapping")
             identifier = item.get("id")
-            if not isinstance(identifier, str) or not _UUID.fullmatch(identifier):
+            if not isinstance(identifier, str) or not CANONICAL_UUID.fullmatch(identifier):
                 raise fail(f"{identifier!r} is not a lowercase canonical UUID")
             if identifier in contracts:
                 raise fail(f"{identifier} is recorded twice")

@@ -42,6 +42,7 @@ from scenario_tools.domain.catalogue.identifiers import (
 from scenario_tools.domain.policy.step_rules import step_refusals
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.canonical import SAFE_INTEGER, jcs
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
 from scenario_tools.domain.shared.workflow import (
@@ -65,8 +66,7 @@ from scenario_tools.domain.shared.workflow import (
 
 PLACEHOLDER_SENDER = "simulation@example.org"
 
-_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-_UUID_IN_TEXT = re.compile(_UUID.pattern, re.IGNORECASE)
+_UUID_IN_TEXT = re.compile(CANONICAL_UUID.pattern, re.IGNORECASE)
 # A hexadecimal digit or a hyphen written as an escape in JSON text, not preceded by an escaped
 # backslash: an identifier written that way would escape rewriting.
 _ESCAPED_ID_CHARACTER = re.compile(r"(?<!\\)(?:\\\\)*\\u00(?:3[0-9]|4[1-6]|6[1-6]|2[dD])")
@@ -212,7 +212,7 @@ class _Identifiers:
         self.targets: dict[str, str] = {}
 
     def add(self, source: str, target: str) -> None:
-        if not _UUID.fullmatch(source):
+        if not CANONICAL_UUID.fullmatch(source):
             raise _refuse(f"identifier {source!r} is not a canonical UUID")
         if self.targets.setdefault(source, target) != target:
             raise _refuse(f"identifier {source!r} names two different objects")
@@ -314,7 +314,7 @@ def _previous_signatures(
         signatures = [_signature(inject, namespace) for inject in _objects(previous, _INJECTS)]
         _check_injects(signatures)
         for signature in signatures:
-            if not _UUID.fullmatch(signature.id):
+            if not CANONICAL_UUID.fullmatch(signature.id):
                 raise _refuse(f"inject identifier {signature.id!r} is not a canonical UUID")
     except ExportStructureError as error:
         raise _refuse(error.what, "previous") from error
@@ -638,7 +638,7 @@ def _step_injects(export: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _known(value: object, pointer: str) -> str:
-    if not isinstance(value, str) or not _UUID.fullmatch(value):
+    if not isinstance(value, str) or not CANONICAL_UUID.fullmatch(value):
         raise _refuse(ID_NOT_KNOWN, pointer=pointer)
     return value
 
@@ -697,7 +697,7 @@ def _previous_steps(
         seen: set[str] = set()
         for step in steps:
             identifier = _text(step, "step_id", STEPS)
-            if not _UUID.fullmatch(identifier):
+            if not CANONICAL_UUID.fullmatch(identifier):
                 raise _refuse(f"step identifier {identifier!r} is not a canonical UUID")
             if identifier in seen:
                 raise _refuse(f"step identifier {identifier!r} appears twice")
@@ -985,7 +985,7 @@ def _name_domains(document: Any) -> None:
             if _declared_domains(item):
                 raise _refuse(f"{_DOMAINS} names no domain, but the contract's copy does")
             continue
-        if not all(isinstance(domain, str) and _UUID.fullmatch(domain) for domain in bare):
+        if not all(isinstance(domain, str) and CANONICAL_UUID.fullmatch(domain) for domain in bare):
             raise _refuse(f"{_DOMAINS} must be a list of identifiers")
         names = _domain_names(item)
         if len(names) != len(set(bare)):
@@ -1078,7 +1078,7 @@ def normalise(
 ) -> Normalised:
     """Normalise ``export`` for the entry ``external_id``, reusing the inject identifiers of
     ``previous`` (a normalised document) and the explicit ``mapping`` of source to stable IDs."""
-    if not _UUID.fullmatch(external_id):
+    if not CANONICAL_UUID.fullmatch(external_id):
         raise ValueError(f"external_id {external_id!r} must be a canonical UUID")
     export = _checked_export(export, rules)
     if previous is not None and not isinstance(previous, dict):

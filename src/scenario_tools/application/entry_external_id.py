@@ -1,12 +1,10 @@
 """The external ID an entry is prepared under: the one its metadata declares, or the one given."""
 
-import re
 from pathlib import Path
 
 from scenario_tools.domain.shared.finding import shorten
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.ports.errors import UsageProblemError
-
-CANONICAL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 def entry_external_id(metadata: Path, declared: object, given: str | None) -> str:

@@ -41,7 +41,7 @@ from scenario_tools.application.assign_payloads import (
 )
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.diff_entry import diff_entry
-from scenario_tools.application.entry_external_id import CANONICAL_UUID, entry_external_id
+from scenario_tools.application.entry_external_id import entry_external_id
 from scenario_tools.application.findings import repository_path
 from scenario_tools.application.intake_entry import (
     intake_check,
@@ -62,6 +62,7 @@ from scenario_tools.domain.shared.finding import (
     Severity,
     shorten,
 )
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.interface.base import (
     _PLANNED,
     _PLANNED_NAMED,

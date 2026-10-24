@@ -298,20 +298,28 @@ _OUTPUT_PARSER = _Object(
     },
     _INSTANCE | {"output_parser_id", "output_parser_created_at", "output_parser_updated_at"},
 )
-_PAYLOAD_INSTANCE = _INSTANCE | {
-    "payload_id",
-    "payload_external_id",
-    "payload_source",
-    "payload_status",
-    "payload_collector_type",
-    "payload_author_user",
-    "payload_author_team",
-    "payload_author_organization",
-    "payload_tags",
-    "payload_created_at",
-    "payload_updated_at",
-    "payload_domains",  # the platform holds them on the contract and projects them in an export
-}
+# The fields the platform gives a payload of its own: never part of what a payload is.
+PAYLOAD_INSTANCE_FIELDS = frozenset(
+    {
+        "payload_id",
+        "payload_external_id",
+        "payload_source",
+        "payload_status",
+        "payload_collector_type",
+        "payload_author_user",
+        "payload_author_team",
+        "payload_author_organization",
+        "payload_tags",
+        "payload_created_at",
+        "payload_updated_at",
+    }
+)
+_PAYLOAD_INSTANCE = (
+    _INSTANCE
+    | PAYLOAD_INSTANCE_FIELDS
+    # the platform holds them on the contract and projects them in an export
+    | {"payload_domains"}
+)
 _COMMON: Mapping[str, _Spec] = {
     "payload_type": _TEXT,
     "payload_name": _TEXT,
