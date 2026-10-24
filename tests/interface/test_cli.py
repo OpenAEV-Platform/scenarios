@@ -17,6 +17,7 @@ import scenario_tools
 import scenario_tools.interface.cli as cli_module
 from scenario_tools.adapters.data_files import write_output
 from scenario_tools.adapters.safe_readers import parse_yaml, read_json_file
+from scenario_tools.application import report_output
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -277,7 +278,7 @@ def test_a_failure_while_rendering_exits_four(
     def broken(*args: object) -> object:
         raise RuntimeError("rendering failed")
 
-    monkeypatch.setattr(cli_module, "_text", broken)
+    monkeypatch.setattr(report_output, "report_text", broken)
     monkeypatch.setattr(Report, "document", broken)
 
     output, code = execute("demo", _report(), output_format)
