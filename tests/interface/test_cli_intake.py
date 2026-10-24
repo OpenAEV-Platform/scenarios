@@ -9,6 +9,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -764,7 +765,10 @@ def test_a_run_asked_to_stop_while_writing_finishes_first(
     mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
 
     def stopped(*arguments: Any) -> Any:
-        os.kill(os.getpid(), stop)  # as CI cancels a job, or a person presses Ctrl-C
+        # As CI cancels a job, or a person presses Ctrl-C: the tools run in one thread, which
+        # receives what the process is sent; a test runner may hold other threads, so the
+        # request goes to this one.
+        signal.pthread_kill(threading.get_ident(), stop)
         return planned(*arguments)
 
     monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", stopped)
@@ -789,7 +793,7 @@ def test_a_run_asked_to_stop_before_writing_writes_nothing(
     real = getattr(cli_module, when)
 
     def stopped(path: Path) -> object:
-        os.kill(os.getpid(), stop)
+        signal.pthread_kill(threading.get_ident(), stop)
         return real(path)
 
     monkeypatch.setattr(f"scenario_tools.interface.cli.{when}", stopped)
@@ -865,7 +869,7 @@ def test_a_run_asked_to_stop_once_all_is_written_says_so(
 
     def stopped(command: str, findings: Any) -> Any:
         if findings:  # the report of what was written, once it is all written
-            os.kill(os.getpid(), signal.SIGTERM)
+            signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
         return reported(command, findings)
 
     monkeypatch.setattr("scenario_tools.interface.cli.Report", stopped)
@@ -904,7 +908,7 @@ def test_a_run_asked_to_stop_as_its_writing_ends_says_all_stands(
     def then_stopped() -> Iterator[None]:
         with held():
             yield
-        os.kill(os.getpid(), signal.SIGTERM)  # the moment the hold ends
+        signal.pthread_kill(threading.get_ident(), signal.SIGTERM)  # the moment the hold ends
 
     monkeypatch.setattr("scenario_tools.interface.cli._stop_requests_held", then_stopped)
 
@@ -924,7 +928,7 @@ def test_a_stop_already_ignored_stays_ignored(
     real = read_export
 
     def hung_up(path: Path) -> object:
-        os.kill(os.getpid(), signal.SIGHUP)
+        signal.pthread_kill(threading.get_ident(), signal.SIGHUP)
         return real(path)
 
     monkeypatch.setattr("scenario_tools.interface.cli.read_export", hung_up)
