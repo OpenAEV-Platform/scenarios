@@ -56,15 +56,17 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(32233060\-03d9\-5d29\-9005\-1df6a4a2d066\)
+- Payload: Create local account \(1\.1\.0\) \(61fb4619\-c428\-580f\-831d\-4ed1225a07aa\)
 
 Command (bash):
 
 ```
+marker=/var/tmp/openaev-created-art.uid
 id art >/dev/null 2>&1 && { echo "an account named art already exists: nothing is created" >&2; exit 1; }
-password=$(openssl passwd -1 art) || exit 1
-useradd --shell /bin/bash --create-home --password "$password" art || exit 1
-(umask 077; id -u art > /var/tmp/openaev-created-art.uid) || exit 1
+(umask 077; set -C; : > "$marker") 2>/dev/null || { echo "$marker cannot be reserved: nothing is created" >&2; exit 1; }
+password=$(openssl passwd -1 art) || { rm -f "$marker"; exit 1; }
+useradd --shell /bin/bash --create-home --password "$password" art || { rm -f "$marker"; exit 1; }
+id -u art > "$marker" || { userdel -rf art; rm -f "$marker"; exit 1; }
 su art -c "whoami; exit"
 ```
 
@@ -88,7 +90,7 @@ rm -f "$marker"
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | 32233060\-03d9\-5d29\-9005\-1df6a4a2d066 | Command | Linux |
+| Create local account \(1\.1\.0\) | 61fb4619\-c428\-580f\-831d\-4ed1225a07aa | Command | Linux |
 | Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in

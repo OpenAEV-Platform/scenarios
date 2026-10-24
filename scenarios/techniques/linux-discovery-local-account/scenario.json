@@ -908,7 +908,7 @@
             "injector_contract_manual": false,
             "injector_contract_needs_executor": true,
             "injector_contract_payload": {
-              "command_content": "id art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || exit 1\nuseradd --shell /bin/bash --create-home --password \"$password\" art || exit 1\n(umask 077; id -u art > /var/tmp/openaev-created-art.uid) || exit 1\nsu art -c \"whoami; exit\"\n",
+              "command_content": "marker=/var/tmp/openaev-created-art.uid\nid art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\n(umask 077; set -C; : > \"$marker\") 2>/dev/null || { echo \"$marker cannot be reserved: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || { rm -f \"$marker\"; exit 1; }\nuseradd --shell /bin/bash --create-home --password \"$password\" art || { rm -f \"$marker\"; exit 1; }\nid -u art > \"$marker\" || { userdel -rf art; rm -f \"$marker\"; exit 1; }\nsu art -c \"whoami; exit\"\n",
               "command_executor": "bash",
               "payload_arguments": [],
               "payload_cleanup_command": "marker=/var/tmp/openaev-created-art.uid\nif [ -f \"$marker\" ] && [ \"$(stat -c %u \"$marker\")\" = 0 ] && [ \"$(id -u art 2>/dev/null)\" = \"$(cat \"$marker\")\" ]; then\n  userdel -rf art\nfi\nrm -f \"$marker\"\n",
@@ -932,7 +932,7 @@
                   "XDR"
                 ]
               },
-              "payload_external_id": "32233060-03d9-5d29-9005-1df6a4a2d066",
+              "payload_external_id": "61fb4619-c428-580f-831d-4ed1225a07aa",
               "payload_id": "d9a1f23b-759f-5524-905d-cd7d62bf41b2",
               "payload_name": "Create local account (1.1.0)",
               "payload_output_parsers": [],

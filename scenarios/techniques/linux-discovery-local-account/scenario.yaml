@@ -28,9 +28,9 @@ requires:
   executors:
   - openaev
 payloads:
-- id: 32233060-03d9-5d29-9005-1df6a4a2d066
+- id: 61fb4619-c428-580f-831d-4ed1225a07aa
   version: 1.1.0
-  sha256: f7407a7d9f0d0f15d1f3e52d36476e547a1a573e70a065a1bdcb95579dc889fa
+  sha256: f11e89fc787a5bc8af21d1af39abb40b18713d68367b4a9524eba149d52514e7
 - id: c297e3ae-0cc2-5500-a923-1d0d7c1f67df
   version: 1.1.0
   sha256: d92ac612caee2685cd00e416ebd8ba0949715c2fb0948ddc3a9b65aa1baec1bb
