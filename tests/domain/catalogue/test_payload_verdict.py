@@ -31,6 +31,7 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     verdicts,
     version_document,
 )
+from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.domain.verification.payload_version import PayloadVersion
@@ -751,3 +752,78 @@ def test_no_name_is_held_for_a_payload_that_is_no_object_or_another_content() ->
     first["command_content"] = "ps -e"  # no longer referenced: the step holds text now
 
     assert names_held(stored, _catalogue(PS)) == set()
+
+
+def _first_payload_of(document: dict[str, Any], payload: object) -> dict[str, Any]:
+    first = document["scenario_injects"][0]["inject_injector_contract"]
+    first["injector_contract_payload"] = payload
+    return document
+
+
+def test_more_new_payloads_than_one_intake_writes_give_the_refusal_alone() -> None:
+    result = claimed_verdicts(_injects_running(101), _catalogue(), NONE, accepted=ANY)
+
+    assert [(f.code, f.severity) for f in result.findings] == [("PAY-009", Severity.BLOCKING)]
+    assert (result.versions, result.renames, result.changes, result.bases) == ({}, {}, {}, {})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "not an object",
+        {"payload_type": "Command", "payload_name": "Payload 0", "payload_platforms": "Linux"},
+    ],
+    ids=["not an object", "cannot be hashed"],
+)
+def test_a_payload_left_to_the_reference_checks_leaves_the_next_one_judged(payload: object) -> None:
+    stored = _first_payload_of(_injects_running(2), payload)
+
+    result = claimed_verdicts(stored, _catalogue(), NONE, accepted=ANY)
+
+    assert [v.name for v in result.versions.values()] == ["Payload 1"]
+
+
+@pytest.mark.parametrize("name", [["a", "list"], {"an": "object"}, 3])
+def test_a_payload_whose_name_is_no_text_is_named_by_no_claim(name: object) -> None:
+    payload = _injects_running(1)["scenario_injects"][0]["inject_injector_contract"]
+    stored = _first_payload_of(
+        _injects_running(1), {**payload["injector_contract_payload"], "payload_name": name}
+    )
+
+    result = claimed_verdicts(
+        stored, _catalogue(), NONE, accepted=ANY, claims=(Claim("Payload 0", PS),)
+    )
+
+    assert ("ITK-009", CLAIM_NAMES_NOTHING) in [(f.code, f.message) for f in result.findings]
+
+
+def test_more_new_payloads_than_one_intake_writes_keep_the_bases_claimed() -> None:
+    result = claimed_verdicts(
+        _injects_running(101),
+        _catalogue(PS),
+        NONE,
+        accepted=ANY,
+        claims=(Claim("Payload 0", PS),),
+    )
+
+    assert [f.code for f in result.findings] == ["PAY-009"]
+    assert (result.versions, result.renames, result.changes) == ({}, {}, {})
+    assert list(result.bases.values()) == ["Process Discovery - ps"]
+
+
+def test_a_claim_without_a_base_leaves_a_new_payload_new() -> None:
+    result = claimed_verdicts(
+        _injects_running(1), _catalogue(), NONE, accepted=ANY, claims=(Claim("Payload 0"),)
+    )
+
+    assert [v.name for v in result.versions.values()] == ["Payload 0"]
+    assert (result.renames, result.bases) == ({}, {})
+    assert "ITK-009" not in [f.code for f in result.findings]
+
+
+def test_a_claim_without_a_base_on_a_payload_already_there_is_not_ignored() -> None:
+    name = "Process Discovery - ps (1.1.0)"
+    result = _claimed(_as_version("1.1.0", name), Claim(name))
+
+    assert _codes_of(result) == [("PAY-010", f"already there: {PS} 1.1.0")] * 2
+    assert (result.versions, result.renames, result.bases) == ({}, {}, {})
