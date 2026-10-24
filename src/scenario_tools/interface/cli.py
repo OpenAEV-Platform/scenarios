@@ -50,6 +50,7 @@ from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
 from scenario_tools.adapters.plan import PlanFile
+from scenario_tools.adapters.policy_levels import policy_levels
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import (
     YAML_LIMIT,
@@ -92,6 +93,12 @@ from scenario_tools.application.intake_entry import (
 )
 from scenario_tools.application.prepare_entry import prepare_entry, renormaliser
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
+from scenario_tools.application.report_output import (
+    concealed,
+    printable,
+    withheld_output,
+)
+from scenario_tools.application.repository_root import repository_root
 from scenario_tools.application.run_fixtures import run_fixtures
 from scenario_tools.application.transfer import check_reuse, export_scenario, import_archive
 from scenario_tools.application.validate_entry import validate_entry
@@ -123,9 +130,7 @@ from scenario_tools.domain.release.manifest import (
 )
 from scenario_tools.domain.shared.canonical import jcs, stored_form
 from scenario_tools.domain.shared.finding import (
-    COUNT_CODE,
     ERROR_LIMIT,
-    MESSAGE_LIMIT,
     Finding,
     Report,
     Severity,
@@ -146,28 +151,6 @@ from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputErro
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
 
 
-def _printable(text: str) -> str:
-    """Escape every non-printable character (control, line break, undecodable byte) as Python
-    writes it in a string literal, so contributor content can neither break a line nor be read
-    as a CI workflow command."""
-    return "".join(char if char.isprintable() else repr(char)[1:-1] for char in text)
-
-
-def _line(finding: Finding) -> str:
-    where = " ".join(part for part in (finding.path, finding.field) if part)
-    location = f" {where}" if where else ""
-    return _printable(f"{finding.severity.name} {finding.code}{location}: {finding.message}")
-
-
-def _text(report: Report) -> str:
-    lines = [_line(finding) for finding in report.findings]
-    if report.ok:
-        return "\n".join([*lines, f"{report.command}: ok"])
-    blocking = sum(finding.severity is Severity.BLOCKING for finding in report.findings)
-    plural = "" if blocking == 1 else "s"
-    return "\n".join([*lines, f"{report.command}: {blocking} blocking finding{plural}"])
-
-
 def execute(
     command: str,
     produce: Callable[[], Report],
@@ -184,10 +167,10 @@ def execute(
     except Exception as error:  # noqa: BLE001 - the last guard: a defect never exits with 1
 
         def render(text: str) -> str:
-            return shorten(_printable(f"{command}: internal error: {text}"))
+            return shorten(printable(f"{command}: internal error: {text}"))
 
         message = f"{type(error).__name__}: {_describe(error)}"
-        return _concealed(message, render, hidden), EXIT_INTERNAL
+        return concealed(message, render, hidden), EXIT_INTERNAL
 
 
 def _describe(error: Exception) -> str:
@@ -196,79 +179,6 @@ def _describe(error: Exception) -> str:
         return str(error)
     except Exception:  # noqa: BLE001 - the guard itself must not fail
         return "<unprintable>"
-
-
-_WITHHELD = "withheld: it would show a secret"
-
-
-def _cut_in(text: str, hidden: str) -> bool:
-    """Whether ``text`` was cut short in the middle of ``hidden``: it then ends with the start
-    of it, before the ellipsis, as it is or as JSON writes it."""
-    for ellipsis in ("…", "\\u2026"):
-        if text.endswith(ellipsis):
-            shown = text[: -len(ellipsis)]
-            # No start longer than the text can end it: the work stays bounded by the text.
-            longest = min(len(hidden), len(shown))
-            return any(shown.endswith(hidden[:length]) for length in range(1, longest + 1))
-    return False
-
-
-def _cut_in_any_form(text: str, hidden: str) -> bool:
-    """Whether ``text``, as the text or the JSON output writes it, was cut short in the middle
-    of ``hidden``: an escape can write the start of the token."""
-    forms = (_printable(text), json.dumps(text)[1:-1])
-    return any(_cut_in(form, hidden) for form in forms)
-
-
-def _concealed(
-    message: str, render: Callable[[str], str], hidden: str, limit: int = MESSAGE_LIMIT
-) -> str:
-    """``message`` as ``render`` writes it, or withheld when that would show ``hidden``, or the
-    start of it where the message is cut short to ``limit``. The token's characters are never
-    escaped, so the token shows as it is or not at all."""
-    output = render(message)
-    if hidden and (
-        hidden in output
-        or _cut_in(output, hidden)
-        or _cut_in_any_form(shorten(message, limit), hidden)
-    ):
-        return render(_WITHHELD)
-    return output
-
-
-def _render(report: Report, output_format: str) -> str:
-    return json.dumps(report.document()) if output_format == "json" else _text(report)
-
-
-def _shows(output: str, report: Report, hidden: str) -> bool:
-    """Whether ``hidden`` shows in the output, or its start in a message, a path or a field cut
-    short. The token's characters are never escaped, so the token shows as it is or not at all."""
-    return hidden in output or any(
-        _cut_in_any_form(text, hidden)
-        for finding in report.findings
-        for text in (finding.message, finding.path, finding.field)
-    )
-
-
-def _withhold(report: Report, output_format: str, hidden: str) -> str:
-    """The output, with the messages, then the paths and fields, of the findings withheld while
-    it would show ``hidden``: what then remains is the tool's own text, never the platform's.
-    The finding that counts those a report does not show is the tool's own text, and stays."""
-    output = _render(report, output_format)
-    for paths_too in (False, True):
-        if not hidden or not _shows(output, report, hidden):
-            break
-
-        def withheld(f: Finding, paths_too: bool = paths_too) -> Finding:
-            if f.code == COUNT_CODE:
-                return f
-            if paths_too:
-                return dataclasses.replace(f, message=_WITHHELD, path="", field="")
-            return dataclasses.replace(f, message=_WITHHELD)
-
-        report = report.with_findings(withheld)
-        output = _render(report, output_format)
-    return output
 
 
 def _run(
@@ -288,11 +198,11 @@ def _run(
             if output_format == "json":
                 error = shorten(text, ERROR_LIMIT)
                 return json.dumps({"command": command, "ok": False, "findings": [], "error": error})
-            return shorten(_printable(f"{command}: environment error: {text}"), ERROR_LIMIT)
+            return shorten(printable(f"{command}: environment error: {text}"), ERROR_LIMIT)
 
-        return _concealed(str(error), render, hidden, ERROR_LIMIT), EXIT_ENVIRONMENT
+        return concealed(str(error), render, hidden, ERROR_LIMIT), EXIT_ENVIRONMENT
     code = EXIT_OK if report.ok else EXIT_BLOCKING
-    return _withhold(report, output_format, hidden), code
+    return withheld_output(report, output_format, hidden), code
 
 
 def _emit(
@@ -343,7 +253,7 @@ def changed_entries_command(ctx: click.Context, checkout: Path, base: str) -> No
     try:
         entries = changed_entries(checkout, base)
     except EnvironmentProblemError as error:
-        text = shorten(_printable(f"changed-entries: environment error: {error}"), ERROR_LIMIT)
+        text = shorten(printable(f"changed-entries: environment error: {error}"), ERROR_LIMIT)
         click.echo(text, err=True)
         ctx.exit(EXIT_ENVIRONMENT)
     click.echo("".join(f"{entry}\0" for entry in entries), nl=False)
@@ -375,38 +285,6 @@ def _entry_external_id(out: Path, given: str | None) -> str:
     return given
 
 
-def _policy_levels(out: Path) -> list[Path]:
-    """OUT and those of its parents that hold policy data, from the deepest up."""
-    resolved = Path(os.path.realpath(out))  # a loop of links is left as it is, not raised
-    try:
-        return [
-            directory
-            for directory in (resolved, *resolved.parents)
-            if (directory / "policy" / "data").is_dir()
-        ]
-    except OSError as error:  # a directory that cannot be searched, for instance
-        raise EnvironmentProblemError(
-            f"cannot look for policy data above {out}: {error.strerror}"
-        ) from error
-
-
-def _repository_root(levels: list[Path], out: Path) -> Path:
-    """The repository that holds the entry, wherever the command runs from: the only directory
-    among OUT and its parents with policy data. A second one would let an entry bring its own
-    rules, so it is refused."""
-    if not levels:
-        raise EnvironmentProblemError(
-            f"no policy/data directory in {out} or above: not a repository"
-        )
-    if len(levels) > 1:
-        raise UnsafeInputError(
-            "IO-015",
-            "policy data below the repository root: an entry may not carry its own rules",
-            str(levels[0] / "policy" / "data"),
-        )
-    return levels[0]
-
-
 def _refused(error: Exception) -> Callable[[], Report]:
     def produce() -> Report:
         raise error
@@ -435,8 +313,8 @@ def normalize(
     levels: list[Path] = []
     metadata = out / "scenario.yaml"
     try:
-        levels = _policy_levels(out)
-        root = _repository_root(levels, out)
+        levels = policy_levels(out)
+        root = repository_root(levels, out)
         # Decided once, before the external ID is chosen: a scenario.yaml that appears later
         # is never read nor replaced, and the run stops before writing anything.
         first = not (metadata.exists() or metadata.is_symlink())
@@ -551,8 +429,8 @@ def archive(ctx: click.Context, entry: Path, out: Path) -> None:
         raise click.UsageError("OUT is a directory: give the path of the archive file")
     levels: list[Path] = []
     try:
-        levels = _policy_levels(entry)
-        root = _repository_root(levels, entry)
+        levels = policy_levels(entry)
+        root = repository_root(levels, entry)
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
         _emit(ctx, "archive", _refused(error), levels[-1] if levels else None)
 
@@ -950,8 +828,8 @@ def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
     metadata, scenario = entry / "scenario.yaml", entry / "scenario.json"
     levels: list[Path] = []
     try:
-        levels = _policy_levels(entry)
-        root = _repository_root(levels, entry)
+        levels = policy_levels(entry)
+        root = repository_root(levels, entry)
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
         _emit(ctx, "payloads", _refused(error), levels[-1] if levels else None)
 
@@ -1006,7 +884,7 @@ def _one_repository(
     try:
         for directory in directories:
             levels = _levels_as_given(directory)
-            root = _repository_root(levels, directory)
+            root = repository_root(levels, directory)
             roots.setdefault(_identity(root), root)
             relatives.append(directory.relative_to(root).as_posix())
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
@@ -1101,7 +979,7 @@ def validate_payloads_command(
     levels: list[Path] = []
     try:
         levels = _levels_as_given(directory.parent)
-        root = _repository_root(levels, directory.parent)
+        root = repository_root(levels, directory.parent)
     except Exception as error:  # noqa: BLE001 - reported as refused input, environment or defect
         _emit(ctx, "validate-payloads", _refused(error), levels[-1] if levels else None)
 
