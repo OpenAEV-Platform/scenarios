@@ -414,44 +414,14 @@ def intake(
         "--external-id": external_id,
         "--previous": previous,
     }
-    writing = {"--request": request, "--repo": repo, "--plan": plan}
     if check:
-        extra = [name for name, value in writing.items() if value is not None]
-        if extra:
-            raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
-        if payloads is None or rules is None or external_id is None:
-            raise click.UsageError("--check needs --payloads, --rules and --external-id")
-        if not CANONICAL_UUID.fullmatch(external_id):
-            raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
+        payloads, rules, external_id = _check_options(
+            (request, repo, plan), payloads, rules, external_id
+        )
         _intake_check(ctx, export, payloads, rules, claims, external_id, previous)
         return
-    extra = [name for name, value in checking.items() if value is not None]
-    if extra:
-        raise click.UsageError(f"only with --check: {', '.join(extra)}")
-    if request is None or repo is None or plan is None:
-        missing = [name for name, value in writing.items() if value is None]
-        raise click.UsageError(f"intake needs {', '.join(missing)}, or --check")
-    try:
-        root = Path(os.path.realpath(repo))  # resolved once: the run holds what it names
-        plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
-    except OSError as error:  # a relative path, once the working directory is gone
-        _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
-    planned = [root / place for place in _PLANNED]  # as committed, or the run stops
-    if any(place in (plan, *plan.parents) or _inside(plan, place) for place in planned):
-        raise click.UsageError(
-            f"--plan may not be inside {_PLANNED_NAMED} of the repository: they stay as committed"
-        )
-    if os.path.lexists(plan):
-        raise click.UsageError(
-            "--plan names a place where something is already there: remove the earlier plan "
-            "first, so that it is never taken for this run's"
-        )
-    for given, place in zip((export, request), inputs, strict=True):
-        if any(_inside(place, directory) for directory in planned):
-            raise click.UsageError(
-                f"{given.name} is inside {_PLANNED_NAMED} of the repository: an export or a "
-                "request must never enter git"
-            )
+    request, repo, plan = _writing_options(checking, request, repo, plan)
+    root, plan, inputs = _intake_places(ctx, export, request, repo, plan)
 
     def produce() -> Report:
         source = RepositoryEntries(root, strict=True)  # what a cut run left is never ignored
@@ -512,6 +482,68 @@ def intake(
             raise EnvironmentProblemError(_unplaced(str(error), root, plan, inputs)) from error
 
     _emit(ctx, "intake", produce_shown, root)
+
+
+_WRITING = ("--request", "--repo", "--plan")  # the options of a run that writes
+
+
+def _check_options(
+    writing: tuple[Path | None, Path | None, Path | None],
+    payloads: Path | None,
+    rules: Path | None,
+    external_id: str | None,
+) -> tuple[Path, Path, str]:
+    """The options --check needs; refuse those it may not have, or lacks."""
+    extra = [name for name, value in zip(_WRITING, writing, strict=True) if value is not None]
+    if extra:
+        raise click.UsageError(f"--check writes nothing: leave out {', '.join(extra)}")
+    if payloads is None or rules is None or external_id is None:
+        raise click.UsageError("--check needs --payloads, --rules and --external-id")
+    if not CANONICAL_UUID.fullmatch(external_id):
+        raise click.UsageError("--external-id must be a UUID in lower case with hyphens")
+    return payloads, rules, external_id
+
+
+def _writing_options(
+    checking: dict[str, object], request: Path | None, repo: Path | None, plan: Path | None
+) -> tuple[Path, Path, Path]:
+    """The options of a run that writes; refuse those of --check, and the missing ones."""
+    extra = [name for name, value in checking.items() if value is not None]
+    if extra:
+        raise click.UsageError(f"only with --check: {', '.join(extra)}")
+    if request is None or repo is None or plan is None:
+        given = (request, repo, plan)
+        missing = [name for name, value in zip(_WRITING, given, strict=True) if value is None]
+        raise click.UsageError(f"intake needs {', '.join(missing)}, or --check")
+    return request, repo, plan
+
+
+def _intake_places(
+    ctx: click.Context, export: Path, request: Path, repo: Path, plan: Path
+) -> tuple[Path, Path, tuple[Path, Path]]:
+    """The repository's root, the plan and the inputs, resolved, refused where git holds them."""
+    try:
+        root = Path(os.path.realpath(repo))  # resolved once: the run holds what it names
+        plan, inputs = plan.absolute(), (export.absolute(), request.absolute())
+    except OSError as error:  # a relative path, once the working directory is gone
+        _emit(ctx, "intake", _failing(f"cannot resolve the paths given: {error.strerror}"))
+    planned = [root / place for place in _PLANNED]  # as committed, or the run stops
+    if any(place in (plan, *plan.parents) or _inside(plan, place) for place in planned):
+        raise click.UsageError(
+            f"--plan may not be inside {_PLANNED_NAMED} of the repository: they stay as committed"
+        )
+    if os.path.lexists(plan):
+        raise click.UsageError(
+            "--plan names a place where something is already there: remove the earlier plan "
+            "first, so that it is never taken for this run's"
+        )
+    for given, place in zip((export, request), inputs, strict=True):
+        if any(_inside(place, directory) for directory in planned):
+            raise click.UsageError(
+                f"{given.name} is inside {_PLANNED_NAMED} of the repository: an export or a "
+                "request must never enter git"
+            )
+    return root, plan, inputs
 
 
 def _intake_check(
