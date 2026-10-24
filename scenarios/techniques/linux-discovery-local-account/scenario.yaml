@@ -1,0 +1,36 @@
+schema_version: 1
+external_id: f43a1c51-f4e6-4bad-9d41-1858bdde0888
+version: 1.0.0
+status: VERIFIED
+name: Linux discovery then local account creation
+description: 'List the running processes on the endpoint, then, once that step has run, create a local account and remove it again: a short chain from process discovery (T1057) to a local account (T1078.003). The second step runs on Linux only, and the agent must run as root.'
+severity: medium
+category: attack-scenario
+main_focus: endpoint-protection
+type: chained
+platforms:
+- Linux
+- MacOS
+threat:
+  ttps:
+  - T1057
+  - T1078.003
+sources:
+- url: https://attack.mitre.org/techniques/T1057/
+  tlp: TLP:CLEAR
+- url: https://attack.mitre.org/techniques/T1078/003/
+  tlp: TLP:CLEAR
+requires:
+  openaev: '>=3.261024.0'
+  edition: EE
+  injectors:
+  - openaev_implant
+  executors:
+  - openaev
+payloads:
+- id: 4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7
+  version: 1.0.0
+  sha256: 258d29808ec995a71b4497957550f951e54372a9c9cb63675e7053824925deff
+- id: 84ad1dfe-0b96-452c-a122-4767aab6584e
+  version: 1.0.0
+  sha256: 21e94efc994c3bd4ec71982dd850751e3acee44cd2d171be6f78380773b60cbf
