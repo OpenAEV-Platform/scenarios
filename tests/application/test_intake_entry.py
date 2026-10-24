@@ -1604,3 +1604,30 @@ def test_the_check_of_an_update_needs_the_previous_version_its_identifiers_come_
 
     assert there(check(previous)) == 11
     assert there(check(None)) == 10  # the one payload is judged on another command
+
+
+def test_an_update_from_an_export_without_a_facet_the_entry_does_not_hold_is_refused() -> None:
+    source = _stored()
+    assert source.stored is not None
+    held = copy.deepcopy(source.stored[1])
+    assert isinstance(held, dict)
+    del held["scenario_information"]["scenario_severity"]
+    source.stored = (json.dumps(held).encode(), held)
+
+    result = _intake(UPDATE, source, export=_without_facets(EASM))
+
+    assert (result.scenario_json, result.metadata, result.changed) == (None, None, False)
+    assert _codes(result.refusals) == [
+        ("ITK-010", EXPORT, "/scenario_information/scenario_severity")
+    ]
+
+
+def test_an_update_whose_claim_cannot_hold_is_refused_at_the_request() -> None:
+    edited, name, _, held_salt = _copy_of_salt()
+    claims = {"payloads": [{"name": name, "based_on": {"payload": "no-such-payload"}}]}
+
+    result = _intake({**UPDATE, **claims}, _stored(SALT), export=edited, payloads=held_salt)
+
+    assert (result.scenario_json, result.metadata, result.changed) == (None, None, False)
+    assert _codes(result.refusals) == [("ITK-009", REQUEST, "/payloads/0/based_on/payload")]
+    assert result.payload_files == {}
