@@ -413,25 +413,9 @@ def _bounded(value: str, limit: int, field: str) -> tuple[str, tuple[str, str] |
     return value, None
 
 
-def starting_metadata(
-    facts: ExportFacts,
-    *,
-    external_id: str,
-    description: str,
-    platform_version: str,
-    unknown_injects: int,
-    path: str,
-) -> tuple[dict[str, object], tuple[Finding, ...]]:
-    """The ``scenario.yaml`` of a first preparation, in the order of the data model, and an
-    ``SCH-007`` finding for each default to review and each field left for a contributor to
-    complete. It takes what the export and the recorded contracts establish, so that it passes
-    the cross-checks, and only values the schema accepts, so that the file stays small enough to
-    read back: a description over its bound once cleaned is cut where a reader can tell and
-    marked, or left empty when it cannot be; another text over its bound or a value outside its
-    list is left empty; each is reported, never copied whole."""
-    todo: dict[str, str] = dict(_DEFAULTS)
-    asking_nothing: set[str] = set()  # the fields whose finding is said, and asks for nothing
-    name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
+def _starting_description(description: str) -> tuple[str, tuple[str, str] | None, bool]:
+    """The description of a first preparation, cleaned and bounded, with what to say of it, if
+    anything, and whether what is said asks for nothing."""
     cleaned = clean(description)
     digest = hashlib.sha256(description.encode()).hexdigest()
     description = cleaned.text
@@ -451,43 +435,36 @@ def starting_metadata(
             f"and {DESCRIPTION_LIMIT - 1} characters to cut at: write a shorter one; "
             "scenario.json keeps the whole text"
         )
-        why_description: tuple[str, str] | None = ("/description", why)
-    elif not description.strip():
-        why_description = ("/description", "write a description: the export has none")
-        description = ""
-    elif cleaned.changed:
+        return description, ("/description", why), False
+    if not description.strip():
+        return "", ("/description", "write a description: the export has none"), False
+    if cleaned.changed:
         said, asks_nothing = _cleaned_reason(cleaned)
-        why_description = ("/description", said)
-        if asks_nothing:  # said, and no item of a checklist
-            asking_nothing.add("/description")
-    else:
-        why_description = None
-    severity = facts.severity if facts.severity in SEVERITIES else ""
-    why_severity = (
-        None
-        if severity
-        else ("/severity", f"the export's severity is not one of {', '.join(SEVERITIES)}: "
-              f"{_FIX_ON_THE_PLATFORM}")
-    )  # fmt: skip
-    category, why_category = _bounded(facts.category, FACET_LIMIT, "category")
-    main_focus, why_main_focus = _bounded(facts.main_focus, FACET_LIMIT, "main_focus")
+        return description, ("/description", said), asks_nothing
+    return description, None, False
+
+
+def _executor_platforms(facts: ExportFacts) -> tuple[list[InjectFacts], list[str], int]:
+    """The injects that run through an executor, the platforms of the list they run on, and how
+    many of their platforms are outside the list."""
     executors = [inject for inject in facts.injects if inject.needs_executor]
     required = {platform for inject in executors for platform in inject.platforms}
     platforms = sorted(required & set(PLATFORMS))
     unknown_platforms = len(required - set(PLATFORMS))
-    for reason in (why_name, why_description, why_severity, why_category, why_main_focus):
-        if reason is not None:
-            todo[reason[0]] = reason[1]
-    reasons: dict[str, list[str]] = {}
-    if unknown_platforms:
-        plural = "s" if unknown_platforms > 1 else ""
-        reasons.setdefault("/platforms", []).append(
-            f"{unknown_platforms} platform{plural} of the injects that run through an executor "
-            f"{'are' if plural else 'is'} not among {', '.join(PLATFORMS)}: left out"
-        )
-    todo["/threat"] = _THREAT
-    todo["/sources"] = _SOURCES
-    todo.update(_REQUIRES_DEFAULTS)
+    return executors, platforms, unknown_platforms
+
+
+def _requirements_to_complete(
+    facts: ExportFacts,
+    platform_version: str,
+    unknown_injects: int,
+    todo: dict[str, str],
+    asking_nothing: set[str],
+    reasons: dict[str, list[str]],
+) -> tuple[str, list[str]]:
+    """The platform version and the injectors a first preparation requires, with what is left
+    to complete of them, said in ``todo`` and ``reasons``: a workflow's edition and minimum
+    release, too many injector types, injects whose contract is not a recorded built-in one."""
     if facts.holds_workflow:  # said, and nothing to choose
         todo["/requires/edition"] = STARTING_EDITION_OF_A_WORKFLOW
         asking_nothing.add("/requires/edition")
@@ -520,6 +497,57 @@ def starting_metadata(
         reasons.setdefault("/requires/executors", []).append(
             f"check them: {unknown}, so whether {they} need an executor is unknown"
         )
+    return platform_version, injectors
+
+
+def starting_metadata(
+    facts: ExportFacts,
+    *,
+    external_id: str,
+    description: str,
+    platform_version: str,
+    unknown_injects: int,
+    path: str,
+) -> tuple[dict[str, object], tuple[Finding, ...]]:
+    """The ``scenario.yaml`` of a first preparation, in the order of the data model, and an
+    ``SCH-007`` finding for each default to review and each field left for a contributor to
+    complete. It takes what the export and the recorded contracts establish, so that it passes
+    the cross-checks, and only values the schema accepts, so that the file stays small enough to
+    read back: a description over its bound once cleaned is cut where a reader can tell and
+    marked, or left empty when it cannot be; another text over its bound or a value outside its
+    list is left empty; each is reported, never copied whole."""
+    todo: dict[str, str] = dict(_DEFAULTS)
+    asking_nothing: set[str] = set()  # the fields whose finding is said, and asks for nothing
+    name, why_name = _bounded(facts.name, NAME_LIMIT, "name")
+    description, why_description, said_only = _starting_description(description)
+    if said_only:  # said, and no item of a checklist
+        asking_nothing.add("/description")
+    severity = facts.severity if facts.severity in SEVERITIES else ""
+    why_severity = (
+        None
+        if severity
+        else ("/severity", f"the export's severity is not one of {', '.join(SEVERITIES)}: "
+              f"{_FIX_ON_THE_PLATFORM}")
+    )  # fmt: skip
+    category, why_category = _bounded(facts.category, FACET_LIMIT, "category")
+    main_focus, why_main_focus = _bounded(facts.main_focus, FACET_LIMIT, "main_focus")
+    executors, platforms, unknown_platforms = _executor_platforms(facts)
+    for reason in (why_name, why_description, why_severity, why_category, why_main_focus):
+        if reason is not None:
+            todo[reason[0]] = reason[1]
+    reasons: dict[str, list[str]] = {}
+    if unknown_platforms:
+        plural = "s" if unknown_platforms > 1 else ""
+        reasons.setdefault("/platforms", []).append(
+            f"{unknown_platforms} platform{plural} of the injects that run through an executor "
+            f"{'are' if plural else 'is'} not among {', '.join(PLATFORMS)}: left out"
+        )
+    todo["/threat"] = _THREAT
+    todo["/sources"] = _SOURCES
+    todo.update(_REQUIRES_DEFAULTS)
+    platform_version, injectors = _requirements_to_complete(
+        facts, platform_version, unknown_injects, todo, asking_nothing, reasons
+    )
     if executors:
         where = ", ".join(platforms) or "platforms left out above"
         reasons.setdefault("/requires/executors", []).insert(
