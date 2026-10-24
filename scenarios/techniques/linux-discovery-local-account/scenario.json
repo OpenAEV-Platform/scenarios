@@ -911,7 +911,7 @@
               "command_content": "dir=/var/tmp/openaev-created-art\nid art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\nmkdir -m 711 \"$dir\" 2>/dev/null || { echo \"$dir already exists: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || { rmdir \"$dir\"; exit 1; }\nuseradd --shell /bin/bash --home-dir \"$dir/home\" --create-home --password \"$password\" art || { rm -rf \"$dir\"; exit 1; }\nid -u art > \"$dir/uid\" || { userdel art; rm -rf \"$dir\"; exit 1; }\nsu art -c \"whoami; exit\"\n",
               "command_executor": "bash",
               "payload_arguments": [],
-              "payload_cleanup_command": "dir=/var/tmp/openaev-created-art\nif [ -d \"$dir\" ] && [ ! -L \"$dir\" ] && [ \"$(stat -c %u \"$dir\")\" = 0 ]; then\n  if [ -f \"$dir/uid\" ] && [ ! -L \"$dir/uid\" ] && [ \"$(id -u art 2>/dev/null)\" = \"$(cat \"$dir/uid\")\" ]; then\n    userdel art\n  fi\n  rm -rf \"$dir\"\nfi\n",
+              "payload_cleanup_command": "dir=/var/tmp/openaev-created-art\n# Only the state this payload's run left: a directory of root's, holding the UID record it wrote.\n[ -d \"$dir\" ] && [ ! -L \"$dir\" ] && [ \"$(stat -c %u \"$dir\")\" = 0 ] || exit 0\n[ -f \"$dir/uid\" ] && [ ! -L \"$dir/uid\" ] && [ \"$(stat -c %u \"$dir/uid\")\" = 0 ] || exit 0\nuid=$(cat \"$dir/uid\")\nif [ \"$(id -u art 2>/dev/null)\" = \"$uid\" ]; then\n  userdel art || { echo \"the account art could not be removed: its state is kept in $dir\" >&2; exit 1; }\nfi\nrm -rf \"$dir\"\n",
               "payload_cleanup_executor": "bash",
               "payload_description": "Create a local account named art with the password art, its home in a directory of the run's own, switch to it to run whoami, then remove both: an account named art that already exists, or anything already where the run keeps its state, is left as it is, and nothing is created.",
               "payload_detection_remediations": [],
@@ -932,7 +932,7 @@
                   "XDR"
                 ]
               },
-              "payload_external_id": "ca055711-870c-5a47-8539-a14fb60893e8",
+              "payload_external_id": "3b7c6215-1a3e-5838-8ff4-fa900f63b251",
               "payload_id": "d9a1f23b-759f-5524-905d-cd7d62bf41b2",
               "payload_name": "Create local account (1.1.0)",
               "payload_output_parsers": [],

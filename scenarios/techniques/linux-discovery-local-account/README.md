@@ -56,7 +56,7 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(ca055711\-870c\-5a47\-8539\-a14fb60893e8\)
+- Payload: Create local account \(1\.1\.0\) \(3b7c6215\-1a3e\-5838\-8ff4\-fa900f63b251\)
 
 Command (bash):
 
@@ -74,12 +74,14 @@ Cleanup (bash):
 
 ```
 dir=/var/tmp/openaev-created-art
-if [ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ]; then
-  if [ -f "$dir/uid" ] && [ ! -L "$dir/uid" ] && [ "$(id -u art 2>/dev/null)" = "$(cat "$dir/uid")" ]; then
-    userdel art
-  fi
-  rm -rf "$dir"
+# Only the state this payload's run left: a directory of root's, holding the UID record it wrote.
+[ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ] || exit 0
+[ -f "$dir/uid" ] && [ ! -L "$dir/uid" ] && [ "$(stat -c %u "$dir/uid")" = 0 ] || exit 0
+uid=$(cat "$dir/uid")
+if [ "$(id -u art 2>/dev/null)" = "$uid" ]; then
+  userdel art || { echo "the account art could not be removed: its state is kept in $dir" >&2; exit 1; }
 fi
+rm -rf "$dir"
 ```
 
 ## Caveats
@@ -92,7 +94,7 @@ fi
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | ca055711\-870c\-5a47\-8539\-a14fb60893e8 | Command | Linux |
+| Create local account \(1\.1\.0\) | 3b7c6215\-1a3e\-5838\-8ff4\-fa900f63b251 | Command | Linux |
 | Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in
