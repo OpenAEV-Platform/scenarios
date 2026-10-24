@@ -157,8 +157,10 @@ same name: rename one of the scenarios, or update the existing entry instead.
 
 ## Scenarios in chaining
 
-A scenario in chaining runs its injects as the steps of a workflow, each step starting when the
-step it waits for is done, instead of at set times. Export it from the platform as any other
+A scenario in chaining runs its injects as the steps of a workflow, each step starting once the
+platform has started the step it waits for, instead of at set times. The platform does not wait
+for that step to end: two steps that run on one agent run in order, as an agent runs its jobs one
+after the other, but steps on different agents may run at once. Export it from the platform as any other
 scenario, with the same options: the export holds a `scenario_workflow` part and no
 `scenario_injects`. A scenario holds injects or a workflow, never both. The tools read only a
 subset of what the platform can export, and refuse the rest (`IO-014`), pointing at the node at

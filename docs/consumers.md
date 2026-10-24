@@ -167,7 +167,8 @@ refused releases are hostile on purpose, and are opened only by a verifier.
 - **No signature.** A release is trusted through its hashes and the location it comes from;
   what stands between an attacker and a platform is the repository's review and release
   rules. Signed releases may come later.
-- **No scenario in chaining yet.** As this page is written, none is released, and none will be
-  before the platform's import rewrites the `DEPEND_ON` conditions, as check 9 asks.
+- **Chaining on recent platforms only.** A scenario in chaining requires OpenAEV 3.261024.0 or
+  later, the first release whose import rewrites the `DEPEND_ON` conditions, as check 9 asks: do
+  not install it on an earlier one (check 8).
 - **No revocation list.** A scenario is withdrawn by a new version whose `status` is `REVOKED`;
   a platform learns it from the next release it reads.

@@ -1,0 +1,39 @@
+{
+  "command_content": "umask 077\ndir=/var/tmp/openaev-created-art\nid art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\nmkdir -m 711 \"$dir\" 2>/dev/null || { echo \"$dir already exists: nothing is created\" >&2; exit 1; }\n# Created locked, without a password: the password is set once the account can be cleaned up.\nuseradd --shell /bin/bash --home-dir \"$dir/home\" --create-home art || { rm -rf \"$dir\"; exit 1; }\nid -u art > \"$dir/uid\" || { userdel art && rm -rf \"$dir\"; exit 1; }\npassword=$(openssl passwd -1 art) && usermod --password \"$password\" art || exit 1\nsu art -c \"whoami; exit\"\n",
+  "command_executor": "bash",
+  "payload_attack_patterns": [
+    "T1078.003"
+  ],
+  "payload_cleanup_command": "dir=/var/tmp/openaev-created-art\n# Only the state this payload's run left: a directory of root's, holding the UID record it wrote.\n[ -e \"$dir\" ] || [ -L \"$dir\" ] || exit 0\nif ! { [ -d \"$dir\" ] && [ ! -L \"$dir\" ] && [ \"$(stat -c %u \"$dir\")\" = 0 ] \\\n    && [ -f \"$dir/uid\" ] && [ ! -L \"$dir/uid\" ] && [ \"$(stat -c %u:%a \"$dir/uid\")\" = 0:600 ]; }; then\n  echo \"$dir is not the state this payload leaves: nothing is removed, check it by hand\" >&2\n  exit 1\nfi\nuid=$(cat \"$dir/uid\")\nif [ \"$(id -u art 2>/dev/null)\" = \"$uid\" ]; then\n  userdel art || { echo \"the account art could not be removed: its state is kept in $dir\" >&2; exit 1; }\nfi\nrm -rf \"$dir\"\n",
+  "payload_cleanup_executor": "bash",
+  "payload_description": "Create a local account named art with the password art, its home in a directory of the run's own, switch to it to run whoami, then remove both: an account named art that already exists, or anything already where the run keeps its state, is left as it is, and nothing is created. Run it once at a time on an endpoint: the cleanup of a run that created nothing removes the account of another run still holding it.",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "d8b64542-22c5-5b64-8828-f578fdf02b05",
+  "payload_name": "Create local account (1.1.0)",
+  "payload_platforms": [
+    "Linux"
+  ],
+  "payload_type": "Command"
+}

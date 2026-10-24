@@ -3,10 +3,12 @@
 A catalogue of shareable attack scenarios for
 [OpenAEV](https://github.com/OpenAEV-Platform/openaev), and the tools that prepare and check them.
 
-> **Status: early.** The catalogue holds its first scenario,
+> **Status: early.** The catalogue holds two scenarios:
 > [EASM Scenario](scenarios/techniques/easm/), the first of the three scenarios of the platform's
-> starter pack. Releases, and installing a scenario from the catalogue straight into a platform,
-> come later.
+> starter pack, and
+> [Linux discovery then local account creation](scenarios/techniques/linux-discovery-local-account/),
+> its first scenario in chaining. Releases, and installing a scenario from the catalogue straight
+> into a platform, come later.
 
 ## What this repository is for
 
