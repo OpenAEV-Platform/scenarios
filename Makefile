@@ -32,8 +32,9 @@ types:
 imports:
 	uv run lint-imports
 
+# The tests run on every core (pytest-xdist); the timing tests stay out, run alone below.
 tests:
-	$(SHARED) uv run pytest -m "not timing" --cov --cov-report=term-missing
+	$(SHARED) uv run pytest -n auto -m "not timing" --cov --cov-report=term-missing
 
 # The domain layer must be fully covered (branches included), measured on the run above.
 coverage-domain: tests

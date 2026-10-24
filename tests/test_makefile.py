@@ -116,7 +116,7 @@ def test_without_flock_the_steps_run_as_they_are(tmp_path: Path) -> None:
     lines = _make("tests", "timing", path=str(empty), lock=tmp_path / "lock").stdout
 
     assert "flock" not in lines
-    assert 'uv run pytest -m "not timing"' in lines
+    assert 'uv run pytest -n auto -m "not timing"' in lines
     assert "uv run pytest -m timing" in lines
 
 
