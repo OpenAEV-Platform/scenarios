@@ -441,3 +441,23 @@ def test_a_domain_that_cannot_be_read_is_the_environment_s_fault(tmp_path: Path)
             RepositoryEntries(tmp_path, strict=True).places()
     finally:
         domain.chmod(0o755)
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_every_entry_read_is_listed_in_order_and_what_is_no_entry_is_left_out(
+    tmp_path: Path, strict: bool
+) -> None:
+    _entry(tmp_path, "scenarios/techniques/a", "one")
+    (tmp_path / "scenarios/techniques/empty").mkdir()  # no scenario.yaml: no entry
+    silent = _entry(tmp_path, "scenarios/techniques/silent")
+    (silent / "scenario.yaml").write_text("description: neither an id nor a name\n")
+    named = _entry(tmp_path, "scenarios/techniques/named")
+    (named / "scenario.yaml").write_text("name: Named\nexternal_id: 5\n")
+    listed = _entry(tmp_path, "scenarios/techniques/listed")
+    (listed / "scenario.yaml").write_text("- a list\n")
+
+    assert RepositoryEntries(tmp_path, strict=strict).entries() == (
+        CatalogueEntry("scenarios/techniques/a", "one", ""),
+        CatalogueEntry("scenarios/techniques/listed", "", "", False),
+        CatalogueEntry("scenarios/techniques/named", "", "Named"),
+    )
