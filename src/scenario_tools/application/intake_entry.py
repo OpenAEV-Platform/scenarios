@@ -604,34 +604,14 @@ def _update(
     )
     if assigned.metadata is not None and assigned.stored is not None:
         scenario_json = stored_form(assigned.stored)
-        # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
-        information = assigned.stored.get(INFORMATION) or {}  # as normalised, then stored
-        given = {name: information.get(FACETS[name]) for name in request.facets}
-        wanted = {**assigned.metadata, **given}
-        if wanted != declared:  # its references or its facets change: scenario.yaml too
-            metadata = wanted
+        metadata = _updated_metadata(request, assigned.metadata, assigned.stored, declared)
+        if metadata is not None:  # its references or its facets change: scenario.yaml too
             previous_files["scenario.yaml"] = written.encode()
     # Otherwise the entry's check, run once it is written, says why in the plan.
     changed = scenario_json != stored or metadata is not None or bool(verdict.files)
     left: tuple[Finding, ...] = verdict.told
     if changed:
-        left += (
-            Finding(
-                "SCH-007",
-                Severity.INFO,
-                metadata_path,
-                "/version",
-                "raise the version for this change and add its section to CHANGELOG.md",
-            ),
-            Finding(
-                "SCH-007",
-                Severity.INFO,
-                f"{request.entry}/{SHEET}",
-                "",
-                "the sheet follows scenario.yaml: once it is complete, render it again with "
-                "`scenario-tools render`",
-            ),
-        )
+        left += _change_notes(metadata_path, request.entry)
     entry = next(entry for entry in source.entries() if entry.path == request.entry)
     if not same_name(entry.name, name):  # renamed, as rewrite declares
         left += (
@@ -643,7 +623,55 @@ def _update(
                 "the scenario was renamed: align name, category and main focus with the export",
             ),
         )
-    left += tuple(
+    left += _removed_notes(stored_path, prepared)
+    return IntakeResult(
+        request,
+        (),
+        scenario_json,
+        metadata,
+        left,
+        changed,
+        previous_files,
+        payload_files=verdict.files,
+        payload_changes=verdict.changes,
+    )
+
+
+def _updated_metadata(
+    request: IntakeRequest, assigned: dict[str, Any], stored: Mapping[str, Any], declared: object
+) -> dict[str, Any] | None:
+    """scenario.yaml as an update writes it, or nothing where it stays as declared."""
+    # A facet the request gives is the stored scenario's now: scenario.yaml takes it too.
+    information = stored.get(INFORMATION) or {}  # as normalised, then stored
+    given = {name: information.get(FACETS[name]) for name in request.facets}
+    wanted = {**assigned, **given}
+    return wanted if wanted != declared else None
+
+
+def _change_notes(metadata_path: str, entry: str) -> tuple[Finding, ...]:
+    """What the author of a changed entry completes before the pull request."""
+    return (
+        Finding(
+            "SCH-007",
+            Severity.INFO,
+            metadata_path,
+            "/version",
+            "raise the version for this change and add its section to CHANGELOG.md",
+        ),
+        Finding(
+            "SCH-007",
+            Severity.INFO,
+            f"{entry}/{SHEET}",
+            "",
+            "the sheet follows scenario.yaml: once it is complete, render it again with "
+            "`scenario-tools render`",
+        ),
+    )
+
+
+def _removed_notes(stored_path: str, prepared: PreparedEntry) -> tuple[Finding, ...]:
+    """The injects and steps of the previous version the export no longer has."""
+    return tuple(
         Finding(
             "VER-012",
             Severity.INFO,
@@ -656,15 +684,4 @@ def _update(
             ("step", prepared.removed_steps),
         )
         for identifier in identifiers
-    )
-    return IntakeResult(
-        request,
-        (),
-        scenario_json,
-        metadata,
-        left,
-        changed,
-        previous_files,
-        payload_files=verdict.files,
-        payload_changes=verdict.changes,
     )
