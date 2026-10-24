@@ -96,7 +96,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 
 | Command | What it does |
 |---|---|
-| `intake` | Turns a platform export and a short request into a new entry, or an update of one, and writes the plan of the pull request |
+| `intake` | Turns a platform export and a short request into a new entry, or an update of one, with the version files of its new payloads, and writes the plan of the pull request; with `--check`, gives the verdict on each payload without git and writing nothing |
 | `normalize` | Writes the normalised `scenario.json` of an export |
 | `validate` | Checks entries against the schemas and the repository's rules (some rules are not run yet) |
 | `render` | Writes the sheet of entries, their `README.md`, from `scenario.yaml` and `scenario.json`; with `--check`, reports a sheet out of date |
@@ -166,8 +166,9 @@ A few rules apply to every pull request:
 | Folder | Content |
 |---|---|
 | [`scenarios/`](scenarios/) | The catalogue's entries, one folder each |
-| [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request and a release manifest |
+| [`payloads/`](payloads/) | The payload catalogue: one folder per payload, one frozen file per version ([`docs/payloads.md`](docs/payloads.md)) |
+| [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request, a payload version file and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
-| [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the findings, releases and their consumers, security |
+| [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the payload catalogue, the findings, releases and their consumers, security |
 | [`src/`](src/) | The source of `scenario-tools` |
 | [`tests/`](tests/) | Its tests, with real platform exports as reference data |

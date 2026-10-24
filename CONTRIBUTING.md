@@ -63,6 +63,14 @@ file, which `intake` writes under `payloads/`, in the same pull request. The pul
 takes its payload catalogue as data, checks it as `scenario-tools validate-payloads payloads` does,
 then checks the entries against it.
 
+A payload version, once merged, is never edited nor removed: the checks of every pull request
+refuse it (`VER-022`). A change to a payload is a new version, in a file of its own with a higher
+number. To make one, copy the payload on the platform, change the copy, and say in the intake
+request that it is based on the catalogue payload (`payloads`, with `based_on`): `intake` writes it
+as that payload's next version, and the plan lists the fields it changes.
+[`docs/payloads.md`](docs/payloads.md) describes the catalogue, and
+[`docs/intake.md`](docs/intake.md#the-request) the request.
+
 ### Versions
 
 Each entry has a version, in `scenario.yaml`, and a `CHANGELOG.md` with one section per version,

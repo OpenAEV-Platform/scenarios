@@ -90,8 +90,11 @@ A release with any finding below is not used at all.
    Every payload file the manifest lists is present, has the size and the SHA-256 listed and the
    name `<payload>-<version>.json`, holds the `openaev_id` listed, and its content has the hash
    `sha256` listed (computed as for an embedded payload, its techniques taken from
-   `payload_attack_patterns`); a version is listed once, an ID with one payload, one version, one hash and one file, a content under one ID, and
-   every payload an item lists is a listed version.
+   `payload_attack_patterns`); a version is listed once, an ID with one payload, one version, one
+   hash and one file, a content under one ID, and every payload an item lists is a listed version.
+   Before installing a payload file, compare that hash with what the platform holds under its
+   `openaev_id`: the platform's import and collectors replace a payload that has the same ID, so
+   a payload written there by hand, or another version under that ID, would be overwritten.
 8. **Status and requirements.** A `REVOKED` scenario must no longer run; a `DEPRECATED` one is
    replaced or no longer maintained. Install only scenarios whose `requires` the platform meets.
 9. **Scenarios in chaining.** Import one only where the import does both of these:
