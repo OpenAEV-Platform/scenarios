@@ -321,16 +321,11 @@ def _previous_signatures(
     return signatures
 
 
-def _identifiers(
-    export: Mapping[str, Any],
-    external_id: str,
-    previous: Mapping[str, Any] | None,
-    mapping: Mapping[str, str] | None,
-) -> tuple[_Identifiers, tuple[str, ...], tuple[str, ...]]:
-    namespace = scenario_namespace(external_id)
-    identifiers = _Identifiers()
-    scenario_id = stable_id(namespace, "scenario", external_id)
-    identifiers.add(_text(export[_INFORMATION], "scenario_id", _INFORMATION), scenario_id)
+def _object_identifiers(
+    export: Mapping[str, Any], namespace: uuid.UUID, identifiers: _Identifiers
+) -> dict[str, str]:
+    """The identifiers of the objects named in their collection, from their names, each name
+    once in a collection; and the name of each channel, by its source identifier."""
     channels: dict[str, str] = {}
     for collection, key, name_key, object_type in _OBJECTS:
         named: set[str] = set()
@@ -342,7 +337,17 @@ def _identifiers(
             identifiers.add(source, stable_id(namespace, object_type, name))
             if object_type == "channel":
                 channels[source] = name
-    # An article's name is unique within its channel only.
+    return channels
+
+
+def _article_identifiers(
+    export: Mapping[str, Any],
+    namespace: uuid.UUID,
+    channels: Mapping[str, str],
+    identifiers: _Identifiers,
+) -> None:
+    """The identifiers of the articles, from their channel and name: an article's name is
+    unique within its channel only, which must be one of the scenario's."""
     articles: set[str] = set()
     for item in _objects(export, _ARTICLES):
         source, name = _text(item, "article_id", _ARTICLES), _name(item, "article_name", _ARTICLES)
@@ -354,6 +359,14 @@ def _identifiers(
             raise _refuse(f"two articles of channel {channel!r} are named {name!r}")
         articles.add(article_key)
         identifiers.add(source, stable_id(namespace, "article", article_key))
+
+
+def _contract_identifiers(
+    export: Mapping[str, Any], namespace: uuid.UUID, identifiers: _Identifiers
+) -> None:
+    """The identifiers of the contracts of injects and steps: a built-in contract keeps its
+    own; a payload and its contract take theirs from the payload's base name, one version of a
+    payload in a scenario."""
     payloads: dict[str, tuple[str, str]] = {}  # the source and name of each base name
     for inject in [*_objects(export, _INJECTS), *_step_injects(export)]:
         payload = _payload(inject)
@@ -385,6 +398,11 @@ def _identifiers(
             identifiers.add(source, stable_id(namespace, "payload", base))
             contract = _text(inject[_CONTRACT], "injector_contract_id", _CONTRACT)
             identifiers.add(contract, stable_id(namespace, "contract", base))
+
+
+def _catalogue_identifiers(export: Mapping[str, Any], identifiers: _Identifiers) -> None:
+    """The identifiers of the catalogue's objects anywhere in the export (techniques, phases,
+    domains), from their shared key, which an object that gives an identifier must have."""
     for item in _catalogue_objects(export):
         for key, external_key, object_type in _CATALOGUE:
             if item.get(key) is not None:  # an identifier given: its shared key is required
@@ -394,6 +412,22 @@ def _identifiers(
                     raise _refuse(f"{key} needs a non-empty {external_key}")
                 target = stable_id(NS_OPENAEV_SCENARIOS, object_type, item[external_key])
                 identifiers.add(item[key], target)
+
+
+def _identifiers(
+    export: Mapping[str, Any],
+    external_id: str,
+    previous: Mapping[str, Any] | None,
+    mapping: Mapping[str, str] | None,
+) -> tuple[_Identifiers, tuple[str, ...], tuple[str, ...]]:
+    namespace = scenario_namespace(external_id)
+    identifiers = _Identifiers()
+    scenario_id = stable_id(namespace, "scenario", external_id)
+    identifiers.add(_text(export[_INFORMATION], "scenario_id", _INFORMATION), scenario_id)
+    channels = _object_identifiers(export, namespace, identifiers)
+    _article_identifiers(export, namespace, channels, identifiers)
+    _contract_identifiers(export, namespace, identifiers)
+    _catalogue_identifiers(export, identifiers)
     old = _previous_signatures(previous, namespace, scenario_id)  # also checks the entry
     mapping = dict(mapping or {})
     previous_steps = _previous_steps(previous, namespace)
