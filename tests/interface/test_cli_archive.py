@@ -15,6 +15,7 @@ from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.interface.cli import main
 from tests.adapters.test_safe_zip import ENCRYPTED
 from tests.support.catalogue import write_catalogue
+from tests.support.interface import patch_interface
 
 ROOT = Path(__file__).parents[2]
 NORMALISED = ROOT / "tests" / "golden" / "normalised"
@@ -148,7 +149,7 @@ def test_an_archive_over_the_limit_is_reported_on_the_output(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     entry = _entry(tmp_path, "easm-scenario")
-    monkeypatch.setattr("scenario_tools.interface.cli.ARCHIVE_LIMIT", 1000)
+    patch_interface(monkeypatch, "ARCHIVE_LIMIT", 1000)
 
     _, stdout, _ = _run(
         "--format", "json", "archive", str(entry.relative_to(tmp_path)), "--out", "build/x/../e.zip"
@@ -163,7 +164,7 @@ def test_an_archive_the_checks_refuse_is_never_written(
 ) -> None:
     entry = _entry(tmp_path, "easm-scenario")
     monkeypatch.setattr(
-        "scenario_tools.interface.cli.ZipArchiveBuilder.build", lambda self, *args: b"not a zip"
+        "scenario_tools.interface.base.ZipArchiveBuilder.build", lambda self, *args: b"not a zip"
     )
 
     code, stdout, _ = _run("--format", "json", "archive", str(entry), "--out", str(tmp_path / "e"))

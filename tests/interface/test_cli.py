@@ -14,13 +14,13 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import scenario_tools
-import scenario_tools.interface.cli as cli_module
 from scenario_tools.adapters.data_files import write_output
 from scenario_tools.adapters.safe_readers import parse_yaml, read_json_file
 from scenario_tools.application import report_output
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Report, Severity
 from scenario_tools.interface.cli import execute, main
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
+from tests.support.interface import interface_attribute, patch_interface
 
 
 def test_version_option_prints_the_package_version() -> None:
@@ -241,7 +241,7 @@ def test_an_unexpected_error_exits_four_with_one_escaped_line_on_stderr(
     def broken(title: str) -> Report:
         raise RuntimeError("boom\n::error::injected")
 
-    monkeypatch.setattr(cli_module, "check_title_use_case", broken)
+    patch_interface(monkeypatch, "check_title_use_case", broken)
 
     result = CliRunner().invoke(main, ["--format", output_format, "check-title", "fix: a (#1)"])
 
@@ -263,7 +263,7 @@ def test_a_long_internal_error_is_shortened(monkeypatch: pytest.MonkeyPatch) -> 
     def broken(title: str) -> Report:
         raise RuntimeError("x" * 100_000)
 
-    monkeypatch.setattr(cli_module, "check_title_use_case", broken)
+    patch_interface(monkeypatch, "check_title_use_case", broken)
 
     result = CliRunner().invoke(main, ["check-title", "fix: a (#1)"])
 
@@ -294,7 +294,7 @@ def test_a_failure_while_converting_a_refusal_exits_four(monkeypatch: pytest.Mon
     def broken(*args: object) -> object:
         raise RuntimeError("conversion failed")
 
-    monkeypatch.setattr(cli_module, "finding_from_unsafe_input", broken)
+    patch_interface(monkeypatch, "finding_from_unsafe_input", broken)
 
     output, code = execute("demo", refused, "json")
 
@@ -702,7 +702,7 @@ def test_a_defect_while_reading_the_entry_exits_with_4(
     def broken(path: Path) -> Any:
         raise RuntimeError("defect")
 
-    monkeypatch.setattr(cli_module, "read_yaml_file", broken)
+    patch_interface(monkeypatch, "read_yaml_file", broken)
     result = _normalize(monkeypatch, entry)
 
     assert result.exit_code == 4
@@ -822,7 +822,7 @@ def test_a_scenario_yaml_that_appears_meanwhile_leaves_the_entry_as_it_was(
             path.write_bytes(b"completed: meanwhile\n")
         write_output(path, data, create=create)
 
-    monkeypatch.setattr(cli_module, "write_output", appears_first)
+    patch_interface(monkeypatch, "write_output", appears_first)
 
     result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
 
@@ -837,14 +837,14 @@ def test_a_scenario_yaml_that_appears_after_the_external_id_was_chosen_stops_the
     # The run decided on a first preparation: a file that appears later is never trusted nor
     # replaced, and no scenario.json is written for an identifier it may contradict.
     entry = _entry(tmp_path)
-    choose = cli_module._entry_external_id
+    choose = interface_attribute("_entry_external_id")
 
     def then_appears(out: Path, given: str | None) -> str:
-        chosen = choose(out, given)
+        chosen: str = choose(out, given)
         (out / "scenario.yaml").write_text("external_id: 00000000-0000-4000-8000-000000000009\n")
         return chosen
 
-    monkeypatch.setattr(cli_module, "_entry_external_id", then_appears)
+    patch_interface(monkeypatch, "_entry_external_id", then_appears)
 
     result = _normalize(monkeypatch, entry, "--external-id", ENTRY_ID)
 
