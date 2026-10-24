@@ -13,12 +13,21 @@ FLOCK := $(shell command -v flock 2>/dev/null)
 SHARED := $(if $(FLOCK),flock -s $(PIPELINE_LOCK))
 ALONE := $(if $(FLOCK),flock -x $(PIPELINE_LOCK))
 
-.PHONY: check lint format types imports tests coverage-domain security audit secrets sheets mutation timing fixtures
+.PHONY: check checks check-fast lint format types imports tests coverage-domain security audit secrets sheets mutation timing fixtures
 
 # The timing tests run from the recipe, once every other check has ended, even under make -j.
-check: lint format types imports tests coverage-domain security audit secrets sheets workflows mutation
+check: checks mutation
 	@$(MAKE) --no-print-directory timing
 	@echo "Local pipeline: all checks passed."
+
+# Every check but the mutation and the timing tests: what CI runs beside the shares of the
+# mutation, each in a job of its own.
+checks: lint format types imports tests coverage-domain security audit secrets sheets workflows
+
+# A quicker loop while working, never a gate: the static checks, then the tests on every core,
+# without coverage and with fewer generated examples. check runs before every pull request.
+check-fast: lint format types imports
+	SCENARIOS_HYPOTHESIS_PROFILE=fast uv run pytest -n auto -m "not timing" -q
 
 lint:
 	uv run ruff check .
@@ -69,10 +78,12 @@ workflows:
 
 # Mutation testing on the security-critical bounded contexts, once they hold code.
 # `mutmut results` lists every mutant that was not killed; any line fails the build.
+# MUTANTS, empty for all, names the prefixes of the mutants a CI job runs and judges, its share.
+MUTANTS ?=
 mutation:
 	@if find $(MUTATION_PATHS) -name '*.py' ! -name '__init__.py' 2>/dev/null | grep -q .; then \
-		$(SHARED) uv run mutmut run && \
-		survivors=$$(uv run mutmut results) && \
+		$(SHARED) uv run mutmut run $(addsuffix *,$(MUTANTS)) && \
+		survivors=$$(uv run mutmut results$(if $(MUTANTS), | { grep -F $(addprefix -e ,$(MUTANTS)) || true; })) && \
 		if [ -n "$$survivors" ]; then echo "$$survivors"; echo "mutation: surviving mutants"; exit 1; fi; \
 	else \
 		echo "mutation: no policy or verification module yet, skipped"; \
