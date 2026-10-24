@@ -11,6 +11,7 @@ import contextlib
 import functools
 import http.client
 import ipaddress
+import json
 import re
 import secrets
 import socket
@@ -26,6 +27,7 @@ from typing import Any
 
 from scenario_tools.adapters.safe_readers import parse_json
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
+from scenario_tools.domain.verification.held_payloads import HeldContract
 from scenario_tools.ports.errors import (
     EnvironmentProblemError,
     OutcomeUnknownError,
@@ -42,6 +44,10 @@ EXPORT_OPTIONS = (
 )
 TIMEOUT = 120.0
 ANSWER_LIMIT = 1024 * 1024
+CONTRACT_LIMIT = 4 * 1024 * 1024  # bytes of one contract, its payload and its copy included
+PAGE_SIZE = 200  # payloads read per page of the platform's search
+PAGE_LIMIT = 16 * 1024 * 1024  # bytes of one page of payloads
+PAGES = 250  # pages read at most: 50,000 payloads
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 # A bearer token (RFC 6750): no output of the tools escapes these characters, so a token that
 # shows anywhere shows as it is, where the guard of the commands finds it.
@@ -340,6 +346,7 @@ class HttpOpenAEV:
         content_type: str | None = None,
         not_found: str = "",
         acts: bool = False,
+        missing: bool = False,
     ) -> bytes:
         """The body of a 200 answer, at most ``limit + 1`` bytes of it. A call that ``acts`` on
         the platform tells, when it fails once connected, that the platform may have acted."""
@@ -376,6 +383,8 @@ class HttpOpenAEV:
                     owed = answer.length
             except urllib.error.HTTPError as error:
                 error.close()
+                if missing and error.code == 404:
+                    raise _Missing from None
                 message, may_have_acted = _failure(error.code, not_found)
                 raise failed(message, may_have_acted) from None
             except (urllib.error.URLError, http.client.HTTPException, OSError) as error:
@@ -429,6 +438,106 @@ class HttpOpenAEV:
             acts=True,
         )
         return _import_result(data)
+
+    def held_contract(self, contract_id: str) -> HeldContract | None:
+        if contract_id in ("", ".", ".."):  # a path segment that names no contract
+            raise EnvironmentProblemError(
+                f"{contract_id!r} is not a contract ID the platform reads"
+            )
+        path = f"/api/injector_contracts/{urllib.parse.quote(contract_id, safe='')}"
+        try:
+            data = self._call("GET", path, CONTRACT_LIMIT, missing=True)
+        except _Missing:
+            return None
+        if len(data) > CONTRACT_LIMIT:
+            raise EnvironmentProblemError(
+                f"the platform's contract is larger than {CONTRACT_LIMIT} bytes"
+            )
+        document = _answer(data, CONTRACT_LIMIT, f"contract {contract_id}")
+        if not isinstance(document, dict):
+            raise EnvironmentProblemError("the platform's contract is not a JSON object")
+        payload = document.get("injector_contract_payload")
+        return HeldContract(None if payload in (None, {}) else payload)
+
+    def held_payloads(self, external_ids: frozenset[str]) -> Mapping[str, object]:
+        held: dict[str, object] = {}
+        if not external_ids:
+            return held
+        # The search takes no sort on a unique field, so its pages may shift while they are read:
+        # every payload must be seen once, and their number must not change, or one may be missed.
+        seen: set[object] = set()
+        total: object = None
+        for page in range(PAGES):
+            body = json.dumps({"page": page, "size": PAGE_SIZE}).encode()
+            data = self._call(
+                "POST",
+                "/api/payloads/search",
+                PAGE_LIMIT,
+                body=body,
+                content_type="application/json",
+            )
+            if len(data) > PAGE_LIMIT:
+                raise EnvironmentProblemError(
+                    f"a page of the platform's payloads is larger than {PAGE_LIMIT} bytes"
+                )
+            document = _answer(data, PAGE_LIMIT, "a page of payloads")
+            content = document.get("content") if isinstance(document, dict) else None
+            last = document.get("last") if isinstance(document, dict) else None
+            count = document.get("totalElements") if isinstance(document, dict) else None
+            if (
+                not isinstance(content, list)
+                or not isinstance(last, bool)
+                or not isinstance(count, int)
+                or isinstance(count, bool)
+            ):
+                raise EnvironmentProblemError(
+                    "the platform's page of payloads is not the expected JSON object"
+                )
+            if page == 0:
+                total = count
+            if count != total or (not content and not last):
+                raise EnvironmentProblemError(_PAYLOADS_CHANGED)
+            for payload in content:
+                if not isinstance(payload, dict):
+                    raise EnvironmentProblemError(
+                        "the platform's page of payloads holds something else than a payload"
+                    )
+                payload_id = payload.get("payload_id")
+                if not isinstance(payload_id, str) or payload_id in seen:
+                    raise EnvironmentProblemError(_PAYLOADS_CHANGED)
+                seen.add(payload_id)
+                external_id = payload.get("payload_external_id")
+                if isinstance(external_id, str) and external_id in external_ids:
+                    if external_id in held:
+                        raise EnvironmentProblemError(
+                            "the platform holds two payloads under one external ID: the one the "
+                            "import would reuse cannot be told"
+                        )
+                    held[external_id] = payload
+            if last:
+                if len(seen) != total:
+                    raise EnvironmentProblemError(_PAYLOADS_CHANGED)
+                return held
+        raise EnvironmentProblemError(
+            f"the platform holds more than {PAGES * PAGE_SIZE} payloads: they cannot all be read"
+        )
+
+
+_PAYLOADS_CHANGED = (
+    "the platform's payloads changed while they were read, or a page lacks one: read them again"
+)
+
+
+class _Missing(Exception):  # noqa: N818 - a signal between two methods, never raised further
+    """A 404 a caller asked to be told of."""
+
+
+def _answer(data: bytes, limit: int, what: str) -> object:
+    """The JSON document of an answer; one that is not JSON is the platform's fault."""
+    try:
+        return parse_json(data, limit=limit)
+    except UnsafeInputError as error:
+        raise EnvironmentProblemError(f"the platform's answer for {what} is not JSON") from error
 
 
 def _failure(status: int, not_found: str) -> tuple[str, bool]:

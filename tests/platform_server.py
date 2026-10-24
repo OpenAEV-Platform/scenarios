@@ -6,7 +6,7 @@ a test can check what was sent, and that nothing was sent when it must not be.
 
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,6 +32,11 @@ class Platform:
     hold: float = 0.0  # seconds of silence after the raw bytes, the connection left open
     silent: bool = False  # read the request, then close without any answer
     received: list[Received] = field(default_factory=list)
+    # Answers by method and path prefix, before the default answer: what a test that calls several
+    # endpoints sets, each request given to the function that answers it.
+    routes: list[tuple[str, str, Callable[[Received], tuple[int, bytes]]]] = field(
+        default_factory=list
+    )
 
     def answer(self, status: int, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
         self.status, self.body, self.headers = status, body, headers or {}
@@ -50,6 +55,14 @@ def _handler(platform: Platform) -> type[BaseHTTPRequestHandler]:
                 )
             )
             time.sleep(platform.delay)
+            for method, prefix, answer in platform.routes:
+                if self.command == method and self.path.startswith(prefix):
+                    status, body = answer(platform.received[-1])
+                    self.send_response(status)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
             if platform.silent:
                 self.close_connection = True
                 return

@@ -86,7 +86,7 @@ A release with any finding below is not used at all.
    across the release.
    When an import would reuse a payload the platform already holds under an ID the manifest
    lists, the content it holds must have the hash the manifest lists: otherwise do not use it,
-   and report the conflict.
+   and report the conflict. Check 9 says how to tell what an import would reuse.
    Every payload file the manifest lists is present, has the size and the SHA-256 listed and the
    name `<payload>-<version>.json`, holds the `openaev_id` listed, and its content has the hash
    `sha256` listed (computed as for an embedded payload, its techniques taken from
@@ -110,6 +110,19 @@ A release with any finding below is not used at all.
      computed in advance, so a contract placed first under one of them would otherwise run
      something other than what was reviewed. Checking the payloads against the manifest
      (check 7) is not enough: the contract decides what a step runs.
+     Where the platform's import does not compare them, compare them before importing.
+     `scenario-tools openaev check ARCHIVE` does, reading the platform only. It reads the
+     contract the platform holds under each contract ID the archive gives, then every payload
+     the platform holds, for those under a payload external ID the archive gives. It compares
+     each with the payload the archive embeds there, by the canonical hash, the techniques taken
+     from the archive on both sides, and reports each one that differs (`OAV-002`). It reads any
+     export, a step's inject given as JSON text included. A platform's answer it cannot read
+     stops it, importing nothing: before OpenAEV 3.261009.0, the platform could cut short the
+     answer for a contract whose payload has a collector type.
+     `openaev import` runs the same check first. The token it uses must read every contract
+     and every payload of the platform, as an administrator's does: what it cannot see, it
+     cannot compare. What the platform gains between the check and the import is not seen
+     either: check and import from one place, on a platform that others do not change meanwhile.
 
    A consumer that lacks either of these must not import an archive whose scenario is in
    chaining. The repository also refuses a condition that copies a step's output into the next
@@ -130,7 +143,8 @@ the one the manifest lists, safe to open, and embeds exactly the payloads the ma
 for, steps included. It does not check again that the workflow's graph and conditions are sound
 (no loop, every dependency on a step of the scenario, only the condition types the repository
 accepts): `build` checks them before it writes an archive, and the archive's hash then stands for
-them. Nor does it run check 9: it cannot see what a platform holds, nor how it imports.
+them. Nor does it run check 9: it cannot see what a platform holds, nor how it imports;
+`openaev check` runs the part that compares what a platform holds.
 
 From the repository's root:
 
@@ -154,6 +168,6 @@ refused releases are hostile on purpose, and are opened only by a verifier.
   what stands between an attacker and a platform is the repository's review and release
   rules. Signed releases may come later.
 - **No scenario in chaining yet.** As this page is written, none is released, and none will be
-  before the platform's import does what check 9 asks.
+  before the platform's import rewrites the `DEPEND_ON` conditions, as check 9 asks.
 - **No revocation list.** A scenario is withdrawn by a new version whose `status` is `REVOKED`;
   a platform learns it from the next release it reads.

@@ -108,7 +108,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `approvals` | Collects who approved the last change of every entry, for `build` |
 | `verify` | Verifies a release as its consumers will: each archive and payload file against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
 | `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |
-| `openaev export`, `openaev import` | Exports a scenario from a platform, or imports an archive into one |
+| `openaev export`, `openaev import`, `openaev check` | Exports a scenario from a platform, or imports an archive into one; `check` says, importing nothing, whether the platform holds another payload under an identifier the archive gives one ([`docs/consumers.md`](docs/consumers.md), check 9) |
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |
 
@@ -120,8 +120,9 @@ uv run scenario-tools --help
 uv run scenario-tools validate scenarios/techniques/easm
 ```
 
-`openaev export` and `openaev import` read the platform's address and an API token from the
-`OPENAEV_URL` and `OPENAEV_TOKEN` environment variables. Until scenarios can be installed from the
+The `openaev` commands read the platform's address and an API token from the `OPENAEV_URL` and
+`OPENAEV_TOKEN` environment variables. `openaev import` runs the check of `openaev check` first,
+and imports nothing when it finds a payload the platform would run instead of the one released. Until scenarios can be installed from the
 catalogue, `archive` then `openaev import` is the way to try an entry on your own platform.
 
 The tools run on Linux, with git 2.40 or later; macOS is not tested yet. They read every file with

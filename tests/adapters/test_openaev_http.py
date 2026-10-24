@@ -21,6 +21,7 @@ from scenario_tools.adapters.openaev_http import (
     _Watchdog,
     usable_token,
 )
+from scenario_tools.domain.verification.held_payloads import HeldContract
 from scenario_tools.ports.errors import (
     EnvironmentProblemError,
     OutcomeUnknownError,
@@ -1075,3 +1076,249 @@ def test_an_import_error_names_the_import(platform: Platform) -> None:
 
     with pytest.raises(EnvironmentProblemError, match=r"^the platform answered HTTP 500$"):
         _client(platform).import_scenario(ARCHIVE)
+
+
+# What the platform holds, read before an import
+
+
+CONTRACT = "6d0d3c1e-3f5a-4c9b-9d0e-1f2a3b4c5d6e"
+
+
+def _page(payloads: list[dict[str, object]], last: object, total: object = None) -> bytes:
+    return json.dumps(
+        {
+            "content": payloads,
+            "last": last,
+            "totalElements": len(payloads) if total is None else total,
+        }
+    ).encode()
+
+
+def _payload(number: int, external_id: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"payload_id": f"p-{number}", "payload_name": str(number)}
+    if external_id is not None:
+        payload["payload_external_id"] = external_id
+    return payload
+
+
+def test_a_contract_the_platform_holds_is_read_with_its_payload(platform: Platform) -> None:
+    payload = {"payload_type": "Command", "command_content": "whoami"}
+    platform.answer(200, json.dumps({"injector_contract_payload": payload}).encode())
+
+    assert _client(platform).held_contract(CONTRACT) == HeldContract(payload)
+    request = platform.received[0]
+    assert (request.method, request.path) == ("GET", f"/api/injector_contracts/{CONTRACT}")
+    assert request.headers["authorization"] == f"Bearer {TOKEN}"
+
+
+@pytest.mark.parametrize("payload", [None, {}], ids=["null", "empty"])
+def test_a_contract_without_a_payload_is_held_without_one(
+    platform: Platform, payload: object
+) -> None:
+    platform.answer(200, json.dumps({"injector_contract_payload": payload}).encode())
+
+    assert _client(platform).held_contract(CONTRACT) == HeldContract(None)
+
+
+def test_a_contract_the_platform_does_not_hold_is_none(platform: Platform) -> None:
+    platform.answer(404, b'{"message": "not found"}')
+
+    assert _client(platform).held_contract(CONTRACT) is None
+
+
+def test_the_contract_identifier_is_encoded_in_the_path(platform: Platform) -> None:
+    platform.answer(404)
+
+    _client(platform).held_contract("a/../b c")
+
+    assert platform.received[0].path == "/api/injector_contracts/a%2F..%2Fb%20c"
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        # what a platform sends when it cannot write the whole contract: two documents
+        (b'{"injector_contract_payload": {"payload_collector_type"}}{"message": "x"}', "not JSON"),
+        (b"[]", "not a JSON object"),
+    ],
+    ids=["broken", "not an object"],
+)
+def test_a_contract_answer_that_cannot_be_read_is_an_environment_problem(
+    platform: Platform, body: bytes, message: str
+) -> None:
+    platform.answer(200, body)
+
+    with pytest.raises(EnvironmentProblemError, match=message) as error:
+        _client(platform).held_contract(CONTRACT)
+
+    assert TOKEN not in str(error.value)
+
+
+def test_a_contract_larger_than_its_limit_is_refused(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.CONTRACT_LIMIT", 16)
+    platform.answer(200, b'{"injector_contract_payload": null}')
+
+    with pytest.raises(EnvironmentProblemError, match="larger than 16 bytes"):
+        _client(platform).held_contract(CONTRACT)
+
+
+@pytest.mark.parametrize("status", [401, 500])
+def test_a_contract_the_platform_fails_to_give_is_an_environment_problem(
+    platform: Platform, status: int
+) -> None:
+    platform.answer(status)
+
+    with pytest.raises(EnvironmentProblemError):
+        _client(platform).held_contract(CONTRACT)
+
+
+def test_the_payloads_are_read_page_by_page_and_kept_by_the_external_ids_asked(
+    platform: Platform,
+) -> None:
+    first, other, second = _payload(1, "ext-1"), _payload(2, "ext-9"), _payload(4, "ext-2")
+    pages = [_page([first, other, _payload(3)], False, 4), _page([second], True, 4)]
+    platform.routes.append(
+        (
+            "POST",
+            "/api/payloads/search",
+            lambda received: (200, pages[json.loads(received.body)["page"]]),
+        )
+    )
+
+    held = _client(platform).held_payloads(frozenset({"ext-1", "ext-2"}))
+
+    assert held == {"ext-1": first, "ext-2": second}
+    assert [json.loads(r.body) for r in platform.received] == [
+        {"page": 0, "size": 200},
+        {"page": 1, "size": 200},
+    ]
+    assert platform.received[0].headers["content-type"] == "application/json"
+
+
+def test_no_payload_is_read_when_none_is_asked(platform: Platform) -> None:
+    assert _client(platform).held_payloads(frozenset()) == {}
+    assert platform.received == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [_page([_payload(1, "ext-1")], True), _page([], True)],
+    ids=["last", "an empty platform"],
+)
+def test_the_reading_stops_at_the_last_page(platform: Platform, body: bytes) -> None:
+    platform.answer(200, body)
+
+    _client(platform).held_payloads(frozenset({"ext-1"}))
+
+    assert len(platform.received) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _page([_payload(1), _payload(2)], True, 3),  # one payload of the count never seen
+        _page([_payload(1), _payload(1)], True, 2),  # one seen twice, as a shifted page gives
+        _page([], False, 1),  # no payload, and yet not the last page
+        _page([{"payload_name": "no ID"}], True, 1),
+    ],
+    ids=["one missed", "one seen twice", "empty page", "no payload ID"],
+)
+def test_a_reading_that_may_have_missed_a_payload_is_an_environment_problem(
+    platform: Platform, body: bytes
+) -> None:
+    platform.answer(200, body)
+
+    with pytest.raises(EnvironmentProblemError, match="changed while they were read"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+def test_a_count_that_changes_between_pages_is_an_environment_problem(
+    platform: Platform,
+) -> None:
+    pages = [_page([_payload(1)], False, 2), _page([_payload(2)], True, 3)]
+    platform.routes.append(
+        (
+            "POST",
+            "/api/payloads/search",
+            lambda received: (200, pages[json.loads(received.body)["page"]]),
+        )
+    )
+
+    with pytest.raises(EnvironmentProblemError, match="changed while they were read"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+def test_two_payloads_under_one_external_id_are_an_environment_problem(
+    platform: Platform,
+) -> None:
+    platform.answer(200, _page([_payload(1, "ext-1"), _payload(2, "ext-1")], True))
+
+    with pytest.raises(EnvironmentProblemError, match="two payloads under one external ID"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"[]",
+        json.dumps({"content": {}, "last": True, "totalElements": 0}).encode(),
+        json.dumps({"content": [], "totalElements": 0}).encode(),
+        json.dumps({"content": [], "last": None, "totalElements": 0}).encode(),
+        json.dumps({"content": [], "last": True}).encode(),
+        json.dumps({"content": [], "last": True, "totalElements": True}).encode(),
+        json.dumps({"content": ["x"], "last": True, "totalElements": 1}).encode(),
+    ],
+    ids=["a list", "content", "last missing", "last null", "count missing", "count", "item"],
+)
+def test_a_page_of_another_shape_is_an_environment_problem(platform: Platform, body: bytes) -> None:
+    platform.answer(200, body)
+
+    with pytest.raises(EnvironmentProblemError, match="the platform's page of payloads"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+def test_a_page_that_is_not_json_is_an_environment_problem(platform: Platform) -> None:
+    platform.answer(200, b"not json")
+
+    with pytest.raises(EnvironmentProblemError, match="not JSON"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+def test_a_page_larger_than_its_limit_is_refused(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.PAGE_LIMIT", 16)
+    platform.answer(200, _page([], True))
+
+    with pytest.raises(EnvironmentProblemError, match="larger than 16 bytes"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+
+def test_a_platform_with_more_pages_than_the_limit_is_an_environment_problem(
+    platform: Platform, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("scenario_tools.adapters.openaev_http.PAGES", 3)
+    platform.routes.append(
+        (
+            "POST",
+            "/api/payloads/search",
+            lambda received: (200, _page([_payload(json.loads(received.body)["page"])], False, 9)),
+        )
+    )
+
+    with pytest.raises(EnvironmentProblemError, match="more than 600 payloads"):
+        _client(platform).held_payloads(frozenset({"ext-1"}))
+
+    assert len(platform.received) == 3
+
+
+@pytest.mark.parametrize("contract_id", ["", ".", ".."])
+def test_a_contract_id_that_names_no_contract_is_never_asked(
+    platform: Platform, contract_id: str
+) -> None:
+    with pytest.raises(EnvironmentProblemError, match="is not a contract ID"):
+        _client(platform).held_contract(contract_id)
+
+    assert platform.received == []

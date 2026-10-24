@@ -80,6 +80,33 @@ def injects_replaced(document: object, change: Callable[[object], object]) -> ob
     return copied
 
 
+def steps_decoded(
+    document: object, decode: Callable[[str], object]
+) -> tuple[object, tuple[str, ...]]:
+    """A copy of ``document`` with the inject of each step that holds it as JSON text, as an
+    export does, decoded by ``decode``, and the pointers of the steps whose text ``decode``
+    refuses with ``ValueError``, left as they are; the rest is kept as it is."""
+    if not isinstance(document, Mapping):
+        return document, ()
+    workflow = document.get(WORKFLOW)
+    if not isinstance(workflow, Mapping):
+        return document, ()
+    steps = workflow.get(STEPS)
+    if not isinstance(steps, list):
+        return document, ()
+    unreadable: list[str] = []
+    decoded: list[object] = []
+    for index, step in enumerate(steps):
+        data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
+        if isinstance(data, str):
+            try:
+                step = {**step, STEP_DATA: decode(data)}
+            except ValueError:
+                unreadable.append(step_pointer(index))
+        decoded.append(step)
+    return {**document, WORKFLOW: {**workflow, STEPS: decoded}}, tuple(unreadable)
+
+
 def _step_replaced(step: object, change: Callable[[object], object]) -> object:
     data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
     if not isinstance(step, Mapping) or data is None:

@@ -89,6 +89,12 @@ def check_export_archive(data: bytes, path: str) -> None:
     _export_document(archive_from_bytes(data, path=path))
 
 
+def scenario_from_export(data: bytes, path: str) -> Any:
+    """The scenario an export archive holds, the entry the platform's importer reads, once the
+    archive passes the same checks."""
+    return _export_document(archive_from_bytes(data, path=path))
+
+
 def scenario_from_archive(data: bytes, path: str) -> Any:
     """The scenario of a release archive, once the archive is exactly what build writes:
     ``scenario.json``, the scenario entry, and an ``attachments.zip`` that opens with the

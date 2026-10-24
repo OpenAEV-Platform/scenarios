@@ -522,6 +522,12 @@ def _decode(text: str, field: str = _CONTENT, copies: int = 0, depth: int = 0) -
 _STEP_DATA_DEPTH = 4
 
 
+def decoded_step_data(text: str) -> Any:
+    """A step's inject given as JSON text, decoded within the readers' bounds; one that cannot be
+    read is ``ExportStructureError``."""
+    return _decode(text, "step_data", copies=1, depth=_STEP_DATA_DEPTH)
+
+
 def _decoded_or_none(text: str, field: str) -> Any:
     """The JSON text of a step's field decoded within the readers' bounds, or ``None``: a step's
     inject may hold one contract copy."""
