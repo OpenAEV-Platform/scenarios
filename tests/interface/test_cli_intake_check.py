@@ -118,6 +118,15 @@ def test_a_refused_claim_fails_the_check(tmp_path: Path, monkeypatch: pytest.Mon
             "--external-id must be a UUID",
         ),
         ([], "intake needs --request, --repo, --plan, or --check"),
+        (
+            ["--check", "--payloads", "p", "--rules", "r", "--plan", "x", "--request", "c.yaml"],
+            "--check writes nothing: leave out --request, --plan",
+        ),
+        (
+            ["--claims", "c.yaml", "--payloads", "p", "--request", "c.yaml"],
+            "only with --check: --payloads, --claims\n",
+        ),
+        (["--request", "c.yaml", "--plan", "x"], "intake needs --repo, or --check"),
     ],
 )
 def test_the_options_of_each_mode_are_its_own(
