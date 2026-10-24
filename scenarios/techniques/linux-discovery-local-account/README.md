@@ -56,7 +56,7 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(3b7c6215\-1a3e\-5838\-8ff4\-fa900f63b251\)
+- Payload: Create local account \(1\.1\.0\) \(033df011\-a278\-5034\-8d2d\-82f9209e41d8\)
 
 Command (bash):
 
@@ -64,9 +64,10 @@ Command (bash):
 dir=/var/tmp/openaev-created-art
 id art >/dev/null 2>&1 && { echo "an account named art already exists: nothing is created" >&2; exit 1; }
 mkdir -m 711 "$dir" 2>/dev/null || { echo "$dir already exists: nothing is created" >&2; exit 1; }
-password=$(openssl passwd -1 art) || { rmdir "$dir"; exit 1; }
-useradd --shell /bin/bash --home-dir "$dir/home" --create-home --password "$password" art || { rm -rf "$dir"; exit 1; }
-id -u art > "$dir/uid" || { userdel art; rm -rf "$dir"; exit 1; }
+# Created locked, without a password: the password is set once the account can be cleaned up.
+useradd --shell /bin/bash --home-dir "$dir/home" --create-home art || { rm -rf "$dir"; exit 1; }
+id -u art > "$dir/uid" || { userdel art && rm -rf "$dir"; exit 1; }
+password=$(openssl passwd -1 art) && usermod --password "$password" art || exit 1
 su art -c "whoami; exit"
 ```
 
@@ -94,7 +95,7 @@ rm -rf "$dir"
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | 3b7c6215\-1a3e\-5838\-8ff4\-fa900f63b251 | Command | Linux |
+| Create local account \(1\.1\.0\) | 033df011\-a278\-5034\-8d2d\-82f9209e41d8 | Command | Linux |
 | Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in
