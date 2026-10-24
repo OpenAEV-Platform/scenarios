@@ -1080,6 +1080,29 @@ def normalise(
     ``previous`` (a normalised document) and the explicit ``mapping`` of source to stable IDs."""
     if not _UUID.fullmatch(external_id):
         raise ValueError(f"external_id {external_id!r} must be a canonical UUID")
+    export = _checked_export(export, rules)
+    if previous is not None and not isinstance(previous, dict):
+        raise _refuse("the previous version must be a JSON object", "previous")
+    identifiers, removed_injects, removed_steps = _identifiers(
+        export, external_id, previous, mapping
+    )
+    document = _rewrite(export, identifiers.targets)  # new objects, export untouched
+    _keep_filter_values(export, document)
+    _name_domains(document)
+    document = _strip(document, rules)
+    _unlink(document, rules)
+    _neutralise(document)
+    _describe_payloads(document)
+    document = _sort(document, rules)
+    if has_workflow(document):
+        document[WORKFLOW] = _stored_workflow(document[WORKFLOW], rules.export_keys.step_data)
+    _sort_collections(document)
+    return Normalised(document, removed_injects, removed_steps)
+
+
+def _checked_export(export: object, rules: NormalisationRules) -> dict[str, Any]:
+    """``export``, refused unless normalisation can read it, with the data of its chaining steps
+    decoded."""
     if not isinstance(export, dict):
         raise _refuse("not a JSON object")
     if not isinstance(export.get(_INFORMATION), dict):
@@ -1105,22 +1128,11 @@ def normalise(
     for key, what in NOT_SUPPORTED:
         if export.get(key):
             raise _refuse(f"{what} are not supported yet")
-    if previous is not None and not isinstance(previous, dict):
-        raise _refuse("the previous version must be a JSON object", "previous")
-    identifiers, removed_injects, removed_steps = _identifiers(
-        export, external_id, previous, mapping
-    )
-    document = _rewrite(export, identifiers.targets)  # new objects, export untouched
-    _keep_filter_values(export, document)
-    _name_domains(document)
-    document = _strip(document, rules)
-    _unlink(document, rules)
-    _neutralise(document)
-    _describe_payloads(document)
-    document = _sort(document, rules)
-    if has_workflow(document):
-        document[WORKFLOW] = _stored_workflow(document[WORKFLOW], rules.export_keys.step_data)
+    return export
+
+
+def _sort_collections(document: dict[str, Any]) -> None:
+    """Each collection of ``document`` sorted by the identifier of its items, in place."""
     for collection, key, *_ in (*_OBJECTS, (_ARTICLES, "article_id"), (_INJECTS, "inject_id")):
         if collection in document and isinstance(document[collection], list):
             document[collection] = sorted(document[collection], key=lambda item: item[key])
-    return Normalised(document, removed_injects, removed_steps)
