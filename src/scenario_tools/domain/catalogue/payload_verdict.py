@@ -25,6 +25,7 @@ from scenario_tools.domain.shared.payload_names import (
 from scenario_tools.domain.shared.stored import injects_replaced
 from scenario_tools.domain.verification.payload_catalogue import Catalogue, is_slug
 from scenario_tools.domain.verification.payload_hash import (
+    PAYLOAD_INSTANCE_FIELDS,
     EmbeddedPayload,
     UnhashablePayloadError,
     embedded_payloads,
@@ -40,22 +41,7 @@ from scenario_tools.domain.verification.payload_version import (
 
 _SLUG_LIMIT = 64
 _ATTACHED: dict[str, str] = {}  # an embedded payload's attached files are not read yet
-_INSTANCE = frozenset(
-    {
-        "payload_id",
-        "payload_external_id",
-        "payload_source",
-        "payload_status",
-        "payload_collector_type",
-        "payload_author_user",
-        "payload_author_team",
-        "payload_author_organization",
-        "payload_tags",
-        "payload_created_at",
-        "payload_updated_at",
-        "listened",
-    }
-)
+_INSTANCE = PAYLOAD_INSTANCE_FIELDS | {"listened"}
 _INSTANCE_ENDINGS = ("_id", "_tags", "_created_at", "_updated_at")
 _TEXT_SETS = ("payload_platforms", "payload_expectations")
 _SECURITY_PLATFORMS = "payload_expected_security_platforms"

@@ -15,12 +15,12 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.openaev_http import HttpOpenAEV, usable_token
-from scenario_tools.application.entry_external_id import CANONICAL_UUID
 from scenario_tools.application.findings import repository_path
 from scenario_tools.application.transfer import check_reuse, export_scenario, import_archive
 from scenario_tools.domain.shared.finding import (
     Report,
 )
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.interface.base import (
     _emit,
     main,

@@ -37,7 +37,6 @@ from scenario_tools.application.build_archive import build_archive
 from scenario_tools.application.build_release import (
     ArchivedEntry,
 )
-from scenario_tools.application.entry_external_id import CANONICAL_UUID
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.prepare_entry import renormaliser
 from scenario_tools.application.report_output import (
@@ -65,6 +64,7 @@ from scenario_tools.domain.shared.finding import (
     Severity,
     shorten,
 )
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import (

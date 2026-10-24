@@ -12,12 +12,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT
+from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 
 EXCEPTABLE = frozenset({"POL-004", "POL-005", "POL-006", "POL-009"})
 REGISTRY = "policy/data/exceptions.yaml"
 
 _KEYS = frozenset({"entry", "code", "field", "sha256", "justification"})
-_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _REASON = (20, 200)  # the fewest and the most characters of a justification
 
@@ -55,7 +55,7 @@ class PolicyException:
     justification: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.entry, str) or not _UUID.fullmatch(self.entry):
+        if not isinstance(self.entry, str) or not CANONICAL_UUID.fullmatch(self.entry):
             raise ValueError("an entry is the external ID of a scenario, a UUID in lower case")
         if not isinstance(self.code, str) or self.code not in EXCEPTABLE:
             raise ValueError(f"a code is one of {', '.join(sorted(EXCEPTABLE))}")
