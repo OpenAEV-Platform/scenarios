@@ -13,10 +13,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError, decoded_step_data
+from scenario_tools.domain.catalogue.normalisation import decoded_step_data
 from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD, contracts_with_payloads
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.stored import STEP_DATA, STEPS, WORKFLOW
+from scenario_tools.domain.shared.stored import steps_decoded
 from scenario_tools.domain.verification.payload_hash import (
     UnhashablePayloadError,
     embedded_payloads,
@@ -59,7 +59,7 @@ def identifiers(stored: object) -> tuple[frozenset[str], frozenset[str]]:
     """The contract IDs and the payload external IDs the payloads ``stored`` embeds are given."""
     contracts: set[str] = set()
     external: set[str] = set()
-    for _, _, contract in contracts_with_payloads(_readable(stored)[0]):
+    for _, _, contract in contracts_with_payloads(steps_decoded(stored, decoded_step_data)[0]):
         contract_id = contract.get(CONTRACT_ID)
         if isinstance(contract_id, str):
             contracts.add(contract_id)
@@ -80,7 +80,7 @@ def reuse_findings(
     embeds that the platform would replace on import: one it holds under the contract ID, in
     ``contracts``, or under the payload's external ID, in ``payloads``, with other content. A
     payload the platform holds under neither is created by the import: nothing to say."""
-    stored, unreadable = _readable(stored)
+    stored, unreadable = steps_decoded(stored, decoded_step_data)
     found = [_finding(path, pointer, UNREADABLE_STEP) for pointer in unreadable]
     contract_of = {
         f"{pointer}/{CONTRACT}": contract
@@ -128,30 +128,6 @@ def _held(
     if isinstance(external_id, str) and external_id in payloads:
         return payloads[external_id], "payload external ID"
     return None
-
-
-def _readable(stored: object) -> tuple[object, tuple[str, ...]]:
-    """``stored`` with each step's inject given as JSON text decoded, in new objects for the parts
-    that change, and the pointers of the steps whose text cannot be read."""
-    if not isinstance(stored, Mapping):
-        return stored, ()
-    workflow = stored.get(WORKFLOW)
-    if not isinstance(workflow, Mapping):
-        return stored, ()
-    steps = workflow.get(STEPS)
-    if not isinstance(steps, list):
-        return stored, ()
-    unreadable: list[str] = []
-    decoded: list[object] = []
-    for index, step in enumerate(steps):
-        data = step.get(STEP_DATA) if isinstance(step, Mapping) else None
-        if isinstance(data, str):
-            try:
-                step = {**step, STEP_DATA: decoded_step_data(data)}
-            except ExportStructureError:
-                unreadable.append(f"/{WORKFLOW}/{STEPS}/{index}/{STEP_DATA}")
-        decoded.append(step)
-    return {**stored, WORKFLOW: {**workflow, STEPS: decoded}}, tuple(unreadable)
 
 
 def _no_files(document: str) -> str | None:
