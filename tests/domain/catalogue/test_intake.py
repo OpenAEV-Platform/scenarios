@@ -740,3 +740,25 @@ def test_the_changed_fields_take_what_the_checklist_leaves_of_the_budget(
     assert body.count("- [ ] ") == 98
     assert (item in body) is shown
     assert ("- and 1 more: compare each new version's file with its base's" in body) is not shown
+
+
+@pytest.mark.parametrize(("spare", "shown"), [(0, True), (1, False)])
+def test_the_files_take_the_budget_to_the_last_character(spare: int, shown: bool) -> None:
+    """A file whose item, its line break included, takes the whole budget is listed; one
+    character more and it is counted instead."""
+    digest = "1" * 64
+    path = "p" * (BODY_ITEMS_LIMIT + spare - len(f"- `` `{digest}`") - 1)
+
+    body = _plan(files={path: digest})["body"]
+
+    assert (f"- `{path}` `{digest}`" in body) is shown
+    assert ("- and 1 more: the plan's files list them all" in body) is not shown
+
+
+def test_the_changed_fields_past_the_budget_are_counted() -> None:
+    changes = {"payloads/a/1.1.0.json": ("/a",), "payloads/b/1.1.0.json": ("/" + "b" * 60_000,)}
+
+    body = _plan(changes=changes)["body"]
+
+    assert "- `payloads/a/1.1.0.json`: `/a`" in body
+    assert "- and 1 more: compare each new version's file with its base's" in body

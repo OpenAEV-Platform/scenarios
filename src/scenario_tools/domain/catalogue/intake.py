@@ -175,37 +175,44 @@ def intake_refusals(
     request may proceed."""
     entries = tuple(catalogue)
     same = [entry for entry in entries if entry.external_id == request.external_id]
-
-    def refused(code: str, path: str, pointer: str, message: str) -> tuple[Finding, ...]:
-        return (Finding(code, Severity.BLOCKING, path, pointer, message),)
-
     unreadable = sorted(entry.path for entry in entries if not entry.readable)
     if unreadable:  # what it declares is not known, so neither is what is taken
         message = (
             f"the catalogue cannot be checked: {', '.join(unreadable)} cannot be read; "
             "fix it first, as validate says"
         )
-        return refused("ITK-008", request_path, "", message)
-
+        return _refused("ITK-008", request_path, "", message)
     if request.mode == NEW:
         if same:
             where = ", ".join(sorted(entry.path for entry in same))
-            return refused("ITK-001", request_path, "/external_id", f"an entry has it: {where}")
+            return _refused("ITK-001", request_path, "/external_id", f"an entry has it: {where}")
         if place_taken or any(entry.path == request.entry for entry in entries):
-            return refused("ITK-002", request_path, "/slug", f"{request.entry} already exists")
+            return _refused("ITK-002", request_path, "/slug", f"{request.entry} already exists")
         return _name_taken(name, entries, export_path)
+    return _update_refusals(request, name, entries, same, request_path, export_path)
+
+
+def _update_refusals(
+    request: IntakeRequest,
+    name: str,
+    entries: tuple[CatalogueEntry, ...],
+    same: list[CatalogueEntry],
+    request_path: str,
+    export_path: str,
+) -> tuple[Finding, ...]:
+    """The findings that refuse an update, ``same`` the entries with its external ID."""
     if not same:
-        return refused("ITK-004", request_path, "/external_id", "no entry has it")
+        return _refused("ITK-004", request_path, "/external_id", "no entry has it")
     if len(same) > 1:  # which entry the identifier names is not known
         where = ", ".join(sorted(entry.path for entry in same))
         message = f"several entries have it: {where}; give it to one only first"
-        return refused("ITK-001", request_path, "/external_id", message)
+        return _refused("ITK-001", request_path, "/external_id", message)
     [entry] = same
     if entry.path != request.entry:
         message = f"the entry with this external_id is {entry.path}, not {request.entry}"
         in_domain = entry.path.rpartition("/")[0] == f"scenarios/{request.domain}"
         pointer = "/slug" if in_domain else "/domain"  # the field that differs
-        return refused("ITK-005", request_path, pointer, message)
+        return _refused("ITK-005", request_path, pointer, message)
     if same_name(entry.name, name):
         return ()
     if not request.rewrite:
@@ -214,9 +221,13 @@ def intake_refusals(
             "its identifier; declare rewrite: true if it is the same scenario renamed, then "
             "align scenario.yaml with the export by hand"
         )
-        return refused("ITK-006", export_path, "", message)
+        return _refused("ITK-006", export_path, "", message)
     others = [other for other in entries if other.external_id != request.external_id]
     return _name_taken(name, others, export_path)
+
+
+def _refused(code: str, path: str, pointer: str, message: str) -> tuple[Finding, ...]:
+    return (Finding(code, Severity.BLOCKING, path, pointer, message),)
 
 
 def _name_taken(
@@ -261,6 +272,18 @@ def _checklist(findings: Iterable[Finding]) -> list[Finding]:
     ]
 
 
+def _within(items: Iterable[str], budget: int) -> tuple[list[str], int]:
+    """The first ``items`` whose lines, each with its line break, fit in ``budget`` characters,
+    and what they leave of it: below zero once one did not fit, so that nothing after it does."""
+    kept: list[str] = []
+    for item in items:
+        budget -= len(item) + 1
+        if budget < 0:
+            break
+        kept.append(item)
+    return kept, budget
+
+
 # Characters the items of a body, what is left to do then its files, may take: GitHub takes
 # 65,536 for a body, and the rest of it, the issue and the entry, takes far less than what is left.
 BODY_ITEMS_LIMIT = 60_000
@@ -287,38 +310,33 @@ def intake_plan(
         lines.append(f"Entry {_span(request.entry)}, from a platform export.")
     else:
         lines.append("The export gives the stored scenario.json again: nothing to propose.")
-    left: list[str] = []
-    budget = BODY_ITEMS_LIMIT
-    for finding in findings[:REPORT_LIMIT]:  # a body a pull request takes whole
-        item = f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
-        budget -= len(item) + 1
-        if budget < 0:
-            break
-        left.append(item)
+    left, budget = _within(
+        (  # a body a pull request takes whole
+            f"- [ ] {_span(finding.path)} {_span(finding.field)}: {_span(finding.message)}"
+            for finding in findings[:REPORT_LIMIT]
+        ),
+        BODY_ITEMS_LIMIT,
+    )
     if left:
         lines += ["", "Left to complete or review:", *left]
     if len(findings) > len(left):
         more = len(findings) - len(left)
         lines.append(f"- and {more} more: run validate on the entry to see them all")
-    changed_fields: list[str] = []
-    for path, pointers in sorted((changes or {}).items()):  # what the checklist leaves
-        item = f"- {_span(path)}: {', '.join(_span(pointer) for pointer in pointers)}"
-        budget -= len(item) + 1
-        if budget < 0:
-            break
-        changed_fields.append(item)
+    changed_fields, budget = _within(
+        (  # what the checklist leaves
+            f"- {_span(path)}: {', '.join(_span(pointer) for pointer in pointers)}"
+            for path, pointers in sorted((changes or {}).items())
+        ),
+        budget,
+    )
     if changed_fields:
         lines += ["", "Changed from the version each new version is based on:", *changed_fields]
     if changes and len(changes) > len(changed_fields):
         more = len(changes) - len(changed_fields)
         lines.append(f"- and {more} more: compare each new version's file with its base's")
-    shown: list[str] = []
-    for path in sorted(files):  # what the changes leave of the budget
-        item = f"- {_span(path)} {_span(files[path])}"
-        budget -= len(item) + 1
-        if budget < 0:
-            break
-        shown.append(item)
+    shown, _ = _within(  # what the changes leave of the budget
+        (f"- {_span(path)} {_span(files[path])}" for path in sorted(files)), budget
+    )
     if files:
         lines += ["", "Files:", *shown]
     if len(files) > len(shown):
