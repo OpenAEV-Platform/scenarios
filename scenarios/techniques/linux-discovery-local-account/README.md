@@ -4,7 +4,7 @@
 
 Version 1\.0\.0 · VERIFIED · chained
 
-List the running processes on the endpoint\, then\, once that step has run\, create a local account and remove it again\: a short chain from process discovery \(T1057\) to a local account \(T1078\.003\)\. The second step runs on Linux only\, and the agent must run as root\.
+List the running processes on the endpoint\, then\, once that step has run\, create a local account and remove it again\: a short chain from process discovery \(T1057\) to a local account \(T1078\.003\)\. The second step runs on Linux only\, and the agent must run as root\; an account named art that already exists is left as it is\.
 
 ## At a glance
 
@@ -44,32 +44,38 @@ List the running processes on the endpoint\, then\, once that step has run\, cre
 
 - Starts when the scenario is launched.
 - Injector: openaev\_implant
-- Payload: Process Discovery \- ps \(4cd2c65a\-8b86\-4ff5\-9c0d\-dc1d39de76a7\)
+- Payload: Process Discovery \- ps \(1\.1\.0\) \(c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df\)
 
 Command (sh):
 
 ```
-ps aux --no-headers
+ps aux | tail -n +2
 ```
 
 ### 2\. Create local account
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(84ad1dfe\-0b96\-452c\-a122\-4767aab6584e\)
+- Payload: Create local account \(1\.1\.0\) \(32233060\-03d9\-5d29\-9005\-1df6a4a2d066\)
 
 Command (bash):
 
 ```
-password=$(openssl passwd -1 art)
-([ "$(uname)" = 'Linux' ] && useradd --shell /bin/bash --create-home --password $password art) || (pw useradd art -g wheel -s /bin/sh && (echo $password | pw mod user testuser1 -h 0))
+id art >/dev/null 2>&1 && { echo "an account named art already exists: nothing is created" >&2; exit 1; }
+password=$(openssl passwd -1 art) || exit 1
+useradd --shell /bin/bash --create-home --password "$password" art || exit 1
+(umask 077; id -u art > /var/tmp/openaev-created-art.uid) || exit 1
 su art -c "whoami; exit"
 ```
 
 Cleanup (bash):
 
 ```
-[ "$(uname)" = 'Linux' ] && userdel art -rf || rmuser -y art
+marker=/var/tmp/openaev-created-art.uid
+if [ -f "$marker" ] && [ "$(stat -c %u "$marker")" = 0 ] && [ "$(id -u art 2>/dev/null)" = "$(cat "$marker")" ]; then
+  userdel -rf art
+fi
+rm -f "$marker"
 ```
 
 ## Caveats
@@ -82,8 +88,8 @@ Cleanup (bash):
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account | 84ad1dfe\-0b96\-452c\-a122\-4767aab6584e | Command | Linux |
-| Process Discovery \- ps | 4cd2c65a\-8b86\-4ff5\-9c0d\-dc1d39de76a7 | Command | Linux, MacOS |
+| Create local account \(1\.1\.0\) | 32233060\-03d9\-5d29\-9005\-1df6a4a2d066 | Command | Linux |
+| Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in
 

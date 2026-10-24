@@ -1,0 +1,39 @@
+{
+  "command_content": "id art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || exit 1\nuseradd --shell /bin/bash --create-home --password \"$password\" art || exit 1\n(umask 077; id -u art > /var/tmp/openaev-created-art.uid) || exit 1\nsu art -c \"whoami; exit\"\n",
+  "command_executor": "bash",
+  "payload_attack_patterns": [
+    "T1078.003"
+  ],
+  "payload_cleanup_command": "marker=/var/tmp/openaev-created-art.uid\nif [ -f \"$marker\" ] && [ \"$(stat -c %u \"$marker\")\" = 0 ] && [ \"$(id -u art 2>/dev/null)\" = \"$(cat \"$marker\")\" ]; then\n  userdel -rf art\nfi\nrm -f \"$marker\"\n",
+  "payload_cleanup_executor": "bash",
+  "payload_description": "Create a local account named art with the password art, switch to it to run whoami, then remove it: only an account this run created is removed, and an account named art that already exists is left as it is.",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": true,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_expectations": [
+    "DETECTION",
+    "PREVENTION"
+  ],
+  "payload_expected_security_platforms": {
+    "DETECTION": [
+      "EDR",
+      "SIEM",
+      "XDR"
+    ],
+    "PREVENTION": [
+      "EDR",
+      "XDR"
+    ]
+  },
+  "payload_external_id": "32233060-03d9-5d29-9005-1df6a4a2d066",
+  "payload_name": "Create local account (1.1.0)",
+  "payload_platforms": [
+    "Linux"
+  ],
+  "payload_type": "Command"
+}

@@ -4,4 +4,4 @@
 
 First version in the catalogue.
 
-- Two steps on a Linux endpoint: Process Discovery - ps, then Create local account once the first step has run.
+- Two steps on an endpoint: Process Discovery - ps (1.1.0), then Create local account (1.1.0) once the first step has run.
