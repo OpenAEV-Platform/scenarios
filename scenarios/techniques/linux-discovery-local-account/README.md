@@ -56,28 +56,30 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(61fb4619\-c428\-580f\-831d\-4ed1225a07aa\)
+- Payload: Create local account \(1\.1\.0\) \(ca055711\-870c\-5a47\-8539\-a14fb60893e8\)
 
 Command (bash):
 
 ```
-marker=/var/tmp/openaev-created-art.uid
+dir=/var/tmp/openaev-created-art
 id art >/dev/null 2>&1 && { echo "an account named art already exists: nothing is created" >&2; exit 1; }
-(umask 077; set -C; : > "$marker") 2>/dev/null || { echo "$marker cannot be reserved: nothing is created" >&2; exit 1; }
-password=$(openssl passwd -1 art) || { rm -f "$marker"; exit 1; }
-useradd --shell /bin/bash --create-home --password "$password" art || { rm -f "$marker"; exit 1; }
-id -u art > "$marker" || { userdel -rf art; rm -f "$marker"; exit 1; }
+mkdir -m 711 "$dir" 2>/dev/null || { echo "$dir already exists: nothing is created" >&2; exit 1; }
+password=$(openssl passwd -1 art) || { rmdir "$dir"; exit 1; }
+useradd --shell /bin/bash --home-dir "$dir/home" --create-home --password "$password" art || { rm -rf "$dir"; exit 1; }
+id -u art > "$dir/uid" || { userdel art; rm -rf "$dir"; exit 1; }
 su art -c "whoami; exit"
 ```
 
 Cleanup (bash):
 
 ```
-marker=/var/tmp/openaev-created-art.uid
-if [ -f "$marker" ] && [ "$(stat -c %u "$marker")" = 0 ] && [ "$(id -u art 2>/dev/null)" = "$(cat "$marker")" ]; then
-  userdel -rf art
+dir=/var/tmp/openaev-created-art
+if [ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(stat -c %u "$dir")" = 0 ]; then
+  if [ -f "$dir/uid" ] && [ ! -L "$dir/uid" ] && [ "$(id -u art 2>/dev/null)" = "$(cat "$dir/uid")" ]; then
+    userdel art
+  fi
+  rm -rf "$dir"
 fi
-rm -f "$marker"
 ```
 
 ## Caveats
@@ -90,7 +92,7 @@ rm -f "$marker"
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | 61fb4619\-c428\-580f\-831d\-4ed1225a07aa | Command | Linux |
+| Create local account \(1\.1\.0\) | ca055711\-870c\-5a47\-8539\-a14fb60893e8 | Command | Linux |
 | Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
 
 ## Targets to fill in

@@ -1,12 +1,12 @@
 {
-  "command_content": "marker=/var/tmp/openaev-created-art.uid\nid art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\n(umask 077; set -C; : > \"$marker\") 2>/dev/null || { echo \"$marker cannot be reserved: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || { rm -f \"$marker\"; exit 1; }\nuseradd --shell /bin/bash --create-home --password \"$password\" art || { rm -f \"$marker\"; exit 1; }\nid -u art > \"$marker\" || { userdel -rf art; rm -f \"$marker\"; exit 1; }\nsu art -c \"whoami; exit\"\n",
+  "command_content": "dir=/var/tmp/openaev-created-art\nid art >/dev/null 2>&1 && { echo \"an account named art already exists: nothing is created\" >&2; exit 1; }\nmkdir -m 711 \"$dir\" 2>/dev/null || { echo \"$dir already exists: nothing is created\" >&2; exit 1; }\npassword=$(openssl passwd -1 art) || { rmdir \"$dir\"; exit 1; }\nuseradd --shell /bin/bash --home-dir \"$dir/home\" --create-home --password \"$password\" art || { rm -rf \"$dir\"; exit 1; }\nid -u art > \"$dir/uid\" || { userdel art; rm -rf \"$dir\"; exit 1; }\nsu art -c \"whoami; exit\"\n",
   "command_executor": "bash",
   "payload_attack_patterns": [
     "T1078.003"
   ],
-  "payload_cleanup_command": "marker=/var/tmp/openaev-created-art.uid\nif [ -f \"$marker\" ] && [ \"$(stat -c %u \"$marker\")\" = 0 ] && [ \"$(id -u art 2>/dev/null)\" = \"$(cat \"$marker\")\" ]; then\n  userdel -rf art\nfi\nrm -f \"$marker\"\n",
+  "payload_cleanup_command": "dir=/var/tmp/openaev-created-art\nif [ -d \"$dir\" ] && [ ! -L \"$dir\" ] && [ \"$(stat -c %u \"$dir\")\" = 0 ]; then\n  if [ -f \"$dir/uid\" ] && [ ! -L \"$dir/uid\" ] && [ \"$(id -u art 2>/dev/null)\" = \"$(cat \"$dir/uid\")\" ]; then\n    userdel art\n  fi\n  rm -rf \"$dir\"\nfi\n",
   "payload_cleanup_executor": "bash",
-  "payload_description": "Create a local account named art with the password art, switch to it to run whoami, then remove it: only an account this run created is removed, and an account named art that already exists is left as it is.",
+  "payload_description": "Create a local account named art with the password art, its home in a directory of the run's own, switch to it to run whoami, then remove both: an account named art that already exists, or anything already where the run keeps its state, is left as it is, and nothing is created.",
   "payload_domains": [
     {
       "domain_color": "#389CFF",
@@ -30,7 +30,7 @@
       "XDR"
     ]
   },
-  "payload_external_id": "61fb4619-c428-580f-831d-4ed1225a07aa",
+  "payload_external_id": "ca055711-870c-5a47-8539-a14fb60893e8",
   "payload_name": "Create local account (1.1.0)",
   "payload_platforms": [
     "Linux"
