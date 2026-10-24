@@ -134,6 +134,77 @@ def _version_findings(
     )
 
 
+def _metadata_file(
+    entry: str, source: EntrySource, schema: SchemaValidator, builtin: BuiltinContracts
+) -> tuple[tuple[Finding, ...], ScenarioMetadata | None, Mapping[str, Any] | None]:
+    """The findings of an entry's ``scenario.yaml``, its metadata, and the document once it
+    meets its schema, for the checks that read it."""
+    path = f"{entry}/scenario.yaml"
+    findings: tuple[Finding, ...] = ()
+    try:
+        # As written, comments included, and as read, escapes of quoted texts included; a
+        # character written as it is, found in both, is reported once, for the file.
+        written = source.read_text(path)
+        findings += text_findings(written, path, breaks=True)
+        labels = frozenset(hidden.label for hidden in hidden_occurrences(written))
+        declared = source.read_yaml(path)
+        found, metadata = _metadata_findings(
+            declared,
+            path,
+            entry,
+            schema,
+            builtin,
+            source.external_ids(),
+            labels,
+            source.scenario_names(),
+        )
+        findings += found
+        if metadata is not None:  # it met its schema, so it is an object
+            return findings, metadata, cast(Mapping[str, Any], declared)
+        return findings, None, None
+    except UnsafeInputError as error:
+        return (*findings, _refused(error, path)), None, None
+
+
+def _stored_file(
+    entry: str,
+    source: EntrySource,
+    builtin: BuiltinContracts,
+    renormalised: Callable[[object, str, str], bytes],
+    metadata: ScenarioMetadata | None,
+) -> tuple[tuple[Finding, ...], ExportFacts | None, object, str | None]:
+    """The findings of an entry's stored ``scenario.json``, the facts it establishes, the
+    document and the hash of its bytes, once read; normalised again under the entry's external
+    ID, when its metadata gives one."""
+    path = f"{entry}/scenario.json"
+    try:
+        stored, document = source.read_json(path)
+        stored_sha256 = hashlib.sha256(stored).hexdigest()
+        external_id = metadata.external_id if metadata is not None else None
+        again = (
+            (lambda: renormalised(document, external_id, path)) if external_id is not None else None
+        )
+        found, facts = _scenario_findings(stored, document, path, builtin, again)
+        return found + payloads_outside_contracts(document, path), facts, document, stored_sha256
+    except UnsafeInputError as error:
+        return (_refused(error, path),), None, None, None
+
+
+def _text_files(
+    entry: str, names: frozenset[str] | tuple[str, ...], source: EntrySource
+) -> tuple[Finding, ...]:
+    """The findings of the entry's other text files."""
+    findings: tuple[Finding, ...] = ()
+    for name in _TEXTS:
+        if name in names:
+            path = f"{entry}/{name}"
+            try:
+                findings += text_findings(source.read_text(path), path)
+            except UnsafeInputError as error:
+                findings += (_refused(error, path),)
+    return findings
+
+
 def validate_entry(
     entry: str,
     source: EntrySource,
@@ -162,50 +233,18 @@ def validate_entry(
         return (_refused(error, entry),)
     findings = layout_findings(entry, names, domains)
     metadata: ScenarioMetadata | None = None
-    facts: ExportFacts | None = None
     declared_checked: Mapping[str, Any] | None = None  # once it meets its schema, for the policy
+    if "scenario.yaml" in names:
+        found, metadata, declared_checked = _metadata_file(entry, source, schema, builtin)
+        findings += found
+    facts: ExportFacts | None = None
     stored_document: object = None  # the stored scenario.json once read, for the policy
     stored_sha256: str | None = None  # its hash, the version an exception names
-    if "scenario.yaml" in names:
-        path = f"{entry}/scenario.yaml"
-        try:
-            # As written, comments included, and as read, escapes of quoted texts included; a
-            # character written as it is, found in both, is reported once, for the file.
-            written = source.read_text(path)
-            findings += text_findings(written, path, breaks=True)
-            labels = frozenset(hidden.label for hidden in hidden_occurrences(written))
-            declared = source.read_yaml(path)
-            found, metadata = _metadata_findings(
-                declared,
-                path,
-                entry,
-                schema,
-                builtin,
-                source.external_ids(),
-                labels,
-                source.scenario_names(),
-            )
-            findings += found
-            if metadata is not None:  # it met its schema, so it is an object
-                declared_checked = cast(Mapping[str, Any], declared)
-        except UnsafeInputError as error:
-            findings += (_refused(error, path),)
     if "scenario.json" in names:
-        path = f"{entry}/scenario.json"
-        try:
-            stored, document = source.read_json(path)
-            stored_document = document
-            stored_sha256 = hashlib.sha256(stored).hexdigest()
-            external_id = metadata.external_id if metadata is not None else None
-            again = (
-                (lambda: renormalised(document, external_id, path))
-                if external_id is not None
-                else None
-            )
-            found, facts = _scenario_findings(stored, document, path, builtin, again)
-            findings += found + payloads_outside_contracts(document, path)
-        except UnsafeInputError as error:
-            findings += (_refused(error, path),)
+        found, facts, stored_document, stored_sha256 = _stored_file(
+            entry, source, builtin, renormalised, metadata
+        )
+        findings += found
     if metadata is not None and facts is not None:
         findings += cross_check(metadata, facts, f"{entry}/scenario.yaml")
     if declared_checked is not None and stored_document is not None:
@@ -217,12 +256,6 @@ def validate_entry(
     if declared_checked is not None and isinstance(stored_document, Mapping):
         sheet = render_sheet(declared_checked, stored_document, policy.exceptions)
         findings += sheet_findings(entry, names, source, sheet)
-    for name in _TEXTS:
-        if name in names:
-            path = f"{entry}/{name}"
-            try:
-                findings += text_findings(source.read_text(path), path)
-            except UnsafeInputError as error:
-                findings += (_refused(error, path),)
+    findings += _text_files(entry, names, source)
     content = EntryContent(entry, names, declared_checked, stored_document, stored_sha256)
     return findings + policy_findings(policy, content)
