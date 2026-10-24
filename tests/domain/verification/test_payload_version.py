@@ -54,9 +54,7 @@ def _findings(
 
 def _with_id(document: dict[str, Any]) -> dict[str, Any]:
     """``document`` with the ID its content has."""
-    fields, techniques = _version(document).hash_input()
-    digest = payload_hash(fields, techniques, lambda _: None).hex
-    return {**document, "payload_external_id": derived_id(digest)}
+    return {**document, "payload_external_id": derived_id(_version(document).digest())}
 
 
 @pytest.mark.parametrize(
@@ -77,14 +75,12 @@ def test_the_files_of_the_hand_built_tree_pass(slug: str, version: str) -> None:
     assert found == ()
 
 
-def test_the_projection_leaves_the_id_the_techniques_and_the_domains_out() -> None:
+def test_the_hash_leaves_the_id_and_the_domains_out() -> None:
     document = _document("system-owner-user-discovery-whoami")
     version = PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", document)
-    fields, techniques = version.hash_input()
-    assert {"payload_external_id", "payload_attack_patterns", "payload_domains"} & set(
-        fields
-    ) == set()
-    assert techniques == ("T1033",)
+    other = {**document, "payload_external_id": "another-id", "payload_domains": []}
+    assert PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", other).digest() == version.digest()
+    assert version.techniques == ("T1033",)
     assert version.identifier == document["payload_external_id"]
     assert version.name == "System Owner/User Discovery - whoami"
 
@@ -95,23 +91,22 @@ def test_a_version_file_has_the_hash_of_the_same_payload_embedded_in_a_scenario(
     )
     embedded = next(embedded_payloads(stored))
     in_scenario = payload_hash(embedded.payload, embedded.attack_patterns, lambda _: None)
-    fields, techniques = _version(_document()).hash_input()
-    file_hash = payload_hash(fields, techniques, lambda _: None)
+    file_hash = _version(_document()).digest()
     # The hand-built file differs from the embedded copy by its output parsers only.
     assert isinstance(embedded.payload, dict)
     copy_fields = copy.deepcopy(embedded.payload)
-    copy_fields["payload_output_parsers"] = fields["payload_output_parsers"]
+    copy_fields["payload_output_parsers"] = _document()["payload_output_parsers"]
     copy_hash = payload_hash(copy_fields, embedded.attack_patterns, lambda _: None)
-    assert copy_hash == file_hash
-    assert in_scenario != file_hash
+    assert copy_hash.hex == file_hash
+    assert in_scenario.hex != file_hash
 
 
 def test_the_domains_change_no_hash() -> None:
     document = _document("system-owner-user-discovery-whoami")
     without = {key: value for key, value in document.items() if key != "payload_domains"}
-    first = PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", document).hash_input()
-    second = PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", without).hash_input()
-    assert payload_hash(*first, lambda _: None) == payload_hash(*second, lambda _: None)
+    first = PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", document).digest()
+    second = PayloadVersion("s", "1.0.0", "payloads/s/1.0.0.json", without).digest()
+    assert first == second
 
 
 def test_an_id_that_is_not_the_one_its_content_has_is_refused() -> None:
@@ -120,8 +115,7 @@ def test_an_id_that_is_not_the_one_its_content_has_is_refused() -> None:
 
 
 def test_the_id_the_registry_agrees_for_the_content_is_its_id() -> None:
-    fields, techniques = _version(_document()).hash_input()
-    digest = payload_hash(fields, techniques, lambda _: None).hex
+    digest = _version(_document()).digest()
     agreed = AgreedIds.from_document(
         {"payloads": [{"id": "agreed-ps", "name": "Process Discovery - ps", "sha256": digest}]}
     )
@@ -132,8 +126,7 @@ def test_the_id_the_registry_agrees_for_the_content_is_its_id() -> None:
 
 
 def test_the_registry_names_a_first_version_by_its_base_name() -> None:
-    fields, techniques = _version(_document()).hash_input()
-    digest = payload_hash(fields, techniques, lambda _: None).hex
+    digest = _version(_document()).digest()
     agreed = AgreedIds.from_document(
         {"payloads": [{"id": "agreed-ps", "name": "Another name", "sha256": digest}]}
     )

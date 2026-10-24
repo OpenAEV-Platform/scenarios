@@ -28,13 +28,13 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     names_held,
     proposed_slug,
     renamed,
-    verdicts,
     version_document,
 )
 from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.domain.verification.payload_version import PayloadVersion
+from tests.support.catalogue import verdicts
 
 ROOT = Path(__file__).resolve().parents[3]
 TREE = ROOT / "tests" / "golden" / "payloads"

@@ -2,17 +2,32 @@
 made as `intake` makes the first version of a new payload, so that a test of another rule reads
 the catalogue as agreeing."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
 
-from scenario_tools.domain.catalogue.payload_verdict import verdicts
+from scenario_tools.domain.catalogue.payload_verdict import claimed_verdicts
 from scenario_tools.domain.shared.canonical import stored_form
+from scenario_tools.domain.shared.finding import Finding
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
 from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
 from scenario_tools.domain.verification.payload_version import PayloadVersion
 
 NONE = AgreedIds({})
+
+
+def verdicts(
+    stored: object,
+    catalogue: Catalogue,
+    agreed: AgreedIds,
+    *,
+    accepted: Callable[[object], bool],
+) -> tuple[tuple[Finding, ...], dict[str, PayloadVersion]]:
+    """The verdicts of ``claimed_verdicts`` without a claim: the findings and the version files
+    of the new payloads, by hash."""
+    found = claimed_verdicts(stored, catalogue, agreed, accepted=accepted)
+    return found.findings, found.versions
 
 
 def versions(*stored: object, agreed: AgreedIds = NONE) -> list[PayloadVersion]:
