@@ -33,6 +33,17 @@ _GENERIC = re.compile(
     ),
     re.IGNORECASE,
 )
+# A generated identifier, shaped as RFC 4122 says (its version digit and its variant in place):
+# its hex groups can spell a task number by chance, as the derived `8d993877-a012-5df3-…` does,
+# and a reference never sits inside one. The generic patterns read each line without them; a
+# reference beside one, or in any other run of hex, is still found. An identifier shaped so on
+# purpose to hide `A0` and two digits is left to the review: this check stops mistakes, not a
+# contributor set on hiding one.
+_IDENTIFIER = re.compile(
+    r"(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+    r"(?![0-9a-f])",
+    re.IGNORECASE,
+)
 
 
 def _private() -> re.Pattern[str] | None:
@@ -55,9 +66,21 @@ def _required_private() -> re.Pattern[str]:
     pytest.skip("no private list of internal terms given: only the generic patterns were checked")
 
 
-def _lines_with(pattern: re.Pattern[str], text: str) -> list[int]:
-    """The numbers of the lines of ``text`` that ``pattern`` finds something in."""
-    return [number for number, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
+def _lines_with(
+    pattern: re.Pattern[str], text: str, *, ignored: re.Pattern[str] | None = None
+) -> list[int]:
+    """The numbers of the lines of ``text`` that ``pattern`` finds something in, once what
+    ``ignored`` matches is taken out of each line."""
+    return [
+        number
+        for number, line in enumerate(text.splitlines(), 1)
+        if pattern.search(ignored.sub(" ", line) if ignored else line)
+    ]
+
+
+def _generic_lines(text: str) -> list[int]:
+    """The lines of ``text`` the generic patterns find a reference in, identifiers left aside."""
+    return _lines_with(_GENERIC, text, ignored=_IDENTIFIER)
 
 
 @pytest.mark.parametrize(
@@ -74,7 +97,25 @@ def _lines_with(pattern: re.Pattern[str], text: str) -> list[int]:
     ],
 )
 def test_the_generic_patterns_refuse_a_reference_to_the_planning(text: str) -> None:
-    assert _lines_with(_GENERIC, text) == [1]
+    assert _generic_lines(text) == [1]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Done in A012, for 8d993877-a012-5df3-bee6-63028383c124.",
+        "Branch task/T003-fix.",
+        "A run 8d993877-a012 of hex, no identifier.",
+        "8d993877-a012-5df3-bee6-63028383c124x and T013.",
+        "8d993877-a012-5df3-bee6-63028383c124-A034",
+        "A034-8d993877-a012-5df3-bee6-63028383c124",
+        "FR-020 for 8d993877-a012-5df3-bee6-63028383c124.",
+        "8d993877-a012-5df3-bee6-63028383c124 Co-authored-by: someone",
+        "00000000-a034-0000-0000-000000000000, not shaped as a generated identifier",
+    ],
+)
+def test_a_reference_beside_or_around_an_identifier_is_still_refused(text: str) -> None:
+    assert _generic_lines(text) == [1]
 
 
 @pytest.mark.parametrize(
@@ -87,7 +128,20 @@ def test_the_generic_patterns_refuse_a_reference_to_the_planning(text: str) -> N
     ],
 )
 def test_the_generic_patterns_accept_ordinary_text(text: str) -> None:
-    assert _lines_with(_GENERIC, text) == []
+    assert _generic_lines(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '"variable_id": "8d993877-a012-5df3-bee6-63028383c124",',
+        "IDs 0a64b5ab-2016-426b-813f-9051d32e88b3 and 1A7A1F81-5811-41D7-8C2D-E6DDDBC9E7CA.",
+        "t003a1b2-0000-4000-8000-000000000000",
+    ],
+)
+def test_an_identifier_is_never_read_as_a_reference(text: str) -> None:
+    """A derived identifier's hex groups can spell a task number by chance: not a reference."""
+    assert _generic_lines(text) == []
 
 
 def test_the_private_list_is_read_from_the_environment_or_a_file(
@@ -136,7 +190,11 @@ def _committable_files(root: Path) -> list[Path]:
 
 
 def _files_with(
-    pattern: re.Pattern[str], root: Path, *, exempt: Path | None = THIS_FILE
+    pattern: re.Pattern[str],
+    root: Path,
+    *,
+    exempt: Path | None = THIS_FILE,
+    ignored: re.Pattern[str] | None = None,
 ) -> dict[str, list[int]]:
     """Every committable file, but ``exempt``, with the lines ``pattern`` finds something in: a
     link by what the repository stores for it, its target; binary files left aside."""
@@ -154,14 +212,14 @@ def _files_with(
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue  # binary files, such as the reference exports
-        lines = _lines_with(pattern, text)
+        lines = _lines_with(pattern, text, ignored=ignored)
         if lines:
             found[relative.as_posix()] = lines
     return found
 
 
 def test_no_repository_file_refers_to_the_planning() -> None:
-    assert _files_with(_GENERIC, ROOT) == {}
+    assert _files_with(_GENERIC, ROOT, ignored=_IDENTIFIER) == {}
 
 
 def test_no_repository_file_names_an_internal_document_or_tool() -> None:
