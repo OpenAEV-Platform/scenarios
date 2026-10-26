@@ -174,6 +174,6 @@ A few rules apply to every pull request:
 | [`payloads/`](payloads/) | The payload catalogue: one folder per payload, one frozen file per version ([`docs/payloads.md`](docs/payloads.md)) |
 | [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request, a payload version file and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
-| [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the payload catalogue, the findings, releases and their consumers, security |
-| [`src/`](src/) | The source of `scenario-tools` |
+| [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the payload catalogue, the findings, releases and their consumers, security, the tools' architecture |
+| [`src/`](src/) | The source of `scenario-tools`: how it is built, what it trusts and where to start reading, in [`docs/architecture.md`](docs/architecture.md) |
 | [`tests/`](tests/) | Its tests, with real platform exports as reference data |
