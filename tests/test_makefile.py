@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -165,6 +166,15 @@ def test_check_runs_every_check_the_ci_jobs_run_and_the_mutation() -> None:
         "lint", "format", "types", "imports", "tests", "coverage-domain", "security", "audit",
         "secrets", "sheets", "workflows",
     }  # fmt: skip
+    # CI runs the same checks in jobs side by side: the static ones, the tests in shares, and
+    # their coverage combined; tests and coverage-domain are their local form.
+    (static,) = re.findall(r"^static:(.*)$", MAKEFILE, re.MULTILINE)
+    assert set(static.split()) == set(checks.split()) - {"tests", "coverage-domain"}
+    assert "--cov-fail-under=0" in _recipe("tests-share")
+    assert [line.strip() for line in _recipe("coverage-shares").splitlines()][1:] == [
+        "uv run coverage report",
+        "uv run coverage report --include='src/scenario_tools/domain/*' --fail-under=100",
+    ]
 
 
 def _mutated_packages() -> set[str]:
@@ -185,13 +195,32 @@ def _mutated_packages() -> set[str]:
     }
 
 
-def test_the_shares_of_the_mutation_in_ci_are_every_package_it_mutates_once() -> None:
+def _mutated_modules() -> set[str]:
+    """The modules of the domain mutmut mutates, by their dotted names: each file of a mutated
+    package that no pattern of do_not_mutate leaves out."""
+    settings = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    left_out = settings["tool"]["mutmut"]["do_not_mutate"]
+    domain = ROOT / "src" / "scenario_tools" / "domain"
+    return {
+        "scenario_tools.domain." + ".".join(path.relative_to(domain).with_suffix("").parts)
+        for name in _mutated_packages()
+        for path in (domain / name).rglob("*.py")
+        if path.name != "__init__.py"
+        and not any(fnmatch.fnmatch(str(path), pattern) for pattern in left_out)
+    }
+
+
+def test_the_shares_of_the_mutation_in_ci_are_every_module_it_mutates_once() -> None:
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "tools-ci.yml").read_text())
     shares = workflow["jobs"]["mutation"]["strategy"]["matrix"]["include"]
     prefixes = [prefix for share in shares for prefix in share["mutants"].split()]
 
     assert len(prefixes) == len(set(prefixes))
-    assert set(prefixes) == {f"scenario_tools.domain.{name}." for name in _mutated_packages()}
+    assert all(prefix.endswith(".") for prefix in prefixes)
+    for module in _mutated_modules():
+        assert sum((module + ".").startswith(prefix) for prefix in prefixes) == 1, module
+    for prefix in prefixes:  # a share that mutates nothing passes and says nothing
+        assert any((module + ".").startswith(prefix) for module in _mutated_modules()), prefix
     # A module beside the packages would be mutated in no share.
     domain = ROOT / "src" / "scenario_tools" / "domain"
     assert sorted(path.name for path in domain.glob("*.py")) == ["__init__.py"]
@@ -204,7 +233,50 @@ def test_the_required_check_passes_only_when_every_job_has() -> None:
     assert pipeline["name"] == "Local pipeline (lint, types, contracts, tests, security)"
     assert set(pipeline["needs"]) == set(workflow["jobs"]) - {"pipeline"}
     assert pipeline["if"] == "always()"
-    assert '[ "$CHECKS" = success ] && [ "$MUTATION" = success ]' in pipeline["steps"][-1]["run"]
+    run = pipeline["steps"][-1]["run"]
+    for job in pipeline["needs"]:
+        assert f'[ "${job.upper()}" = success ]' in run, job
+
+
+def _runs(job: dict[str, Any]) -> list[str]:
+    """The commands a job runs, one per line, in order."""
+    return [
+        line.strip()
+        for step in job["steps"]
+        for line in step.get("run", "").splitlines()
+        if line.strip()
+    ]
+
+
+def test_every_job_runs_its_checks_and_nothing_takes_their_place() -> None:
+    """A job that ran fewer checks would still pass: what each runs is pinned."""
+    jobs = yaml.safe_load((ROOT / ".github" / "workflows" / "tools-ci.yml").read_text())["jobs"]
+
+    assert _runs(jobs["static"])[-2:] == ["make static", "make timing"]
+    tests = next(
+        step for step in jobs["tests"]["steps"] if step.get("name") == "Tests of the share"
+    )
+    assert tests["env"]["SHARE"] == "${{ matrix.share }}"
+    assert tests["run"].splitlines()[0] == 'make tests-share SHARE="$SHARE"'
+    assert _runs(jobs["coverage"]) == [
+        "uv sync --frozen",
+        'make coverage-shares COVERAGE_SHARES="$RUNNER_TEMP/coverage"',
+    ]
+    assert _runs(jobs["mutation"]) == ["uv sync --frozen", 'make mutation MUTANTS="$MUTANTS"']
+
+
+def test_the_coverage_is_judged_on_every_share_of_the_tests() -> None:
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "tools-ci.yml").read_text())
+    tests, coverage = workflow["jobs"]["tests"], workflow["jobs"]["coverage"]
+    matrix = tests["strategy"]["matrix"]
+    count = len(matrix["share"])
+
+    assert matrix["share"] == [f"{index}/{count}" for index in range(1, count + 1)]
+    assert {entry["data"] for entry in matrix["include"]} == {
+        f"share-{index}" for index in range(1, count + 1)
+    }
+    assert coverage["needs"] == "tests"
+    assert any("make coverage-shares" in step.get("run", "") for step in coverage["steps"])
 
 
 _MUTMUT_STUB = """#!/bin/sh

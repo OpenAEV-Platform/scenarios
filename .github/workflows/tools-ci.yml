@@ -14,13 +14,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # make check, in jobs that run side by side: the checks and the timing tests in one, the
-  # mutation in shares of its own. The last job, the check the default branch requires, passes
-  # only when every one of them has.
-  checks:
-    name: Checks and timing tests
+  # make check, in jobs that run side by side: the static checks and the timing tests in one,
+  # the tests in shares, their coverage combined once they have all run, and the mutation in
+  # shares of its own. The last job, the check the default branch requires, passes only when
+  # every one of them has.
+  static:
+    name: Static checks and timing tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,15 +61,119 @@ jobs:
           sudo install -m 755 actionlint /usr/local/bin/actionlint
           rm -f "$archive" actionlint
 
-      - name: Checks, then the timing tests
+      - name: Static checks, then the timing tests
+        run: |
+          make static
+          make timing
+
+  tests:
+    name: Tests (share ${{ matrix.share }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every test is in exactly one share, by a stable hash of its ID; tests/test_sharding.py.
+        share: ["1/4", "2/4", "3/4", "4/4"]
+        include:
+          - share: "1/4"
+            data: share-1
+          - share: "2/4"
+            data: share-2
+          - share: "3/4"
+            data: share-3
+          - share: "4/4"
+            data: share-4
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Install gitleaks (pinned, checksum verified)
         env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar xzf "$archive" gitleaks
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$archive" gitleaks
+
+      - name: Install actionlint (pinned, checksum verified)
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
+          tar xzf "$archive" actionlint
+          sudo install -m 755 actionlint /usr/local/bin/actionlint
+          rm -f "$archive" actionlint
+
+      - name: Tests of the share
+        env:
+          SHARE: ${{ matrix.share }}
+          DATA: ${{ matrix.data }}
           # The internal terms the hygiene test refuses, never committed; required on main and on
           # pull requests from this repository, as a fork never receives a secret.
           SCENARIOS_HYGIENE_TERMS: ${{ secrets.HYGIENE_TERMS }}
           SCENARIOS_HYGIENE_REQUIRED: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          make checks
-          make timing
+          make tests-share SHARE="$SHARE"
+          mkdir "$RUNNER_TEMP/coverage"
+          mv .coverage "$RUNNER_TEMP/coverage/$DATA"
+
+      - name: Keep the coverage of the share
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ matrix.data }}
+          path: ${{ runner.temp }}/coverage
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true # a job run again replaces its share's data
+
+  coverage:
+    name: Coverage of every share
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Take the coverage of every share
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-share-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/coverage
+
+      - name: Coverage combined, 90 % overall and the domain fully
+        run: make coverage-shares COVERAGE_SHARES="$RUNNER_TEMP/coverage"
 
   mutation:
     name: Mutation (${{ matrix.share }})
@@ -77,14 +182,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every package make mutation mutates, in one share; tests/test_makefile.py checks it.
+        # Every module make mutation mutates, in exactly one share; tests/test_makefile.py checks
+        # it. The shares are cut by size, so that none holds the run back.
         include:
-          - share: verification
-            mutants: scenario_tools.domain.verification.
-          - share: policy
-            mutants: scenario_tools.domain.policy.
-          - share: sheet and release
-            mutants: scenario_tools.domain.sheet. scenario_tools.domain.release.
+          - share: policy rules
+            mutants: scenario_tools.domain.policy.rules.
+          - share: policy steps and workflows
+            mutants: >-
+              scenario_tools.domain.policy.workflow_rules. scenario_tools.domain.policy.step_rules.
+              scenario_tools.domain.policy.rule. scenario_tools.domain.policy.exceptions.
+          - share: policy actions and targets
+            mutants: >-
+              scenario_tools.domain.policy.actions. scenario_tools.domain.policy.payloads.
+              scenario_tools.domain.policy.registry. scenario_tools.domain.policy.targets.
+              scenario_tools.domain.policy.vendors.
+          - share: verification versioning
+            mutants: scenario_tools.domain.verification.versioning.
+          - share: verification payload hashes
+            mutants: >-
+              scenario_tools.domain.verification.payload_hash.
+              scenario_tools.domain.verification.payload_references.
+          - share: verification payloads and release output
+            mutants: >-
+              scenario_tools.domain.verification.held_payloads.
+              scenario_tools.domain.verification.payload_catalogue.
+              scenario_tools.domain.verification.payload_version.
+              scenario_tools.domain.verification.release_output.
+          - share: sheet
+            mutants: scenario_tools.domain.sheet.
+          - share: release
+            mutants: scenario_tools.domain.release.
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -107,15 +234,17 @@ jobs:
 
   pipeline:
     name: Local pipeline (lint, types, contracts, tests, security)
-    needs: [checks, mutation]
+    needs: [static, tests, coverage, mutation]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Every job passed
         env:
-          CHECKS: ${{ needs.checks.result }}
+          STATIC: ${{ needs.static.result }}
+          TESTS: ${{ needs.tests.result }}
+          COVERAGE: ${{ needs.coverage.result }}
           MUTATION: ${{ needs.mutation.result }}
         run: |
-          echo "checks: $CHECKS, mutation: $MUTATION"
-          [ "$CHECKS" = success ] && [ "$MUTATION" = success ]
+          echo "static: $STATIC, tests: $TESTS, coverage: $COVERAGE, mutation: $MUTATION"
+          [ "$STATIC" = success ] && [ "$TESTS" = success ] && [ "$COVERAGE" = success ] && [ "$MUTATION" = success ]
