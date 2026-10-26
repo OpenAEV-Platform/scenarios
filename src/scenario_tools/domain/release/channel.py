@@ -103,10 +103,12 @@ def check_moved_forward(previous: ChannelPointer | None, pointer: ChannelPointer
 
 def points_at(pointer: ChannelPointer, manifest: bytes, document: Mapping[str, Any]) -> bool:
     """Whether ``manifest``, as read, and ``document``, what it holds, are those of the release
-    ``pointer`` names: its SHA-256, the repository, the channel and the release's name."""
+    ``pointer`` names: its SHA-256, the repository, the channel and the release's name, and an
+    approved manifest, naming its approver, since a channel names an approved release only."""
     return (
         hashlib.sha256(manifest).hexdigest() == pointer.manifest_sha256
         and document.get("repository") == REPOSITORY
         and document.get("channel") == pointer.channel
         and document.get("release") == pointer.release
+        and is_github_login(document.get("release_approver"))
     )

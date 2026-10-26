@@ -201,3 +201,7 @@ def test_a_pointer_points_at_the_manifest_of_its_hash_its_channel_and_its_releas
     assert not points_at(stable, MANIFEST, DOCUMENT)
     assert not points_at(later, MANIFEST, DOCUMENT)
     assert not points_at(POINTER, MANIFEST, {**DOCUMENT, "repository": "another/repository"})
+    for approver in (None, "", "Not A Login"):
+        assert not points_at(POINTER, MANIFEST, {**DOCUMENT, "release_approver": approver})
+    without = {key: value for key, value in DOCUMENT.items() if key != "release_approver"}
+    assert not points_at(POINTER, MANIFEST, without)

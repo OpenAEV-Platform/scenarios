@@ -271,3 +271,20 @@ def test_a_previous_pointer_out_of_shape_is_refused(tmp_path: Path) -> None:
     assert result.exit_code == 3, result.output
     assert "it holds another field than its five" in result.output
     assert not out.exists()
+
+
+def test_a_manifest_the_pointer_names_but_not_approved_is_not_the_previous(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_bytes(
+        jcs({"repository": REPOSITORY, "channel": "edge", "release": "2026.10.27.1"})
+    )
+    pointer = _pointer(tmp_path, manifest, "2026.10.27.1")
+
+    result = _run(
+        "previous", "--pointer", str(pointer), "--manifest", str(manifest), "--channel", "edge"
+    )
+
+    assert result.exit_code == 3, result.output
+    assert "not the release the channel's pointer names" in result.output
