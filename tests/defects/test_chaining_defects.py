@@ -249,7 +249,7 @@ def test_a_type_or_edition_out_of_line_with_the_workflow_fails_on_sch_013(
     assert _validate(entry) == (1, {("SCH-013", field)})
 
 
-@pytest.mark.parametrize("openaev", [">=3.261005.0", ">3.261023.9", "==3.261023.0"])
+@pytest.mark.parametrize("openaev", [">=3.261016.0", ">3.261023.9", "==3.261023.0"])
 def test_a_workflow_allowing_a_platform_without_the_dependency_fix_fails_on_sch_015(
     tmp_path: Path, openaev: str
 ) -> None:
