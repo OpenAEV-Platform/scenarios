@@ -5,11 +5,15 @@ what to do. A security problem is reported privately, as [`SECURITY.md`](../SECU
 
 ## A release build fails
 
-The **Release build** workflow stops at the first job that fails. It publishes nothing at all
-today: releases are not published yet, and it builds only the first release of the repository.
-Its jobs run in this order: the approvals, the two builds, then the comparison and the
-verification.
+The **Release** workflow stops at the first job that fails. Its jobs run in this order: the
+previous release and the approvals, the two builds, the comparison and the verification, then
+the publication.
 
+- **Previous release.** The channel's pointer does not name the manifest it is read with, or the
+  repository has a release while the channel has no pointer: someone wrote on `channels`, or a
+  publication stopped between the release and its pointer. Find which release the channel should
+  name, the latest the workflow published, and restore its pointer from it with
+  `scenario-tools channel pointer` before releasing again. Never delete or replace a release.
 - **Approvals.** The job names the entry and its pull request.
   - An entry whose last change was not approved is said (`REL-002`) and does not stop the
     release. Never list a pull request in `policy/data/merged-before-review.yaml` to silence it:
@@ -31,6 +35,17 @@ verification.
   tampering. If tampering cannot be ruled out, report it privately, as
   [`SECURITY.md`](../SECURITY.md) says; open a public issue only for a defect known to be no
   security problem.
+- **Publication.** The tag of the release exists: a release is never replaced; find why, then
+  release again from a later commit. The release is published but the channel did not move:
+  write the pointer to it with `scenario-tools channel pointer` and put it on `channels` by hand.
+  Until the pointer is restored, a run the same day stops on the existing tag, as it names the
+  release again: restore the pointer first. A release tagged on another commit than the run's,
+  or one that fails its check once read back, is not pointed at: find why before anything else,
+  and if tampering cannot be ruled out, report it privately, as
+  [`SECURITY.md`](../SECURITY.md) says.
+  A publication stopped while its files were uploaded can leave a draft release: delete the
+  draft, which no one could read, before releasing again. The pointer changed while the run
+  ran: someone wrote on `channels`; find who, then release again.
 
 ## A pull request is refused by mistake
 
@@ -59,7 +74,7 @@ A maintainer's, a reviewer's or an automated account, or a token.
    team. Rotate any secret it could read.
 2. List what it did since it may have been compromised, in the repository's and the
    organisation's audit logs: its pushes, its approvals, its merges, the workflow runs it
-   started, the **Release build** runs included, and any change to the branch rules, the
+   started, the **Release** runs included, and any change to the branch rules, the
    collaborators, the keys or the workflows.
 3. For each merge it made or approved, review the change again. A scenario it touched that may
    be malicious is withdrawn at once, as below.

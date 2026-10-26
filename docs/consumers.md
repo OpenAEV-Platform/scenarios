@@ -4,7 +4,8 @@ This page is for those who build what consumes the catalogue: a collector that i
 scenarios on a platform, a marketplace, an offline import. It says what a release holds, what to
 check before any of its content is used, and how to test those checks.
 
-Releases are not published yet. Where they are published will be said here with the first one.
+Releases are published as GitHub releases of this repository, named `YYYY.MM.DD.N`. Each channel's
+pointer is `<channel>.json` on the `channels` branch: read it, then the release it names.
 
 ## What a release holds
 
