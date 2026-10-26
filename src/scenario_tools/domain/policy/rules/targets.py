@@ -34,7 +34,7 @@ from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Vi
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.shared.stored import injects
-from scenario_tools.domain.shared.workflow import conditions
+from scenario_tools.domain.shared.stored_workflow import conditions
 
 _CONTENT = "inject_content"
 # What a person reads of a condition of a step: its name, its description and the key it reads;

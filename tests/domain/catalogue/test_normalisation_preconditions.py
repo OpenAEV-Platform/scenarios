@@ -6,7 +6,8 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError, normalise
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
+from scenario_tools.domain.catalogue.normalisation import normalise
 from tests.domain.catalogue.test_normalisation import EXPORT, EXTERNAL_ID, RULES
 
 

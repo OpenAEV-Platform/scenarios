@@ -13,8 +13,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from scenario_tools.domain.catalogue.normalisation import decoded_step_data
 from scenario_tools.domain.catalogue.structure import CONTRACT, PAYLOAD, contracts_with_payloads
+from scenario_tools.domain.catalogue.workflow_steps import decoded_step_data
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.stored import Origin, injects, steps_decoded
 from scenario_tools.domain.verification.payload_hash import (

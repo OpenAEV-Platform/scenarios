@@ -17,11 +17,15 @@ PACKAGE = Path(__file__).resolve().parents[2] / "src" / "scenario_tools"
 EXEMPT = {
     "domain/shared/stored.py": "defines the walk",
     "domain/shared/workflow.py": "reads the workflow's shape and keys before any other check",
+    "domain/shared/stored_workflow.py": "reads the steps and conditions of a checked workflow",
     "domain/policy/step_rules.py": "checks a step and the inject it runs, before it is stored",
     "domain/catalogue/structure.py": (
         "refuses a part that is not a list, or an item that is not an object"
     ),
     "domain/catalogue/normalisation.py": "produces the parts from an export",
+    "domain/catalogue/export_reading.py": "names the parts of an export, for the errors on them",
+    "domain/catalogue/workflow_steps.py": "produces the steps of the workflow from an export",
+    "domain/catalogue/volatile_fields.py": "produces the parts from an export without what changes",
 }
 # Modules that read a part on purpose.
 ALLOWED = {

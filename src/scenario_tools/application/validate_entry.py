@@ -19,17 +19,18 @@ from scenario_tools.domain.catalogue.entry import (
     truncation_findings,
     version_findings,
 )
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.catalogue.metadata import ExportFacts, ScenarioMetadata, cross_check
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.characters import hidden_occurrences
 from scenario_tools.domain.shared.finding import Finding, Severity, reportable
 from scenario_tools.domain.sheet.sheet import render_sheet
+from scenario_tools.domain.verification.changelog import changelog_findings
 from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
-from scenario_tools.domain.verification.versioning import changelog_findings, versioning_findings
+from scenario_tools.domain.verification.versioning import versioning_findings
 from scenario_tools.ports.errors import UnsafeInputError
 from scenario_tools.ports.repository import EntrySource
 from scenario_tools.ports.schema import SchemaValidator

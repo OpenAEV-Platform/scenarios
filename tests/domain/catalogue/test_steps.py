@@ -8,12 +8,9 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.domain.catalogue.normalisation import (
-    ExportStructureError,
-    canonical_step_text,
-    normalise,
-    stored_step_data,
-)
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
+from scenario_tools.domain.catalogue.normalisation import normalise
+from scenario_tools.domain.catalogue.workflow_steps import canonical_step_text, stored_step_data
 from scenario_tools.domain.shared.workflow import (
     DEPEND_ON_DANGLING,
     KEY_RUNTIME,

@@ -8,6 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from scenario_tools.domain.shared.stored_workflow import conditions, holds_workflow, parsed_workflow
 from scenario_tools.domain.shared.workflow import (
     EXPORT_VERSION_UNKNOWN,
     INJECTS_AND_WORKFLOW,
@@ -29,11 +30,8 @@ from scenario_tools.domain.shared.workflow import (
     WORKFLOW_NO_STEP,
     ExportKeys,
     Refusal,
-    conditions,
     export_refusals,
     has_workflow,
-    holds_workflow,
-    parsed_workflow,
     settled_workflow,
 )
 from tests.support.workflow import KEYS, KEYS_DOCUMENT

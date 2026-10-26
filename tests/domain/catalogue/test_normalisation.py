@@ -8,18 +8,15 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.identifiers import (
     NS_OPENAEV_SCENARIOS,
     AmbiguousInjectError,
     scenario_namespace,
     stable_id,
 )
-from scenario_tools.domain.catalogue.normalisation import (
-    PLACEHOLDER_SENDER,
-    ExportStructureError,
-    NormalisationRules,
-    normalise,
-)
+from scenario_tools.domain.catalogue.normalisation import normalise
+from scenario_tools.domain.catalogue.volatile_fields import PLACEHOLDER_SENDER, NormalisationRules
 from scenario_tools.domain.shared.workflow import (
     EXPORT_VERSION_UNKNOWN,
     INJECTS_AND_WORKFLOW,

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from scenario_tools.application.assign_payloads import payload_findings
 from scenario_tools.application.findings import not_normalised
 from scenario_tools.domain.catalogue.archive import archive_findings, checked_workflow
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.policy.registry import rule_findings
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.shared.finding import Finding, Report

@@ -20,16 +20,15 @@ from scenario_tools.domain.policy.payloads import (
 )
 from scenario_tools.domain.shared.stored import STEP_DATA, Origin, step_pointer
 from scenario_tools.domain.shared.stored import injects as stored_injects
-from scenario_tools.domain.shared.workflow import (
+from scenario_tools.domain.shared.stored_workflow import (
     ConditionNode,
-    StoredSettings,
     holds_workflow,
     step_condition_trees,
     step_identifier,
     step_waits,
-    stored_settings,
     stored_steps,
 )
+from scenario_tools.domain.shared.workflow import StoredSettings, stored_settings
 from scenario_tools.domain.sheet.markdown import block, code, inline, plain
 
 SHEET_LIMIT = 1024 * 1024  # the most a README.md is read with: a larger sheet could not be checked

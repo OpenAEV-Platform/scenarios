@@ -7,14 +7,16 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.domain.verification.versioning import (
+from scenario_tools.domain.verification.changelog import changelog_findings
+from scenario_tools.domain.verification.entry_changes import (
     Bump,
     Change,
-    changelog_findings,
     changes,
     declared_bump,
-    released_version_findings,
     required_bump,
+)
+from scenario_tools.domain.verification.versioning import (
+    released_version_findings,
     versioning_findings,
 )
 

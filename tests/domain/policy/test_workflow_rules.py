@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
+from scenario_tools.domain.shared.stored_workflow import parsed_workflow
 from scenario_tools.domain.shared.workflow import (
     CONDITION_DEPEND_NESTED,
     CONDITION_GROUP_EMPTY,
@@ -25,7 +26,6 @@ from scenario_tools.domain.shared.workflow import (
     DEPEND_ON_NULL,
     STEP_ID_TWICE,
     Refusal,
-    parsed_workflow,
 )
 
 AT = "/scenario_workflow/workflow_steps"

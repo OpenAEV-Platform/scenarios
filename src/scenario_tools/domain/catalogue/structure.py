@@ -4,7 +4,7 @@ shaped as expected is refused (``IO-014``)."""
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.shared.stored import (
     INJECTS,
     STEP_DATA,
@@ -16,7 +16,7 @@ from scenario_tools.domain.shared.stored import (
     injects,
     step_pointer,
 )
-from scenario_tools.domain.shared.workflow import holds_workflow
+from scenario_tools.domain.shared.stored_workflow import holds_workflow
 
 INFORMATION = "scenario_information"
 CONTRACT, PAYLOAD = "inject_injector_contract", "injector_contract_payload"

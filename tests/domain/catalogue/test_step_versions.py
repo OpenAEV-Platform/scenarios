@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.identifiers import (
     AmbiguousInjectError,
     InjectSignature,
@@ -16,7 +17,7 @@ from scenario_tools.domain.catalogue.identifiers import (
     scenario_namespace,
     stable_id,
 )
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError, normalise
+from scenario_tools.domain.catalogue.normalisation import normalise
 from scenario_tools.domain.shared.workflow import MAX_STEPS, TOO_MANY_STEPS
 from tests.domain.catalogue.test_normalisation import RULES
 

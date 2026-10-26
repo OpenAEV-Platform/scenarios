@@ -12,10 +12,10 @@ import pytest
 
 from scenario_tools.application.assign_payloads import no_attached_files
 from scenario_tools.application.validate_entry import validate_entry
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.facts import BuiltinContracts
 from scenario_tools.domain.catalogue.intake import CatalogueEntry, name_key
 from scenario_tools.domain.catalogue.metadata import InjectFacts
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.policy.exceptions import PolicyException
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.sheet.sheet import render_sheet

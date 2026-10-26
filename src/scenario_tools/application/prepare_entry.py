@@ -6,18 +6,16 @@ from typing import Any
 
 from scenario_tools.domain.catalogue.archive import belongs_to
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.catalogue.identifiers import (
     InjectMatchingError,
     InvalidInjectMappingError,
 )
 from scenario_tools.domain.catalogue.metadata import starting_metadata
-from scenario_tools.domain.catalogue.normalisation import (
-    ExportStructureError,
-    NormalisationRules,
-    normalise,
-)
+from scenario_tools.domain.catalogue.normalisation import normalise
 from scenario_tools.domain.catalogue.structure import INFORMATION
+from scenario_tools.domain.catalogue.volatile_fields import NormalisationRules
 from scenario_tools.domain.shared.canonical import stored_form, stored_size
 from scenario_tools.domain.shared.finding import Finding
 from scenario_tools.domain.shared.workflow import ExportKeys
