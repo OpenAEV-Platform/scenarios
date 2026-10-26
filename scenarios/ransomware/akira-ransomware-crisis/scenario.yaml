@@ -25,6 +25,9 @@ threat:
 sources:
 - url: https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-109a
   tlp: TLP:CLEAR
+targets:
+- placeholder: participants
+  description: The people who play the exercise, put in its 14 generic teams on the platform before it starts; none ships with the scenario, and without them no email reaches anyone.
 requires:
   openaev: '>=3.261013.0'
   edition: CE

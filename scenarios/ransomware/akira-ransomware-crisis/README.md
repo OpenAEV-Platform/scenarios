@@ -70,7 +70,7 @@ None.
 
 ## Targets to fill in
 
-None: the scenario needs no target of the platform.
+- participants: The people who play the exercise\, put in its 14 generic teams on the platform before it starts\; none ships with the scenario\, and without them no email reaches anyone\.
 
 ## Versions
 
