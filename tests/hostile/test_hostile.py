@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.hostile.corpus import CASES, INPUTS, Case, renamed_entry, run
+from tests.hostile.corpus import CASES, INPUTS, RAN, Case, renamed_entry, run
 
 
 def _document(output: str) -> dict[str, object]:
@@ -29,6 +29,7 @@ def test_a_hostile_input_is_refused_within_its_budget(case: Case, tmp_path: Path
 
     assert outcome.exit_code == case.exit_code, outcome.output
     assert "Traceback" not in outcome.output
+    assert RAN not in outcome.output  # what an input's command prints only once it ran
     if case.code is None:  # said as the environment's fault, and why
         assert "environment error: " in outcome.output, outcome.output
     else:

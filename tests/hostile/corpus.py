@@ -13,6 +13,7 @@ are built when the case runs, the same bytes every time.
 import json
 import os
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -28,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 INPUTS = HERE / "inputs"
 TOOLS = Path(sys.executable).parent / "scenario-tools"
 LAUNCHER = HERE / "launcher.py"
+RAN = "hostile-code-42"  # what the command of tags.yaml prints, computed by the shell
 ENTRY = ENTRIES[0]
 EXTERNAL_ID = "00000000-0000-4000-8000-000000000001"
 JSON_LIMIT = 20 * 1024 * 1024  # what the readers accept of one JSON file
@@ -219,21 +221,24 @@ def run(case: Case, into: Path) -> Outcome:
     environment = {key: value for key, value in os.environ.items() if key not in UNSET}
     started = time.monotonic()
     command = [sys.executable, "-I", str(LAUNCHER), str(report), str(TOOLS), "--format", "json"]
+    # A group of its own: on timeout, the tools are stopped with the launcher, never left running.
+    child = subprocess.Popen(  # noqa: S603 - the tools themselves, arguments of the case
+        [*command, *arguments],
+        cwd=root,
+        env={**environment, **ENVIRONMENT},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
     try:
-        done = subprocess.run(  # noqa: S603 - the tools themselves, arguments of the case
-            [*command, *arguments],
-            cwd=root,
-            env={**environment, **ENVIRONMENT},
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=case.seconds * 3,
-            check=False,
-        )
+        output, _ = child.communicate(timeout=case.seconds * 3)
     except subprocess.TimeoutExpired as error:
+        os.killpg(child.pid, signal.SIGKILL)
+        child.communicate()
         raise AssertionError(f"{case.name}: over {case.seconds * 3} s") from error
     return Outcome(
-        done.returncode,
-        done.stdout.decode(errors="replace"),
+        child.returncode,
+        output.decode(errors="replace"),
         time.monotonic() - started,
         int(report.read_text(encoding="ascii")) / 1024,  # KiB on Linux
     )
