@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.interface import base, entries, openaev, payloads, release
+from scenario_tools.interface import base, entries, intake, openaev, payloads, release
 
-MODULES: tuple[ModuleType, ...] = (base, entries, release, payloads, openaev)
+MODULES: tuple[ModuleType, ...] = (base, entries, intake, release, payloads, openaev)
 
 
 def patch_interface(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
