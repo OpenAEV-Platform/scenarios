@@ -11,9 +11,9 @@ Its jobs run in this order: the approvals, the two builds, then the comparison a
 verification.
 
 - **Approvals.** The job names the entry and its pull request.
-  - An entry whose last change was not approved (`REL-002`): change it again through a reviewed
-    pull request. Never list a pull request in `policy/data/merged-before-review.yaml` to make a
-    release pass: that list holds only the pull requests merged before reviews were required.
+  - An entry whose last change was not approved is said (`REL-002`) and does not stop the
+    release. Never list a pull request in `policy/data/merged-before-review.yaml` to silence it:
+    that list holds only the pull requests merged before reviews were required.
   - An entry last changed by a commit pushed straight to the default branch, or merged otherwise
     than squashed, or a pull request or review whose account was deleted: change the entry again
     through a reviewed pull request.

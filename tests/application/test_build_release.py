@@ -134,11 +134,15 @@ def test_an_informative_finding_is_said_and_the_release_built() -> None:
     assert release is not None
 
 
-def test_an_entry_without_an_approval_leaves_the_release_unbuilt() -> None:
+def test_an_entry_without_an_approval_is_said_and_the_release_built() -> None:
     report, release = _build(approvals={FIRST: APPROVALS[FIRST], SECOND: Approval(9, ())})
 
-    assert release is None
-    assert [(f.code, f.path) for f in report.findings] == [("REL-002", SECOND)]
+    assert [(f.code, f.path, f.severity) for f in report.findings] == [
+        ("REL-002", SECOND, Severity.INFO)
+    ]
+    assert release is not None
+    second = json.loads(release.manifest)["items"][1]
+    assert second["approvals"] == {"pull_request": 9, "approvers": []}
 
 
 def test_a_pull_request_merged_before_review_needs_no_approver() -> None:

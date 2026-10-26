@@ -239,7 +239,7 @@ def test_an_approvals_file_out_of_its_shape_is_refused(document: Any) -> None:
         approvals_from_document(document)
 
 
-def test_every_entry_needs_its_approvals_and_an_approver() -> None:
+def test_every_entry_needs_its_approvals_and_one_without_an_approver_is_said() -> None:
     approvals = {
         ENTRY: Approval(122, ("alice",)),
         "scenarios/x/unapproved": Approval(9, ()),
@@ -253,7 +253,7 @@ def test_every_entry_needs_its_approvals_and_an_approver() -> None:
         (
             "REL-002",
             "scenarios/x/unapproved",
-            "blocking",
+            "info",
             "pull request #9, the last to change this entry, has no approval, and is not listed "
             "as merged before reviews were required",
         ),

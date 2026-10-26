@@ -113,7 +113,7 @@ the one the previous release holds.
 | Code | What it means | What to do |
 |---|---|---|
 | `REL-001` | The approvals file names no pull request for the entry. | Give an approvals file that lists every entry of the catalogue. |
-| `REL-002` | The pull request that last changed the entry has no approval, and is not listed in `policy/data/merged-before-review.yaml` as merged before reviews were required. | Change the entry through a reviewed pull request. |
+| `REL-002` | (Info) The pull request that last changed the entry has no approval, and is not listed in `policy/data/merged-before-review.yaml` as merged before reviews were required. The release is still built, and names the pull request with no approver. | Have the entry's next change approved once a second maintainer reviews them. |
 | `REL-003` | The previous release lists a scenario that no entry has. A released scenario is withdrawn by a new version, never removed. | Bring the entry back, with `status` set to `DEPRECATED` or `REVOKED` in a new version. |
 
 ## Verifying a release: `VRF`

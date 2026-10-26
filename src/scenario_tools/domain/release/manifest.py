@@ -323,7 +323,8 @@ def approval_findings(
 ) -> tuple[Finding, ...]:
     """``REL-001`` for each of ``entries`` the approvals file leaves out, and ``REL-002`` for
     each whose last pull request has no approver, unless it was merged before reviews were
-    required."""
+    required. ``REL-002`` informs, and does not stop the release, while one maintainer merges
+    the catalogue's changes alone: the release still names the pull request, with no approver."""
     findings = []
     for entry in entries:
         approval = approvals.get(entry)
@@ -335,7 +336,7 @@ def approval_findings(
                 f"pull request #{approval.pull_request}, the last to change this entry, has no "
                 "approval, and is not listed as merged before reviews were required"
             )
-            findings.append(Finding("REL-002", Severity.BLOCKING, entry, "", message))
+            findings.append(Finding("REL-002", Severity.INFO, entry, "", message))
     return tuple(findings)
 
 
