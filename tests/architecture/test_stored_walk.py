@@ -34,6 +34,7 @@ ALLOWED = {
         "shape is itself a change"
     ),
     "application/build_fixtures.py": "writes the parts of test exports",
+    "application/fixture_parts.py": "writes the parts of the scenarios the fixtures hold",
 }
 
 

@@ -10,16 +10,9 @@ from typing import Any
 import click
 
 from scenario_tools.adapters.catalogue_files import CatalogueDirectory
-from scenario_tools.adapters.data_files import (
-    scenario_from_archive,
-    write_output,
-)
+from scenario_tools.adapters.data_files import scenario_from_archive, write_output
 from scenario_tools.adapters.fixture_zip import HandmadeArchives
-from scenario_tools.adapters.git import (
-    commit_time,
-    head_commit,
-    last_commit,
-)
+from scenario_tools.adapters.git import commit_time, head_commit, last_commit
 from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.repository import RepositoryEntries
@@ -31,7 +24,7 @@ from scenario_tools.adapters.safe_readers import (
 )
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
-from scenario_tools.application.build_fixtures import EXPECTED, fixture_files, release_fixtures
+from scenario_tools.application.build_fixtures import fixture_files, release_fixtures
 from scenario_tools.application.build_release import (
     ArchivedEntry,
     EntryResult,
@@ -40,10 +33,8 @@ from scenario_tools.application.build_release import (
 )
 from scenario_tools.application.collect_approvals import collect_approvals
 from scenario_tools.application.findings import finding_from_unsafe_input
-from scenario_tools.application.fixture_expectations import (
-    Expectation,
-    expectations_from_document,
-)
+from scenario_tools.application.fixture_expectations import Expectation, expectations_from_document
+from scenario_tools.application.fixture_parts import EXPECTED
 from scenario_tools.application.run_fixtures import run_fixtures
 from scenario_tools.application.validate_payloads import checked_payloads
 from scenario_tools.application.verify_release import verify_release
@@ -73,15 +64,8 @@ from scenario_tools.domain.release.manifest import (
     previous_release,
 )
 from scenario_tools.domain.shared.canonical import jcs
-from scenario_tools.domain.shared.finding import (
-    Finding,
-    Report,
-    Severity,
-)
-from scenario_tools.domain.verification.payload_references import (
-    HeldVersions,
-    PayloadReference,
-)
+from scenario_tools.domain.shared.finding import Finding, Report, Severity
+from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.domain.verification.payload_version import VERSION_FILE_LIMIT
 from scenario_tools.domain.verification.release_output import payload_reference_findings
 from scenario_tools.interface.base import (
@@ -95,10 +79,7 @@ from scenario_tools.interface.base import (
     _rules,
     main,
 )
-from scenario_tools.ports.errors import (
-    EnvironmentProblemError,
-    UnsafeInputError,
-)
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 
 def _previous(path: Path, schema: JsonSchemaValidator) -> PreviousRelease:

@@ -21,47 +21,25 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.entry_writer import RepositoryWriter
-from scenario_tools.adapters.git import (
-    changed_entries,
-    converting,
-    head_commit,
-    uncommitted,
-)
+from scenario_tools.adapters.git import changed_entries, converting, head_commit, uncommitted
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.plan import PlanFile
 from scenario_tools.adapters.policy_levels import policy_levels
 from scenario_tools.adapters.repository import RepositoryEntries
-from scenario_tools.adapters.safe_readers import (
-    read_json_file,
-    read_yaml_file,
-    yaml_bytes,
-)
-from scenario_tools.application.assign_payloads import (
-    catalogue_of,
-)
+from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
+from scenario_tools.application.assign_payloads import catalogue_of
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.entry_external_id import entry_external_id
 from scenario_tools.application.findings import repository_path
-from scenario_tools.application.intake_entry import (
-    intake_check,
-    intake_entry,
-    intake_files,
-    write_intake,
-)
+from scenario_tools.application.intake_check import intake_check
+from scenario_tools.application.intake_entry import intake_entry
+from scenario_tools.application.intake_write import intake_files, write_intake
 from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
-from scenario_tools.application.report_output import (
-    printable,
-)
+from scenario_tools.application.report_output import printable
 from scenario_tools.application.repository_root import repository_root
-from scenario_tools.domain.shared.finding import (
-    ERROR_LIMIT,
-    Finding,
-    Report,
-    Severity,
-    shorten,
-)
+from scenario_tools.domain.shared.finding import ERROR_LIMIT, Finding, Report, Severity, shorten
 from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.interface.base import (
     _PLANNED,
@@ -79,11 +57,7 @@ from scenario_tools.interface.base import (
     _rules,
     main,
 )
-from scenario_tools.ports.errors import (
-    EnvironmentProblemError,
-    UnsafeInputError,
-    UsageProblemError,
-)
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError, UsageProblemError
 
 
 @main.command(name="check-title")

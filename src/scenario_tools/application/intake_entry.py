@@ -1,7 +1,6 @@
 """Intake an export into the catalogue: everything that would refuse the request is found before
 anything is written, so that a refused request leaves the repository as it was."""
 
-import contextlib
 import dataclasses
 import datetime
 import json
@@ -9,11 +8,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from scenario_tools.application.assign_payloads import (
-    agreed_ids,
-    assigned_entry,
-    no_attached_files,
-)
+from scenario_tools.application.assign_payloads import agreed_ids, assigned_entry
 from scenario_tools.application.prepare_entry import PreparedEntry, prepare_entry
 from scenario_tools.application.render_sheet import SHEET, policy_exceptions
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -24,7 +19,6 @@ from scenario_tools.domain.catalogue.intake import (
     IntakeRequest,
     completed_facets,
     domain_refusals,
-    intake_plan,
     intake_refusals,
     same_name,
 )
@@ -37,20 +31,15 @@ from scenario_tools.domain.catalogue.payload_verdict import (
     renamed,
 )
 from scenario_tools.domain.catalogue.structure import INFORMATION
-from scenario_tools.domain.shared.canonical import ContentHash, stored_form
+from scenario_tools.domain.shared.canonical import stored_form
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.payload_names import base_name
 from scenario_tools.domain.sheet.sheet import SHEET_LIMIT, render_sheet
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
-from scenario_tools.domain.verification.payload_references import (
-    HeldVersions,
-    PayloadReference,
-    unhashable_findings,
-)
+from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.ports.data import DataLoader
-from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
-from scenario_tools.ports.plan import PlanSink
-from scenario_tools.ports.repository import EntrySource, EntryWriter
+from scenario_tools.ports.errors import UnsafeInputError
+from scenario_tools.ports.repository import EntrySource
 from scenario_tools.ports.schema import SchemaValidator
 
 
@@ -82,7 +71,7 @@ def _scenario_name(export: Any) -> str:
     return name if isinstance(name, str) else ""
 
 
-def _refused(code: str, path: str, pointer: str, message: str) -> Finding:
+def refusal_finding(code: str, path: str, pointer: str, message: str) -> Finding:
     return Finding(code, Severity.BLOCKING, path, pointer, message)
 
 
@@ -112,31 +101,33 @@ def intake_entry(
         return IntakeResult(
             None,
             tuple(
-                _refused("SCH-001", request_path, violation.pointer, violation.message)
+                refusal_finding("SCH-001", request_path, violation.pointer, violation.message)
                 for violation in violations
             ),
         )
     if not isinstance(request_document, Mapping):  # whatever the schema lets through
         why = "the request must be a mapping of its fields"
-        return IntakeResult(None, (_refused("SCH-001", request_path, "", why),))
+        return IntakeResult(None, (refusal_finding("SCH-001", request_path, "", why),))
     if not isinstance(request_document.get("issue"), int):  # 12.0 is an integer to the schema
         why = "the issue must be a whole number, as #12 is"
-        return IntakeResult(None, (_refused("SCH-001", request_path, "/issue", why),))
+        return IntakeResult(None, (refusal_finding("SCH-001", request_path, "/issue", why),))
     for key in ("domain", "slug"):  # a place in the catalogue, whatever its schema lets through
         if not is_slug(request_document.get(key)):
             why = f"must be kebab-case of at most {SLUG_LIMIT} characters, never a path"
-            return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
+            return IntakeResult(None, (refusal_finding("SCH-001", request_path, f"/{key}", why),))
     for key in ("category", "main_focus"):  # a facet as the platform shows it: one clean line
         value = request_document.get(key)
         if isinstance(value, str) and (value != value.strip() or len(value.splitlines()) > 1):
             why = "must be one line, with no blank at either end"
-            return IntakeResult(None, (_refused("SCH-001", request_path, f"/{key}", why),))
+            return IntakeResult(None, (refusal_finding("SCH-001", request_path, f"/{key}", why),))
     request = IntakeRequest.from_document(request_document)
     refusals: tuple[Finding, ...] = ()
     name = _scenario_name(export)
     if not name.strip():
         why = "the export's scenario has no name: name it on the platform, and export it again"
-        refusals = (_refused("SCH-001", export_path, "/scenario_information/scenario_name", why),)
+        refusals = (
+            refusal_finding("SCH-001", export_path, "/scenario_information/scenario_name", why),
+        )
     refusals = (
         refusals
         or domain_refusals(request, domains, request_path)
@@ -172,7 +163,7 @@ class _Payloads:
     adopted: dict[str, str]  # the base name each claimed copy follows, by the name it had
 
 
-def _claims(claims: Iterable[Mapping[str, Any]]) -> tuple[Claim, ...]:
+def claim_list(claims: Iterable[Mapping[str, Any]]) -> tuple[Claim, ...]:
     """The claims of a request, as its schema takes them."""
     return tuple(
         Claim(
@@ -185,7 +176,7 @@ def _claims(claims: Iterable[Mapping[str, Any]]) -> tuple[Claim, ...]:
     )
 
 
-def _adopting(
+def adopting(
     export: Any,
     prepare: Callable[[Any], PreparedEntry],
     discover: Callable[[Any], PreparedEntry],
@@ -287,173 +278,6 @@ def _payloads(
     )
 
 
-# What the check mode needs to normalise an export, and never shows: the entry's external ID
-# and the catalogue facets an export may lack. The verdicts judge the payloads alone.
-CHECKED_ID = "00000000-0000-4000-8000-000000000000"
-_CHECKED_FACETS = dict.fromkeys(FACETS.values(), "check") | {FACETS["severity"]: "low"}
-_CHECKED_REQUEST = {
-    "mode": "update",
-    "external_id": CHECKED_ID,
-    "domain": "check",
-    "slug": "check",
-    "issue": 1,
-}
-
-
-def intake_check(
-    export: Any,
-    claims: object,
-    *,
-    export_path: str,
-    claims_path: str,
-    data: DataLoader,
-    schema: SchemaValidator,
-    payloads: Catalogue,
-    external_id: str,
-    previous: object = None,
-    previous_path: str | None = None,
-) -> tuple[Finding, ...]:
-    """The verdicts ``intake`` gives on the payloads ``export`` embeds against the catalogue
-    ``payloads``, with the findings on ``claims``, a document holding a request's ``payloads``
-    alone (none when it is ``None``): from the same functions, writing nothing. The export is
-    normalised as intake normalises it for the entry ``external_id``, and, for an update, with
-    the entry's stored scenario, ``previous``, read from ``previous_path``: normalisation derives
-    the identifiers it orders injects by, and rewrites in values, from both, so the verdicts
-    are intake's only with them. A facet the export lacks is given a value the verdicts never
-    read."""
-    listed: tuple[Mapping[str, Any], ...] = ()
-    if claims is not None:
-        refused = _claims_refused(claims, claims_path, schema)
-        if refused:
-            return refused
-        listed = tuple(claims["payloads"]) if isinstance(claims, Mapping) else ()
-    export, _ = completed_facets(export, {}, _CHECKED_FACETS, export_path)
-    prepared, verdict = _adopting(
-        export,
-        lambda form: prepare_entry(
-            form,
-            external_id,
-            data,
-            path=export_path,
-            previous=previous,
-            previous_path=previous_path,
-        ),
-        lambda form: prepare_entry(form, external_id, data, path=export_path),
-        _claims(listed),
-        (export_path, claims_path),
-        payloads,
-        data,
-        schema,
-    )
-    if prepared.refusals or verdict is None:
-        return prepared.refusals
-    # A payload that cannot be hashed has no verdict: intake's reference checks refuse it, and
-    # the check says so as they do.
-    refused = unhashable_findings(
-        json.loads(prepared.scenario_json), no_attached_files, export_path
-    )
-    return (*refused, *verdict.refusals, *verdict.told)
-
-
-def _claims_refused(claims: object, path: str, schema: SchemaValidator) -> tuple[Finding, ...]:
-    """Why the claims document at ``path`` is refused: it is a mapping of ``payloads`` alone,
-    the list a request holds, checked against the request's own definition."""
-    hidden = hidden_character_findings(claims, path)
-    if hidden:
-        return hidden
-    if not isinstance(claims, Mapping) or set(claims) != {"payloads"}:
-        why = "the claims must be a mapping holding the request's payloads list alone"
-        return (_refused("SCH-001", path, "", why),)
-    violations = schema.validate("intake-request", {**_CHECKED_REQUEST, **claims})
-    return tuple(_refused("SCH-001", path, v.pointer, v.message) for v in violations)
-
-
-def intake_files(
-    result: IntakeResult, render: Callable[[dict[str, Any]], bytes]
-) -> dict[str, bytes]:
-    """The files intake writes in the entry, by name, in the order they are written: its
-    ``scenario.yaml`` first when there is one to write, as ``render`` writes it, then its
-    ``scenario.json``; none when the request is refused or changes nothing."""
-    if result.refusals or not result.changed or result.scenario_json is None:
-        return {}
-    files = {} if result.metadata is None else {"scenario.yaml": render(result.metadata)}
-    if result.changelog is not None:
-        files["CHANGELOG.md"] = result.changelog
-    if result.sheet is not None:
-        files[SHEET] = result.sheet
-    files["scenario.json"] = result.scenario_json
-    return files
-
-
-def plan_document(
-    result: IntakeResult, files: Mapping[str, bytes], base: str, findings: Iterable[Finding]
-) -> dict[str, Any]:
-    """The plan of the pull request: the files written with their digests, from the commit
-    ``base``, and what is left, from intake and from the checks of the entry written."""
-    if result.request is None or result.refusals:
-        raise ValueError("a refused request has no plan")
-    entry = result.request.entry
-    digests = {f"{entry}/{name}": ContentHash.of_bytes(data).hex for name, data in files.items()}
-    digests.update(
-        {path: ContentHash.of_bytes(data).hex for path, data in result.payload_files.items()}
-    )
-    return intake_plan(
-        result.request,
-        base=base,
-        changed=result.changed,
-        files=digests,
-        checklist=(*result.to_complete, *findings),
-        changes=result.payload_changes,
-    )
-
-
-def write_intake(
-    result: IntakeResult,
-    *,
-    entries: EntryWriter,
-    plan: PlanSink,
-    base: str,
-    current: Callable[[], str],
-    validate: Callable[[str], tuple[Finding, ...]],
-    render: Callable[[dict[str, Any]], bytes],
-) -> tuple[Finding, ...]:
-    """Write the entry ``result`` says and its plan, from the commit ``base``, in one go: the
-    plan's place is reserved first, then the entry is written and checked as ``validate``
-    checks it, and the plan is published only once the checkout's commit, as ``current`` reads
-    it once sure its path still names the checkout held, is still ``base``, then, last, the
-    entry is known to be still where and as it was written. The entry is
-    kept only with its plan: if anything stops the run before, what was written is taken back
-    and the place given back. What is left to complete and the entry's findings are given. The
-    caller holds the repository from the catalogue's check that made ``result`` until this
-    returns."""
-    if result.request is None or result.refusals:
-        raise ValueError("a refused request is never written")
-    entry = result.request.entry
-    with plan.reserving() as reservation, contextlib.ExitStack() as stack:
-        files = intake_files(result, render)
-        # The new payload versions first: a new payload's in a folder of its own, a new version
-        # of a payload in that payload's folder. The entry's check reads them, and they are
-        # taken back with it if anything stops the run.
-        versions = []
-        for path, data in sorted(result.payload_files.items()):
-            folder, name = path.rsplit("/", 1)
-            held: dict[str, bytes] | None = {} if path in result.payload_changes else None
-            versions.append(
-                stack.enter_context(entries.writing(folder, {name: data}, previous=held))
-            )
-        written = stack.enter_context(entries.writing(entry, files, previous=result.previous))
-        findings = validate(entry)
-        document = plan_document(result, files, base, findings)
-        if current() != base:  # the plan must describe what its base gives
-            raise EnvironmentProblemError(
-                "the checkout's commit changed while the run wrote: nothing is kept"
-            )
-        for checked in (*versions, written):  # last: what the checkout's check leaves out
-            checked.check()
-        reservation.publish(json.dumps(document, indent=2).encode() + b"\n")
-    return (*result.to_complete, *findings)
-
-
 def _new(
     request: IntakeRequest,
     export: Any,
@@ -468,7 +292,7 @@ def _new(
     export, missing = completed_facets(export, request.facets, {}, export_path)
     if missing:
         return IntakeResult(request, missing)
-    prepared, verdict = _adopting(
+    prepared, verdict = adopting(
         export,
         lambda form: prepare_entry(
             form, request.external_id, data, path=export_path, start_at=metadata_path
@@ -476,7 +300,7 @@ def _new(
         lambda form: prepare_entry(
             form, request.external_id, data, path=export_path, start_at=metadata_path
         ),
-        _claims(request.claims),
+        claim_list(request.claims),
         (f"{request.entry}/scenario.json", request_path),
         payloads,
         data,
@@ -492,9 +316,9 @@ def _new(
         return IntakeResult(
             request,
             (
-                _refused("ITK-007", request_path, "", why),
+                refusal_finding("ITK-007", request_path, "", why),
                 *(
-                    _refused("SCH-001", metadata_path, violation.pointer, violation.message)
+                    refusal_finding("SCH-001", metadata_path, violation.pointer, violation.message)
                     for violation in violations
                 ),
             ),
@@ -557,7 +381,11 @@ def _update(
     if "scenario.json" not in source.names(request.entry):
         return IntakeResult(
             request,
-            (_refused("SCH-008", stored_path, "", "the entry has no scenario.json to update"),),
+            (
+                refusal_finding(
+                    "SCH-008", stored_path, "", "the entry has no scenario.json to update"
+                ),
+            ),
         )
     stored, previous = source.read_json(stored_path)
     held = previous.get("scenario_information") if isinstance(previous, dict) else None
@@ -566,7 +394,7 @@ def _update(
     )
     if missing:
         return IntakeResult(request, missing)
-    prepared, verdict = _adopting(
+    prepared, verdict = adopting(
         export,
         lambda form: prepare_entry(
             form,
@@ -577,7 +405,7 @@ def _update(
             previous_path=stored_path,
         ),
         lambda form: prepare_entry(form, request.external_id, data, path=export_path),
-        _claims(request.claims),
+        claim_list(request.claims),
         (f"{request.entry}/scenario.json", request_path),
         payloads,
         data,
