@@ -2,7 +2,7 @@
 
 # EASM Scenario
 
-Version 1\.0\.0 · VERIFIED · time\-based
+Version 2\.0\.0 · VERIFIED · time\-based
 
 EASM is a cybersecurity practice focused on discovering\, mapping\, and continuously monitoring all internet\-facing assets of an organization \(websites\, IP addresses\, cloud services\, APIs\, admin portals\, etc\.\)\.
 
@@ -42,7 +42,7 @@ Simply define an asset using an IP address or FQDN\. OpenAEV then performs enume
 
 ## Requirements
 
-- OpenAEV: \>\=3\.261005\.0
+- OpenAEV: \>\=3\.261016\.0
 - Edition: CE
 - Injectors: openaev\_nmap, openaev\_nuclei
 - Executors: none
