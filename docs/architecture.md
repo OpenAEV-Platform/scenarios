@@ -57,8 +57,11 @@ kept for a defect of the tools.
 | The platform's answers | The platform | `adapters/openaev_http.py` | 1 MiB an answer, 4 MiB a contract, 16 MiB a page of payloads |
 | GitHub's answers | GitHub | `adapters/github_api.py` | 4 MiB an answer |
 
-Writes go through `entry_writer.py`: one directory at a time, held open, never through a link; what
-a run cannot keep is taken back. Who could attack, and what stops them, is in
+Writes never go through a link. `intake` writes an entry through `entry_writer.py` and its plan
+through `plan.py`, one directory at a time, held open: what the run cannot keep is taken back, and
+the plan is published last. The other commands write each output file with
+`data_files.write_output`: a temporary file renamed over the target, so that a failure leaves that
+file as it was; files written before a failure stay. Who could attack, and what stops them, is in
 [`threat-model.md`](threat-model.md). The inputs that once got past these bounds are replayed by
 the hostile corpus, `tests/hostile/`, on every run of the tools pipeline.
 
