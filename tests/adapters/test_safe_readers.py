@@ -16,6 +16,7 @@ from hypothesis import strategies as st
 
 from scenario_tools.adapters.safe_readers import (
     MAX_DEPTH,
+    VALUE_LIMIT,
     _Loader,
     parse_json,
     parse_yaml,
@@ -73,6 +74,45 @@ def test_json_bytes_over_the_size_limit_are_refused() -> None:
         parse_json(b"[1, 2]", path="in-memory.json", limit=5)
     assert _code(error) == "IO-001"
     assert error.value.path == "in-memory.json"
+
+
+def _zeros(count: int) -> bytes:
+    return b"[" + b",".join([b"0"] * count) + b"]"
+
+
+def test_json_with_as_many_values_as_accepted_passes_and_one_more_is_refused() -> None:
+    # Counted before parsing: a value after each comma and in each opening bracket, and the
+    # first; a list of n numbers counts n + 1, the list itself included.
+    assert len(parse_json(_zeros(VALUE_LIMIT - 1))) == VALUE_LIMIT - 1
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(_zeros(VALUE_LIMIT), path="many.json")
+    assert _code(error) == "IO-001"
+    assert str(VALUE_LIMIT) in str(error.value)
+    assert error.value.path == "many.json"
+
+
+@pytest.mark.parametrize("brackets", [b"{", b"["])
+def test_json_values_count_the_opening_brackets(brackets: bytes) -> None:
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(b'"' + brackets * VALUE_LIMIT + b'"')
+    assert _code(error) == "IO-001"
+
+
+@pytest.mark.parametrize("escape", [b"\\u002c", b"\\u005b", b"\\u007b", b"\\u005c"])
+def test_json_values_count_the_escapes_of_a_text(escape: bytes) -> None:
+    # A text may be JSON decoded a second time, at any depth: each escape may be a comma, a
+    # bracket or the backslash of one there.
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(b'"' + escape * VALUE_LIMIT + b'"')
+    assert _code(error) == "IO-001"
+
+
+def test_json_values_count_the_commas_of_a_text_too() -> None:
+    # Counted without reading the strings, which keeps the count linear in the input's size; the
+    # largest real file counts some thirteen thousand.
+    with pytest.raises(UnsafeInputError) as error:
+        parse_json(b'"' + b"," * VALUE_LIMIT + b'"')
+    assert _code(error) == "IO-001"
 
 
 @pytest.mark.parametrize(

@@ -26,7 +26,7 @@ file the tools read: exports, archives, requests, scenario files.
 
 | Code | What it means | What to do |
 |---|---|---|
-| `IO-001` | The file is larger than the tools accept. | Make it smaller, or check it is the right file. |
+| `IO-001` | The file is larger than the tools accept: in bytes, or, for JSON, in values: 500,000 at most, counted before reading it as one per comma, opening bracket and `\u` escape, those inside its texts too, since a text may hold JSON read in turn. | Make it smaller, or check it is the right file. |
 | `IO-002` | The file is not valid JSON or YAML (syntax or encoding). | Fix the syntax; save it as UTF-8. |
 | `IO-003` | The YAML uses an anchor, an alias or a merge key. | Write the values out in full. |
 | `IO-004` | The data is nested deeper than the tools accept. | Flatten the structure. |

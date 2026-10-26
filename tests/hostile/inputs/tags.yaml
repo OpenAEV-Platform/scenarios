@@ -1,0 +1,3 @@
+python: !!python/object/apply:os.system ["echo hostile-code-$((40 + 2))"]
+raw: !!binary aGVsbG8=
+unique: !!set {a, b}
