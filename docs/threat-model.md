@@ -24,6 +24,10 @@ their way, as the repository is today; what is planned is said so.
 How a release is built is in [`releases.md`](releases.md); what `intake` guarantees as it writes,
 in [`intake.md`](intake.md).
 
+Each input once found to get past these defences is kept in the hostile corpus
+(`tests/hostile/`), replayed by every run of the tools pipeline: it must be refused, with its
+finding code and never as an internal error, within a budget of time and of memory.
+
 ## Accepted for now
 
 - **Whoever can publish a release can publish anything.** A compromised account or token with the

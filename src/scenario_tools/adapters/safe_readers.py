@@ -22,6 +22,7 @@ from scenario_tools.domain.shared.canonical import SAFE_INTEGER
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 JSON_LIMIT = 20 * 1024 * 1024
+VALUE_LIMIT = 500_000  # values of one JSON text, counted before it is parsed
 YAML_LIMIT = 256 * 1024
 TEXT_LIMIT = 1024 * 1024  # a README or a CHANGELOG
 MAX_DEPTH = 64
@@ -132,7 +133,21 @@ def _json_constant(name: str) -> Any:
     raise _RefusedError("IO-006", f"{name} is not JSON")
 
 
+def _values_at_most(data: bytes) -> int:
+    """At least as many as the values the JSON text ``data`` holds, counted without parsing it:
+    one after each comma, one in each opening bracket, and the first. Those of its strings count
+    too, so that the count stays linear in the size of ``data``; and so does each ``\\u``
+    escape, since a string may be JSON text decoded once more, at any depth, where an escape may
+    be a comma, a bracket, or the backslash of one."""
+    return data.count(b",") + data.count(b"[") + data.count(b"{") + data.count(b"\\u") + 1
+
+
 def _parse_json(data: bytes, max_depth: int) -> Any:
+    # Parsed, a JSON text of the smallest values takes some fifty times its size: bounded first.
+    if _values_at_most(data) > VALUE_LIMIT:
+        raise _RefusedError(
+            "IO-001", f"more than {VALUE_LIMIT} commas, opening brackets and escapes"
+        )
     text = _decode(data)
     try:
         value = json.loads(text, object_pairs_hook=_json_object, parse_constant=_json_constant)

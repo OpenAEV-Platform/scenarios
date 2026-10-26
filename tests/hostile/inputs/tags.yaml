@@ -1,0 +1,3 @@
+python: !!python/object/apply:os.system ["echo reached"]
+raw: !!binary aGVsbG8=
+unique: !!set {a, b}
