@@ -38,6 +38,11 @@ def test_a_method_beyond_c_is_reported() -> None:
     assert "Holder.tangled D (21)" in too_complex(source)
 
 
+def test_a_method_of_a_class_inside_a_class_beyond_c_is_reported() -> None:
+    source = "class Outer:\n    class Inner:\n" + _branching("tangled", 20, "        ")
+    assert any(found.endswith("tangled D (21)") for found in too_complex(source))
+
+
 def test_a_function_inside_a_function_beyond_c_is_reported() -> None:
     source = "def outer():\n" + _branching("tangled", 20, "    ") + "    return tangled\n"
     assert any(found.startswith("tangled D") for found in too_complex(source))

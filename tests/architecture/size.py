@@ -11,10 +11,12 @@ MAX_LINES = 600
 
 
 def _blocks(found: list[Any]) -> Iterator[Any]:
-    """Every block radon read, the methods of a class and the functions inside a function too."""
+    """Every block radon read: the methods of a class and the classes inside it, the functions
+    inside a function, at any depth."""
     for block in found:
         yield block
         yield from _blocks(getattr(block, "methods", []))
+        yield from _blocks(getattr(block, "inner_classes", []))
         yield from _blocks(getattr(block, "closures", []))
 
 
