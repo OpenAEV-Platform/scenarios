@@ -18,6 +18,9 @@ COMMITS = frozenset(
 # A path in the runner's temporary directory, which the runner sets and no one else: where the
 # release workflow keeps what its tools write, outside the checkout.
 _IN_RUNNER_TEMP = re.compile(r"\$\{\{ runner\.temp \}\}/[a-z]+(?:\.json)?")
+# An artifact's name taken from a matrix value, which the workflow file itself sets, never an
+# event: the one way to name the artifact of each job of a matrix.
+_BY_MATRIX = re.compile(r"[a-z-]*\$\{\{ matrix\.[a-z]+ \}\}")
 # A static guard, never a proof: what would run the base branch's tools from the pull request's
 # tree, or run a file of it. Code-owner review of the workflows is the barrier.
 _MOVES = re.compile(
@@ -102,7 +105,8 @@ def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> Non
         for key, value in (step.get("with") or {}).items():
             computed = "${{" in str(value)
             in_temp = key == "path" and _IN_RUNNER_TEMP.fullmatch(str(value)) is not None
-            assert not computed or in_temp or (key == "ref" and value in COMMITS), (
+            named = key == "name" and _BY_MATRIX.fullmatch(str(value)) is not None
+            assert not computed or in_temp or named or (key == "ref" and value in COMMITS), (
                 step.get("name"),
                 key,
             )
@@ -120,6 +124,20 @@ def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> Non
 )
 def test_only_a_plain_path_in_the_runner_temp_may_be_computed(value: str, kept: bool) -> None:
     assert (_IN_RUNNER_TEMP.fullmatch(value) is not None) is kept
+
+
+@pytest.mark.parametrize(
+    ("value", "kept"),
+    [
+        ("coverage-${{ matrix.data }}", True),
+        ("${{ matrix.share }}", True),
+        ("x-${{ github.head_ref }}", False),
+        ("${{ matrix.data }}-${{ github.ref }}", False),
+        ("${{ matrix.data || github.ref }}", False),
+    ],
+)
+def test_only_a_matrix_value_may_name_an_artifact(value: str, kept: bool) -> None:
+    assert (_BY_MATRIX.fullmatch(value) is not None) is kept
 
 
 def test_a_ref_that_is_no_commit_is_refused() -> None:

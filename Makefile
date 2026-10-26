@@ -1,4 +1,4 @@
-# Local quality pipeline. CI runs the same target.
+# Local quality pipeline. CI runs the same checks, in jobs side by side (see tools-ci.yml).
 # Every target fails the build on the first error.
 
 GITLEAKS_VERSION := 8.30.1
@@ -13,16 +13,19 @@ FLOCK := $(shell command -v flock 2>/dev/null)
 SHARED := $(if $(FLOCK),flock -s $(PIPELINE_LOCK))
 ALONE := $(if $(FLOCK),flock -x $(PIPELINE_LOCK))
 
-.PHONY: check checks check-fast lint format types imports tests coverage-domain security audit secrets sheets mutation timing fixtures
+.PHONY: check checks static check-fast lint format types imports tests tests-share coverage-domain coverage-shares security audit secrets sheets mutation timing fixtures
 
 # The timing tests run from the recipe, once every other check has ended, even under make -j.
 check: checks mutation
 	@$(MAKE) --no-print-directory timing
 	@echo "Local pipeline: all checks passed."
 
-# Every check but the mutation and the timing tests: what CI runs beside the shares of the
-# mutation, each in a job of its own.
+# Every check but the mutation and the timing tests. CI runs the same checks in jobs side by
+# side: static, the tests in shares (tests-share), their coverage combined (coverage-shares).
 checks: lint format types imports tests coverage-domain security audit secrets sheets workflows
+
+# Every check but the tests, the mutation and the timing tests.
+static: lint format types imports security audit secrets sheets workflows
 
 # A quicker loop while working, never a gate: the static checks, then the tests on every core,
 # without coverage and with fewer generated examples. check runs before every pull request.
@@ -47,6 +50,18 @@ tests:
 
 # The domain layer must be fully covered (branches included), measured on the run above.
 coverage-domain: tests
+	uv run coverage report --include='src/scenario_tools/domain/*' --fail-under=100
+
+# One share of the tests, as each of CI's test jobs runs it: SHARE=index/count. Under coverage,
+# judged only once every share's data is combined: a share alone covers part of the code.
+tests-share:
+	SCENARIOS_TEST_SHARD=$(SHARE) SCENARIOS_HYPOTHESIS_PROFILE=repository $(SHARED) uv run pytest -n auto -m "not timing" --cov --cov-report= --cov-fail-under=0
+
+# The coverage data of every share, the files share-* in COVERAGE_SHARES, combined and judged as
+# the tests and coverage-domain judge them: 90 % overall, the domain fully.
+coverage-shares:
+	uv run coverage combine --keep $(COVERAGE_SHARES)/share-*
+	uv run coverage report
 	uv run coverage report --include='src/scenario_tools/domain/*' --fail-under=100
 
 security:
