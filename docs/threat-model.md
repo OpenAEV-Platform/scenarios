@@ -3,8 +3,7 @@
 The scenarios of this catalogue run on real endpoints, through the agents of every platform that
 installs them. Content tampered with on its way is therefore not a bug: it is an attack on every
 platform that imports it. This page says who could attack, what they could do, and what stands in
-their way, as the repository is today; what is planned is said so. Releases are not published
-yet: the release workflow builds and checks the first release, and publishes nothing.
+their way, as the repository is today; what is planned is said so.
 
 ## Who could attack, and what stops them
 
@@ -39,6 +38,12 @@ in [`intake.md`](intake.md).
 - **An older release replayed is not detected** by the release alone. A consumer is asked to
   refuse a version lower than one it installed, but a platform that installs for the first time
   cannot tell an old release from the latest.
+- **The release is approved by starting its run.** The repository has no protected environment
+  yet, so whoever can start the release workflow approves the release; GitHub does not make
+  published releases immutable, and does not keep others from writing on `channels`. The
+  workflow never replaces a release and alone writes the pointers, and a consumer checks the
+  manifest's hash against the pointer; a protected environment, immutable releases and a rule on
+  `channels` are the next step.
 - **There is no revocation list.** A scenario is withdrawn by a new version, which a platform
   learns from the next release it reads.
 

@@ -4,14 +4,19 @@ A release of the catalogue is every entry's import archive, the file of every pa
 `payloads/`, and a manifest that lists them, with the hash of each, so that a platform can check
 what it imports. This page is for the
 maintainers who build releases; what a platform checks of a release is in
-[`consumers.md`](consumers.md). Releases are not published yet: the workflow builds one and
-checks that it is reproducible.
+[`consumers.md`](consumers.md). Releases are published as GitHub releases of this repository,
+named `YYYY.MM.DD.N`, each channel's pointer on the `channels` branch.
 
 ## How a release is built
 
-The **Release build** workflow (`.github/workflows/release.yml`) is run by hand, from the
-Actions tab, for a channel (`edge` or `stable`). It stops unless it runs on the default branch,
-whose changes were reviewed.
+The **Release** workflow (`.github/workflows/release.yml`) is run by hand, from the Actions
+tab, for a channel (`edge` for now; `stable` comes with promotion). It stops unless it runs on
+the head of the default branch, whose changes were reviewed. Who starts it approves the release.
+
+0. **The previous release.** The channel's pointer is read on the `channels` branch, and the
+   manifest of the release it names is downloaded; `scenario-tools channel previous` checks that
+   the pointer names that manifest. With no pointer, it is the first release, only while the
+   repository has none; otherwise the workflow stops.
 
 1. **Approvals.** `scenario-tools approvals` finds, for each entry, the pull request merged into
    the default branch as the last commit that changed it, and those who approved what it
@@ -39,12 +44,19 @@ whose changes were reviewed.
    directory for the archives, and `--approved` also requires the release approver, once the
    release is approved.
 
-A green run means the release builds, is reproducible and passes what its consumers check;
-nothing is published. The two builds are kept as the run's artifacts for seven days.
+5. **Publication.** The one job allowed to write approves the release with the login of who
+   started the run (`scenario-tools approve`), verifies it again as approved
+   (`verify --approved`), writes the channel's next pointer (`scenario-tools channel pointer`,
+   refused unless it moves the channel forward), publishes the release, refused when its tag
+   exists, reads it back and checks it against that pointer and as its consumers will, and then
+   moves the channel to it, refused if the pointer changed since the run read it. The run's summary
+   names the release and each scenario whose last change was merged without approval.
 
-Until releases are published, the workflow builds only the first release of the repository: it
-stops when the repository has a release, whatever its channel, as the next one needs the
-previous manifest. A draft release is not seen.
+The two builds are kept as the run's artifacts for seven days. For now the repository has no
+protected environment to approve a release in, published releases are not made immutable by
+GitHub, and nothing but the workflow's practice keeps others from writing on `channels`: starting
+the run stands for the approval, the workflow never replaces a release, and only it writes the
+pointers.
 
 **What it assumes.** A change of the catalogue goes through a pull request that is squash-merged:
 the last commit that changed an entry is then the one the pull request was merged as. An entry
@@ -81,11 +93,10 @@ release, by its name, and the SHA-256 of that release's manifest. A consumer rea
 then the manifest of the release it names, and checks that it has that hash, that repository,
 that channel and that name. The releases themselves never change, and a channel moves to a later
 release, never back: publishing the same release again leaves it as it is, and a channel is
-never rolled back, a later release is published instead. The pointers come with the publication
-of releases, on a branch only the release workflow writes; until then, there is none.
-`scenario-tools channel previous` checks that a pointer names a given manifest, and
-`scenario-tools channel pointer` writes the pointer to an approved release, refused unless it
-moves the channel forward.
+never rolled back, a later release is published instead. The release workflow writes the pointers
+on the `channels` branch: `scenario-tools channel previous` checks that a pointer names a given
+manifest, and `scenario-tools channel pointer` writes the pointer to an approved release, refused
+unless it moves the channel forward.
 
 ## Release fixtures
 

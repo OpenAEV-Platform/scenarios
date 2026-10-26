@@ -109,9 +109,15 @@ def test_a_ref_that_is_no_commit_is_refused() -> None:
 
 # A job's own permissions, by workflow and job: reads only, and only where a job needs one.
 ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
-    # The approvals of each entry, from the pull requests' reviews.
-    "release.yml": {"approvals": {"contents": "read", "pull-requests": "read"}},
+    "release.yml": {
+        # The approvals of each entry, from the pull requests' reviews.
+        "approvals": {"contents": "read", "pull-requests": "read"},
+        # The one job that writes: the release, and the channel's pointer.
+        "publish": {"contents": "write"},
+    },
 }
+# The jobs whose token may write, by workflow: the release workflow's publication only.
+WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -123,7 +129,8 @@ def test_every_workflow_reads_the_repository_only(path: Path) -> None:
     for name, job in document["jobs"].items():
         if name in allowed:
             assert job["permissions"] == allowed[name]
-            assert set(job["permissions"].values()) == {"read"}
+            if name not in WRITING_JOBS.get(path.name, frozenset()):
+                assert set(job["permissions"].values()) == {"read"}
         else:
             assert "permissions" not in job, "a job never widens the token"
 
@@ -190,21 +197,60 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "release.yml": frozenset({"github.token"}),  # to read the reviews, in its approvals job
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
     "release.yml": {
         "approvals": {
-            "Build only the first release, until releases are published": {
-                "env": {"GH_TOKEN": "${{ github.token }}"},
+            "Read the channel's previous release": {
+                "env": {
+                    "GH_TOKEN": "${{ github.token }}",
+                    "CHANNEL": "${{ inputs.channel }}",
+                },
                 "run": (
-                    'count=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq length)\n'
-                    'if [ "$count" != "0" ]; then\n'
-                    '  echo "The repository has a release: the next one needs the previous '
-                    'manifest, which the release workflow does not read yet."\n'
+                    "export LC_ALL=C\n"
+                    'default=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)\n'
+                    'head=$(gh api "repos/${GITHUB_REPOSITORY}/branches/${default}" --jq .commi'
+                    "t.sha)\n"
+                    'if [ "$head" != "$GITHUB_SHA" ]; then\n'
+                    '  echo "A release is built from the head of the default branch, $head, not'
+                    ' $GITHUB_SHA."\n'
                     "  exit 1\n"
                     "fi\n"
+                    "mkdir ../previous\n"
+                    'if answer=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json?re'
+                    'f=channels" 2> ../previous/error.txt); then\n'
+                    "  sha=$(printf '%s' \"$answer\" | jq -r .sha)\n"
+                    '  if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then\n'
+                    '    echo "The pointer of $CHANNEL is not as GitHub gives a file."\n'
+                    "    exit 1\n"
+                    "  fi\n"
+                    "  printf '%s' \"$sha\" > ../previous/pointer.sha\n"
+                    "  printf '%s' \"$answer\" | jq -r .content | base64 -d > ../previous/point"
+                    "er.json\n"
+                    "  release=$(jq -r .release ../previous/pointer.json)\n"
+                    '  if ! [[ "$release" =~ ^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}$'
+                    " ]]; then\n"
+                    '    echo "The pointer of $CHANNEL names no release."\n'
+                    "    exit 1\n"
+                    "  fi\n"
+                    '  gh release download "$release" --repo "$GITHUB_REPOSITORY" --pattern man'
+                    "ifest.json --dir ../previous\n"
+                    'elif grep -q "Not Found (HTTP 404)" ../previous/error.txt; then\n'
+                    '  count=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq len'
+                    "gth)\n"
+                    '  if [ "$count" != "0" ]; then\n'
+                    '    echo "The repository has a release, but $CHANNEL has no pointer: resto'
+                    're it before releasing again."\n'
+                    "    exit 1\n"
+                    "  fi\n"
+                    '  echo "The channel has no release yet." > ../previous/first-release\n'
+                    "else\n"
+                    "  cat ../previous/error.txt\n"
+                    "  exit 1\n"
+                    "fi\n"
+                    "rm ../previous/error.txt\n"
                 ),
             },
             "Collect the approvals": {
@@ -214,7 +260,64 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     "--out ../approvals.json"
                 ),
             },
-        }
+        },
+        "publish": {
+            "Publish the release": {
+                "env": {
+                    "GH_TOKEN": "${{ github.token }}",
+                    "CHANNEL": "${{ inputs.channel }}",
+                },
+                "run": (
+                    'default=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)\n'
+                    'head=$(gh api "repos/${GITHUB_REPOSITORY}/branches/${default}" --jq .commi'
+                    "t.sha)\n"
+                    'if [ "$head" != "$GITHUB_SHA" ]; then\n'
+                    '  echo "The default branch moved to $head while the release was built from'
+                    ' $GITHUB_SHA: release again."\n'
+                    "  exit 1\n"
+                    "fi\n"
+                    'release=$(jq -r .release "../pointer/${CHANNEL}.json")\n'
+                    'if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" > /dev/null'
+                    " 2> ../tag-error.txt; then\n"
+                    '  echo "The tag $release exists: a release is never replaced."\n'
+                    "  exit 1\n"
+                    'elif ! grep -q "Not Found (HTTP 404)" ../tag-error.txt; then\n'
+                    "  cat ../tag-error.txt\n"
+                    "  exit 1\n"
+                    "fi\n"
+                    'gh release create "$release" ../release/* --repo "$GITHUB_REPOSITORY" --ta'
+                    'rget "$GITHUB_SHA" --title "$release" --notes "Release $release of the cat'
+                    "alogue, on $CHANNEL. Check it against its manifest before using it: see do"
+                    'cs/consumers.md."\n'
+                    'tagged=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" --jq '
+                    ".object.sha)\n"
+                    'if [ "$tagged" != "$GITHUB_SHA" ]; then\n'
+                    '  echo "The release $release is tagged on $tagged, not $GITHUB_SHA: the ch'
+                    'annel does not move to it."\n'
+                    "  exit 1\n"
+                    "fi\n"
+                    "mkdir ../published\n"
+                    'gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir ../publis'
+                    "hed\n"
+                ),
+            },
+            "Move the channel to the release": {
+                "env": {
+                    "GH_TOKEN": "${{ github.token }}",
+                    "CHANNEL": "${{ inputs.channel }}",
+                },
+                "run": (
+                    'release=$(jq -r .release "../pointer/${CHANNEL}.json")\n'
+                    'sha=""\n'
+                    "if [ -f ../previous/pointer.sha ]; then\n"
+                    "  sha=$(cat ../previous/pointer.sha)\n"
+                    "fi\n"
+                    'gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json" -f bra'
+                    'nch=channels -f message="Move ${CHANNEL} to ${release}" -f content="$(base'
+                    '64 -w0 "../pointer/${CHANNEL}.json")" ${sha:+-f sha="$sha"} > /dev/null\n'
+                ),
+            },
+        },
     }
 }
 
@@ -368,6 +471,7 @@ def test_every_declared_workflow_exists() -> None:
     assert set(ALLOWED_TRIGGERS) <= names
     assert set(ALLOWED_JOB_PERMISSIONS) <= names
     assert set(SECRET_JOBS) <= names
+    assert set(WRITING_JOBS) <= names
 
 
 def test_the_two_builds_of_a_release_are_the_same_job() -> None:
@@ -404,3 +508,58 @@ def test_a_release_is_built_by_hand_from_the_default_branch_and_from_the_approva
         "Verify the release as its consumers will",
     )
     assert "scenario-tools verify ../one/manifest.json" in jobs["compare"]["steps"][-1]["run"]
+
+
+def test_a_release_is_published_after_its_builds_compared_approved_and_verified() -> None:
+    """The release published is the one compared and verified, approved by who started the run,
+    verified again once approved; it never replaces a release, is read back and checked against
+    the next pointer, and the channel moves last."""
+    jobs = _load(DIRECTORY / "release.yml")["jobs"]
+    publish = jobs["publish"]
+    names = [step["name"] for step in publish["steps"]]
+    steps = {step["name"]: step for step in publish["steps"]}
+
+    assert publish["needs"] == "compare"
+    assert steps["Take the release built"]["with"]["name"] == "release-one"
+    assert names[names.index("Approve the release") :] == [
+        "Approve the release",
+        "Verify the approved release as its consumers will",
+        "Write the channel's next pointer",
+        "Publish the release",
+        "Check the published release against the next pointer",
+        "Move the channel to the release",
+        "Say what was published",
+    ]
+    assert steps["Approve the release"]["env"] == {"APPROVER": "${{ github.triggering_actor }}"}
+    assert "--approved" in steps["Verify the approved release as its consumers will"]["run"]
+    assert "a release is never replaced" in steps["Publish the release"]["run"]
+    assert steps["Check the published release against the next pointer"]["run"] == (
+        'uv run --frozen --no-dev scenario-tools channel previous --pointer "../pointer/${CHANN'
+        'EL}.json" --manifest ../published/manifest.json --channel "$CHANNEL"\n'
+        "uv run --frozen --no-dev scenario-tools verify ../published/manifest.json --schemas sc"
+        "hemas --approved\n"
+    )
+
+
+def test_every_build_is_made_against_the_channel_s_previous_release() -> None:
+    jobs = _load(DIRECTORY / "release.yml")["jobs"]
+    approvals = [step["name"] for step in jobs["approvals"]["steps"]]
+
+    assert approvals.index("Read the channel's previous release") < approvals.index(
+        "Check the previous release against the channel's pointer"
+    )
+    for name in ("build-one", "build-two"):
+        build = {step["name"]: step for step in jobs[name]["steps"]}["Build the release"]
+        assert '--previous-release "$previous"' in build["run"]
+
+
+def test_one_release_runs_at_a_time_and_no_step_is_skipped_or_let_fail() -> None:
+    document = _load(DIRECTORY / "release.yml")
+
+    assert document["concurrency"] == {"group": "release", "cancel-in-progress": False}
+    for name, job in document["jobs"].items():
+        assert "if" not in job, name
+        assert "continue-on-error" not in job, name
+        for step in job["steps"]:
+            assert "if" not in step, step["name"]
+            assert "continue-on-error" not in step, step["name"]
