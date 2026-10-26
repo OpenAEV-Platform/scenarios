@@ -294,6 +294,21 @@ def approvals_document(approvals: Approvals) -> dict[str, Any]:
     }
 
 
+def approved_manifest(document: object, approver: str) -> dict[str, Any]:
+    """``document``, the manifest of a release of this repository, naming ``approver``, a
+    GitHub login in lower case, as its release approver; the rest left as it is. A manifest is
+    approved once: one that already names its approver is refused, as is any other document."""
+    if not isinstance(document, dict):
+        raise ValueError("cannot approve it: a manifest is an object")
+    if document.get("repository") != REPOSITORY:
+        raise ValueError("cannot approve it: it is a manifest of another repository")
+    if "release_approver" in document:
+        raise ValueError("cannot approve it: it already names its approver")
+    if not is_github_login(approver):
+        raise ValueError(f"cannot approve it: {approver!r} is no GitHub login in lower case")
+    return {**document, "release_approver": approver}
+
+
 def merged_before_review_from_document(document: object) -> frozenset[int]:
     """The pull requests merged before reviews were required, each listed once with why, from
     the policy data the maintainers review."""

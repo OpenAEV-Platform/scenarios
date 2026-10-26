@@ -2,6 +2,7 @@
 
 import datetime
 import hashlib
+import re
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -18,6 +19,7 @@ from scenario_tools.domain.release.manifest import (
     approval_findings,
     approvals_document,
     approvals_from_document,
+    approved_manifest,
     archive_name,
     is_github_login,
     issued_at_text,
@@ -626,3 +628,35 @@ def test_a_previous_release_listing_a_payload_version_twice_is_refused() -> None
 
     with pytest.raises(ValueError, match=r"the previous release lists ps 1\.0\.0 twice"):
         previous_release(document)
+
+
+def _unapproved() -> dict[str, Any]:
+    return {"schema_version": 1, "repository": "OpenAEV-Platform/scenarios", "release": "x"}
+
+
+def test_approving_a_manifest_names_its_approver_and_changes_nothing_else() -> None:
+    document = _unapproved()
+
+    approved = approved_manifest(document, "laugiov")
+
+    assert approved == {**_unapproved(), "release_approver": "laugiov"}
+    assert document == _unapproved()
+
+
+@pytest.mark.parametrize(
+    ("document", "why"),
+    [
+        ([], "a manifest is an object"),
+        ({**_unapproved(), "repository": "someone/else"}, "it is a manifest of another repository"),
+        ({**_unapproved(), "release_approver": "alice"}, "it already names its approver"),
+    ],
+)
+def test_a_manifest_that_cannot_be_approved_is_refused(document: Any, why: str) -> None:
+    with pytest.raises(ValueError, match=f"^cannot approve it: {re.escape(why)}$"):
+        approved_manifest(document, "laugiov")
+
+
+@pytest.mark.parametrize("login", ["", "Laugiov", "-alice", "alice--bob", "a" * 40, "al ice"])
+def test_the_approver_is_a_github_login_in_lower_case(login: str) -> None:
+    with pytest.raises(ValueError, match="no GitHub login in lower case"):
+        approved_manifest(_unapproved(), login)
