@@ -108,6 +108,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `validate-payloads` | Checks the payload catalogue, `payloads/`: its layout, each version file, and the rules across its versions ([`docs/payloads.md`](docs/payloads.md)) |
 | `build` | Builds a release of the catalogue from a commit: every entry's archive, every payload version's file, and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
 | `approvals` | Collects who approved the last change of every entry, for `build` |
+| `approve` | Names the release approver in a manifest `build` wrote, once the release is approved; the release job runs it |
 | `verify` | Verifies a release as its consumers will: each archive and payload file against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
 | `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |
 | `openaev export`, `openaev import`, `openaev check` | Exports a scenario from a platform, or imports an archive into one; `check` says, importing nothing, whether the platform holds another payload under an identifier the archive gives one ([`docs/consumers.md`](docs/consumers.md), check 9) |

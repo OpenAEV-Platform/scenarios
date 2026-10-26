@@ -57,6 +57,8 @@ from scenario_tools.domain.release.manifest import (
     PreviousRelease,
     approvals_document,
     approvals_from_document,
+    approved_manifest,
+    is_github_login,
     merged_before_review_from_document,
     previous_release,
 )
@@ -333,6 +335,37 @@ def _verified(manifest: Path, schemas: Path, held: Path, *, approved: bool) -> R
         payload_of=payload_of,
         read_payload=_payload_document,
     )
+
+
+@main.command(name="approve")
+@click.argument("manifest", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--approver", required=True, help="The release approver's GitHub login.")
+@click.option(
+    "--out",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="A new or empty directory, where manifest.json is written.",
+)
+@click.pass_context
+def approve(ctx: click.Context, manifest: Path, approver: str, out: Path) -> None:
+    """Name --approver, a GitHub login in lower case, as the release approver of the manifest
+    MANIFEST, written to --out in canonical JSON (JCS); a manifest already approved is refused.
+    Run in the release job once the release is approved, before verify --approved, which checks
+    the manifest against its schema."""
+    if not is_github_login(approver):
+        raise click.BadParameter("give a GitHub login in lower case", param_hint="--approver")
+    out = _free_place(out, directory=True)
+
+    def produce() -> Report:
+        try:
+            approved = approved_manifest(read_json_file(manifest), approver)
+        except ValueError as error:
+            raise EnvironmentProblemError(str(error)) from error
+        out.mkdir(exist_ok=True)
+        write_output(out / "manifest.json", jcs(approved), create=True)
+        return Report("approve")
+
+    _emit(ctx, "approve", produce, None)
 
 
 @main.command(name="verify")
