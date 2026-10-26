@@ -9,7 +9,8 @@ import pytest
 from scenario_tools.adapters.fixture_zip import HandmadeArchives
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
-from scenario_tools.application.build_fixtures import EXPECTED, fixture_files, release_fixtures
+from scenario_tools.application.build_fixtures import fixture_files, release_fixtures
+from scenario_tools.application.fixture_parts import EXPECTED
 from tests.interface.test_cli_build import ROOT
 
 FIXTURES = release_fixtures(ZipArchiveBuilder(), HandmadeArchives())

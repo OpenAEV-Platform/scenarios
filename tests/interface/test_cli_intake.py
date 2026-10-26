@@ -23,7 +23,7 @@ from scenario_tools.adapters.data_files import read_export
 from scenario_tools.adapters.git import uncommitted
 from scenario_tools.adapters.places import is_hidden_name
 from scenario_tools.adapters.safe_readers import parse_yaml, yaml_bytes
-from scenario_tools.application import intake_entry
+from scenario_tools.application import intake_write
 from scenario_tools.domain.shared.finding import Report
 from scenario_tools.domain.shared.title import check_pull_request_title
 from scenario_tools.interface.cli import main
@@ -602,7 +602,7 @@ def test_a_reservation_that_cannot_be_removed_is_said_with_the_run_s_failure(
         monkeypatch.setattr(os, "unlink", failing)
         raise EnvironmentProblemError("the plan cannot be made")
 
-    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", unplanned)
+    monkeypatch.setattr("scenario_tools.application.intake_write.plan_document", unplanned)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -616,13 +616,13 @@ def test_attributes_set_while_the_entry_is_written_get_no_plan(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
 
     def converting(*arguments: Any) -> Any:  # outside the three directories: not a change seen
         (root / ".gitattributes").write_text(f"{ENTRY}/** text eol=crlf\n")
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", converting)
+    monkeypatch.setattr("scenario_tools.application.intake_write.plan_document", converting)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -674,7 +674,7 @@ def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
 
     def swapped(*arguments: Any) -> Any:
         root.rename(tmp_path / "held")
@@ -682,7 +682,7 @@ def test_a_repository_whose_path_names_another_meanwhile_gets_no_plan(
         root.symlink_to(tmp_path / "other")
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", swapped)
+    monkeypatch.setattr("scenario_tools.application.intake_write.plan_document", swapped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -698,7 +698,7 @@ def test_an_entry_swapped_before_its_plan_gets_no_plan(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
     entry = root / ENTRY
 
     def swapped(*arguments: Any) -> Any:
@@ -706,7 +706,7 @@ def test_an_entry_swapped_before_its_plan_gets_no_plan(
         entry.mkdir()
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", swapped)
+    monkeypatch.setattr("scenario_tools.application.intake_write.plan_document", swapped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -760,7 +760,7 @@ def test_a_run_asked_to_stop_while_writing_finishes_first(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
     handlers = {name: signal.getsignal(name) for name in _STOPS}
     mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
 
@@ -771,7 +771,7 @@ def test_a_run_asked_to_stop_while_writing_finishes_first(
         signal.pthread_kill(threading.get_ident(), stop)
         return planned(*arguments)
 
-    monkeypatch.setattr("scenario_tools.application.intake_entry.plan_document", stopped)
+    monkeypatch.setattr("scenario_tools.application.intake_write.plan_document", stopped)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
 
@@ -1168,7 +1168,7 @@ def test_a_commit_made_while_the_entry_is_written_gets_no_plan(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
 
     def committed_meanwhile(*arguments: Any) -> Any:
         (root / "notes.txt").write_text("another commit")
@@ -1178,7 +1178,7 @@ def test_a_commit_made_while_the_entry_is_written_gets_no_plan(
         return planned(*arguments)
 
     monkeypatch.setattr(
-        "scenario_tools.application.intake_entry.plan_document", committed_meanwhile
+        "scenario_tools.application.intake_write.plan_document", committed_meanwhile
     )
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
@@ -1197,14 +1197,14 @@ def test_a_catalogue_or_rules_changed_while_the_entry_is_written_gets_no_plan(
 ) -> None:
     root = _repository(tmp_path)
     plan = tmp_path / "plan.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
 
     def changed_meanwhile(*arguments: Any) -> Any:
         (root / changed).parent.mkdir(parents=True, exist_ok=True)
         (root / changed).write_text("changed meanwhile")
         return planned(*arguments)
 
-    planning = "scenario_tools.application.intake_entry.plan_document"
+    planning = "scenario_tools.application.intake_write.plan_document"
     monkeypatch.setattr(planning, changed_meanwhile)
 
     result = _intake(monkeypatch, root, _request(tmp_path, NEW), plan)
@@ -1223,14 +1223,14 @@ def test_metadata_changed_while_an_update_is_written_gets_no_plan(
     _commit(root)
     stored = (root / ENTRY / "scenario.json").read_bytes()
     plan = tmp_path / "update.json"
-    planned = intake_entry.plan_document
+    planned = intake_write.plan_document
 
     def changed_meanwhile(*arguments: Any) -> Any:
         with (root / ENTRY / "scenario.yaml").open("a") as file:
             file.write("# changed meanwhile\n")  # the file the update does not write
         return planned(*arguments)
 
-    planning = "scenario_tools.application.intake_entry.plan_document"
+    planning = "scenario_tools.application.intake_write.plan_document"
     monkeypatch.setattr(planning, changed_meanwhile)
     update = {"mode": "update", "external_id": ID, "domain": "techniques", "slug": "easm"}
 
