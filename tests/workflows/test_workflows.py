@@ -15,6 +15,9 @@ _PINNED = re.compile(r"[^@\s]+@[0-9a-f]{40}")
 COMMITS = frozenset(
     {"${{ github.event.pull_request.base.sha }}", "${{ github.event.pull_request.head.sha }}"}
 )
+# A path in the runner's temporary directory, which the runner sets and no one else: where the
+# release workflow keeps what its tools write, outside the checkout.
+_IN_RUNNER_TEMP = re.compile(r"\$\{\{ runner\.temp \}\}/[a-z]+(?:\.json)?")
 # A static guard, never a proof: what would run the base branch's tools from the pull request's
 # tree, or run a file of it. Code-owner review of the workflows is the barrier.
 _MOVES = re.compile(
@@ -98,7 +101,25 @@ def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> Non
     for step in _steps(_load(path)):
         for key, value in (step.get("with") or {}).items():
             computed = "${{" in str(value)
-            assert not computed or (key == "ref" and value in COMMITS), (step.get("name"), key)
+            in_temp = key == "path" and _IN_RUNNER_TEMP.fullmatch(str(value)) is not None
+            assert not computed or in_temp or (key == "ref" and value in COMMITS), (
+                step.get("name"),
+                key,
+            )
+
+
+@pytest.mark.parametrize(
+    ("value", "kept"),
+    [
+        ("${{ runner.temp }}/approvals.json", True),
+        ("${{ runner.temp }}/release", True),
+        ("${{ runner.temp }}/../x", False),
+        ("${{ github.event.pull_request.title }}", False),
+        ("${{ runner.temp }}/x ${{ github.head_ref }}", False),
+    ],
+)
+def test_only_a_plain_path_in_the_runner_temp_may_be_computed(value: str, kept: bool) -> None:
+    assert (_IN_RUNNER_TEMP.fullmatch(value) is not None) is kept
 
 
 def test_a_ref_that_is_no_commit_is_refused() -> None:
@@ -218,26 +239,27 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     ' $GITHUB_SHA."\n'
                     "  exit 1\n"
                     "fi\n"
-                    "mkdir ../previous\n"
+                    'mkdir "$RUNNER_TEMP"/previous\n'
                     'if answer=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json?re'
-                    'f=channels" 2> ../previous/error.txt); then\n'
+                    'f=channels" 2> "$RUNNER_TEMP"/previous/error.txt); then\n'
                     "  sha=$(printf '%s' \"$answer\" | jq -r .sha)\n"
                     '  if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then\n'
                     '    echo "The pointer of $CHANNEL is not as GitHub gives a file."\n'
                     "    exit 1\n"
                     "  fi\n"
-                    "  printf '%s' \"$sha\" > ../previous/pointer.sha\n"
-                    "  printf '%s' \"$answer\" | jq -r .content | base64 -d > ../previous/point"
-                    "er.json\n"
-                    "  release=$(jq -r .release ../previous/pointer.json)\n"
+                    '  printf \'%s\' "$sha" > "$RUNNER_TEMP"/previous/pointer.sha\n'
+                    '  printf \'%s\' "$answer" | jq -r .content | base64 -d > "$RUNNER_TEMP"/pr'
+                    "evious/pointer.json\n"
+                    '  release=$(jq -r .release "$RUNNER_TEMP"/previous/pointer.json)\n'
                     '  if ! [[ "$release" =~ ^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}$'
                     " ]]; then\n"
                     '    echo "The pointer of $CHANNEL names no release."\n'
                     "    exit 1\n"
                     "  fi\n"
                     '  gh release download "$release" --repo "$GITHUB_REPOSITORY" --pattern man'
-                    "ifest.json --dir ../previous\n"
-                    'elif grep -q "Not Found (HTTP 404)" ../previous/error.txt; then\n'
+                    'ifest.json --dir "$RUNNER_TEMP"/previous\n'
+                    'elif grep -q "Not Found (HTTP 404)" "$RUNNER_TEMP"/previous/error.txt; the'
+                    "n\n"
                     '  count=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq len'
                     "gth)\n"
                     '  if [ "$count" != "0" ]; then\n'
@@ -245,19 +267,20 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     're it before releasing again."\n'
                     "    exit 1\n"
                     "  fi\n"
-                    '  echo "The channel has no release yet." > ../previous/first-release\n'
+                    '  echo "The channel has no release yet." > "$RUNNER_TEMP"/previous/first-r'
+                    "elease\n"
                     "else\n"
-                    "  cat ../previous/error.txt\n"
+                    '  cat "$RUNNER_TEMP"/previous/error.txt\n'
                     "  exit 1\n"
                     "fi\n"
-                    "rm ../previous/error.txt\n"
+                    'rm "$RUNNER_TEMP"/previous/error.txt\n'
                 ),
             },
             "Collect the approvals": {
                 "env": {"GITHUB_TOKEN": "${{ github.token }}"},
                 "run": (
-                    "uv run --frozen --no-dev scenario-tools approvals --repo . "
-                    "--out ../approvals.json"
+                    'uv run --frozen --no-dev scenario-tools approvals --repo . --out "$RUNNER_'
+                    'TEMP"/approvals.json'
                 ),
             },
         },
@@ -276,19 +299,19 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     ' $GITHUB_SHA: release again."\n'
                     "  exit 1\n"
                     "fi\n"
-                    'release=$(jq -r .release "../pointer/${CHANNEL}.json")\n'
+                    'release=$(jq -r .release "$RUNNER_TEMP/pointer/${CHANNEL}.json")\n'
                     'if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" > /dev/null'
-                    " 2> ../tag-error.txt; then\n"
+                    ' 2> "$RUNNER_TEMP"/tag-error.txt; then\n'
                     '  echo "The tag $release exists: a release is never replaced."\n'
                     "  exit 1\n"
-                    'elif ! grep -q "Not Found (HTTP 404)" ../tag-error.txt; then\n'
-                    "  cat ../tag-error.txt\n"
+                    'elif ! grep -q "Not Found (HTTP 404)" "$RUNNER_TEMP"/tag-error.txt; then\n'
+                    '  cat "$RUNNER_TEMP"/tag-error.txt\n'
                     "  exit 1\n"
                     "fi\n"
-                    'gh release create "$release" ../release/* --repo "$GITHUB_REPOSITORY" --ta'
-                    'rget "$GITHUB_SHA" --title "$release" --notes "Release $release of the cat'
-                    "alogue, on $CHANNEL. Check it against its manifest before using it: see do"
-                    'cs/consumers.md."\n'
+                    'gh release create "$release" "$RUNNER_TEMP"/release/* --repo "$GITHUB_REPO'
+                    'SITORY" --target "$GITHUB_SHA" --title "$release" --notes "Release $releas'
+                    "e of the catalogue, on $CHANNEL. Check it against its manifest before usin"
+                    'g it: see docs/consumers.md."\n'
                     'tagged=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" --jq '
                     ".object.sha)\n"
                     'if [ "$tagged" != "$GITHUB_SHA" ]; then\n'
@@ -296,9 +319,9 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     'annel does not move to it."\n'
                     "  exit 1\n"
                     "fi\n"
-                    "mkdir ../published\n"
-                    'gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir ../publis'
-                    "hed\n"
+                    'mkdir "$RUNNER_TEMP"/published\n'
+                    'gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_'
+                    'TEMP"/published\n'
                 ),
             },
             "Move the channel to the release": {
@@ -307,14 +330,15 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     "CHANNEL": "${{ inputs.channel }}",
                 },
                 "run": (
-                    'release=$(jq -r .release "../pointer/${CHANNEL}.json")\n'
+                    'release=$(jq -r .release "$RUNNER_TEMP/pointer/${CHANNEL}.json")\n'
                     'sha=""\n'
-                    "if [ -f ../previous/pointer.sha ]; then\n"
-                    "  sha=$(cat ../previous/pointer.sha)\n"
+                    'if [ -f "$RUNNER_TEMP"/previous/pointer.sha ]; then\n'
+                    '  sha=$(cat "$RUNNER_TEMP"/previous/pointer.sha)\n'
                     "fi\n"
                     'gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json" -f bra'
                     'nch=channels -f message="Move ${CHANNEL} to ${release}" -f content="$(base'
-                    '64 -w0 "../pointer/${CHANNEL}.json")" ${sha:+-f sha="$sha"} > /dev/null\n'
+                    '64 -w0 "$RUNNER_TEMP/pointer/${CHANNEL}.json")" ${sha:+-f sha="$sha"} > /d'
+                    "ev/null\n"
                 ),
             },
         },
@@ -507,7 +531,10 @@ def test_a_release_is_built_by_hand_from_the_default_branch_and_from_the_approva
         "Compare them byte for byte",
         "Verify the release as its consumers will",
     )
-    assert "scenario-tools verify ../one/manifest.json" in jobs["compare"]["steps"][-1]["run"]
+    assert (
+        'scenario-tools verify "$RUNNER_TEMP"/one/manifest.json'
+        in (jobs["compare"]["steps"][-1]["run"])
+    )
 
 
 def test_a_release_is_published_after_its_builds_compared_approved_and_verified() -> None:
@@ -534,10 +561,11 @@ def test_a_release_is_published_after_its_builds_compared_approved_and_verified(
     assert "--approved" in steps["Verify the approved release as its consumers will"]["run"]
     assert "a release is never replaced" in steps["Publish the release"]["run"]
     assert steps["Check the published release against the next pointer"]["run"] == (
-        'uv run --frozen --no-dev scenario-tools channel previous --pointer "../pointer/${CHANN'
-        'EL}.json" --manifest ../published/manifest.json --channel "$CHANNEL"\n'
-        "uv run --frozen --no-dev scenario-tools verify ../published/manifest.json --schemas sc"
-        "hemas --approved\n"
+        'uv run --frozen --no-dev scenario-tools channel previous --pointer "$RUNNER_TEMP/point'
+        'er/${CHANNEL}.json" --manifest "$RUNNER_TEMP"/published/manifest.json --channel "$CHAN'
+        'NEL"\n'
+        'uv run --frozen --no-dev scenario-tools verify "$RUNNER_TEMP"/published/manifest.json '
+        "--schemas schemas --approved\n"
     )
 
 

@@ -4,7 +4,7 @@ name: Release
 # channel's previous release, and compares the two byte for byte: a release is what its commit
 # gives, wherever it is built. Then it publishes it: the one who starts the run approves the
 # release, which names them as its approver, and the channel's pointer moves to it. Run by hand,
-# on the default branch only. What the tools write stays beside the checkout, never in it.
+# on the default branch only. What the tools write stays in the runner's temporary directory, never in the checkout.
 on:
   workflow_dispatch:
     inputs:
@@ -53,33 +53,33 @@ jobs:
             echo "A release is built from the head of the default branch, $head, not $GITHUB_SHA."
             exit 1
           fi
-          mkdir ../previous
-          if answer=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json?ref=channels" 2> ../previous/error.txt); then
+          mkdir "$RUNNER_TEMP"/previous
+          if answer=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json?ref=channels" 2> "$RUNNER_TEMP"/previous/error.txt); then
             sha=$(printf '%s' "$answer" | jq -r .sha)
             if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
               echo "The pointer of $CHANNEL is not as GitHub gives a file."
               exit 1
             fi
-            printf '%s' "$sha" > ../previous/pointer.sha
-            printf '%s' "$answer" | jq -r .content | base64 -d > ../previous/pointer.json
-            release=$(jq -r .release ../previous/pointer.json)
+            printf '%s' "$sha" > "$RUNNER_TEMP"/previous/pointer.sha
+            printf '%s' "$answer" | jq -r .content | base64 -d > "$RUNNER_TEMP"/previous/pointer.json
+            release=$(jq -r .release "$RUNNER_TEMP"/previous/pointer.json)
             if ! [[ "$release" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]{0,8}$ ]]; then
               echo "The pointer of $CHANNEL names no release."
               exit 1
             fi
-            gh release download "$release" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir ../previous
-          elif grep -q "Not Found (HTTP 404)" ../previous/error.txt; then
+            gh release download "$release" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir "$RUNNER_TEMP"/previous
+          elif grep -q "Not Found (HTTP 404)" "$RUNNER_TEMP"/previous/error.txt; then
             count=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq length)
             if [ "$count" != "0" ]; then
               echo "The repository has a release, but $CHANNEL has no pointer: restore it before releasing again."
               exit 1
             fi
-            echo "The channel has no release yet." > ../previous/first-release
+            echo "The channel has no release yet." > "$RUNNER_TEMP"/previous/first-release
           else
-            cat ../previous/error.txt
+            cat "$RUNNER_TEMP"/previous/error.txt
             exit 1
           fi
-          rm ../previous/error.txt
+          rm "$RUNNER_TEMP"/previous/error.txt
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,20 +100,20 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
         run: |
-          if [ -f ../previous/pointer.json ]; then
-            uv run --frozen --no-dev scenario-tools channel previous --pointer ../previous/pointer.json --manifest ../previous/manifest.json --channel "$CHANNEL"
+          if [ -f "$RUNNER_TEMP"/previous/pointer.json ]; then
+            uv run --frozen --no-dev scenario-tools channel previous --pointer "$RUNNER_TEMP"/previous/pointer.json --manifest "$RUNNER_TEMP"/previous/manifest.json --channel "$CHANNEL"
           fi
 
       - name: Collect the approvals
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: uv run --frozen --no-dev scenario-tools approvals --repo . --out ../approvals.json
+        run: uv run --frozen --no-dev scenario-tools approvals --repo . --out "$RUNNER_TEMP"/approvals.json
 
       - name: Keep the approvals for the builds
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: approvals
-          path: ../approvals.json
+          path: ${{ runner.temp }}/approvals.json
           if-no-files-found: error
           retention-days: 7
 
@@ -121,7 +121,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: previous
-          path: ../previous
+          path: ${{ runner.temp }}/previous
           if-no-files-found: error
           retention-days: 7
 
@@ -151,29 +151,29 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: approvals
-          path: ../inputs
+          path: ${{ runner.temp }}/inputs
 
       - name: Take the previous release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: previous
-          path: ../previous
+          path: ${{ runner.temp }}/previous
 
       - name: Build the release
         env:
           CHANNEL: ${{ inputs.channel }}
         run: |
           previous=none
-          if [ -f ../previous/manifest.json ]; then
-            previous=../previous/manifest.json
+          if [ -f "$RUNNER_TEMP"/previous/manifest.json ]; then
+            previous="$RUNNER_TEMP"/previous/manifest.json
           fi
-          uv run --frozen --no-dev scenario-tools build --repo . --previous-release "$previous" --channel "$CHANNEL" --approvals ../inputs/approvals.json --out ../release
+          uv run --frozen --no-dev scenario-tools build --repo . --previous-release "$previous" --channel "$CHANNEL" --approvals "$RUNNER_TEMP"/inputs/approvals.json --out "$RUNNER_TEMP"/release
 
       - name: Keep the release built
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-one
-          path: ../release
+          path: ${{ runner.temp }}/release
           if-no-files-found: error
           retention-days: 7
 
@@ -201,29 +201,29 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: approvals
-          path: ../inputs
+          path: ${{ runner.temp }}/inputs
 
       - name: Take the previous release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: previous
-          path: ../previous
+          path: ${{ runner.temp }}/previous
 
       - name: Build the release
         env:
           CHANNEL: ${{ inputs.channel }}
         run: |
           previous=none
-          if [ -f ../previous/manifest.json ]; then
-            previous=../previous/manifest.json
+          if [ -f "$RUNNER_TEMP"/previous/manifest.json ]; then
+            previous="$RUNNER_TEMP"/previous/manifest.json
           fi
-          uv run --frozen --no-dev scenario-tools build --repo . --previous-release "$previous" --channel "$CHANNEL" --approvals ../inputs/approvals.json --out ../release
+          uv run --frozen --no-dev scenario-tools build --repo . --previous-release "$previous" --channel "$CHANNEL" --approvals "$RUNNER_TEMP"/inputs/approvals.json --out "$RUNNER_TEMP"/release
 
       - name: Keep the release built
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-two
-          path: ../release
+          path: ${{ runner.temp }}/release
           if-no-files-found: error
           retention-days: 7
 
@@ -251,21 +251,21 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-one
-          path: ../one
+          path: ${{ runner.temp }}/one
 
       - name: Take the second build
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-two
-          path: ../two
+          path: ${{ runner.temp }}/two
 
       - name: Compare them byte for byte
         run: |
-          diff --recursive --brief --no-dereference ../one ../two
-          echo "The two builds are the same: $(find ../one -type f | wc -l) files." >> "$GITHUB_STEP_SUMMARY"
+          diff --recursive --brief --no-dereference "$RUNNER_TEMP"/one "$RUNNER_TEMP"/two
+          echo "The two builds are the same: $(find "$RUNNER_TEMP/one" -type f | wc -l) files." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify the release as its consumers will
-        run: uv run --frozen --no-dev scenario-tools verify ../one/manifest.json --schemas schemas
+        run: uv run --frozen --no-dev scenario-tools verify "$RUNNER_TEMP"/one/manifest.json --schemas schemas
 
   publish:
     name: Approve and publish the release, then move the channel to it
@@ -294,13 +294,13 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-one
-          path: ../release
+          path: ${{ runner.temp }}/release
 
       - name: Take the previous release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: previous
-          path: ../previous
+          path: ${{ runner.temp }}/previous
 
       # Without a protected environment to approve in, starting the run is the approval: the one
       # who started it is the release approver.
@@ -309,22 +309,22 @@ jobs:
           APPROVER: ${{ github.triggering_actor }}
         run: |
           approver=$(printf '%s' "$APPROVER" | tr '[:upper:]' '[:lower:]')
-          uv run --frozen --no-dev scenario-tools approve ../release/manifest.json --approver "$approver" --out ../approved
-          mv ../approved/manifest.json ../release/manifest.json
+          uv run --frozen --no-dev scenario-tools approve "$RUNNER_TEMP"/release/manifest.json --approver "$approver" --out "$RUNNER_TEMP"/approved
+          mv "$RUNNER_TEMP"/approved/manifest.json "$RUNNER_TEMP"/release/manifest.json
 
       - name: Verify the approved release as its consumers will
-        run: uv run --frozen --no-dev scenario-tools verify ../release/manifest.json --schemas schemas --approved
+        run: uv run --frozen --no-dev scenario-tools verify "$RUNNER_TEMP"/release/manifest.json --schemas schemas --approved
 
       - name: Write the channel's next pointer
         env:
           CHANNEL: ${{ inputs.channel }}
         run: |
           previous=none
-          if [ -f ../previous/pointer.json ]; then
-            previous=../previous/pointer.json
+          if [ -f "$RUNNER_TEMP"/previous/pointer.json ]; then
+            previous="$RUNNER_TEMP"/previous/pointer.json
           fi
-          mkdir ../pointer
-          uv run --frozen --no-dev scenario-tools channel pointer ../release/manifest.json --previous "$previous" --out "../pointer/${CHANNEL}.json"
+          mkdir "$RUNNER_TEMP"/pointer
+          uv run --frozen --no-dev scenario-tools channel pointer "$RUNNER_TEMP"/release/manifest.json --previous "$previous" --out "$RUNNER_TEMP/pointer/${CHANNEL}.json"
 
       - name: Publish the release
         env:
@@ -337,43 +337,43 @@ jobs:
             echo "The default branch moved to $head while the release was built from $GITHUB_SHA: release again."
             exit 1
           fi
-          release=$(jq -r .release "../pointer/${CHANNEL}.json")
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" > /dev/null 2> ../tag-error.txt; then
+          release=$(jq -r .release "$RUNNER_TEMP/pointer/${CHANNEL}.json")
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" > /dev/null 2> "$RUNNER_TEMP"/tag-error.txt; then
             echo "The tag $release exists: a release is never replaced."
             exit 1
-          elif ! grep -q "Not Found (HTTP 404)" ../tag-error.txt; then
-            cat ../tag-error.txt
+          elif ! grep -q "Not Found (HTTP 404)" "$RUNNER_TEMP"/tag-error.txt; then
+            cat "$RUNNER_TEMP"/tag-error.txt
             exit 1
           fi
-          gh release create "$release" ../release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$release" --notes "Release $release of the catalogue, on $CHANNEL. Check it against its manifest before using it: see docs/consumers.md."
+          gh release create "$release" "$RUNNER_TEMP"/release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$release" --notes "Release $release of the catalogue, on $CHANNEL. Check it against its manifest before using it: see docs/consumers.md."
           tagged=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release}" --jq .object.sha)
           if [ "$tagged" != "$GITHUB_SHA" ]; then
             echo "The release $release is tagged on $tagged, not $GITHUB_SHA: the channel does not move to it."
             exit 1
           fi
-          mkdir ../published
-          gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir ../published
+          mkdir "$RUNNER_TEMP"/published
+          gh release download "$release" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP"/published
 
       - name: Check the published release against the next pointer
         env:
           CHANNEL: ${{ inputs.channel }}
         run: |
-          uv run --frozen --no-dev scenario-tools channel previous --pointer "../pointer/${CHANNEL}.json" --manifest ../published/manifest.json --channel "$CHANNEL"
-          uv run --frozen --no-dev scenario-tools verify ../published/manifest.json --schemas schemas --approved
+          uv run --frozen --no-dev scenario-tools channel previous --pointer "$RUNNER_TEMP/pointer/${CHANNEL}.json" --manifest "$RUNNER_TEMP"/published/manifest.json --channel "$CHANNEL"
+          uv run --frozen --no-dev scenario-tools verify "$RUNNER_TEMP"/published/manifest.json --schemas schemas --approved
 
       - name: Move the channel to the release
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
         run: |
-          release=$(jq -r .release "../pointer/${CHANNEL}.json")
+          release=$(jq -r .release "$RUNNER_TEMP/pointer/${CHANNEL}.json")
           sha=""
-          if [ -f ../previous/pointer.sha ]; then
-            sha=$(cat ../previous/pointer.sha)
+          if [ -f "$RUNNER_TEMP"/previous/pointer.sha ]; then
+            sha=$(cat "$RUNNER_TEMP"/previous/pointer.sha)
           fi
-          gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json" -f branch=channels -f message="Move ${CHANNEL} to ${release}" -f content="$(base64 -w0 "../pointer/${CHANNEL}.json")" ${sha:+-f sha="$sha"} > /dev/null
+          gh api -X PUT "repos/${GITHUB_REPOSITORY}/contents/${CHANNEL}.json" -f branch=channels -f message="Move ${CHANNEL} to ${release}" -f content="$(base64 -w0 "$RUNNER_TEMP/pointer/${CHANNEL}.json")" ${sha:+-f sha="$sha"} > /dev/null
 
       - name: Say what was published
         run: |
-          jq -r '"Published \(.release) on \(.channel): \(.items | length) scenario(s), \(.payloads | length) payload version(s), approved by \(.release_approver)."' ../release/manifest.json >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.items[] | select(.approvals.approvers == []) | "- \(.name) \(.version): pull request #\(.approvals.pull_request), merged without approval (REL-002)"' ../release/manifest.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"Published \(.release) on \(.channel): \(.items | length) scenario(s), \(.payloads | length) payload version(s), approved by \(.release_approver)."' "$RUNNER_TEMP"/release/manifest.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.items[] | select(.approvals.approvers == []) | "- \(.name) \(.version): pull request #\(.approvals.pull_request), merged without approval (REL-002)"' "$RUNNER_TEMP"/release/manifest.json >> "$GITHUB_STEP_SUMMARY"
