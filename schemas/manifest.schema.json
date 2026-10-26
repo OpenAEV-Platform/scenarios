@@ -362,7 +362,7 @@
               "minimum": 1
             },
             "approvers": {
-              "description": "The people who approved the pull request: at least one, except for a pull request merged before reviews were required, which the repository lists.",
+              "description": "The people who approved the pull request, possibly none: a pull request merged without approval is said when the release is built.",
               "type": "array",
               "maxItems": 10,
               "minItems": 0,

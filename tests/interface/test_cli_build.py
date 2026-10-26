@@ -147,7 +147,7 @@ def test_a_checkout_with_uncommitted_changes_builds_nothing(
     assert not out.exists()
 
 
-def test_an_entry_without_an_approver_builds_nothing(
+def test_an_entry_without_an_approver_is_said_and_built(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _repository(tmp_path, monkeypatch)
@@ -155,9 +155,10 @@ def test_an_entry_without_an_approver_builds_nothing(
 
     result = _build(root, _approvals(tmp_path, []), out)
 
-    assert result.exit_code == 1, result.output
-    assert [f["code"] for f in json.loads(result.output)["findings"]] == ["REL-002"]
-    assert not out.exists()
+    assert result.exit_code == 0, result.output
+    findings = json.loads(result.output)["findings"]
+    assert [(f["code"], f["severity"]) for f in findings] == [("REL-002", "info")]
+    assert (out / "manifest.json").is_file()
 
 
 def test_a_pull_request_listed_as_merged_before_review_needs_no_approver(

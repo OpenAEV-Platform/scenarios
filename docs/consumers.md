@@ -23,7 +23,8 @@ release is approved, its `release_approver`. For each scenario it gives:
   hash of the payload's content, and is what identifies it;
 - what a platform needs to run it, in `requires`: the OpenAEV versions (`openaev`), the edition
   (`CE` or `EE`), the injectors and the executors;
-- the facets a catalogue shows, and who approved its change, in which pull request.
+- the facets a catalogue shows, and who approved its change, in which pull request (possibly
+  no one: the release names a pull request merged without approval with no approver).
 
 Under `payloads`, the manifest lists every payload version of the catalogue at the commit the
 release is built from, used by a scenario or not: its `payload` (the folder it lives in), its

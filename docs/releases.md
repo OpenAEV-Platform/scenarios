@@ -61,9 +61,11 @@ and the checkout its whole history.
   release is dated by the commit's time, so two builds of one commit give the same bytes.
 - Every directory two levels under `scenarios/` is an entry, and each passes `validate` and the
   archive's checks.
-- Each entry has at least one approver (`REL-002`), unless its pull request is listed in
-  `policy/data/merged-before-review.yaml`. The list holds the pull requests merged before
-  reviews were required, each with why; it is reviewed as any change of the rules is.
+- Each entry's last pull request is named with its approvers. One with no approver is said
+  (`REL-002`, information) and still released, with an empty list of approvers, while one
+  maintainer merges the catalogue's changes alone; one listed in
+  `policy/data/merged-before-review.yaml` is not said. That list holds the pull requests merged
+  before reviews were required, each with why; it is reviewed as any change of the rules is.
 - Against the previous release of the channel: a released version never changes, neither its
   archive nor what the manifest says of it (`VER-020`); a version never decreases (`VER-002`);
   and a released scenario stays in the catalogue (`REL-003`).
