@@ -10,9 +10,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from scenario_tools.domain.release.manifest import CHANNELS, REPOSITORY, release_key
+from scenario_tools.domain.release.manifest import (
+    CHANNELS,
+    REPOSITORY,
+    is_github_login,
+    release_key,
+)
 
 POINTER_SCHEMA_VERSION = 1
+POINTER_LIMIT = 4 * 1024  # bytes of a pointer file, which holds five short fields
 _FIELDS = frozenset({"schema_version", "repository", "channel", "release", "manifest_sha256"})
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -44,9 +50,11 @@ class ChannelPointer:
 def channel_pointer(manifest: bytes, document: Mapping[str, Any]) -> ChannelPointer:
     """The pointer to the release whose manifest is ``manifest``, as published: ``document`` is
     what it holds, read and checked by the caller, which gives the channel and the name; the
-    bytes give the SHA-256."""
+    bytes give the SHA-256. Only an approved manifest, naming its approver, is pointed at."""
     if document.get("repository") != REPOSITORY:
         raise _refused("the manifest is of another repository")
+    if not is_github_login(document.get("release_approver")):
+        raise _refused("the manifest is not approved: a channel names an approved release only")
     channel: Any = document.get("channel")  # checked as the pointer is made
     release: Any = document.get("release")
     return ChannelPointer(channel, release, hashlib.sha256(manifest).hexdigest())

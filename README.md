@@ -111,6 +111,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `approve` | Names the release approver in a manifest `build` wrote, once the release is approved; the release job runs it |
 | `verify` | Verifies a release as its consumers will: each archive and payload file against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
 | `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |
+| `channel previous`, `channel pointer` | Checks that a channel's pointer names a release's manifest, or writes the pointer that moves the channel forward to an approved release; the release job runs them |
 | `openaev export`, `openaev import`, `openaev check` | Exports a scenario from a platform, or imports an archive into one; `check` says, importing nothing, whether the platform holds another payload under an identifier the archive gives one ([`docs/consumers.md`](docs/consumers.md), check 9) |
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |

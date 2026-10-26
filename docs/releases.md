@@ -83,6 +83,9 @@ that channel and that name. The releases themselves never change, and a channel 
 release, never back: publishing the same release again leaves it as it is, and a channel is
 never rolled back, a later release is published instead. The pointers come with the publication
 of releases, on a branch only the release workflow writes; until then, there is none.
+`scenario-tools channel previous` checks that a pointer names a given manifest, and
+`scenario-tools channel pointer` writes the pointer to an approved release, refused unless it
+moves the channel forward.
 
 ## Release fixtures
 
