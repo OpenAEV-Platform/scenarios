@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -23,6 +24,7 @@ from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import (
+    JSON_LIMIT,
     parse_json,
     read_json_file,
     read_regular_file,
@@ -49,6 +51,14 @@ from scenario_tools.domain.catalogue.facts import export_facts
 from scenario_tools.domain.catalogue.metadata import (
     communication_injectors_from_document,
     is_tabletop,
+)
+from scenario_tools.domain.release.channel import (
+    POINTER_LIMIT,
+    channel_pointer,
+    check_moved_forward,
+    pointer_document,
+    pointer_from_document,
+    points_at,
 )
 from scenario_tools.domain.release.manifest import (
     CHANNELS,
@@ -462,3 +472,78 @@ def conformance_run(ctx: click.Context, fixtures: Path, schemas: Path) -> None:
         return run_fixtures(expectations, present=present, outcome_of=outcome_of)
 
     _emit(ctx, "conformance", produce, None)
+
+
+@main.group(name="channel")
+def channel() -> None:
+    """Check a release channel's pointer, and write the one that moves it forward."""
+
+
+def _manifest_read(manifest: Path) -> tuple[bytes, Any]:
+    """The bytes of ``manifest`` and what they hold, read as every JSON document of a release."""
+    data = read_regular_file(manifest, JSON_LIMIT)
+    return data, parse_json(data, limit=JSON_LIMIT)
+
+
+@channel.command(name="previous")
+@click.option("--pointer", required=True, type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--manifest", required=True, type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--channel", "name", required=True, type=click.Choice(CHANNELS))
+@click.pass_context
+def channel_previous(ctx: click.Context, pointer: Path, manifest: Path, name: str) -> None:
+    """Check that --pointer, the pointer of --channel, is well formed and names the release
+    whose manifest is --manifest: its SHA-256, repository, channel and name. The release
+    workflow runs it on the channel's previous release before it builds the next one."""
+
+    def produce() -> Report:
+        try:
+            found = pointer_from_document(read_json_file(pointer, limit=POINTER_LIMIT))
+        except ValueError as error:
+            raise EnvironmentProblemError(str(error)) from error
+        if found.channel != name:
+            raise EnvironmentProblemError(
+                f"{pointer} is the pointer of {found.channel}, not {name}"
+            )
+        data, document = _manifest_read(manifest)
+        if not isinstance(document, dict) or not points_at(found, data, document):
+            raise EnvironmentProblemError(
+                f"{manifest} is not the release the channel's pointer names, {found.release}"
+            )
+        return Report("channel")
+
+    _emit(ctx, "channel", produce, None)
+
+
+@channel.command(name="pointer")
+@click.argument("manifest", type=click.Path(path_type=Path, dir_okay=False))
+@click.option(
+    "--previous",
+    required=True,
+    help="The channel's pointer until now, or none when the channel has none yet.",
+)
+@click.option("--out", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def channel_pointer_command(ctx: click.Context, manifest: Path, previous: str, out: Path) -> None:
+    """Write to --out, a new file, the pointer that moves the channel of MANIFEST, an approved
+    release's manifest, to that release: refused unless it follows --previous, the channel's
+    pointer until now, to a later release, or names the same release with the same manifest."""
+    out = _free_place(out, directory=False)
+
+    def produce() -> Report:
+        data, document = _manifest_read(manifest)
+        try:
+            before = (
+                None
+                if previous == "none"
+                else pointer_from_document(read_json_file(Path(previous), limit=POINTER_LIMIT))
+            )
+            if not isinstance(document, dict):
+                raise ValueError("channel pointer: the manifest must be an object")
+            after = channel_pointer(data, document)
+            check_moved_forward(before, after)
+        except ValueError as error:
+            raise EnvironmentProblemError(str(error)) from error
+        write_output(out, jcs(pointer_document(after)), create=True)
+        return Report("channel")
+
+    _emit(ctx, "channel", produce, None)

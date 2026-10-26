@@ -21,6 +21,7 @@ DOCUMENT = {
     "repository": "OpenAEV-Platform/scenarios",
     "channel": "edge",
     "release": "2026.10.15.2",
+    "release_approver": "laugiov",
 }
 MANIFEST = b'{"channel":"edge","release":"2026.10.15.2","repository":"OpenAEV-Platform/scenarios"}'
 SHA = hashlib.sha256(MANIFEST).hexdigest()
@@ -42,8 +43,24 @@ def test_a_pointer_names_the_release_of_a_manifest_and_its_hash() -> None:
         ({**DOCUMENT, "channel": "nightly"}, "'nightly' is not a channel"),
         ({**DOCUMENT, "release": "2026.13.15.2"}, "'2026.13.15.2' is not a release name"),
         (
-            {"repository": "OpenAEV-Platform/scenarios", "channel": "edge"},
+            {
+                "repository": "OpenAEV-Platform/scenarios",
+                "channel": "edge",
+                "release_approver": "a",
+            },
             "None is not a release name",
+        ),
+        (
+            {key: value for key, value in DOCUMENT.items() if key != "release_approver"},
+            "the manifest is not approved: a channel names an approved release only",
+        ),
+        (
+            {**DOCUMENT, "release_approver": None},
+            "the manifest is not approved: a channel names an approved release only",
+        ),
+        (
+            {**DOCUMENT, "release_approver": ""},
+            "the manifest is not approved: a channel names an approved release only",
         ),
     ],
 )
@@ -184,3 +201,7 @@ def test_a_pointer_points_at_the_manifest_of_its_hash_its_channel_and_its_releas
     assert not points_at(stable, MANIFEST, DOCUMENT)
     assert not points_at(later, MANIFEST, DOCUMENT)
     assert not points_at(POINTER, MANIFEST, {**DOCUMENT, "repository": "another/repository"})
+    for approver in (None, "", "Not A Login"):
+        assert not points_at(POINTER, MANIFEST, {**DOCUMENT, "release_approver": approver})
+    without = {key: value for key, value in DOCUMENT.items() if key != "release_approver"}
+    assert not points_at(POINTER, MANIFEST, without)
