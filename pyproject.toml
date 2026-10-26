@@ -32,6 +32,7 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.6",
+    "radon>=6.0.1",
     "ruff>=0.8",
     "time-machine>=2.16",
     "types-jsonschema>=4.25",
