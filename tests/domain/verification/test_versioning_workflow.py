@@ -11,14 +11,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from scenario_tools.domain.verification.versioning import (
+from scenario_tools.domain.verification.entry_changes import (
     Bump,
     changes,
-    diff_findings,
     located_changes,
     required_bump,
-    versioning_findings,
 )
+from scenario_tools.domain.verification.versioning import diff_findings, versioning_findings
 
 ROOT = Path(__file__).resolve().parents[3]
 STORED: dict[str, Any] = json.loads(

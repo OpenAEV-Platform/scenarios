@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from scenario_tools.domain.catalogue import archive as stored_scenario
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_hash import (
     FileHash,

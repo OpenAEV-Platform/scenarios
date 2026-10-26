@@ -11,7 +11,7 @@ import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader, read_export
 from scenario_tools.application.prepare_entry import prepare_entry
-from scenario_tools.domain.catalogue.normalisation import NormalisationRules
+from scenario_tools.domain.catalogue.volatile_fields import NormalisationRules
 from scenario_tools.domain.shared.workflow import ExportKeys
 
 ROOT = Path(__file__).parents[2]

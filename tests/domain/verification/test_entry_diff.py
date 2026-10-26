@@ -8,14 +8,14 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.shared.finding import Severity
-from scenario_tools.domain.verification.versioning import (
+from scenario_tools.domain.verification.entry_changes import (
     Bump,
     Change,
     LocatedChange,
     changes,
-    diff_findings,
     located_changes,
 )
+from scenario_tools.domain.verification.versioning import diff_findings
 from tests.domain.verification.test_versioning import CONTRACT, METADATA, STORED, inject
 
 ENTRY = "scenarios/techniques/x"

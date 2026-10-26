@@ -10,6 +10,7 @@ export, before any is rewritten; identifiers that are not text are left to the i
 from collections.abc import Iterator
 
 from scenario_tools.domain.shared.canonical import jcs
+from scenario_tools.domain.shared.stored_workflow import Condition, Step, Workflow
 from scenario_tools.domain.shared.workflow import (
     CONDITION_DEPEND_NESTED,
     CONDITION_GROUP_EMPTY,
@@ -28,10 +29,7 @@ from scenario_tools.domain.shared.workflow import (
     DEPEND_ON_DANGLING,
     DEPEND_ON_NULL,
     STEP_ID_TWICE,
-    Condition,
     Refusal,
-    Step,
-    Workflow,
 )
 
 _DEPEND_ON = "DEPEND_ON"

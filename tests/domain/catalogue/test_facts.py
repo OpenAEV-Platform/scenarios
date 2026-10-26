@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, copy_findings, export_facts
 from scenario_tools.domain.catalogue.metadata import ExportFacts, InjectFacts
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 

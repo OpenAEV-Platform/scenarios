@@ -9,12 +9,7 @@ import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.application.prepare_entry import prepare_entry
-from scenario_tools.domain.shared.workflow import (
-    KEY_UNKNOWN,
-    ExportKeys,
-    Refusal,
-    export_refusals,
-)
+from scenario_tools.domain.shared.workflow import KEY_UNKNOWN, ExportKeys, Refusal, export_refusals
 from scenario_tools.domain.sheet.sheet import render_sheet
 
 ROOT = Path(__file__).resolve().parents[2]

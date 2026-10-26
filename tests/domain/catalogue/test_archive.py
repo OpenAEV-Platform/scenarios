@@ -12,8 +12,8 @@ from scenario_tools.domain.catalogue.archive import (
     belongs_to,
     payloads_outside_contracts,
 )
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.finding import Severity
 
 PATH = "scenarios/ransomware/akira/scenario.json"

@@ -2,7 +2,7 @@
 
 import pytest
 
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.structure import (
     CONTRACT,
     PAYLOAD,

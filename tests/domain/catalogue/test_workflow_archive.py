@@ -11,9 +11,9 @@ import pytest
 
 from scenario_tools.adapters.data_files import YamlDataLoader
 from scenario_tools.domain.catalogue.archive import STORED_PARTS, archive_findings, checked_workflow
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.facts import BuiltinContracts, export_facts
 from scenario_tools.domain.catalogue.metadata import is_tabletop
-from scenario_tools.domain.catalogue.normalisation import ExportStructureError
 from scenario_tools.domain.shared.workflow import (
     CONDITION_LIST_EMPTY,
     CONDITION_MAPPER,

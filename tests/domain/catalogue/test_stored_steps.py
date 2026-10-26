@@ -11,12 +11,10 @@ from typing import Any
 import pytest
 
 from scenario_tools.adapters.safe_readers import parse_json
+from scenario_tools.domain.catalogue.export_reading import ExportStructureError
 from scenario_tools.domain.catalogue.identifiers import scenario_namespace, stable_id
-from scenario_tools.domain.catalogue.normalisation import (
-    ExportStructureError,
-    NormalisationRules,
-    normalise,
-)
+from scenario_tools.domain.catalogue.normalisation import normalise
+from scenario_tools.domain.catalogue.volatile_fields import NormalisationRules
 from scenario_tools.domain.shared.workflow import (
     CONDITION_DEPEND_NESTED,
     CONDITION_MAPPER,

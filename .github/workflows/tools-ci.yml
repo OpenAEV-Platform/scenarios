@@ -197,7 +197,10 @@ jobs:
               scenario_tools.domain.policy.registry. scenario_tools.domain.policy.targets.
               scenario_tools.domain.policy.vendors.
           - share: verification versioning
-            mutants: scenario_tools.domain.verification.versioning.
+            mutants: >-
+              scenario_tools.domain.verification.versioning.
+              scenario_tools.domain.verification.entry_changes.
+              scenario_tools.domain.verification.changelog.
           - share: verification payload hashes
             mutants: >-
               scenario_tools.domain.verification.payload_hash.

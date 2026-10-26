@@ -26,7 +26,7 @@ from scenario_tools.domain.catalogue.structure import (
 from scenario_tools.domain.shared.canonical import ContentHash
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
-from scenario_tools.domain.shared.workflow import holds_workflow
+from scenario_tools.domain.shared.stored_workflow import holds_workflow
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 INJECTOR_TYPE_LIMIT = 64  # characters, as the schema says for requires.injectors

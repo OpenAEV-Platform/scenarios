@@ -25,7 +25,7 @@ from scenario_tools.domain.catalogue.structure import (
 from scenario_tools.domain.policy.workflow_rules import graph_refusals, subset_refusals
 from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.shared.stored import INJECTS, WORKFLOW, injects
-from scenario_tools.domain.shared.workflow import checked_stored_workflow
+from scenario_tools.domain.shared.stored_workflow import checked_stored_workflow
 
 # The parts of a normalised scenario, which are all an archive may carry.
 STORED_PARTS = frozenset(

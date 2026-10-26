@@ -18,32 +18,18 @@ from scenario_tools.adapters.data_files import (
     read_attachments,
     read_stored_scenario,
 )
-from scenario_tools.adapters.git import (
-    converted,
-    uncommitted,
-)
+from scenario_tools.adapters.git import converted, uncommitted
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.repository import RepositoryEntries
-from scenario_tools.adapters.safe_readers import (
-    read_yaml_file,
-)
+from scenario_tools.adapters.safe_readers import read_yaml_file
 from scenario_tools.adapters.safe_zip import ARCHIVE_LIMIT
 from scenario_tools.adapters.zip_archive import ZipArchiveBuilder
-from scenario_tools.application.assign_payloads import (
-    agreed_ids,
-    catalogue_of,
-)
+from scenario_tools.application.assign_payloads import agreed_ids, catalogue_of
 from scenario_tools.application.build_archive import build_archive
-from scenario_tools.application.build_release import (
-    ArchivedEntry,
-)
+from scenario_tools.application.build_release import ArchivedEntry
 from scenario_tools.application.findings import finding_from_unsafe_input, repository_path
 from scenario_tools.application.prepare_entry import renormaliser
-from scenario_tools.application.report_output import (
-    concealed,
-    printable,
-    withheld_output,
-)
+from scenario_tools.application.report_output import concealed, printable, withheld_output
 from scenario_tools.application.repository_root import repository_root
 from scenario_tools.application.validate_entry import validate_entry
 from scenario_tools.domain.catalogue.characters import hidden_character_findings
@@ -54,27 +40,13 @@ from scenario_tools.domain.policy.exceptions import exceptions_from_document
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
 from scenario_tools.domain.policy.vendors import vendors_from_document
-from scenario_tools.domain.release.manifest import (
-    archive_name,
-)
-from scenario_tools.domain.shared.finding import (
-    ERROR_LIMIT,
-    Finding,
-    Report,
-    Severity,
-    shorten,
-)
+from scenario_tools.domain.release.manifest import archive_name
+from scenario_tools.domain.shared.finding import ERROR_LIMIT, Finding, Report, Severity, shorten
 from scenario_tools.domain.shared.identifiers import CANONICAL_UUID
 from scenario_tools.domain.shared.workflow import ExportKeys
 from scenario_tools.domain.verification.payload_catalogue import Catalogue
-from scenario_tools.domain.verification.payload_references import (
-    AgreedIds,
-    HeldVersions,
-)
-from scenario_tools.ports.errors import (
-    EnvironmentProblemError,
-    UnsafeInputError,
-)
+from scenario_tools.domain.verification.payload_references import AgreedIds, HeldVersions
+from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
 EXIT_OK, EXIT_BLOCKING, EXIT_ENVIRONMENT, EXIT_INTERNAL = 0, 1, 3, 4
 
