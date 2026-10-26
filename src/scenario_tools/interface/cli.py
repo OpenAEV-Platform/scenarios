@@ -6,7 +6,7 @@ finding, 2 on a usage error (click), 3 when the environment cannot be used, and 
 itself fails, so that a defect of the tool never reads as a defect of the content.
 """
 
-from scenario_tools.interface import entries, openaev, payloads, release
+from scenario_tools.interface import entries, intake, openaev, payloads, release
 from scenario_tools.interface.base import (
     EXIT_BLOCKING,
     EXIT_ENVIRONMENT,
@@ -23,6 +23,7 @@ __all__ = [
     "EXIT_OK",
     "entries",
     "execute",
+    "intake",
     "main",
     "openaev",
     "payloads",

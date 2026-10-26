@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from scenario_tools.adapters import entry_writer, places
+from scenario_tools.adapters import entry_writer, guarded_writes, places
 from scenario_tools.adapters.entry_writer import RepositoryWriter
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
@@ -275,7 +275,7 @@ def test_a_new_entry_that_cannot_be_written_whole_leaves_nothing(
             raise EnvironmentProblemError("disk full")
         return created(directory, path, data)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", failing)
+    _patch_writer(monkeypatch, "create_in", failing)
 
     with pytest.raises(EnvironmentProblemError, match="disk full"):
         _write(tmp_path, {"scenario.yaml": b"a", "scenario.json": b"b"}, new=True)
@@ -487,7 +487,7 @@ def test_an_update_that_cannot_be_put_back_says_so(
             raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
         return created(directory, path, data)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", failing)
+    _patch_writer(monkeypatch, "create_in", failing)
 
     error = _failing_block(tmp_path, {"scenario.json": b"{}\n"}, new=False, during=lambda: None)
 
@@ -512,7 +512,7 @@ def test_an_update_whose_place_another_took_says_where_the_previous_version_is_l
             raise PermissionError(errno.EACCES, "Permission denied")
         unlink(path, dir_fd=dir_fd)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", taken)
+    _patch_writer(monkeypatch, "create_in", taken)
     monkeypatch.setattr(os, "unlink", refused)
 
     with pytest.raises(EnvironmentProblemError, match="which stays") as error:
@@ -660,6 +660,14 @@ def test_a_refused_write_leaves_no_directory_open(
     assert sorted(opened) == sorted(closed)
 
 
+def _patch_writer(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
+    """Replace ``name`` with ``value`` in every module of the writer that holds it."""
+    holders = [module for module in (entry_writer, guarded_writes) if hasattr(module, name)]
+    assert holders, name
+    for module in holders:
+        monkeypatch.setattr(module, name, value)
+
+
 def _stopped(*arguments: Any) -> Any:
     raise KeyboardInterrupt
 
@@ -672,7 +680,7 @@ def test_a_stop_before_a_made_directory_is_known_leaves_it_and_says_so(
     if where == "akira":  # the entry the only directory the run makes
         (tmp_path / "scenarios" / "ransomware").mkdir(parents=True)
     at, doing = (ENTRY, "write") if where == "akira" else ("scenarios", "make")
-    monkeypatch.setattr(f"scenario_tools.adapters.entry_writer.{step}", _stopped)
+    _patch_writer(monkeypatch, step, _stopped)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(EnvironmentProblemError) as error:
@@ -823,7 +831,7 @@ def test_a_new_entry_whose_identity_cannot_be_read_is_left_and_said(
             raise EnvironmentProblemError(f"cannot read {where}: Input/output error")
         return told(descriptor, where)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", failing)
+    _patch_writer(monkeypatch, "identity", failing)
 
     with pytest.raises(EnvironmentProblemError, match="remove it by hand") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=True)
@@ -1322,14 +1330,14 @@ def test_a_file_another_puts_at_the_place_of_one_being_updated_is_never_overwrit
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     directory = _entry(tmp_path)
-    checked = entry_writer._same_bytes
+    checked = guarded_writes._same_bytes
 
     def then_changed(*arguments: Any) -> bool:
         same = checked(*arguments)
         (directory / "scenario.json").write_text("another's")  # right after the check
         return same
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer._same_bytes", then_changed)
+    _patch_writer(monkeypatch, "_same_bytes", then_changed)
 
     with pytest.raises(EnvironmentProblemError, match="meanwhile"):
         _write(tmp_path, {"scenario.json": b"{}"}, new=False)
@@ -1379,7 +1387,7 @@ def test_a_file_whose_new_version_cannot_be_written_is_as_it_was(
     def failing(directory: int, path: Path, data: bytes) -> tuple[int, int]:
         raise stop
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", failing)
+    _patch_writer(monkeypatch, "create_in", failing)
 
     with pytest.raises(type(stop)):
         _write(tmp_path, {"scenario.json": b"{}"}, new=False)
@@ -1414,14 +1422,14 @@ def test_a_file_another_puts_while_a_changed_one_is_checked_is_never_overwritten
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     directory = _entry(tmp_path)
-    checked = entry_writer._same_bytes
+    checked = guarded_writes._same_bytes
 
     def then_put(*arguments: Any) -> bool:
         same = checked(*arguments)
         (directory / "scenario.json").write_text("another's")
         return same
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer._same_bytes", then_put)
+    _patch_writer(monkeypatch, "_same_bytes", then_put)
 
     with pytest.raises(EnvironmentProblemError, match="kept as") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=False, previous={"scenario.json": b"[]"})
@@ -1440,7 +1448,7 @@ def test_a_new_version_that_cannot_be_written_whole_keeps_the_previous_one(
         (directory / "scenario.json").write_bytes(data[:1])  # its own clean-up failed too
         raise EnvironmentProblemError(f"cannot write {path}: No space left on device")
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", half_written)
+    _patch_writer(monkeypatch, "create_in", half_written)
 
     with pytest.raises(EnvironmentProblemError, match="No space left on device") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=False)
@@ -1495,7 +1503,7 @@ def test_a_stop_while_a_new_version_is_written_says_what_it_leaves(
         (directory / "scenario.json").write_text("another's")  # the way back is taken
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.create_in", stopped)
+    _patch_writer(monkeypatch, "create_in", stopped)
 
     with pytest.raises(EnvironmentProblemError, match="kept as") as error:
         _write(tmp_path, {"scenario.json": b"{}"}, new=False)
@@ -1593,7 +1601,7 @@ def test_a_directory_above_whose_identity_cannot_be_read_leaves_nothing_open(
             raise EnvironmentProblemError(f"cannot read {where}: Input/output error")
         return told(descriptor, where)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.identity", failing)
+    _patch_writer(monkeypatch, "identity", failing)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(EnvironmentProblemError, match="Input/output error") as error:
@@ -1615,7 +1623,7 @@ def test_a_directory_made_and_removed_by_another_is_the_environment_s_fault(
             os.rmdir(name, dir_fd=directory)  # another removes it before the run opens it
         return made(directory, name, at)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", removed)
+    _patch_writer(monkeypatch, "made_directory", removed)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(EnvironmentProblemError, match="removed it meanwhile"):
@@ -1638,7 +1646,7 @@ def test_a_directory_made_and_replaced_by_a_link_is_the_environment_s_fault(
             os.symlink(tmp_path / "elsewhere", name, dir_fd=directory)
         return made(directory, name, at)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", replaced)
+    _patch_writer(monkeypatch, "made_directory", replaced)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(EnvironmentProblemError, match="replaced it meanwhile"):
@@ -1660,7 +1668,7 @@ def test_a_directory_made_that_cannot_be_opened_is_left_and_said(
             raise EnvironmentProblemError(f"cannot read {at}: Permission denied")
         return made(directory, name, at)
 
-    monkeypatch.setattr("scenario_tools.adapters.entry_writer.made_directory", failing)
+    _patch_writer(monkeypatch, "made_directory", failing)
     opened, closed = descriptors(monkeypatch)
 
     with pytest.raises(EnvironmentProblemError, match="Permission denied") as error:
