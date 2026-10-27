@@ -352,9 +352,8 @@ class _Pass:
         renamed = {**payload, "payload_name": name}
         new_digest = payload_hash(renamed, embedded.attack_patterns, _ATTACHED.get).hex
         domains = contract_domains(self.contracts[embedded.contract])
-        document = version_document(
-            renamed, embedded.attack_patterns, self.agreed.id_for(new_digest), domains
-        )
+        # A new version carries its payload's ID, the ID of its first version.
+        document = version_document(renamed, embedded.attack_patterns, held[0].identifier, domains)
         version = PayloadVersion(slug, number, f"payloads/{slug}/{number}.json", document)
         if not self.kept(version, new_digest, pointer):
             return

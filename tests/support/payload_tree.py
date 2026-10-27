@@ -47,9 +47,18 @@ def with_id(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def edit(catalogue: Path, file: str, change: Callable[[dict[str, Any]], None]) -> None:
-    """Change the document of ``file`` and write it back in the stored form, its ID the one its
-    new content has."""
+    """Change the document of ``file`` and write it back in the stored form: a first version
+    with the ID its new content has, which its later versions then carry, a later one with its
+    payload's ID, as it was."""
     path = catalogue / file
     document: dict[str, Any] = json.loads(path.read_text("utf-8"))
     change(document)
-    path.write_bytes(stored_form(with_id(document)))
+    if path.name != "1.0.0.json":
+        path.write_bytes(stored_form(document))
+        return
+    document = with_id(document)
+    path.write_bytes(stored_form(document))
+    for later in sorted(set(path.parent.glob("*.json")) - {path}):
+        held: dict[str, Any] = json.loads(later.read_text("utf-8"))
+        held["payload_external_id"] = document.get("payload_external_id")
+        later.write_bytes(stored_form(held))

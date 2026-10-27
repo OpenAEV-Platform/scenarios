@@ -158,6 +158,12 @@ def _identity(version: PayloadVersion, agreed: AgreedIds) -> list[Finding]:
         digest = version.digest()
     except UnhashablePayloadError:
         return [_blocking("PAY-009", version, "", NOT_HASHABLE)]
+    # A later version carries its payload's ID, checked across the catalogue; a first version,
+    # and one the registry lists, with its content, as keeping its own, carry their content's.
+    if version.version != FIRST_VERSION and not agreed.keeps_own_id(
+        version.slug, version.version, digest
+    ):
+        return []
     if version.identifier != agreed.id_for(digest):
         return [_blocking("PAY-003", version, f"/{_ID}", ID_NOT_ITS_CONTENT)]
     entry = agreed.by_hash.get(digest)

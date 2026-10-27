@@ -28,7 +28,7 @@ exports, cleaned:
 - its techniques by their external IDs (`payload_attack_patterns`) and its domains
   (`payload_domains`, name and colour), both sorted; a platform export holds a payload's domains
   on its contract, so `intake` takes them from the contract's own copy;
-- the ID of this version (`payload_external_id`).
+- the payload's ID (`payload_external_id`), the same in all its versions.
 
 A payload exported without a description is given its name as one when the scenario is
 normalised, so the scenario's copy and the version file carry the same description and the same
@@ -41,7 +41,7 @@ What the cleaning leaves out, and why:
 
 | Left out | Why |
 |---|---|
-| The payload's identifier on an instance, and those of its output parsers | They belong to one platform; the version's ID is `payload_external_id` |
+| The payload's identifier on an instance, and those of its output parsers | They belong to one platform; the payload's ID is `payload_external_id` |
 | Source, status, collector type | What the platform records of where a payload came from; whoever installs the catalogue sets them |
 | Tags | Labels of one platform; whoever installs the catalogue sets its own |
 | Authors, creation and update dates | They describe one platform's copy, not the content |
@@ -50,8 +50,14 @@ What the cleaning leaves out, and why:
 
 The hash of a version is the canonical payload hash of its fields, its techniques passed as a
 contract's. It leaves out the ID and the domains, so it is the hash the platform computes for the
-same payload embedded in a scenario. The ID of a version is the one its content has: the ID
-`policy/data/payload-ids.yaml` agrees for that hash, otherwise the one derived from it.
+same payload embedded in a scenario.
+
+A payload has one ID, the same in all its versions: the one the content of its first version
+has, the ID `policy/data/payload-ids.yaml` agrees for that hash, otherwise the one derived from
+it. A later version carries that ID; a platform tells two versions apart by the ID and the
+version, and checks the content by its hash. Two versions published before this rule carry the
+ID of their own content, as a published version is never edited: the registry lists them under
+`own_ids`, each with the hash of its content.
 
 ## Names and versions
 

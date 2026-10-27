@@ -7,7 +7,7 @@
   "payload_description": "Utilize ps to identify processes.",
   "payload_elevation_required": false,
   "payload_execution_arch": "ALL_ARCHITECTURES",
-  "payload_external_id": "192e41a5-3dd0-5cb2-bca5-5f5d801f1b36",
+  "payload_external_id": "9ce05653-db16-585e-8538-ee8be9e6c777",
   "payload_name": "Process Discovery - ps (1.1.0)",
   "payload_output_parsers": [
     {

@@ -35,7 +35,7 @@ def checked_payloads(
         version = PayloadVersion(place.slug, place.version, place.path, document)
         findings += version_findings(version, data, agreed)
         versions.append((version, data))
-    findings += catalogue_findings([version for version, _ in versions])
+    findings += catalogue_findings([version for version, _ in versions], agreed.own)
     return tuple(findings), tuple(versions)
 
 

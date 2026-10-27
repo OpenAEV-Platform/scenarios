@@ -107,11 +107,13 @@ def test_each_defect_of_a_version_file_fails_on_its_check_only(
 
 
 def test_an_id_that_is_not_the_one_its_content_has_fails(tmp_path: Path) -> None:
+    """The first version's ID is its content's; its later version carries the same one."""
     catalogue = repository(tmp_path)
-    path = catalogue / PS_FIRST
-    document = json.loads(path.read_text("utf-8"))
-    document["payload_external_id"] = "not-its-id"
-    path.write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    for file in (PS_FIRST, PS_LATER):
+        path = catalogue / file
+        document = json.loads(path.read_text("utf-8"))
+        document["payload_external_id"] = "not-its-id"
+        path.write_text(json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
     assert _run(catalogue) == (
         1,
         [("PAY-003", f"payloads/{PS_FIRST}", "/payload_external_id", ID_NOT_ITS_CONTENT)],

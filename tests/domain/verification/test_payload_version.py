@@ -114,6 +114,24 @@ def test_an_id_that_is_not_the_one_its_content_has_is_refused() -> None:
     assert _findings(document) == [("PAY-003", "/payload_external_id", ID_NOT_ITS_CONTENT)]
 
 
+def test_a_later_version_is_not_judged_by_the_id_of_its_content() -> None:
+    # A later version carries its payload's ID, which the catalogue checks across versions.
+    document = {**_document(), "payload_name": "Process Discovery - ps (1.1.0)"}
+    assert _findings({**document, "payload_external_id": "the-payload-s-id"}, "1.1.0") == []
+
+
+def test_a_version_listed_as_keeping_its_own_id_is_judged_by_its_content() -> None:
+    document = {**_document(), "payload_name": "Process Discovery - ps (1.1.0)"}
+    listed = {
+        "payload": "process-discovery-ps",
+        "version": "1.1.0",
+        "sha256": _version(document, "1.1.0").digest(),
+    }
+    agreed = AgreedIds.from_document({"payloads": [], "own_ids": [listed]})
+    found = _findings({**document, "payload_external_id": "not-its-id"}, "1.1.0", agreed)
+    assert found == [("PAY-003", "/payload_external_id", ID_NOT_ITS_CONTENT)]
+
+
 def test_the_id_the_registry_agrees_for_the_content_is_its_id() -> None:
     digest = _version(_document()).digest()
     agreed = AgreedIds.from_document(
