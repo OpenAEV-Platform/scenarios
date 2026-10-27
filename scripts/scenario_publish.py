@@ -1,22 +1,22 @@
 """Materialise a scenario entry on a ``scenario-publish/*`` branch.
 
-The Publisher agent commits ``.scenario-publish/publish.yaml`` to a ``scenario-publish/*``
-branch and opens a draft pull request. This script runs in the scenario-publish
-Action to fill that pull request:
+The Publisher agent exports the scenario itself and commits two files to the
+branch: ``.scenario-publish/export.zip`` (the platform export, a ``.zip`` so a
+scenario with documents survives) and ``.scenario-publish/request.yaml`` (the
+intake request). This script runs in the scenario-publish Action to fill the
+draft pull request, with **no call to the OpenAEV platform**:
 
-1. read and schema-check the staging file;
-2. export ``scenario_id`` from the author OpenAEV platform (``scenario-tools``
-   reads ``OPENAEV_URL`` / ``OPENAEV_TOKEN`` from the environment);
-3. run ``scenario-tools intake`` to write the catalogue entry, then ``validate``
+1. find the committed export and request on the branch;
+2. run ``scenario-tools intake`` to write the catalogue entry, then ``validate``
    it as a smoke check;
-4. remove the staging file;
-5. commit the result as ONE GitHub-verified commit through the REST API, so the
-   repository's signed-commit rule is met and the author is the bot, not a
-   person. The pull request's existing checks then judge the entry.
+3. remove the staging files;
+4. commit the result as ONE commit through the REST API with the
+   ``filigran-automation`` token, so the author is the bot (not a person), the
+   commit is GitHub-verified, and — unlike ``GITHUB_TOKEN`` — it triggers the
+   pull request's checks. The existing checks then judge the entry.
 
-No token is ever printed. The export subprocess reads ``OPENAEV_TOKEN`` itself
-and hides it from its own output; this script only sends ``GITHUB_TOKEN`` in an
-Authorization header.
+No OpenAEV URL or token is needed here any more; the only secret this uses is the
+``filigran-automation`` GitHub token, sent in an Authorization header.
 """
 
 from __future__ import annotations
@@ -36,7 +36,11 @@ import jsonschema
 import yaml
 
 _API = "https://api.github.com"
-_STAGING = ".scenario-publish/publish.yaml"
+_STAGING_DIR = ".scenario-publish"
+_REQUEST = f"{_STAGING_DIR}/request.yaml"
+#: The export the Publisher committed, by preference: a .zip (keeps documents),
+#: or the .json intake also accepts.
+_EXPORT_NAMES = ("export.zip", "export.json")
 
 
 def _fail(message: str) -> None:
@@ -59,38 +63,44 @@ def _git(args: list[str], *, cwd: Path) -> str:
     ).stdout
 
 
-def _load_staging(root: Path) -> dict[str, Any]:
-    path = root / _STAGING
-    if not path.is_file():
-        print(f"scenario-publish: no {_STAGING} on this branch; nothing to do.")
+def _staging(root: Path) -> tuple[dict[str, Any], Path, Path]:
+    """The intake request (schema-checked) and the export the Publisher committed."""
+    request_path = root / _REQUEST
+    if not request_path.is_file():
+        print(f"scenario-publish: no {_REQUEST} on this branch; nothing to do.")
         raise SystemExit(0)
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    schema = json.loads((root / "schemas" / "scenario-publish.schema.json").read_text("utf-8"))
+    export_path = next(
+        (
+            root / _STAGING_DIR / name
+            for name in _EXPORT_NAMES
+            if (root / _STAGING_DIR / name).is_file()
+        ),
+        None,
+    )
+    if export_path is None:
+        _fail(f"{_REQUEST} is present but no {' or '.join(_EXPORT_NAMES)} beside it")
+
+    request = yaml.safe_load(request_path.read_text(encoding="utf-8"))
+    schema = json.loads((root / "schemas" / "intake-request.schema.json").read_text("utf-8"))
     try:
-        jsonschema.validate(document, schema)
+        jsonschema.validate(request, schema)
     except jsonschema.ValidationError as error:
-        _fail(f"{_STAGING} is not a valid publish request: {error.message}")
-    return document
+        _fail(f"{_REQUEST} is not a valid intake request: {error.message}")
+    return request, export_path, request_path
 
 
-def _materialise(root: Path, staging: dict[str, Any], work: Path) -> str:
-    """Export, intake and validate; return the entry path written in the repo."""
-    scenario_id = staging["scenario_id"]
-    request = staging["request"]
+def _materialise(
+    root: Path, request: dict[str, Any], export: Path, request_path: Path, work: Path
+) -> str:
+    """Intake the committed export, validate the entry; return its path in the repo."""
     entry = f"scenarios/{request['domain']}/{request['slug']}"
-
-    request_file = work / "request.yaml"
-    request_file.write_text(yaml.safe_dump(request, sort_keys=False), encoding="utf-8")
-    export = work / "export.zip"
-
-    _run(["scenario-tools", "openaev", "export", scenario_id, "--out", str(export)], cwd=root)
     _run(
         [
             "scenario-tools",
             "intake",
             str(export),
             "--request",
-            str(request_file),
+            str(request_path),
             "--repo",
             ".",
             "--plan",
@@ -105,10 +115,10 @@ def _materialise(root: Path, staging: dict[str, Any], work: Path) -> str:
 
 
 def _remove_staging(root: Path) -> None:
-    (root / _STAGING).unlink()
-    staging_dir = root / ".scenario-publish"
-    if not any(staging_dir.iterdir()):
-        staging_dir.rmdir()
+    staging_dir = root / _STAGING_DIR
+    for child in staging_dir.iterdir():
+        child.unlink()
+    staging_dir.rmdir()
 
 
 def _changes(root: Path) -> tuple[list[str], list[str]]:
@@ -189,25 +199,26 @@ def main() -> None:
     root = Path.cwd()
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("GITHUB_REF_NAME", "")
-    token = os.environ.get("GITHUB_TOKEN", "")
+    # The filigran-automation token: its commit triggers the pull request's checks
+    # (a GITHUB_TOKEN commit does not), and it keeps the author off a real person.
+    token = os.environ.get("FILIGRAN_AUTOMATION_TOKEN", "")
     if not (repo and branch and token):
-        _fail("GITHUB_REPOSITORY, GITHUB_REF_NAME and GITHUB_TOKEN are required")
+        _fail("GITHUB_REPOSITORY, GITHUB_REF_NAME and FILIGRAN_AUTOMATION_TOKEN are required")
 
-    staging = _load_staging(root)
+    request, export, request_path = _staging(root)
     # Outside the repo: intake refuses a dirty checkout, so nothing it does not write lands there.
     with tempfile.TemporaryDirectory() as tmp:
-        entry = _materialise(root, staging, Path(tmp))
+        entry = _materialise(root, request, export, request_path, Path(tmp))
     _remove_staging(root)
 
     written, removed = _changes(root)
     if not written:
         _fail("intake wrote no entry files; see the log above")
-    request = staging["request"]
     verb = "add" if request["mode"] == "new" else "update"
     message = f"feat(scenarios): {verb} {request['domain']}/{request['slug']} (#{request['issue']})"
     commit = _commit(root, repo, branch, token, written, removed, message)
 
-    line = f"Materialised `{entry}` and committed it as `{commit[:9]}` (verified)."
+    line = f"Materialised `{entry}` and committed it as `{commit[:9]}`."
     print(f"scenario-publish: {line}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
