@@ -438,7 +438,7 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                 ),
             },
         },
-    }
+    },
 }
 
 
