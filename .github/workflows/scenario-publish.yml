@@ -1,6 +1,6 @@
 name: Scenario publish
 
-# The last mile of the scenario publishing pipeline. The XTM One Publisher agent commits
+# The last mile of the scenario publishing pipeline. The Publisher agent commits
 # .scenario-publish/publish.yaml to a scenario-publish/* branch and opens a draft pull request;
 # this workflow exports the scenario from the author platform, runs the real
 # scenario-tools (intake, then validate), removes the staging file, and commits

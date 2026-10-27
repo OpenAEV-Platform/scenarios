@@ -1,6 +1,6 @@
 """Materialise a scenario entry on a ``scenario-publish/*`` branch.
 
-The XTM One Publisher agent commits ``.scenario-publish/publish.yaml`` to a ``scenario-publish/*``
+The Publisher agent commits ``.scenario-publish/publish.yaml`` to a ``scenario-publish/*``
 branch and opens a draft pull request. This script runs in the scenario-publish
 Action to fill that pull request:
 

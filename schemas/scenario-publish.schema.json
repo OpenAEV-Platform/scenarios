@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/OpenAEV-Platform/scenarios/schemas/v1/scenario-publish.schema.json",
   "title": "OpenAEV scenario publish request",
-  "description": "The staging file .scenario-publish/publish.yaml that the XTM One Publisher agent commits to a scenario-publish/* branch. The scenario-publish Action reads it, exports scenario_id from the author platform, runs intake with request, and removes it before the entry is committed. The platform scenario_id lives here, not in request, because the intake-request schema forbids extra keys.",
+  "description": "The staging file .scenario-publish/publish.yaml that the Publisher agent commits to a scenario-publish/* branch. The scenario-publish Action reads it, exports scenario_id from the author platform, runs intake with request, and removes it before the entry is committed. The platform scenario_id lives here, not in request, because the intake-request schema forbids extra keys.",
   "type": "object",
   "additionalProperties": false,
   "required": [
