@@ -1,7 +1,7 @@
-"""Materialise a factory scenario entry on a ``factory/*`` branch.
+"""Materialise a scenario entry on a ``scenario-publish/*`` branch.
 
-The XTM One Publisher agent commits ``.factory/publish.yaml`` to a ``factory/*``
-branch and opens a draft pull request. This script runs in the factory-publish
+The XTM One Publisher agent commits ``.scenario-publish/publish.yaml`` to a ``scenario-publish/*``
+branch and opens a draft pull request. This script runs in the scenario-publish
 Action to fill that pull request:
 
 1. read and schema-check the staging file;
@@ -36,11 +36,11 @@ import jsonschema
 import yaml
 
 _API = "https://api.github.com"
-_STAGING = ".factory/publish.yaml"
+_STAGING = ".scenario-publish/publish.yaml"
 
 
 def _fail(message: str) -> None:
-    print(f"factory-publish: {message}", file=sys.stderr)
+    print(f"scenario-publish: {message}", file=sys.stderr)
     raise SystemExit(1)
 
 
@@ -62,10 +62,10 @@ def _git(args: list[str], *, cwd: Path) -> str:
 def _load_staging(root: Path) -> dict[str, Any]:
     path = root / _STAGING
     if not path.is_file():
-        print(f"factory-publish: no {_STAGING} on this branch; nothing to do.")
+        print(f"scenario-publish: no {_STAGING} on this branch; nothing to do.")
         raise SystemExit(0)
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    schema = json.loads((root / "schemas" / "factory-publish.schema.json").read_text("utf-8"))
+    schema = json.loads((root / "schemas" / "scenario-publish.schema.json").read_text("utf-8"))
     try:
         jsonschema.validate(document, schema)
     except jsonschema.ValidationError as error:
@@ -106,7 +106,7 @@ def _materialise(root: Path, staging: dict[str, Any], work: Path) -> str:
 
 def _remove_staging(root: Path) -> None:
     (root / _STAGING).unlink()
-    staging_dir = root / ".factory"
+    staging_dir = root / ".scenario-publish"
     if not any(staging_dir.iterdir()):
         staging_dir.rmdir()
 
@@ -208,10 +208,10 @@ def main() -> None:
     commit = _commit(root, repo, branch, token, written, removed, message)
 
     line = f"Materialised `{entry}` and committed it as `{commit[:9]}` (verified)."
-    print(f"factory-publish: {line}")
+    print(f"scenario-publish: {line}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        Path(summary).write_text(f"## Factory publish\n\n{line}\n", encoding="utf-8")
+        Path(summary).write_text(f"## Scenario publish\n\n{line}\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
