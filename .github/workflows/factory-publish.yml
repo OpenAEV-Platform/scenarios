@@ -1,0 +1,56 @@
+name: Factory publish
+
+# The last mile of the Scenario Factory. The XTM One Publisher agent commits
+# .factory/publish.yaml to a factory/* branch and opens a draft pull request;
+# this workflow exports the scenario from the author platform, runs the real
+# scenario-tools (intake, then validate), removes the staging file, and commits
+# the entry as one GitHub-verified commit through the API. The pull request's
+# pr-entries, pr-title and Tools CI then judge the entry as for any contributor.
+#
+# It runs ONLY on factory/* branches, and the author platform's URL and token
+# live in the protected "factory-publish" environment, reachable from here
+# alone. A commit made with GITHUB_TOKEN never re-triggers a workflow, so the
+# entry commit does not start this one again; a run that finds no staging file
+# (the entry commit, or a hand-pushed branch) does nothing.
+on:
+  push:
+    branches: ["factory/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: factory-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Materialise and commit the entry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: factory-publish
+    permissions:
+      contents: write  # advance the branch with the verified entry commit, via the API
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false  # the entry commit goes through the API, never git push
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+          enable-cache: false
+
+      - name: Install the tools
+        run: uv sync --frozen --no-dev
+
+      - name: Materialise the entry and commit it
+        env:
+          # The author platform, read only here through the protected environment.
+          OPENAEV_URL: ${{ secrets.OPENAEV_URL }}
+          OPENAEV_TOKEN: ${{ secrets.OPENAEV_TOKEN }}
+          # The verified entry commit is authored by this token (GitHub-signed).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --frozen --no-dev python scripts/factory_publish.py
