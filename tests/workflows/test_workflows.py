@@ -166,9 +166,15 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
         # The one job that writes: the release, and the channel's pointer.
         "publish": {"contents": "write"},
     },
+    # The factory publish advances the bot's branch with the verified entry commit.
+    "factory-publish.yml": {"publish": {"contents": "write"}},
 }
-# The jobs whose token may write, by workflow: the release workflow's publication only.
-WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
+# The jobs whose token may write, by workflow: the release's publication, and the factory
+# publish's commit of the materialised entry onto the bot's branch.
+WRITING_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"publish"}),
+    "factory-publish.yml": frozenset({"publish"}),
+}
 # The environment of each job that runs in one, by workflow: the release app's key is kept in
 # `release`, which only the default branch can deploy to; the approvals read it for a token that
 # reads the organisation's members, the publication for one that moves the channel.
@@ -266,12 +272,29 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
             "steps.members.outputs.token",  # a token to read the organisation's members
         }
     ),
+    # The factory publish: the author platform (export) and the token for the verified commit.
+    "factory-publish.yml": frozenset({"GITHUB_TOKEN", "OPENAEV_TOKEN", "OPENAEV_URL"}),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"approvals", "publish"}),
+    "factory-publish.yml": frozenset({"publish"}),
+}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "factory-publish.yml": {
+        "publish": {
+            "Materialise the entry and commit it": {
+                "env": {
+                    "OPENAEV_URL": "${{ secrets.OPENAEV_URL }}",
+                    "OPENAEV_TOKEN": "${{ secrets.OPENAEV_TOKEN }}",
+                    "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                },
+                "run": "uv run --frozen --no-dev python scripts/factory_publish.py",
+            },
+        },
+    },
     "release.yml": {
         "approvals": {
             "Read the channel's previous release": {
