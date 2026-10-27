@@ -177,10 +177,11 @@ class CatalogueCollisionError(ValueError):
 
 @dataclass(frozen=True)
 class Catalogue:
-    """The versions of the catalogue by ID, by hash, by slug (in version order) and the slug of
-    each base name, by its key."""
+    """The versions of the catalogue by ID and version, every version under each ID and of each
+    slug (in version order), by hash, and the slug of each base name, by its key."""
 
-    by_id: Mapping[str, PayloadVersion]
+    by_key: Mapping[tuple[str, str], PayloadVersion]
+    by_id: Mapping[str, tuple[PayloadVersion, ...]]
     by_hash: Mapping[str, PayloadVersion]
     by_slug: Mapping[str, tuple[PayloadVersion, ...]]
     by_base_name: Mapping[str, str]
@@ -191,15 +192,18 @@ class Catalogue:
         if catalogue_findings(versions):
             raise CatalogueCollisionError("the versions do not form a catalogue")
         by_slug: dict[str, list[PayloadVersion]] = {}
+        by_id: dict[str, list[PayloadVersion]] = {}
         by_hash: dict[str, PayloadVersion] = {}
         for version in ordered(versions):
             by_slug.setdefault(version.slug, []).append(version)
+            by_id.setdefault(version.identifier, []).append(version)
             digest = _digest(version)
             if digest is None:
                 raise CatalogueCollisionError("a version cannot be hashed: it has no place by hash")
             by_hash[digest] = version
         return cls(
-            by_id={version.identifier: version for version in versions},
+            by_key={(version.identifier, version.version): version for version in versions},
+            by_id={identifier: tuple(found) for identifier, found in by_id.items()},
             by_hash=by_hash,
             by_slug={slug: tuple(found) for slug, found in by_slug.items()},
             by_base_name={name_key(found[0].base_name): slug for slug, found in by_slug.items()},

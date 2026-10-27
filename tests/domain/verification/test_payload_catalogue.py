@@ -186,7 +186,8 @@ def test_the_hand_built_versions_form_a_catalogue() -> None:
     catalogue = Catalogue.of(_tree())
     ps = catalogue.by_slug["process-discovery-ps"]
     assert [version.version for version in ps] == ["1.0.0", "1.1.0"]
-    assert catalogue.by_id[ps[1].identifier] == ps[1]
+    assert catalogue.by_id[ps[1].identifier] == (ps[1],)
+    assert catalogue.by_key[(ps[1].identifier, "1.1.0")] == ps[1]
     assert catalogue.by_hash[ps[0].digest()] == ps[0]
     assert catalogue.by_base_name["process discovery - ps"] == "process-discovery-ps"
 
@@ -360,7 +361,7 @@ def test_the_catalogue_gives_each_version_as_the_reference_that_names_it() -> No
     versions = _tree()
     held = Catalogue.of(versions).held()
 
-    assert sorted(held.by_id.values(), key=lambda r: (r.id, r.version)) == sorted(
+    assert sorted(held.by_key.values(), key=lambda r: (r.id, r.version)) == sorted(
         (PayloadReference(v.identifier, v.version, v.digest()) for v in versions),
         key=lambda r: (r.id, r.version),
     )
