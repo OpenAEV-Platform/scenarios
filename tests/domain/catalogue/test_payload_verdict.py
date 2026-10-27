@@ -491,7 +491,8 @@ def test_a_payload_carrying_a_catalogue_id_with_another_content_is_said_changed(
 
     assert (
         "PAY-011",
-        f"this payload carries the ID of {PS} 1.1.0 but another content: it is treated as changed",
+        f"this payload carries the ID of {PS} but the content of none of its versions: it is "
+        "treated as changed",
     ) in _codes_of(result)
 
 

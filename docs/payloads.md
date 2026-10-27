@@ -52,8 +52,8 @@ The hash of a version is the canonical payload hash of its fields, its technique
 contract's. It leaves out the ID and the domains, so it is the hash the platform computes for the
 same payload embedded in a scenario.
 
-A payload has one ID, the same in all its versions: the one the content of its first version
-has, the ID `policy/data/payload-ids.yaml` agrees for that hash, otherwise the one derived from
+A payload has one ID, the same in all its versions: the one the content of its first version,
+`1.0.0`, which every payload folder holds, the ID `policy/data/payload-ids.yaml` agrees for that hash, otherwise the one derived from
 it. A later version carries that ID; a platform tells two versions apart by the ID and the
 version, and checks the content by its hash. Two versions published before this rule carry the
 ID of their own content, as a published version is never edited: the registry lists them under

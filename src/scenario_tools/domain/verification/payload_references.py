@@ -337,6 +337,7 @@ def reference_findings(
         by_id[reference.id] = (index, reference)
         findings.extend(_held(reference, index, catalogue, metadata))
     stale: set[int] = set()
+    contents: dict[str, str] = {}  # the content of each ID the scenario's payloads carry
     for item in hashed:
         identifier = item.payload.get(_EXTERNAL_ID)
         field = f"{item.embedded.pointer}/{_EXTERNAL_ID}"
@@ -360,6 +361,9 @@ def reference_findings(
                     f"it; {_RUN}",
                 )
             )
+            continue
+        if contents.setdefault(identifier, item.digest) != item.digest:
+            findings.append(_blocking("PAY-002", scenario, field, TWO_VERSIONS))
             continue
         if identifier not in by_id:
             findings.append(_unnamed(scenario, field))
