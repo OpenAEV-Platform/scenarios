@@ -706,6 +706,18 @@ def test_a_reference_the_catalogue_does_not_hold_says_why_at_its_field(
     assert found[0] == ("PAY-008", YAML, f"/payloads/0/{field}", f"{message}: {RUN}")
 
 
+def test_a_reference_to_one_of_the_versions_under_its_id_is_held() -> None:
+    # Another version under the same ID, listed after it, must not hide the one referenced.
+    item = named(payload("a"))
+    named_version = reference(item)
+    later = PayloadReference(named_version.id, "9.9.9", "f" * 64)
+    catalogue = HeldVersions.of([named_version, later])
+
+    found = findings(stored(item), (named_version,), catalogue=catalogue)
+
+    assert [f for f in found if f[0] == "PAY-008"] == []
+
+
 def test_the_payloads_that_cannot_be_hashed_are_refused_and_no_other() -> None:
     scenario = stored(payload("a"), payload("b", payload_new_field=1))
 
@@ -723,3 +735,17 @@ def test_a_payload_whose_attached_file_the_entry_holds_can_be_hashed() -> None:
 
     assert unhashable_findings(scenario, lambda document: "0" * 64, JSON) == ()
     assert [f.code for f in unhashable_findings(scenario, _no_files, JSON)] == ["PAY-005"]
+
+
+def test_held_versions_keep_every_version_of_one_id() -> None:
+    first = PayloadReference("process-discovery", "1.0.0", "a" * 64)
+    second = PayloadReference("process-discovery", "1.1.0", "b" * 64)
+
+    held = HeldVersions.of([first, second])
+
+    assert held.by_key == {
+        ("process-discovery", "1.0.0"): first,
+        ("process-discovery", "1.1.0"): second,
+    }
+    assert held.by_id == {"process-discovery": (first, second)}
+    assert held.by_hash == {"a" * 64: first, "b" * 64: second}

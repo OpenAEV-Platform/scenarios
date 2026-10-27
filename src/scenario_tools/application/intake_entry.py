@@ -261,7 +261,7 @@ def _payloads(
     )
     found, new = verdict.findings, verdict.versions
     refusals = tuple(f for f in found if f.severity is Severity.BLOCKING)
-    held = [*payloads.held().by_id.values()]
+    held = [*payloads.held().by_key.values()]
     held += [PayloadReference(v.identifier, v.version, digest) for digest, v in new.items()]
     return _Payloads(
         refusals,

@@ -116,16 +116,21 @@ class PayloadReference:
 
 @dataclass(frozen=True)
 class HeldVersions:
-    """The versions the payload catalogue holds, each as the reference that names it, by ID and
-    by hash."""
+    """The versions the payload catalogue holds, each as the reference that names it: by its ID
+    and version, every version under each ID in the order given, and by hash."""
 
-    by_id: Mapping[str, PayloadReference]
+    by_key: Mapping[tuple[str, str], PayloadReference]
+    by_id: Mapping[str, tuple[PayloadReference, ...]]
     by_hash: Mapping[str, PayloadReference]
 
     @classmethod
     def of(cls, versions: Sequence[PayloadReference]) -> "HeldVersions":
+        by_id: dict[str, tuple[PayloadReference, ...]] = {}
+        for version in versions:
+            by_id[version.id] = (*by_id.get(version.id, ()), version)
         return cls(
-            {version.id: version for version in versions},
+            {(version.id, version.version): version for version in versions},
+            by_id,
             {version.sha256: version for version in versions},
         )
 
@@ -251,10 +256,10 @@ def _held(
 ) -> list[Finding]:
     """Why ``reference``, the reference at ``index``, names no version the catalogue holds: no
     file has its ID, or the file with its ID is another version or has another hash."""
-    held = catalogue.by_id.get(reference.id)
-    if held is None:
+    held = catalogue.by_key.get((reference.id, reference.version))
+    if reference.id not in catalogue.by_id:
         message, field = "no version file of payloads/ has this ID", "id"
-    elif held.version != reference.version:
+    elif held is None:
         message, field = "the version file with this ID is another version", "version"
     elif held.sha256 != reference.sha256:
         message, field = "the version file with this ID has another hash", "sha256"

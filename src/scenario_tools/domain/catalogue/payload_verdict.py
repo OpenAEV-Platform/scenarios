@@ -468,9 +468,9 @@ def _judge(
         digest = payload_hash(payload, embedded.attack_patterns, _ATTACHED.get).hex
     except UnhashablePayloadError:
         return  # the reference checks say why
-    carried = catalogue.by_id.get(str(payload.get("payload_external_id")))
-    if carried is not None and carried.digest() != digest:
-        message = CARRIED_ID.format(payload=carried.slug, version=carried.version)
+    carried = catalogue.by_id.get(str(payload.get("payload_external_id")), ())
+    if carried and all(version.digest() != digest for version in carried):
+        message = CARRIED_ID.format(payload=carried[-1].slug, version=carried[-1].version)
         run.hint(embedded.pointer, message)
     based = claim if claim is not None and claim[0].based_on is not None else None
     held = catalogue.by_hash.get(digest)
