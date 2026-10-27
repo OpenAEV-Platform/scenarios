@@ -1,17 +1,18 @@
 name: Scenario publish
 
-# The last mile of the scenario publishing pipeline. The Publisher agent commits
-# .scenario-publish/publish.yaml to a scenario-publish/* branch and opens a draft pull request;
-# this workflow exports the scenario from the author platform, runs the real
-# scenario-tools (intake, then validate), removes the staging file, and commits
-# the entry as one GitHub-verified commit through the API. The pull request's
-# pr-entries, pr-title and Tools CI then judge the entry as for any contributor.
+# The last mile of the scenario publishing pipeline. The Publisher agent exports
+# the scenario itself and commits .scenario-publish/export.zip and
+# .scenario-publish/request.yaml to a scenario-publish/* branch, then opens a
+# draft pull request. This workflow runs the real scenario-tools (intake, then
+# validate) on the committed export, removes the staging files, and commits the
+# entry. It never calls the OpenAEV platform. The pull request's pr-entries,
+# pr-title and Tools CI then judge the entry as for any contributor.
 #
-# It runs ONLY on scenario-publish/* branches, and the author platform's URL and token
-# live in the protected "scenario-publish" environment, reachable from here
-# alone. A commit made with GITHUB_TOKEN never re-triggers a workflow, so the
-# entry commit does not start this one again; a run that finds no staging file
-# (the entry commit, or a hand-pushed branch) does nothing.
+# It runs ONLY on scenario-publish/* branches. The only secret is the
+# filigran-automation token (in the protected "scenario-publish" environment):
+# its commit, unlike GITHUB_TOKEN's, triggers the pull request's checks, and the
+# author is the bot, not a person. A run that finds no staging file (the entry
+# commit, or a hand-pushed branch) does nothing.
 on:
   push:
     branches: ["scenario-publish/**"]
@@ -29,13 +30,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: scenario-publish
-    permissions:
-      contents: write  # advance the branch with the verified entry commit, via the API
     steps:
       - name: Check out the branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false  # the entry commit goes through the API, never git push
+          persist-credentials: false  # the entry commit goes through the API with the bot token
 
       - name: Set up uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -48,9 +47,7 @@ jobs:
 
       - name: Materialise the entry and commit it
         env:
-          # The author platform, read only here through the protected environment.
-          OPENAEV_URL: ${{ secrets.OPENAEV_URL }}
-          OPENAEV_TOKEN: ${{ secrets.OPENAEV_TOKEN }}
-          # The verified entry commit is authored by this token (GitHub-signed).
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The bot token: its commit triggers the pull request's checks (a
+          # GITHUB_TOKEN commit does not), and keeps the author off a real person.
+          FILIGRAN_AUTOMATION_TOKEN: ${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}
         run: uv run --frozen --no-dev python scripts/scenario_publish.py
