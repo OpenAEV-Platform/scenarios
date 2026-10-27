@@ -1,26 +1,26 @@
-name: Factory publish
+name: Scenario publish
 
-# The last mile of the Scenario Factory. The XTM One Publisher agent commits
-# .factory/publish.yaml to a factory/* branch and opens a draft pull request;
+# The last mile of the scenario publishing pipeline. The XTM One Publisher agent commits
+# .scenario-publish/publish.yaml to a scenario-publish/* branch and opens a draft pull request;
 # this workflow exports the scenario from the author platform, runs the real
 # scenario-tools (intake, then validate), removes the staging file, and commits
 # the entry as one GitHub-verified commit through the API. The pull request's
 # pr-entries, pr-title and Tools CI then judge the entry as for any contributor.
 #
-# It runs ONLY on factory/* branches, and the author platform's URL and token
-# live in the protected "factory-publish" environment, reachable from here
+# It runs ONLY on scenario-publish/* branches, and the author platform's URL and token
+# live in the protected "scenario-publish" environment, reachable from here
 # alone. A commit made with GITHUB_TOKEN never re-triggers a workflow, so the
 # entry commit does not start this one again; a run that finds no staging file
 # (the entry commit, or a hand-pushed branch) does nothing.
 on:
   push:
-    branches: ["factory/**"]
+    branches: ["scenario-publish/**"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: factory-publish-${{ github.ref }}
+  group: scenario-publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
     name: Materialise and commit the entry
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: factory-publish
+    environment: scenario-publish
     permissions:
       contents: write  # advance the branch with the verified entry commit, via the API
     steps:
@@ -53,4 +53,4 @@ jobs:
           OPENAEV_TOKEN: ${{ secrets.OPENAEV_TOKEN }}
           # The verified entry commit is authored by this token (GitHub-signed).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv run --frozen --no-dev python scripts/factory_publish.py
+        run: uv run --frozen --no-dev python scripts/scenario_publish.py
