@@ -39,7 +39,10 @@ FOLDER_WITHOUT_VERSION = "a payload folder holds at least one version"
 OUT_OF_SCHEMA = "this value is out of schemas/payload.schema.json"
 BASE_NAME_DIFFERS = "every version of a payload has the base name of its other versions"
 BASE_NAME_TAKEN = "another payload of the catalogue has this base name: give each payload its own"
-ID_TWICE = "another version of the catalogue has this ID: an ID names one version"
+ID_TWICE = "another payload of the catalogue has this ID: an ID names one payload"
+ID_NOT_THE_PAYLOAD_S = (
+    "a version after the first carries its payload's ID, the ID of its first version"
+)
 HASH_TWICE = "another version of the catalogue has this content: a content is one version"
 VERSION_CHANGED = (
     "a version file the base branch holds never changes: put it back, and add the change as a "
@@ -144,14 +147,41 @@ def _digest(version: PayloadVersion) -> str | None:
         return None  # its own finding says so
 
 
-def catalogue_findings(versions: Sequence[PayloadVersion]) -> tuple[Finding, ...]:
+def catalogue_findings(
+    versions: Sequence[PayloadVersion], own: frozenset[tuple[str, str, str]] = frozenset()
+) -> tuple[Finding, ...]:
     """What keeps ``versions``, read in order of folder and version, from forming a catalogue:
-    the base name each version shares with its payload's others, and the slug, base name, ID and
-    hash no two payloads or versions share; reported where it is used again."""
+    the base name and the ID each version shares with its payload's first, unless ``own`` lists
+    it as keeping the ID its content has, and the base name, ID and hash no two payloads or
+    versions share; reported where it is used again."""
+    findings = list(_collisions(versions))
+    firsts: dict[str, PayloadVersion] = {}  # the first version of each payload, by slug
+    for version in ordered(versions):
+        first = firsts.setdefault(version.slug, version)
+        if (
+            version is not first
+            and (version.slug, version.version, _digest(version)) not in own
+            and version.identifier != first.identifier
+        ):
+            findings.append(
+                Finding(
+                    "PAY-003",
+                    Severity.BLOCKING,
+                    version.path,
+                    "/payload_external_id",
+                    ID_NOT_THE_PAYLOAD_S,
+                )
+            )
+    return tuple(findings)
+
+
+def _collisions(versions: Sequence[PayloadVersion]) -> tuple[Finding, ...]:
+    """The base name each version shares with its payload's others, and the base name, ID and
+    hash no two payloads or versions share: what an index of the versions needs."""
     findings: list[Finding] = []
     bases: dict[str, str] = {}  # the base name of each payload, by slug
     owners: dict[str, str] = {}  # the payload of each base name, by its key
-    ids: set[str] = set()
+    id_owners: dict[str, str] = {}  # the payload of each ID
     hashes: set[str] = set()
     for version in ordered(versions):
         base = bases.setdefault(version.slug, version.base_name)
@@ -159,9 +189,8 @@ def catalogue_findings(versions: Sequence[PayloadVersion]) -> tuple[Finding, ...
             findings.append(_blocking(version.path, "/payload_name", BASE_NAME_DIFFERS))
         elif owners.setdefault(name_key(base), version.slug) != version.slug:
             findings.append(_blocking(version.path, "/payload_name", BASE_NAME_TAKEN))
-        if version.identifier in ids:
+        if id_owners.setdefault(version.identifier, version.slug) != version.slug:
             findings.append(_blocking(version.path, "/payload_external_id", ID_TWICE))
-        ids.add(version.identifier)
         digest = _digest(version)
         if digest is not None and digest in hashes:
             findings.append(_blocking(version.path, "", HASH_TWICE))
@@ -189,7 +218,7 @@ class Catalogue:
     @classmethod
     def of(cls, versions: Sequence[PayloadVersion]) -> "Catalogue":
         """The index of ``versions``, which must keep the rules of the catalogue."""
-        if catalogue_findings(versions):
+        if _collisions(versions):
             raise CatalogueCollisionError("the versions do not form a catalogue")
         by_slug: dict[str, list[PayloadVersion]] = {}
         by_id: dict[str, list[PayloadVersion]] = {}

@@ -13,7 +13,13 @@ from scenario_tools.application.assign_payloads import (
     payload_findings,
 )
 from scenario_tools.domain.verification.payload_hash import payload_hash
-from scenario_tools.domain.verification.payload_references import AgreedId, AgreedIds, derived_id
+from scenario_tools.domain.verification.payload_references import (
+    AgreedId,
+    AgreedIds,
+    HeldVersions,
+    PayloadReference,
+    derived_id,
+)
 from scenario_tools.ports.errors import EnvironmentProblemError
 from tests.support.catalogue import held
 
@@ -84,7 +90,8 @@ def test_an_agreed_id_is_given_for_its_content() -> None:
         stored(PAYLOAD),
         ENTRY,
         AgreedIds({HASH: AgreedId("agreed", "a")}),
-        held(stored(PAYLOAD)),
+        # The catalogue holds that content under the agreed ID, as validate-payloads requires.
+        HeldVersions.of([PayloadReference("agreed", "1.0.0", HASH)]),
     )
 
     assert result.metadata is not None

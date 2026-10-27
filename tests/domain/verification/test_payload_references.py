@@ -3,6 +3,7 @@
 registry agrees for it, and one reference of ``scenario.yaml`` gives that ID with the hash."""
 
 import copy
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,7 @@ from scenario_tools.domain.verification.payload_hash import (
     payload_hash,
 )
 from scenario_tools.domain.verification.payload_references import (
+    TWO_VERSIONS,
     AgreedId,
     AgreedIds,
     HeldVersions,
@@ -42,8 +44,9 @@ ID_RULE = (
 )
 DERIVED_FORM = "an id is never a UUID v5, the form of the IDs derived from contents"
 WRONG_ID = (
-    "this ID is not the one its content has (the ID derived from its hash, or the one "
-    "policy/data/payload-ids.yaml agrees for it): a changed payload takes a new ID; " + RUN
+    "this ID is not the one its content has: the ID of the payload whose version has this "
+    "content in payloads/, or, for a content no version has, the ID derived from its hash or the "
+    "one policy/data/payload-ids.yaml agrees for it; " + RUN
 )
 
 
@@ -155,6 +158,62 @@ def test_the_registry_is_read_from_its_document() -> None:
         }
     )
     assert AgreedIds.from_document({"payloads": []}) == NONE
+
+
+def test_the_registry_lists_the_versions_that_keep_their_own_id() -> None:
+    listed = {"payload": "create-local-account", "version": "1.1.0", "sha256": "a" * 64}
+    agreed = AgreedIds.from_document({"payloads": [], "own_ids": [listed]})
+    assert agreed.keeps_own_id("create-local-account", "1.1.0", "a" * 64)
+    # Another content at that place, or another version, is not listed.
+    assert not agreed.keeps_own_id("create-local-account", "1.1.0", "b" * 64)
+    assert not agreed.keeps_own_id("create-local-account", "1.2.0", "a" * 64)
+    assert not AgreedIds.from_document({"payloads": []}).keeps_own_id("x", "1.1.0", "a" * 64)
+
+
+_EACH = "payload-ids: own_ids lists a payload, a version and a sha256, each"
+_TEXT = "payload-ids: own_ids gives a payload and a version as text"
+
+
+@pytest.mark.parametrize(
+    ("own_ids", "message"),
+    [
+        ("create-local-account", "payload-ids: own_ids must be a list"),
+        ([{"payload": "create-local-account", "version": "1.1.0"}], _EACH),
+        (
+            [
+                {
+                    "payload": "create-local-account",
+                    "version": "1.1.0",
+                    "sha256": "a" * 64,
+                    "id": "x",
+                }
+            ],
+            _EACH,
+        ),
+        ([{"payload": "", "version": "1.1.0", "sha256": "a" * 64}], _TEXT),
+        ([{"payload": "create-local-account", "version": 1, "sha256": "a" * 64}], _TEXT),
+        (
+            [{"payload": "create-local-account", "version": "1.1.0", "sha256": "A" * 64}],
+            "payload-ids: own_ids gives a sha256 of 64 lower-case digits",
+        ),
+        (
+            [{"payload": "a", "version": "1.1.0", "sha256": "a" * 64}] * 2,
+            "payload-ids: own_ids lists each version once",
+        ),
+    ],
+    ids=[
+        "not a list",
+        "no hash",
+        "another key",
+        "empty payload",
+        "version not text",
+        "bad hash",
+        "twice",
+    ],
+)
+def test_a_malformed_list_of_own_ids_is_refused(own_ids: object, message: str) -> None:
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+        AgreedIds.from_document({"payloads": [], "own_ids": own_ids})
 
 
 @pytest.mark.parametrize(
@@ -304,20 +363,18 @@ def test_an_agreed_id_on_another_content_is_refused() -> None:
     agreed_content, other = payload("a"), named(payload("a", "id"), "agreed")
     agreed = AgreedIds({digest(agreed_content): AgreedId("agreed", "a")})
 
-    assert findings(stored(other), (reference(other, "agreed"),), agreed) == [
-        ("PAY-003", JSON, FIELD.format(0), WRONG_ID)
-    ]
+    # The catalogue holds that content under the ID it has, never under the agreed one.
+    catalogue = held(stored(other), agreed)
+    found = findings(stored(other), (reference(other, "agreed"),), agreed, catalogue)
+    assert ("PAY-003", JSON, FIELD.format(0), WRONG_ID) in found
 
 
 def test_a_derived_id_for_content_the_registry_agrees_another_id_is_refused() -> None:
     item = named(payload("a"))
+    agreed = AgreedIds({digest(item): AgreedId("agreed", "a")})
 
-    assert [
-        code
-        for code, *_ in findings(
-            stored(item), (reference(item),), AgreedIds({digest(item): AgreedId("agreed", "a")})
-        )
-    ] == ["PAY-003"]
+    found = findings(stored(item), (reference(item),), agreed, held(stored(item), agreed))
+    assert "PAY-003" in [code for code, *_ in found]
 
 
 def test_a_reference_whose_hash_is_not_its_payload_s_is_refused_once() -> None:
@@ -516,6 +573,62 @@ def test_an_assigned_scenario_passes_the_check() -> None:
     )
 
     assert findings(result.stored, result.references, agreed) == []
+
+
+def test_assign_gives_a_later_version_its_payload_s_id() -> None:
+    item = payload("a")
+    later = PayloadReference("the-payload-id", "1.1.0", digest(item))
+
+    result = assign(
+        stored(item),
+        agreed=NONE,
+        catalogue=HeldVersions.of([later]),
+        files=_no_files,
+        scenario=JSON,
+    )
+
+    assert result.refusals == ()
+    assert result.references == (later,)
+    assert result.stored is not None
+    (inject,) = result.stored["scenario_injects"]
+    assert inject["inject_injector_contract"]["injector_contract_payload"][
+        "payload_external_id"
+    ] == ("the-payload-id")
+
+
+def test_assign_refuses_two_versions_of_one_payload_in_one_scenario() -> None:
+    first, second = payload("a"), payload("b", "id")
+    catalogue = HeldVersions.of(
+        [
+            PayloadReference("p", "1.0.0", digest(first)),
+            PayloadReference("p", "1.1.0", digest(second)),
+        ]
+    )
+
+    result = assign(
+        stored(first, second), agreed=NONE, catalogue=catalogue, files=_no_files, scenario=JSON
+    )
+
+    assert (result.stored, result.references) == (None, ())
+    assert [(f.code, f.field, f.message) for f in result.refusals] == [
+        ("PAY-002", PAYLOAD.format(1) + "/payload_external_id", TWO_VERSIONS)
+    ]
+
+
+def test_a_later_version_carrying_its_payload_s_id_passes_the_check() -> None:
+    item = named(payload("a"), "p")
+    later = PayloadReference("p", "1.1.0", digest(payload("a")))
+
+    assert findings(stored(item), (later,), catalogue=HeldVersions.of([later])) == []
+
+
+def test_a_later_version_carrying_the_id_of_its_content_is_refused() -> None:
+    item = named(payload("a"))  # the ID derived from its hash, not its payload's
+    later = PayloadReference("p", "1.1.0", digest(payload("a")))
+
+    found = findings(stored(item), (later,), catalogue=HeldVersions.of([later]))
+
+    assert ("PAY-003", JSON, PAYLOAD.format(0) + "/payload_external_id") in [f[:3] for f in found]
 
 
 def test_assign_writes_nothing_when_a_payload_cannot_be_hashed() -> None:

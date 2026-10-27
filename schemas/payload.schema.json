@@ -61,7 +61,7 @@
           "$ref": "#/$defs/text"
         },
         "payload_external_id": {
-          "description": "The payload ID of this version: the ID derived from its hash, or the one policy/data/payload-ids.yaml agrees for it. It is not part of the hash.",
+          "description": "The payload's ID, the same for all its versions: the ID of its first version, derived from that version's hash or agreed by policy/data/payload-ids.yaml, which also lists the versions that keep the ID their own content has. It is not part of the hash.",
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
