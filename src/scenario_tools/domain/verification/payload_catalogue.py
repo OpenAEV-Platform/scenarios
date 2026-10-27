@@ -14,7 +14,7 @@ from enum import Enum, auto
 
 from scenario_tools.domain.catalogue.intake import name_key
 from scenario_tools.domain.shared.finding import Finding, Severity
-from scenario_tools.domain.shared.payload_names import SEMVER, version_key
+from scenario_tools.domain.shared.payload_names import FIRST_VERSION, SEMVER, version_key
 from scenario_tools.domain.verification.payload_hash import UnhashablePayloadError
 from scenario_tools.domain.verification.payload_references import HeldVersions, PayloadReference
 from scenario_tools.domain.verification.payload_version import (
@@ -40,6 +40,7 @@ OUT_OF_SCHEMA = "this value is out of schemas/payload.schema.json"
 BASE_NAME_DIFFERS = "every version of a payload has the base name of its other versions"
 BASE_NAME_TAKEN = "another payload of the catalogue has this base name: give each payload its own"
 ID_TWICE = "another payload of the catalogue has this ID: an ID names one payload"
+FIRST_MISSING = "a payload starts at its version 1.0.0: this folder has none"
 ID_NOT_THE_PAYLOAD_S = (
     "a version after the first carries its payload's ID, the ID of its first version"
 )
@@ -125,10 +126,16 @@ def layout(
             where = "/".join((root, *entry.path))
             places.append(VersionPlace(entry.path[0], entry.path[1].removesuffix(".json"), where))
     held = {place.slug for place in places}
+    # The first version is the one judged by its content: the others carry its ID.
+    started = {place.slug for place in places if place.version == FIRST_VERSION}
     findings += [
-        _blocking(f"{root}/{folder}", "", FOLDER_WITHOUT_VERSION)
+        _blocking(
+            f"{root}/{folder}",
+            "",
+            FOLDER_WITHOUT_VERSION if folder not in held else FIRST_MISSING,
+        )
         for folder in folders
-        if folder not in held
+        if folder not in started
     ]
     ordered_places = sorted(places, key=lambda p: (p.slug, version_key(p.version)))
     return tuple(findings), tuple(ordered_places)

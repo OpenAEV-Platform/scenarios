@@ -615,6 +615,32 @@ def test_assign_refuses_two_versions_of_one_payload_in_one_scenario() -> None:
     ]
 
 
+def test_the_check_refuses_two_versions_of_one_payload_in_one_scenario() -> None:
+    first, second = payload("a"), payload("b", "id")
+    versions = (
+        PayloadReference("p", "1.0.0", digest(first)),
+        PayloadReference("p", "1.1.0", digest(second)),
+    )
+
+    other = PayloadReference("q", "1.0.0", digest(payload("c", "id")))
+
+    found = findings(
+        stored(named(first, "p"), named(second, "p"), named(payload("c", "id"), "q")),
+        versions[:1],
+        catalogue=HeldVersions.of([*versions, other]),
+    )
+
+    # The payloads after it are read still: the third has no reference.
+    assert [(code, field, message) for code, _, field, message in found] == [
+        ("PAY-002", PAYLOAD.format(1) + "/payload_external_id", TWO_VERSIONS),
+        (
+            "PAY-001",
+            PAYLOAD.format(2) + "/payload_external_id",
+            f"no reference of scenario.yaml names this payload: {RUN}",
+        ),
+    ]
+
+
 def test_a_later_version_carrying_its_payload_s_id_passes_the_check() -> None:
     item = named(payload("a"), "p")
     later = PayloadReference("p", "1.1.0", digest(payload("a")))

@@ -143,6 +143,16 @@ def test_the_id_the_registry_agrees_for_the_content_is_its_id() -> None:
     ]
 
 
+def test_the_registry_names_a_later_version_by_its_name_too() -> None:
+    document = {**_document(), "payload_name": "Process Discovery - ps (1.1.0)"}
+    digest = _version(document, "1.1.0").digest()
+    agreed = AgreedIds.from_document(
+        {"payloads": [{"id": "agreed-ps", "name": "Another name", "sha256": digest}]}
+    )
+    found = _findings({**document, "payload_external_id": "the-payload-s-id"}, "1.1.0", agreed)
+    assert found == [("PAY-003", "/payload_name", REGISTRY_OTHER_NAME)]
+
+
 def test_the_registry_names_a_first_version_by_its_base_name() -> None:
     digest = _version(_document()).digest()
     agreed = AgreedIds.from_document(

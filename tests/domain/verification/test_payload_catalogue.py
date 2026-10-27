@@ -15,6 +15,7 @@ from scenario_tools.domain.verification.payload_catalogue import (
     ENTRY_NOT_FOLDER,
     ENTRY_NOT_VERSION_FILE,
     ENTRY_SPECIAL,
+    FIRST_MISSING,
     FOLDER_NOT_SLUG,
     FOLDER_WITHOUT_VERSION,
     HASH_TWICE,
@@ -129,6 +130,12 @@ def test_a_payload_folder_without_a_version_is_refused() -> None:
     assert _found([*_entries(), TreeEntry(("empty",), FOLDER, 0)]) == [
         ("payloads/empty", FOLDER_WITHOUT_VERSION)
     ]
+
+
+def test_a_payload_folder_without_its_first_version_is_refused() -> None:
+    """Its lowest version would carry any ID: only a first version is judged by its content."""
+    alone = [TreeEntry(("p",), FOLDER, 0), TreeEntry(("p", "1.1.0.json"), FILE, 1)]
+    assert _found([*_entries(), *alone]) == [("payloads/p", FIRST_MISSING)]
 
 
 def test_an_entry_inside_a_folder_that_is_refused_is_neither_reported_nor_read() -> None:

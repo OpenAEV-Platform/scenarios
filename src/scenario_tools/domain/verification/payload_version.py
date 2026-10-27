@@ -160,11 +160,10 @@ def _identity(version: PayloadVersion, agreed: AgreedIds) -> list[Finding]:
         return [_blocking("PAY-009", version, "", NOT_HASHABLE)]
     # A later version carries its payload's ID, checked across the catalogue; a first version,
     # and one the registry lists, with its content, as keeping its own, carry their content's.
-    if version.version != FIRST_VERSION and not agreed.keeps_own_id(
+    own = version.version == FIRST_VERSION or agreed.keeps_own_id(
         version.slug, version.version, digest
-    ):
-        return []
-    if version.identifier != agreed.id_for(digest):
+    )
+    if own and version.identifier != agreed.id_for(digest):
         return [_blocking("PAY-003", version, f"/{_ID}", ID_NOT_ITS_CONTENT)]
     entry = agreed.by_hash.get(digest)
     if entry is not None and entry.name != version.name:  # a first version's is its base name
