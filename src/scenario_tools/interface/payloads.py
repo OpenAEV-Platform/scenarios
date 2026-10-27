@@ -57,9 +57,9 @@ from scenario_tools.ports.errors import (
 )
 @click.pass_context
 def payloads(ctx: click.Context, entry: Path, assign: bool) -> None:
-    """Check that each payload ENTRY's scenario embeds carries the ID its content has, the one
-    derived from its hash or the one policy/data/payload-ids.yaml agrees for it, and that a
-    reference of its scenario.yaml gives that ID with the payload's hash. With --assign, give
+    """Check that each payload ENTRY's scenario embeds carries its ID, the one of the payload
+    whose version in payloads/ has its content, and that a reference of its scenario.yaml gives
+    that ID with the payload's version and hash. With --assign, give
     each payload that ID and write the references; scenario.yaml is written again in the tools'
     layout, so a comment in it is not kept."""
     entry = Path(os.path.realpath(entry))
@@ -136,8 +136,9 @@ def validate_payloads_command(
     """Check DIRECTORY, the payload catalogue of a repository (its payloads/ or a copy): one
     folder per payload, named by its slug, one file per version, named by its version, and nothing
     else; each file against schemas/payload.schema.json, in the stored form, its name carrying
-    its version, its ID the one its content has (PAY-003); and no slug, base name, ID or hash
-    used twice (PAY-009). Exit with 1 if anything blocks.
+    its version, its ID its payload's, the one its first version's content has (PAY-003); and no
+    slug, base name or ID used by two payloads, nor a hash by two versions (PAY-009). Exit with 1
+    if anything blocks.
 
     The policy data and the schemas are the repository's, above DIRECTORY. No symbolic link is
     followed, and git is not read. No policy rule runs on the version files yet."""

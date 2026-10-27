@@ -1,9 +1,8 @@
 # Payload IDs agreed outside this repository, each for one payload content.
 #
-# The platform trusts a payload's ID: it does not read a payload whose ID it already holds. So a
-# payload's ID is the one derived from the hash of its content, which proves the content it names.
-# An entry here agrees another ID for one content, given by its hash: a payload the platform ships
-# as it is keeps the ID the platform knows it by. Any other content takes its derived ID. Each
+# A payload has one ID, the same for all its versions: the ID of its first version, derived from
+# the hash of that version's content. An entry here agrees another ID for one first content, given
+# by its hash: a payload the platform ships as it is keeps the ID the platform knows it by. Each
 # entry is reviewed by the maintainers: it binds an ID to a content for every scenario.
 payloads:
 - id: 78e95057-d429-4e66-8f82-0f060c1ac96f
@@ -60,3 +59,13 @@ payloads:
 - id: 4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7
   name: Process Discovery - ps
   sha256: 258d29808ec995a71b4497957550f951e54372a9c9cb63675e7053824925deff
+# Versions published before a payload kept one ID for all its versions: a published version never
+# changes, so each keeps the ID its content has. Each is listed with the hash of that content, so
+# that the exception holds for this very file and no other.
+own_ids:
+- payload: create-local-account
+  version: 1.1.0
+  sha256: a63c2755eef16540127edc9ae0e90988f8daa0873707c0c938e433f40924e251
+- payload: process-discovery-ps
+  version: 1.1.0
+  sha256: d92ac612caee2685cd00e416ebd8ba0949715c2fb0948ddc3a9b65aa1baec1bb

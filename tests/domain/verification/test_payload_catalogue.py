@@ -15,9 +15,11 @@ from scenario_tools.domain.verification.payload_catalogue import (
     ENTRY_NOT_FOLDER,
     ENTRY_NOT_VERSION_FILE,
     ENTRY_SPECIAL,
+    FIRST_MISSING,
     FOLDER_NOT_SLUG,
     FOLDER_WITHOUT_VERSION,
     HASH_TWICE,
+    ID_NOT_THE_PAYLOAD_S,
     ID_TWICE,
     OUT_OF_SCHEMA,
     OVER_SIZE,
@@ -130,6 +132,12 @@ def test_a_payload_folder_without_a_version_is_refused() -> None:
     ]
 
 
+def test_a_payload_folder_without_its_first_version_is_refused() -> None:
+    """Its lowest version would carry any ID: only a first version is judged by its content."""
+    alone = [TreeEntry(("p",), FOLDER, 0), TreeEntry(("p", "1.1.0.json"), FILE, 1)]
+    assert _found([*_entries(), *alone]) == [("payloads/p", FIRST_MISSING)]
+
+
 def test_an_entry_inside_a_folder_that_is_refused_is_neither_reported_nor_read() -> None:
     entries = [
         *_entries(),
@@ -162,11 +170,11 @@ def _version(slug: str, version: str, **changes: Any) -> PayloadVersion:
 
 
 def _variant(slug: str, version: str) -> dict[str, Any]:
-    """A version under a folder of its own: ps 1.0.0 with an ID of its own."""
+    """A version under a folder of its own: ps 1.0.0 with its payload's ID."""
     document: dict[str, Any] = json.loads(
         (TREE / "process-discovery-ps" / "1.0.0.json").read_text("utf-8")
     )
-    return {**document, "payload_external_id": f"id-{slug}-{version}"}
+    return {**document, "payload_external_id": f"id-{slug}"}
 
 
 def _tree() -> list[PayloadVersion]:
@@ -177,8 +185,10 @@ def _tree() -> list[PayloadVersion]:
     ]
 
 
-def _across(versions: list[PayloadVersion]) -> list[tuple[str, str, str]]:
-    return [(f.path, f.field, f.message) for f in catalogue_findings(versions)]
+def _across(
+    versions: list[PayloadVersion], own: frozenset[tuple[str, str, str]] = frozenset()
+) -> list[tuple[str, str, str]]:
+    return [(f.path, f.field, f.message) for f in catalogue_findings(versions, own)]
 
 
 def test_the_hand_built_versions_form_a_catalogue() -> None:
@@ -186,16 +196,22 @@ def test_the_hand_built_versions_form_a_catalogue() -> None:
     catalogue = Catalogue.of(_tree())
     ps = catalogue.by_slug["process-discovery-ps"]
     assert [version.version for version in ps] == ["1.0.0", "1.1.0"]
-    assert catalogue.by_id[ps[1].identifier] == (ps[1],)
+    assert catalogue.by_id[ps[1].identifier] == (ps[0], ps[1])
     assert catalogue.by_key[(ps[1].identifier, "1.1.0")] == ps[1]
     assert catalogue.by_hash[ps[0].digest()] == ps[0]
     assert catalogue.by_base_name["process discovery - ps"] == "process-discovery-ps"
 
 
 def test_versions_with_two_base_names_are_refused_at_the_later_one() -> None:
+    first = _tree()[0]
     versions = [
-        *_tree()[:1],
-        _version("process-discovery-ps", "1.1.0", payload_name="Other (1.1.0)"),
+        first,
+        _version(
+            "process-discovery-ps",
+            "1.1.0",
+            payload_name="Other (1.1.0)",
+            payload_external_id=first.identifier,
+        ),
     ]
     assert _across(versions) == [
         ("payloads/process-discovery-ps/1.1.0.json", "/payload_name", BASE_NAME_DIFFERS)
@@ -213,7 +229,7 @@ def test_a_base_name_two_payloads_share_is_refused_at_the_second(name: str) -> N
     ]
 
 
-def test_an_id_two_versions_share_is_refused_at_the_second() -> None:
+def test_an_id_two_payloads_share_is_refused_at_the_second() -> None:
     first = _tree()[0]
     other = _version(
         "zz-other-ps", "1.0.0", payload_name="Another", payload_external_id=first.identifier
@@ -221,6 +237,33 @@ def test_an_id_two_versions_share_is_refused_at_the_second() -> None:
     assert _across([*_tree(), other]) == [
         ("payloads/zz-other-ps/1.0.0.json", "/payload_external_id", ID_TWICE)
     ]
+
+
+def test_the_versions_of_a_payload_share_its_first_version_s_id() -> None:
+    first = _version("p", "1.0.0")
+    later = _version(
+        "p", "1.1.0", payload_name="Process Discovery - ps (1.1.0)", command_content="ps"
+    )
+    assert first.identifier == later.identifier == "id-p"
+    assert _across([first, later]) == []
+
+
+def test_a_later_version_with_another_id_is_refused() -> None:
+    first = _version("p", "1.0.0")
+    later = _version(
+        "p",
+        "1.1.0",
+        payload_name="Process Discovery - ps (1.1.0)",
+        command_content="ps",
+        payload_external_id="another-id",
+    )
+    assert _across([first, later]) == [
+        ("payloads/p/1.1.0.json", "/payload_external_id", ID_NOT_THE_PAYLOAD_S)
+    ]
+    ((code, severity),) = {(f.code, f.severity) for f in catalogue_findings([first, later])}
+    assert (code, severity) == ("PAY-003", Severity.BLOCKING)
+    # A version the registry lists as keeping its own ID is judged by its content instead.
+    assert _across([first, later], own=frozenset({("p", "1.1.0", later.digest())})) == []
 
 
 def test_a_hash_two_versions_share_is_refused_at_the_second() -> None:
@@ -276,7 +319,7 @@ def test_versions_are_in_semantic_order_not_in_text_order() -> None:
     first = _version(
         "p", "1.9.0", payload_name="Process Discovery - ps (1.9.0)", payload_external_id="a"
     )
-    later = _version("p", "1.10.0", payload_name="Other (1.10.0)", payload_external_id="b")
+    later = _version("p", "1.10.0", payload_name="Other (1.10.0)", payload_external_id="a")
     assert _across([later, first]) == [
         ("payloads/p/1.10.0.json", "/payload_name", BASE_NAME_DIFFERS)
     ]
@@ -285,9 +328,9 @@ def test_versions_are_in_semantic_order_not_in_text_order() -> None:
 def test_the_base_name_of_a_payload_is_its_first_version_s() -> None:
     versions = [
         _version("p", "1.0.0", payload_external_id="a"),
-        _version("p", "1.1.0", payload_name="Other (1.1.0)", payload_external_id="b"),
+        _version("p", "1.1.0", payload_name="Other (1.1.0)", payload_external_id="a"),
         _version(
-            "p", "1.2.0", payload_name="Process Discovery - ps (1.2.0)", payload_external_id="c"
+            "p", "1.2.0", payload_name="Process Discovery - ps (1.2.0)", payload_external_id="a"
         ),
     ]
     assert _across(versions) == [("payloads/p/1.1.0.json", "/payload_name", BASE_NAME_DIFFERS)]
@@ -296,7 +339,7 @@ def test_the_base_name_of_a_payload_is_its_first_version_s() -> None:
 def test_a_base_name_that_differs_is_compared_exactly_within_a_payload() -> None:
     versions = [
         _version("p", "1.0.0", payload_name="Foo", payload_external_id="a"),
-        _version("p", "1.1.0", payload_name="foo (1.1.0)", payload_external_id="b"),
+        _version("p", "1.1.0", payload_name="foo (1.1.0)", payload_external_id="a"),
     ]
     assert _across(versions) == [("payloads/p/1.1.0.json", "/payload_name", BASE_NAME_DIFFERS)]
 
@@ -308,7 +351,7 @@ def test_a_base_name_that_differs_and_another_payload_has_is_reported_once() -> 
             "zz-other-ps",
             "1.1.0",
             payload_name="Process Discovery - ps (1.1.0)",
-            payload_external_id="zz-b",
+            payload_external_id="id-zz-other-ps",
             command_content="ps -e",
         )
     )

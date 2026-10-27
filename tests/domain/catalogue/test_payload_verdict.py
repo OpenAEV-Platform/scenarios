@@ -355,6 +355,8 @@ def test_a_payload_based_on_a_catalogue_payload_is_its_next_minor_version() -> N
         f"payloads/{PS}/1.2.0.json",
     )
     assert version.name == "Process Discovery - ps (1.2.0)"
+    # A new version carries its payload's ID: the ID of its first version.
+    assert version.identifier == _catalogue(PS).by_slug[PS][0].identifier
     assert result.renames == {
         STEP_PAYLOAD.format(0): "Process Discovery - ps (1.2.0)",
         STEP_PAYLOAD.format(1): "Process Discovery - ps (1.2.0)",
@@ -489,7 +491,8 @@ def test_a_payload_carrying_a_catalogue_id_with_another_content_is_said_changed(
 
     assert (
         "PAY-011",
-        f"this payload carries the ID of {PS} 1.0.0 but another content: it is treated as changed",
+        f"this payload carries the ID of {PS} but the content of none of its versions: it is "
+        "treated as changed",
     ) in _codes_of(result)
 
 

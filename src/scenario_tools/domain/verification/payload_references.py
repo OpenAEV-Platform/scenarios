@@ -1,11 +1,12 @@
-"""The payload references of an entry. The platform trusts a payload's ID: an imported payload
-whose ``payload_external_id`` it already holds is not read. So each payload a scenario embeds
-carries the ID its content has: the one derived from its hash, a UUID v5, unless the reviewed
-registry ``policy/data/payload-ids.yaml`` agrees another ID for that very hash. The ID thereby
-proves the content: it cannot be taken from another payload, nor kept by a changed one, and one
-ID names one content in every entry. One reference of ``scenario.yaml`` gives the ID with the
-hash and the version of the file of ``payloads/`` that holds that content, which the references
-are checked against."""
+"""The payload references of an entry. A payload has one ID, the same for all its versions, and
+the platform tells its versions apart by the ID and the version. So each payload a scenario
+embeds carries the ID its content has: the ID of the payload whose version file of ``payloads/``
+holds that content, or, for a content no file holds, the one derived from its hash, a UUID v5,
+unless the reviewed registry ``policy/data/payload-ids.yaml`` agrees another ID for that very
+hash. The ID cannot be taken from another payload, nor kept by a content of no version of its
+own. One reference of ``scenario.yaml`` gives the ID with the hash and the version of the file
+that holds that content, which the references are checked against, and a scenario embeds one
+version of a payload."""
 
 import copy
 import re
@@ -29,6 +30,10 @@ _RUN = "run `scenario-tools payloads --assign`"
 _ID = re.compile(r"[a-z0-9][a-z0-9:._-]{0,127}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ENTRY_KEYS = frozenset({"id", "name", "sha256"})
+TWO_VERSIONS = (
+    "another payload of the scenario is another version of this payload: a scenario embeds one "
+    "version of a payload"
+)
 
 
 def derived_id(digest: str) -> str:
@@ -46,18 +51,22 @@ class AgreedId:
 
 @dataclass(frozen=True)
 class AgreedIds:
-    """The IDs the reviewed registry agrees, each for one content, by its hash. An agreed ID is
-    never a UUID v5, so that it can never be the ID derived from another content."""
+    """The IDs the reviewed registry agrees, each for one content, by its hash, and the versions
+    published before a payload kept one ID for all its versions, which keep the ID their content
+    has. An agreed ID is never a UUID v5, so that it can never be the ID derived from another
+    content."""
 
     by_hash: Mapping[str, AgreedId]
+    own: frozenset[tuple[str, str, str]] = frozenset()
 
     @classmethod
     def from_document(cls, document: object) -> "AgreedIds":
         """Read the payload-ids data document: entries of an ID, a name and a hash, each ID and
-        each hash once, so that one content has one ID."""
+        each hash once, so that one content has one ID; and, under ``own_ids``, the payload,
+        version and content hash of each version that keeps its own ID, each once."""
         if not isinstance(document, Mapping) or not isinstance(document.get("payloads"), list):
             raise ValueError("payload-ids: the document must be a mapping holding payloads")
-        unknown = sorted(str(key) for key in document if key != "payloads")
+        unknown = sorted(str(key) for key in document if key not in {"payloads", "own_ids"})
         if unknown:
             raise ValueError(f"payload-ids: unknown keys {', '.join(unknown)}")
         by_hash: dict[str, AgreedId] = {}
@@ -70,12 +79,35 @@ class AgreedIds:
                 raise ValueError("payload-ids: each sha256 once: one content has one ID")
             ids.add(agreed.id)
             by_hash[digest] = agreed
-        return cls(by_hash)
+        return cls(by_hash, _own_ids(document.get("own_ids", [])))
+
+    def keeps_own_id(self, payload: str, version: str, digest: str) -> bool:
+        """Whether the ``version`` of ``payload``, of content hash ``digest``, keeps the ID its
+        content has, rather than its payload's: listed with this very content."""
+        return (payload, version, digest) in self.own
 
     def id_for(self, digest: str) -> str:
         """The ID of the content whose hash is ``digest``."""
         agreed = self.by_hash.get(digest)
         return agreed.id if agreed is not None else derived_id(digest)
+
+
+def _own_ids(listed: object) -> frozenset[tuple[str, str, str]]:
+    if not isinstance(listed, list):
+        raise ValueError("payload-ids: own_ids must be a list")
+    own: set[tuple[str, str, str]] = set()
+    for entry in listed:
+        if not isinstance(entry, Mapping) or set(entry) != {"payload", "version", "sha256"}:
+            raise ValueError("payload-ids: own_ids lists a payload, a version and a sha256, each")
+        payload, version, digest = entry["payload"], entry["version"], entry["sha256"]
+        if not isinstance(payload, str) or not payload or not isinstance(version, str):
+            raise ValueError("payload-ids: own_ids gives a payload and a version as text")
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+            raise ValueError("payload-ids: own_ids gives a sha256 of 64 lower-case digits")
+        if (payload, version, digest) in own:
+            raise ValueError("payload-ids: own_ids lists each version once")
+        own.add((payload, version, digest))
+    return frozenset(own)
 
 
 def _is_derived_form(identifier: str) -> bool:
@@ -208,6 +240,13 @@ def _hashed(
     return hashed, refused, carried
 
 
+def _expected_id(digest: str, agreed: AgreedIds, catalogue: HeldVersions) -> str:
+    """The ID a payload of hash ``digest`` carries: its payload's, from the version of the
+    catalogue that has this content; the ID of its content for a content no version has."""
+    held = catalogue.by_hash.get(digest)
+    return held.id if held is not None else agreed.id_for(digest)
+
+
 def _unnamed(scenario: str, field: str) -> Finding:
     return _blocking(
         "PAY-001", scenario, field, f"no reference of scenario.yaml names this payload: {_RUN}"
@@ -298,27 +337,33 @@ def reference_findings(
         by_id[reference.id] = (index, reference)
         findings.extend(_held(reference, index, catalogue, metadata))
     stale: set[int] = set()
+    contents: dict[str, str] = {}  # the content of each ID the scenario's payloads carry
     for item in hashed:
         identifier = item.payload.get(_EXTERNAL_ID)
         field = f"{item.embedded.pointer}/{_EXTERNAL_ID}"
-        used.add(agreed.id_for(item.digest))  # its own reference names it, whatever it carries
+        expected = _expected_id(item.digest, agreed, catalogue)
+        used.add(expected)  # its own reference names it, whatever it carries
         if item.digest not in catalogue.by_hash:
             findings.append(_blocking("PAY-008", scenario, field, _NOT_IN_CATALOGUE))
         if not isinstance(identifier, str):
             findings.append(_unnamed(scenario, field))
             continue
         used.add(identifier)
-        if identifier != agreed.id_for(item.digest):
+        if identifier != expected:
             findings.append(
                 _blocking(
                     "PAY-003",
                     scenario,
                     field,
-                    "this ID is not the one its content has (the ID derived from its hash, or "
-                    "the one policy/data/payload-ids.yaml agrees for it): a changed payload "
-                    f"takes a new ID; {_RUN}",
+                    "this ID is not the one its content has: the ID of the payload whose version "
+                    "has this content in payloads/, or, for a content no version has, the ID "
+                    "derived from its hash or the one policy/data/payload-ids.yaml agrees for "
+                    f"it; {_RUN}",
                 )
             )
+            continue
+        if contents.setdefault(identifier, item.digest) != item.digest:
+            findings.append(_blocking("PAY-002", scenario, field, TWO_VERSIONS))
             continue
         if identifier not in by_id:
             findings.append(_unnamed(scenario, field))
@@ -370,9 +415,13 @@ def assign(
         return Assignment(None, (), tuple(refused))
     given: dict[str, str] = {}
     for item in hashed:
-        identifier = agreed.id_for(item.digest)
+        identifier = catalogue.by_hash[item.digest].id
+        if given.setdefault(identifier, item.digest) != item.digest:
+            field = f"{item.embedded.pointer}/{_EXTERNAL_ID}"
+            refused.append(_blocking("PAY-002", scenario, field, TWO_VERSIONS))
         item.payload[_EXTERNAL_ID] = identifier
-        given[identifier] = item.digest
+    if refused:
+        return Assignment(None, (), tuple(refused))
     references = tuple(
         PayloadReference(identifier, catalogue.by_hash[digest].version, digest)
         for identifier, digest in sorted(given.items())

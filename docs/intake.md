@@ -83,11 +83,13 @@ A new entry starts its `CHANGELOG.md` with the section of its version and the da
 `## 1.0.0 — <YYYY-MM-DD>`, to complete before the pull request, and gets its sheet, `README.md`,
 which `scenario-tools render` writes from `scenario.yaml` and `scenario.json`.
 
-Intake gives each payload the scenario embeds the ID its content has, written in the payload's
-`payload_external_id` and in a reference of `scenario.yaml` with its hash, as
-`scenario-tools payloads --assign` does. The ID is derived from the hash of the payload's content,
-unless `policy/data/payload-ids.yaml` agrees another ID for that very content: an unchanged
-payload keeps its ID, a changed one takes a new one.
+Intake gives each payload the scenario embeds its ID, written in the payload's
+`payload_external_id` and in a reference of `scenario.yaml` with its version and its hash, as
+`scenario-tools payloads --assign` does. A payload a version file of the catalogue holds takes
+that payload's ID, the same for all its versions. Any other content is a new payload: its ID is
+derived from the hash of its content, unless `policy/data/payload-ids.yaml` agrees another ID for
+that very content. A scenario embeds one version of a payload: two would carry one ID
+(`PAY-002`).
 
 Each payload is also looked up in the payload catalogue, `payloads/`, by its hash, and intake
 says what it found (`PAY-010`): `already there: <payload> <version>` when a version file has that
@@ -106,7 +108,7 @@ name: `based_on.payload` is the catalogue payload's slug, `based_on.version` the
 (the latest when absent), and `version` the number wanted (the next minor version of the
 highest when absent; it must be higher). Intake writes the copy as that payload's new version,
 `payloads/<payload>/<version>.json`, named `<base name> (<version>)` in the version file and in
-the stored scenario, with the ID its content has (`PAY-010`, `new version: ...`), and the plan's
+the stored scenario, with that payload's ID (`PAY-010`, `new version: ...`), and the plan's
 body lists the fields that differ from the version it is based on, never a value. The copy
 takes its name in the export before it is normalised, so what normalisation derives from a
 payload's name follows it; an undescribed copy keeps its first name as its description. Run again on

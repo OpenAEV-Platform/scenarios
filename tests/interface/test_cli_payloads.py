@@ -128,17 +128,9 @@ def test_assign_gives_the_id_the_registry_agrees_for_a_content(tmp_path: Path) -
         f"payloads:\n  - id: {AGREED}\n    name: '{CROWDOOR}'\n    sha256: {digest}\n"
     )
 
-    code, document = _run("payloads", str(entry))  # the derived ID is no longer its content's
-
-    assert code == 1
-    assert [(f["code"], f["message"]) for f in document["findings"]] == [
-        (
-            "PAY-003",
-            "this ID is not the one its content has (the ID derived from its hash, or the one "
-            "policy/data/payload-ids.yaml agrees for it): a changed payload takes a new ID; run "
-            "`scenario-tools payloads --assign`",
-        )
-    ]
+    # The scenario follows the catalogue: its version file, now at fault, is the one
+    # validate-payloads refuses (tests/domain/verification/test_payload_version.py).
+    assert _run("payloads", str(entry))[0] == 0
 
     # The version file takes the agreed ID too (validate-payloads says so), then the references.
     write_catalogue(tmp_path, json.loads((entry / "scenario.json").read_bytes()))

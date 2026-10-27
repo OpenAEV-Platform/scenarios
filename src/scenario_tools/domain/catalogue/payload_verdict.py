@@ -224,8 +224,8 @@ TWO_CONTENTS = "this claim names payloads with different contents: give each cop
 CLAIM_IGNORED = "this payload is already in the catalogue: the claim is ignored"
 STALE_BASE = "based on {payload} {version}, whereas the latest version is {payload} {latest}"
 CARRIED_ID = (
-    "this payload carries the ID of {payload} {version} but another content: it is treated as "
-    "changed"
+    "this payload carries the ID of {payload} but the content of none of its versions: it is "
+    "treated as changed"
 )
 _REQUEST = "request.yaml"
 _HASHED_OUT = frozenset({"payload_name", "payload_external_id"})
@@ -352,9 +352,8 @@ class _Pass:
         renamed = {**payload, "payload_name": name}
         new_digest = payload_hash(renamed, embedded.attack_patterns, _ATTACHED.get).hex
         domains = contract_domains(self.contracts[embedded.contract])
-        document = version_document(
-            renamed, embedded.attack_patterns, self.agreed.id_for(new_digest), domains
-        )
+        # A new version carries its payload's ID, the ID of its first version.
+        document = version_document(renamed, embedded.attack_patterns, held[0].identifier, domains)
         version = PayloadVersion(slug, number, f"payloads/{slug}/{number}.json", document)
         if not self.kept(version, new_digest, pointer):
             return
@@ -470,7 +469,7 @@ def _judge(
         return  # the reference checks say why
     carried = catalogue.by_id.get(str(payload.get("payload_external_id")), ())
     if carried and all(version.digest() != digest for version in carried):
-        message = CARRIED_ID.format(payload=carried[-1].slug, version=carried[-1].version)
+        message = CARRIED_ID.format(payload=carried[-1].slug)
         run.hint(embedded.pointer, message)
     based = claim if claim is not None and claim[0].based_on is not None else None
     held = catalogue.by_hash.get(digest)
