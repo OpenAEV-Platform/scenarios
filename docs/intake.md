@@ -106,7 +106,9 @@ A payload copied from a catalogue payload on the platform and changed there keep
 name, which the catalogue already holds. The request then says so in `payloads`, by the copy's
 name: `based_on.payload` is the catalogue payload's slug, `based_on.version` the version copied
 (the latest when absent), and `version` the number wanted (the next minor version of the
-highest when absent; it must be higher). Intake writes the copy as that payload's new version,
+highest when absent; it must be higher). A scenario embeds one version of a payload, so the
+claims of one export give a payload one version: a second, held or new, is refused
+(`ITK-009`) before any file is written. Intake writes the copy as that payload's new version,
 `payloads/<payload>/<version>.json`, named `<base name> (<version>)` in the version file and in
 the stored scenario, with that payload's ID (`PAY-010`, `new version: ...`), and the plan's
 body lists the fields that differ from the version it is based on, never a value. The copy
@@ -144,7 +146,7 @@ Nothing is written when the request is refused:
 | `ITK-006` | an update with another scenario name, without `rewrite: true` |
 | `ITK-007` | `threat` or `sources` that make `scenario.yaml` break its schema |
 | `ITK-008` | an entry of the catalogue, or a domain, that is a link, a hidden name a cut run left (`.scenario-tools-<hex>`) or a name a finding cannot show (a backslash, a drive), an entry holding such a name, or an entry whose `scenario.yaml` cannot be read or is not a mapping: what it holds is unknown, so is what is taken, and every request is refused until it is fixed |
-| `ITK-009` | a claim of `payloads` that names no embedded payload or one already claimed, whose `based_on` names no catalogue payload or version, or whose `version` is not higher than the payload's highest or is asked twice, or that names two contents |
+| `ITK-009` | a claim of `payloads` that names no embedded payload or one already claimed, whose `based_on` names no catalogue payload or version, or whose `version` is not higher than the payload's highest, that gives a payload a second version in the export, or that names two contents |
 | `ITK-010` | an export without a severity, category or main focus that the request does not give, or a request that gives another one than the export |
 
 The export is also refused as `normalize` refuses it.

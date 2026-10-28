@@ -11,10 +11,10 @@ import pytest
 from scenario_tools.domain.catalogue.payload_verdict import (
     BASE_NAME_TAKEN,
     CLAIM_NAMES_NOTHING,
-    GIVEN_TWICE,
     NO_SLUG,
     NOT_HIGHER,
     NOT_KEPT,
+    ONE_VERSION,
     OUT_OF_SCHEMA,
     OVER_SIZE,
     SUFFIXED,
@@ -660,40 +660,43 @@ def _two_copies(first: str, second: str) -> dict[str, Any]:
     return stored
 
 
-def test_versions_asked_for_are_taken_whatever_order_the_copies_come_in() -> None:
-    claims = (Claim("B", PS, version="1.3.0"), Claim("A", PS, version="1.2.0"))
+@pytest.mark.parametrize(
+    "versions",
+    [("1.3.0", "1.2.0"), ("1.2.0", "1.2.0"), (None, None), ("1.3.0", None)],
+    ids=["asked-for", "asked-twice", "automatic", "one-automatic"],
+)
+def test_two_new_versions_of_one_payload_in_one_export_are_refused(
+    versions: tuple[str | None, str | None],
+) -> None:
+    """A scenario embeds one version of a payload: a second one is refused at its claim, before
+    any file is numbered or written for it."""
+    claims = (Claim("B", PS, version=versions[0]), Claim("A", PS, version=versions[1]))
 
-    result = _claimed(_two_copies("B", "A"), *claims)  # the higher one met first
+    result = _claimed(_two_copies("B", "A"), *claims)
 
-    assert sorted(v.version for v in result.versions.values()) == ["1.2.0", "1.3.0"]
-    assert all(f.code == "PAY-010" for f in result.findings)
+    assert ("ITK-009", ONE_VERSION.format(payload=PS)) in _codes_of(result)
+    assert len(result.versions) == 1
 
 
-def test_a_version_asked_for_twice_in_one_export_is_refused() -> None:
-    claims = (Claim("A", PS, version="1.2.0"), Claim("B", PS, version="1.2.0"))
+@pytest.mark.parametrize("held_first", [True, False])
+def test_a_catalogue_version_and_a_new_version_of_one_payload_in_one_export_are_refused(
+    held_first: bool,
+) -> None:
+    stored = _as_version("1.1.0", "Process Discovery - ps")
+    edited = _payloads(stored)[1 if held_first else 0]
+    edited.update(payload_name="Edited", command_content="ps -ef")
+    claims = (Claim("Process Discovery - ps", PS), Claim("Edited", PS))
 
-    result = _claimed(_two_copies("A", "B"), *claims)
+    result = _claimed(stored, *claims)
 
-    assert ("ITK-009", GIVEN_TWICE) in _codes_of(result)
+    assert ("ITK-009", ONE_VERSION.format(payload=PS)) in _codes_of(result)
+    assert len(result.versions) == (0 if held_first else 1)  # the first claim met stands
 
 
 def test_a_claim_naming_two_contents_is_refused() -> None:
     result = _claimed(_two_copies("A", "A"), Claim("A", PS))
 
     assert ("ITK-009", TWO_CONTENTS) in _codes_of(result)
-
-
-def test_a_version_given_automatically_follows_the_highest_asked_for_before_it() -> None:
-    stored = _two_copies("A", "B")
-    steps = stored["scenario_workflow"]["workflow_steps"]
-    steps.append(copy.deepcopy(steps[0]))
-    third = steps[2]["step_data"]["inject_injector_contract"]["injector_contract_payload"]
-    third.update(payload_name="C", command_content="ps -eo pid")
-    claims = (Claim("A", PS, version="1.3.0"), Claim("B", PS, version="1.2.0"), Claim("C", PS))
-
-    result = _claimed(stored, *claims)
-
-    assert sorted(v.version for v in result.versions.values()) == ["1.2.0", "1.3.0", "1.4.0"]
 
 
 def test_a_claim_s_findings_point_at_its_place_in_the_request() -> None:
