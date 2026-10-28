@@ -290,7 +290,7 @@
     },
     {
       "name": "payload-two-contents",
-      "description": "One payload ID listed with two contents by two scenarios of the release.",
+      "description": "One payload version listed with two contents by two scenarios of the release.",
       "approved": false,
       "accepted": false,
       "findings": [
@@ -305,6 +305,13 @@
     {
       "name": "catalogue-accepted",
       "description": "A release whose payload catalogue lists a version used by a time-based scenario and a step of a scenario in chaining, and a version no scenario uses.",
+      "approved": false,
+      "accepted": true,
+      "findings": []
+    },
+    {
+      "name": "catalogue-versions-accepted",
+      "description": "A release whose payload catalogue lists two versions of one payload under its ID, each used by a scenario.",
       "approved": false,
       "accepted": true,
       "findings": []
@@ -394,8 +401,8 @@
       ]
     },
     {
-      "name": "payload-id-two-versions",
-      "description": "One payload ID listed with two versions.",
+      "name": "payload-content-two-versions",
+      "description": "One payload content listed at two versions.",
       "approved": false,
       "accepted": false,
       "findings": [
@@ -423,7 +430,7 @@
     },
     {
       "name": "payload-id-two-files",
-      "description": "One payload ID listed at one version and hash with two files.",
+      "description": "One payload ID listed with two payloads, at one version and hash.",
       "approved": false,
       "accepted": false,
       "findings": [

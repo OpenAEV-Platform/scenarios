@@ -37,7 +37,8 @@ the head of the default branch, whose changes were reviewed. Who starts it appro
    consumers will: each archive against the manifest, by its size and its SHA-256; safe extraction,
    and nothing in an archive, or in its scenario's parts, but what `build` writes; each payload an
    archive embeds, inside an inject's contract and listed with the canonical hash its content has;
-   one version and one hash for each payload ID across the release; each payload file against
+   one hash for each payload ID at each version across the release, the versions of a payload
+   sharing its ID; each payload file against
    the manifest, by its bytes, its content hash and its ID, and every reference of a scenario to
    a listed version; and nothing beside the archives and payload files, but the manifest
    verified, that the manifest does not list. `--archives` gives another

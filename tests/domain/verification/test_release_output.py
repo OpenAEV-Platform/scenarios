@@ -355,22 +355,37 @@ def _using(*payloads: tuple[str, str, str]) -> dict[str, Any]:
     return {"payloads": [{"id": i, "version": v, "sha256": sha} for i, v, sha in payloads]}
 
 
+def test_a_scenario_listing_two_versions_of_one_payload_is_refused() -> None:
+    item = _item(**{PAYLOAD_ID: VECTOR["sha256"]})
+    item["payloads"].append({"id": PAYLOAD_ID, "version": "1.1.0", "sha256": "f" * 64})
+
+    findings = payload_content_findings(item, _stored(PAYLOAD), _no_files)
+
+    assert _codes(findings) == [
+        ("VRF-008", NAME, "", f"the manifest lists the payload {PAYLOAD_ID} twice")
+    ]
+
+
 def test_a_payload_several_scenarios_share_with_one_version_and_one_hash_is_accepted() -> None:
     one = ("shared", "1.0.0", "a" * 64)
 
     assert shared_payload_findings([_using(one), _using(("other", "1.0.0", "b" * 64), one)]) == ()
 
 
-@pytest.mark.parametrize(
-    "other", [("shared", "1.0.0", "b" * 64), ("shared", "1.1.0", "a" * 64)], ids=["hash", "version"]
-)
-def test_a_payload_listed_with_another_version_or_hash_by_another_scenario_is_refused(
-    other: tuple[str, str, str],
-) -> None:
+def test_two_versions_of_one_payload_used_by_two_scenarios_are_accepted() -> None:
+    """A payload keeps its ID across its versions: a scenario may embed one, another the next."""
+    items = [_using(("shared", "1.0.0", "a" * 64)), _using(("shared", "1.1.0", "b" * 64))]
+
+    assert shared_payload_findings(items) == ()
+
+
+def test_a_payload_version_listed_with_another_hash_by_another_scenario_is_refused() -> None:
+    other = ("shared", "1.0.0", "b" * 64)
     items = [
         _using(("shared", "1.0.0", "a" * 64)),
         _using(("x", "1.0.0", "c" * 64), other),
         _using(other),
+        _using(("shared", "1.1.0", "b" * 64)),
     ]
 
     assert _codes(shared_payload_findings(items)) == [
@@ -378,8 +393,8 @@ def test_a_payload_listed_with_another_version_or_hash_by_another_scenario_is_re
             "VRF-008",
             "manifest.json",
             f"/items/{index}/payloads/{position}",
-            "the payload shared is listed with another version or hash than in /items/0: a "
-            "platform holding this payload by its ID would not read the other content",
+            "the payload shared 1.0.0 is listed with another hash than in /items/0: a platform "
+            "holding this version by its ID and version would not read the other content",
         )
         for index, position in ((1, 1), (2, 0))
     ]
@@ -391,7 +406,7 @@ def test_a_payload_one_item_lists_twice_with_two_hashes_is_refused_as_two_conten
     (finding,) = shared_payload_findings(items)
 
     assert finding.field == "/items/0/payloads/1"
-    assert finding.message.startswith("the payload shared is listed with another version or hash")
+    assert finding.message.startswith("the payload shared 1.0.0 is listed with another hash")
 
 
 def test_the_id_of_a_payload_is_outside_its_hash() -> None:
@@ -489,19 +504,27 @@ def test_a_payload_file_that_is_no_json_is_refused() -> None:
     ]
 
 
-def test_a_payload_version_or_an_id_listed_twice_and_a_misnamed_file_are_refused() -> None:
-    later = _entry(version="1.1.0", file={"name": "process-discovery-ps-1.1.0.json"})
-    renamed = _entry(
-        payload="other", openaev_id="other-id", sha256="c" * 64, file={"name": PS_FILE}
+def test_versions_of_one_payload_under_its_id_are_accepted() -> None:
+    later = _entry(
+        version="1.1.0", sha256="c" * 64, file={"name": "process-discovery-ps-1.1.0.json"}
     )
 
-    assert _codes(payload_list_findings([_entry(), later, _entry(), renamed])) == [
+    assert payload_list_findings([_entry(), later]) == ()
+
+
+def test_a_payload_version_or_an_id_listed_twice_and_a_misnamed_file_are_refused() -> None:
+    rehashed = _entry(sha256="c" * 64)
+    renamed = _entry(
+        payload="other", openaev_id="other-id", sha256="d" * 64, file={"name": PS_FILE}
+    )
+
+    assert _codes(payload_list_findings([_entry(), rehashed, _entry(), renamed])) == [
         (
             "VRF-008",
             MANIFEST,
             "/payloads/1",
-            f"the payload ID {PS.identifier} is listed with another payload, version, hash "
-            "or file than in /payloads/0",
+            f"the payload ID {PS.identifier} is listed at 1.0.0 with another hash than in "
+            "/payloads/0",
         ),
         ("VRF-008", MANIFEST, "/payloads/2", "process-discovery-ps 1.0.0 is listed twice"),
         (
@@ -510,6 +533,40 @@ def test_a_payload_version_or_an_id_listed_twice_and_a_misnamed_file_are_refused
             "/payloads/3/file/name",
             "the file of other 1.0.0 is named process-discovery-ps-1.0.0.json",
         ),
+    ]
+
+
+def test_one_payload_under_two_ids_is_accepted() -> None:
+    """Earlier versions keep the ID of their own content."""
+    later = _entry(
+        version="1.1.0",
+        sha256="c" * 64,
+        openaev_id="its-own-id",
+        file={"name": "process-discovery-ps-1.1.0.json"},
+    )
+
+    assert payload_list_findings([_entry(), later]) == ()
+
+
+def test_a_version_refused_is_not_what_a_later_one_is_compared_with() -> None:
+    rehashed = _entry(sha256="c" * 64)
+    later = _entry(
+        version="1.1.0", sha256="c" * 64, file={"name": "process-discovery-ps-1.1.0.json"}
+    )
+
+    assert [f.field for f in payload_list_findings([_entry(), rehashed, later])] == ["/payloads/1"]
+
+
+def test_one_content_listed_at_two_versions_is_refused() -> None:
+    later = _entry(version="1.1.0", file={"name": "process-discovery-ps-1.1.0.json"})
+
+    assert _codes(payload_list_findings([_entry(), later])) == [
+        (
+            "VRF-008",
+            MANIFEST,
+            "/payloads/1",
+            "this content is listed at another version in /payloads/0",
+        )
     ]
 
 
@@ -549,8 +606,7 @@ def test_one_content_under_two_ids_or_one_id_with_two_files_is_refused() -> None
             "VRF-008",
             MANIFEST,
             "/payloads/2",
-            f"the payload ID {PS.identifier} is listed with another payload, version, hash "
-            "or file than in /payloads/0",
+            f"the payload ID {PS.identifier} is listed with another payload than in /payloads/0",
         ),
     ]
 

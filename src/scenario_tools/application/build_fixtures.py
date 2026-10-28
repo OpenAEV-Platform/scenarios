@@ -70,13 +70,14 @@ class FixtureBuilder:
         external_id: str,
         scenario: Mapping[str, Any] | None = None,
         payloads: Sequence[Mapping[str, Any]] | None = None,
+        payload_version: str = "1.0.0",
     ) -> tuple[dict[str, Any], bytes]:
         """An item and its archive: by default, the scenario embedding the fixture payload,
-        listed."""
+        listed at ``payload_version``."""
         held = scenario if scenario is not None else fixture_scenario(external_id, self._payload)
         archive = self._built(held)
         listed = payloads if payloads is not None else [self._payload]
-        return fixture_item(external_id, archive, listed), archive
+        return fixture_item(external_id, archive, listed, payload_version), archive
 
     def _holding(self, archive: bytes) -> dict[str, bytes]:
         """The release of one item whose archive, listed as it is, is ``archive``."""
@@ -266,7 +267,7 @@ class FixtureBuilder:
             ),
             make_fixture(
                 "payload-two-contents",
-                "One payload ID listed with two contents by two scenarios of the release.",
+                "One payload version listed with two contents by two scenarios of the release.",
                 fixture_release(
                     [
                         (self._item, self._archive),
@@ -291,6 +292,7 @@ class FixtureBuilder:
         misnamed = copy.deepcopy(entry)
         misnamed["file"]["name"] = "fixture-command-2.0.0.json"
         later, later_data = fixture_version(payload, "1.1.0")
+        next_version, next_data = fixture_version(changed, "1.1.0")  # its ID, another content
         copied, copied_data = fixture_version(
             {**payload, "payload_external_id": "copied"}, slug="copied"
         )
@@ -307,6 +309,23 @@ class FixtureBuilder:
                 fixture_release(
                     [(self._item, self._archive), self._chained_entry()],
                     [(entry, data), (unused, unused_data)],
+                ),
+            ),
+            make_fixture(
+                "catalogue-versions-accepted",
+                "A release whose payload catalogue lists two versions of one payload under its "
+                "ID, each used by a scenario.",
+                fixture_release(
+                    [
+                        (self._item, self._archive),
+                        self._entry(
+                            SECOND,
+                            fixture_scenario(SECOND, changed),
+                            payloads=[changed],
+                            payload_version="1.1.0",
+                        ),
+                    ],
+                    [(entry, data), (next_version, next_data)],
                 ),
             ),
             make_fixture(
@@ -346,8 +365,8 @@ class FixtureBuilder:
                 ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
             ),
             make_fixture(
-                "payload-id-two-versions",
-                "One payload ID listed with two versions.",
+                "payload-content-two-versions",
+                "One payload content listed at two versions.",
                 fixture_release(listed, [(entry, data), (later, later_data)]),
                 ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
             ),
@@ -359,7 +378,7 @@ class FixtureBuilder:
             ),
             make_fixture(
                 "payload-id-two-files",
-                "One payload ID listed at one version and hash with two files.",
+                "One payload ID listed with two payloads, at one version and hash.",
                 fixture_release(listed, [(again, again_data), (entry, data)]),
                 ExpectedFinding("VRF-008", MANIFEST, "/payloads/1"),
             ),

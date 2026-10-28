@@ -55,7 +55,7 @@ def verify_release(
     included, is ``VRF-006``. ``payload_of`` gives a payload file's bytes by its name, or nothing
     when it is missing, and ``read_payload`` reads them as JSON, ``ValueError`` when it cannot. A
     manifest with a finding of its own (its schema, its approver), listing a scenario twice, a
-    payload with two contents, a payload version twice, or a reference to a version it does not
+    payload version with two contents or twice, or a reference to a version it does not
     list, is reported alone: no archive or payload file is read."""
     mapping = document if isinstance(document, Mapping) else {}
     manifest = manifest_findings(validate(document), mapping, approved=approved)

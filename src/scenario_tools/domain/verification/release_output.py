@@ -2,8 +2,9 @@
 meets its schema, each archive is the one the manifest lists, by its size and its SHA-256, and
 holds a scenario with only the parts of a stored scenario, each payload of which sits inside an
 inject's contract and is listed by its ID with the canonical hash its content has; and one payload
-ID names one version and one hash across the release. What ``build`` checks on the commit it
-builds, the scenario's facts, its normalised form and the policy, is not checked again here."""
+ID at one version names one hash across the release, the versions of a payload sharing its ID.
+What ``build`` checks on the commit it builds, the scenario's facts, its normalised form and the
+policy, is not checked again here."""
 
 import hashlib
 from collections.abc import Callable, Iterable, Mapping
@@ -67,21 +68,22 @@ def item_findings(items: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
 
 
 def shared_payload_findings(items: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
-    """``VRF-008`` for each payload an item lists with another version or hash than the first
-    item listing it, that item included: a platform that holds a payload by its ID does not read
-    it again, so one ID names one content across the release."""
+    """``VRF-008`` for each payload version an item lists with another hash than the first item
+    listing it, that item included: a platform that holds a payload version by its ID and its
+    version does not read it again, so one ID at one version names one content across the
+    release. Two versions of one payload share its ID."""
     findings = []
-    first: dict[str, tuple[int, tuple[str, str]]] = {}
+    first: dict[tuple[str, str], tuple[int, str]] = {}
     for index, item in enumerate(items):
         for position, payload in enumerate(item["payloads"]):
-            payload_id = str(payload["id"])
-            listed = (str(payload["version"]), str(payload["sha256"]))
-            at, known = first.setdefault(payload_id, (index, listed))
-            if known != listed:
+            payload_id, version = str(payload["id"]), str(payload["version"])
+            sha256 = str(payload["sha256"])
+            at, known = first.setdefault((payload_id, version), (index, sha256))
+            if known != sha256:
                 message = (
-                    f"the payload {payload_id} is listed with another version or hash than in "
-                    f"/items/{at}: a platform holding this payload by its ID would not read the "
-                    "other content"
+                    f"the payload {payload_id} {version} is listed with another hash than in "
+                    f"/items/{at}: a platform holding this version by its ID and version would "
+                    "not read the other content"
                 )
                 field = f"/items/{index}/payloads/{position}"
                 findings.append(_refused("VRF-008", MANIFEST, field, message))
@@ -160,33 +162,45 @@ def payload_content_findings(
 
 def payload_list_findings(payloads: Iterable[Mapping[str, Any]]) -> tuple[Finding, ...]:
     """``VRF-008`` for each payload version of the manifest's list whose ID is listed before
-    with another payload, version, hash or file, whose content is listed before under another
-    ID, or
-    which is listed before itself: one ID names one version file, and one content one ID.
+    with another payload, or at its version with another hash, whose content is listed before
+    under another ID or at another version, or which is listed before itself: an ID names one
+    payload, an ID and a version one content, and one content one version. A payload may be
+    listed under two IDs: earlier versions keep the ID of their own content.
     ``VRF-006`` for a version whose file is not named ``<payload>-<version>.json``."""
     findings = []
     seen: set[tuple[str, str]] = set()
-    by_id: dict[str, tuple[int, tuple[str, str, str]]] = {}
-    by_hash: dict[str, tuple[int, str]] = {}
+    by_id: dict[str, tuple[int, str]] = {}
+    by_version: dict[tuple[str, str], tuple[int, str]] = {}
+    by_hash: dict[str, tuple[int, tuple[str, str]]] = {}
     for index, entry in enumerate(payloads):
         payload, version = str(entry["payload"]), str(entry["version"])
         identifier, sha256 = str(entry["openaev_id"]), str(entry["sha256"])
-        listed = (payload, version, sha256)  # its file is named by the first two
-        at, known = by_id.setdefault(identifier, (index, listed))
-        first, owner = by_hash.setdefault(sha256, (index, identifier))
-        if known != listed:
+        at, owner = by_id.get(identifier, (index, payload))
+        hashed_at, known = by_version.get((identifier, version), (index, sha256))
+        first, holder = by_hash.get(sha256, (index, (identifier, version)))
+        if owner != payload:
             message = (
-                f"the payload ID {identifier} is listed with another payload, version, hash or "
-                f"file than in /payloads/{at}"
+                f"the payload ID {identifier} is listed with another payload than in /payloads/{at}"
             )
             findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
-        elif owner != identifier:
-            message = f"this content is listed under another ID in /payloads/{first}"
+        elif known != sha256:
+            message = (
+                f"the payload ID {identifier} is listed at {version} with another hash than in "
+                f"/payloads/{hashed_at}"
+            )
+            findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
+        elif holder != (identifier, version):
+            where = "under another ID" if holder[0] != identifier else "at another version"
+            message = f"this content is listed {where} in /payloads/{first}"
             findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
         elif (payload, version) in seen:
             message = f"{payload} {version} is listed twice"
             findings.append(_refused("VRF-008", MANIFEST, f"/payloads/{index}", message))
-        seen.add((payload, version))
+        else:  # a version refused is never what a later one is compared with
+            by_id.setdefault(identifier, (index, payload))
+            by_version[(identifier, version)] = (index, sha256)
+            by_hash[sha256] = (index, (identifier, version))
+            seen.add((payload, version))
         name = str(entry["file"]["name"])
         if name != f"{payload}-{version}.json":
             message = f"the file of {payload} {version} is named {name}"

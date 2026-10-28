@@ -19,6 +19,8 @@ Each directory is a release: its `manifest.json`, and the archives and payload f
 - `catalogue-accepted` is a release `verify` accepts with a payload catalogue: one version used
   by a time-based scenario and by the steps of a scenario in chaining, and one no scenario uses,
   each file beside the archives.
+- `catalogue-versions-accepted` is a release `verify` accepts with two versions of one payload,
+  both under the payload's ID, one used by each of its two scenarios.
 - `chaining-accepted` is a release `verify` accepts with a scenario in chaining: two steps, the
   second waiting for the first, both running the payload a time-based scenario also runs, listed
   once. Its steps carry only what `verify` reads, not every field an export carries.
@@ -34,13 +36,13 @@ Each directory is a release: its `manifest.json`, and the archives and payload f
     steps are not a list or keep their data as text;
   - a payload whose content is not the one listed, not listed, listed but not embedded,
     without its ID, that cannot be hashed, listed twice, outside an inject's contract, or one
-    ID with two contents across the release; the `chaining-*` fixtures refuse a step's payload
-    that is not listed, not the one listed, or outside its contract;
+    ID at one version with two contents across the release; the `chaining-*` fixtures refuse a
+    step's payload that is not listed, not the one listed, or outside its contract;
   - a payload file missing, with other bytes than listed, whose content has another hash or
     holds another ID than listed, or named after another version; a payload version listed
-    twice, one ID with two versions or two payloads, one content under two IDs, a reference of
-    a scenario to a version the release does not list, a payload file the manifest lists
-    nowhere;
+    twice, one ID with two payloads or with two contents at one version, one content under two
+    IDs or at two versions, a reference of a scenario to a version the release does not list, a
+    payload file the manifest lists nowhere;
   - a manifest that does not meet its schema, an approved one without its release approver, a
     scenario listed twice, an archive named after another version.
 
