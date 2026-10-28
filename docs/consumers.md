@@ -20,8 +20,9 @@ release is approved, its `release_approver`. For each scenario it gives:
 - its `external_id`, which never changes from one version to the next, its `version` and its
   `status`;
 - its archive: `name`, `size` and `sha256`;
-- every payload its archive embeds, as `id`, `version` and `sha256`; the hash is the canonical
-  hash of the payload's content, and is what identifies it;
+- every payload its archive embeds, as `id`, `version` and `sha256`; the versions of a payload
+  share its `id`, and the hash is the canonical hash of the payload's content, which identifies
+  the version;
 - what a platform needs to run it, in `requires`: the OpenAEV versions (`openaev`), the edition
   (`CE` or `EE`), the injectors and the executors;
 - the facets a catalogue shows, and who approved its change, in which pull request (possibly
@@ -29,7 +30,10 @@ release is approved, its `release_approver`. For each scenario it gives:
 
 Under `payloads`, the manifest lists every payload version of the catalogue at the commit the
 release is built from, used by a scenario or not: its `payload` (the folder it lives in), its
-`version`, its content hash `sha256`, its `openaev_id` (the ID it has on the platform) and its
+`version`, its content hash `sha256`, its `openaev_id` (the ID it has on the platform: its
+payload's, the same for all its versions, but for two earlier versions, `1.1.0` of
+`create-local-account` and of `process-discovery-ps`, which keep the ID of their own content, so
+that one payload may be listed under two IDs) and its
 `file` (`name`, `sha256` of the file's bytes, `size`). The two hashes differ on purpose: the
 content hash is what a platform recomputes; the file hash also covers the payload's domains, which
 the content hash leaves out. Every payload a scenario's item lists is one of these versions.
@@ -84,19 +88,24 @@ A release with any finding below is not used at all.
    among them.
 7. **Payloads.** Every payload the scenario embeds sits in the contract of an inject or of a
    step, carries its ID, can be hashed, and is listed once by that ID with the canonical hash of
-   its content; every listed payload is embedded; one payload ID has one version and one hash
-   across the release.
+   its content; every listed payload is embedded; one payload ID at one version has one hash
+   across the release. Two scenarios may embed two versions of one payload, under its one ID; a
+   scenario embeds one version of a payload.
    When an import would reuse a payload the platform already holds under an ID the manifest
-   lists, the content it holds must have the hash the manifest lists: otherwise do not use it,
+   lists, the content it holds must have the hash the scenario's item lists for that ID and
+   version: otherwise do not use it,
    and report the conflict. Check 9 says how to tell what an import would reuse.
    Every payload file the manifest lists is present, has the size and the SHA-256 listed and the
    name `<payload>-<version>.json`, holds the `openaev_id` listed, and its content has the hash
    `sha256` listed (computed as for an embedded payload, its techniques taken from
-   `payload_attack_patterns`); a version is listed once, an ID with one payload, one version, one
-   hash and one file, a content under one ID, and every payload an item lists is a listed version.
+   `payload_attack_patterns`); a version is listed once, an ID with one payload, an ID at one
+   version with one hash, a content at one version of one ID, and every payload an item lists is
+   a listed version.
    Before installing a payload file, compare that hash with what the platform holds under its
-   `openaev_id`: the platform's import and collectors replace a payload that has the same ID, so
-   a payload written there by hand, or another version under that ID, would be overwritten.
+   `openaev_id` and `version`. A platform that holds a payload by its ID alone keeps one version
+   under it: its import and collectors replace a payload that has the same ID, so a payload
+   written there by hand, or another version of that payload, would be overwritten: two
+   scenarios that embed two versions of one payload cannot both be installed there.
 8. **Status and requirements.** A `REVOKED` scenario must no longer run; a `DEPRECATED` one is
    replaced or no longer maintained. Install only scenarios whose `requires` the platform meets.
 9. **Scenarios in chaining.** Import one only where the import does both of these:

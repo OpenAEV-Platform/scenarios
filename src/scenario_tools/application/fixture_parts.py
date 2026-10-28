@@ -157,9 +157,13 @@ def chained_scenario(
 
 
 def fixture_item(
-    external_id: str, archive: bytes, payloads: Sequence[Mapping[str, Any]]
+    external_id: str,
+    archive: bytes,
+    payloads: Sequence[Mapping[str, Any]],
+    payload_version: str = "1.0.0",
 ) -> dict[str, Any]:
-    """The manifest item, at version 1.0.0, of a scenario whose archive is ``archive``."""
+    """The manifest item, at version 1.0.0, of a scenario whose archive is ``archive``, each of
+    its ``payloads`` referenced at ``payload_version``."""
     return {
         "approvals": {"approvers": ["fixture-maintainer"], "pull_request": 1},
         "archive": {
@@ -173,7 +177,7 @@ def fixture_item(
         "main_focus": "endpoint-protection",
         "name": f"Fixture {external_id[:8]}",
         "payloads": [
-            {"id": p["payload_external_id"], "version": "1.0.0", "sha256": fixture_hash(p)}
+            {"id": p["payload_external_id"], "version": payload_version, "sha256": fixture_hash(p)}
             for p in payloads
         ],
         "platforms": ["Linux"],

@@ -16,10 +16,15 @@ from tests.interface.test_cli_build import ROOT
 FIXTURES = release_fixtures(ZipArchiveBuilder(), HandmadeArchives())
 
 
-def test_three_fixtures_are_accepted_and_every_other_is_refused_for_its_own_reason() -> None:
+def test_four_fixtures_are_accepted_and_every_other_is_refused_for_its_own_reason() -> None:
     accepted = [fixture.name for fixture in FIXTURES if not fixture.expectation.findings]
 
-    assert accepted == ["accepted", "catalogue-accepted", "chaining-accepted"]
+    assert accepted == [
+        "accepted",
+        "catalogue-accepted",
+        "catalogue-versions-accepted",
+        "chaining-accepted",
+    ]
     assert len({fixture.name for fixture in FIXTURES}) == len(FIXTURES)
     assert all(fixture.expectation.description for fixture in FIXTURES)
 
@@ -30,7 +35,9 @@ def test_every_refusal_of_the_verifier_has_a_fixture() -> None:
     assert codes == {"VRF-006", "VRF-007", "VRF-008", "VRF-009"}
 
 
-@pytest.mark.parametrize("name", ["accepted", "catalogue-accepted", "chaining-accepted"])
+@pytest.mark.parametrize(
+    "name", ["accepted", "catalogue-accepted", "catalogue-versions-accepted", "chaining-accepted"]
+)
 def test_an_accepted_release_meets_the_manifest_s_schema_and_lists_what_stands_beside_it(
     name: str,
 ) -> None:

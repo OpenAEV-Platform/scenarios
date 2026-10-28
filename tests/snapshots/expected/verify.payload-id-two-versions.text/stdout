@@ -1,2 +1,2 @@
-BLOCKING VRF-008 manifest.json /payloads/1: the payload ID c3424b24-d49a-5bb5-aea3-e90d42048332 is listed with another payload, version, hash or file than in /payloads/0
+BLOCKING VRF-008 manifest.json /payloads/1: this content is listed at another version in /payloads/0
 verify: 1 blocking finding
