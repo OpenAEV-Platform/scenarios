@@ -678,16 +678,19 @@ def test_two_new_versions_of_one_payload_in_one_export_are_refused(
     assert len(result.versions) == 1
 
 
-def test_a_catalogue_version_and_a_new_version_of_one_payload_in_one_export_are_refused() -> None:
+@pytest.mark.parametrize("held_first", [True, False])
+def test_a_catalogue_version_and_a_new_version_of_one_payload_in_one_export_are_refused(
+    held_first: bool,
+) -> None:
     stored = _as_version("1.1.0", "Process Discovery - ps")
-    _, edited = _payloads(stored)
+    edited = _payloads(stored)[1 if held_first else 0]
     edited.update(payload_name="Edited", command_content="ps -ef")
     claims = (Claim("Process Discovery - ps", PS), Claim("Edited", PS))
 
     result = _claimed(stored, *claims)
 
     assert ("ITK-009", ONE_VERSION.format(payload=PS)) in _codes_of(result)
-    assert result.versions == {}
+    assert len(result.versions) == (0 if held_first else 1)  # the first claim met stands
 
 
 def test_a_claim_naming_two_contents_is_refused() -> None:
