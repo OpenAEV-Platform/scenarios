@@ -219,7 +219,10 @@ NO_SUCH_VERSION = "based_on names a version {payload} does not have"
 NOT_HIGHER = (
     "the version asked for is not higher than {payload} {version}, the highest the catalogue holds"
 )
-GIVEN_TWICE = "the version asked for is given to another payload of this export already"
+ONE_VERSION = (
+    "a scenario embeds one version of a payload: another payload of this export is already "
+    "a version of {payload}"
+)
 TWO_CONTENTS = "this claim names payloads with different contents: give each copy a name of its own"
 CLAIM_IGNORED = "this payload is already in the catalogue: the claim is ignored"
 STALE_BASE = "based on {payload} {version}, whereas the latest version is {payload} {latest}"
@@ -266,7 +269,9 @@ class _Pass:
         self.named: dict[str, str] = {}  # the slug of each new payload, by its base name's key
         self.slugs: set[str] = set()  # the slugs of the new payloads
         self.claimed: dict[str, tuple[str, str]] = {}  # a claimed copy's name and verdict, by hash
-        self.highest: dict[str, str] = {}  # the highest version each payload has so far
+        # The version of each payload the claims give: a held one by its number, a new one by
+        # the hash of the copy it is made of.
+        self.chosen: dict[str, str] = {}
         self.contents: dict[int, str] = {}  # the hash each claim names, by its position
         self.bases: dict[str, str] = {}  # the base name each claimed copy follows, by pointer
 
@@ -284,9 +289,14 @@ class _Pass:
         if refused not in self.findings:  # a claim is refused once, however many copies it names
             self.findings.append(refused)
 
-    def latest(self, slug: str) -> str:
-        held = self.catalogue.by_slug[slug][-1].version
-        return self.highest.get(slug, held)
+    def one_version(self, slug: str, version: str, index: int) -> bool:
+        """Whether ``version`` is the one version of ``slug`` the claims give, refused if
+        another is: a scenario embeds one version of a payload."""
+        if self.chosen.setdefault(slug, version) != version:
+            message = ONE_VERSION.format(payload=slug)
+            self.refuse_claim(f"/payloads/{index}/based_on/payload", message)
+            return False
+        return True
 
     def kept(self, version: PayloadVersion, digest: str, pointer: str) -> bool:
         refused = _not_kept(version, digest, self.agreed, self.accepted)
@@ -325,29 +335,24 @@ class _Pass:
                 payload_hash(renamed, embedded.attack_patterns, _ATTACHED.get).hex
                 == version.digest()
             ):
+                if not self.one_version(slug, version.version, index):
+                    return
                 message = f"already there: {slug} {version.version}"
                 self.renames[pointer] = version.name
                 self.claimed[digest] = (version.name, message)
                 self.info(pointer, message)
                 return
-        latest = self.latest(slug)
-        # A version asked for is judged against the catalogue alone, whatever order the
-        # export's payloads come in; this run only must not give it twice.
-        if claim.version is not None and version_key(claim.version) <= version_key(
-            held[-1].version
-        ):
-            message = NOT_HIGHER.format(payload=slug, version=held[-1].version)
+        latest = held[-1].version
+        if claim.version is not None and version_key(claim.version) <= version_key(latest):
+            message = NOT_HIGHER.format(payload=slug, version=latest)
             self.refuse_claim(f"/payloads/{index}/version", message)
             return
-        if claim.version is not None and any(
-            v.slug == slug and v.version == claim.version for v in self.versions.values()
-        ):
-            self.refuse_claim(f"/payloads/{index}/version", GIVEN_TWICE)
+        if not self.one_version(slug, f"new {digest}", index):
             return
-        if base_version != held[-1].version:
-            message = STALE_BASE.format(payload=slug, version=base_version, latest=held[-1].version)
-            self.hint(pointer, message)
         number = claim.version or _next_minor(latest)
+        if base_version != latest:
+            message = STALE_BASE.format(payload=slug, version=base_version, latest=latest)
+            self.hint(pointer, message)
         name = versioned_name(base.base_name, number)
         renamed = {**payload, "payload_name": name}
         new_digest = payload_hash(renamed, embedded.attack_patterns, _ATTACHED.get).hex
@@ -359,7 +364,6 @@ class _Pass:
             return
         message = f"new version: {slug} {number} (based on {slug} {base_version})"
         self.versions[new_digest] = version
-        self.highest[slug] = max(number, latest, key=version_key)  # never back
         self.renames[pointer] = name
         self.claimed[digest] = (name, message)
         self.changes[version.path] = _changed(base.document, document)
