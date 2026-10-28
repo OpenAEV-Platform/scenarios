@@ -53,11 +53,10 @@ the head of the default branch, whose changes were reviewed. Who starts it appro
    moves the channel to it, refused if the pointer changed since the run read it. The run's summary
    names the release and each scenario whose last change was merged without approval.
 
-The two builds are kept as the run's artifacts for seven days. For now the repository has no
-protected environment to approve a release in, published releases are not made immutable by
-GitHub, and nothing but the workflow's practice keeps others from writing on `channels`: starting
-the run stands for the approval, the workflow never replaces a release, and only it writes the
-pointers.
+The two builds are kept as the run's artifacts for seven days. Published releases are immutable
+on GitHub. For now the repository has no protected environment to approve a release in, and
+nothing but the workflow's practice keeps others from writing on `channels`: starting the run
+stands for the approval, and only the workflow writes the pointers.
 
 **What it assumes.** A change of the catalogue goes through a pull request that is squash-merged:
 the last commit that changed an entry is then the one the pull request was merged as. An entry
@@ -70,13 +69,12 @@ and the checkout its whole history.
 
 ## What `build` checks
 
-- The checkout has no uncommitted change under `scenarios/`, `policy/` and `schemas/`. The
+- The checkout has no uncommitted change under `scenarios/`, `payloads/`, `policy/` and `schemas/`. The
   release is dated by the commit's time, so two builds of one commit give the same bytes.
 - Every directory two levels under `scenarios/` is an entry, and each passes `validate` and the
   archive's checks.
 - Each entry's last pull request is named with its approvers. One with no approver is said
-  (`REL-002`, information) and still released, with an empty list of approvers, while one
-  maintainer merges the catalogue's changes alone; one listed in
+  (`REL-002`, information) and still released, with an empty list of approvers; one listed in
   `policy/data/merged-before-review.yaml` is not said. That list holds the pull requests merged
   before reviews were required, each with why; it is reviewed as any change of the rules is.
 - Against the previous release of the channel: a released version never changes, neither its
@@ -88,7 +86,7 @@ The findings are described in [`findings.md`](findings.md).
 ## Channels
 
 Every release is published on the `edge` channel; one recommended to everyone is promoted to
-`stable`, with the same archives. Each channel will have a pointer, `edge.json` or `stable.json`,
+`stable`, with the same archives. Each channel has a pointer, `edge.json` or `stable.json`,
 which [`schemas/channel.schema.json`](../schemas/channel.schema.json) describes: the channel's
 release, by its name, and the SHA-256 of that release's manifest. A consumer reads the pointer,
 then the manifest of the release it names, and checks that it has that hash, that repository,

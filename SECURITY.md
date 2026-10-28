@@ -21,8 +21,8 @@ repository too.
 
 ## What follows a report
 
-A scenario found dangerous is withdrawn by a new version whose status is `REVOKED`: once
-releases are published, platforms learn it from the next release they read, and from the
+A scenario found dangerous is withdrawn by a new version whose status is `REVOKED`: platforms
+learn it from the next release they read, and from the
 security advisory, when one is published, sooner. [`docs/runbook.md`](docs/runbook.md) describes how a scenario is withdrawn, and
 [`docs/threat-model.md`](docs/threat-model.md) what the repository guards against.
 

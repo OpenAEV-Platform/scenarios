@@ -12,7 +12,7 @@ The [README](README.md) explains how it works; this page explains how to take pa
 - **An idea or a question**: open an issue, even if you do not plan to write the change yourself.
 
 Every contribution starts with an issue, so that the work is discussed before it is done. Pick
-the template that fits: bug report, feature request, question or technical improvement.
+the template that fits: bug report, feature request or question.
 
 ## Contributing a scenario
 
@@ -101,7 +101,8 @@ request's check disagrees with your run, rebase your branch on the project's `ma
 
 ## Working on the tools
 
-The tools are written in Python 3.12 and managed with [uv](https://docs.astral.sh/uv/):
+The tools are written in Python 3.12 and managed with [uv](https://docs.astral.sh/uv/) 0.12.23,
+the version `pyproject.toml` requires:
 
 ```sh
 uv sync --frozen
@@ -116,6 +117,8 @@ mutation testing, and last the tests that bound a running time, marked `timing`,
 `flock` exists, they wait until no other checkout's tests or mutation run, and those wait for them.
 It needs [gitleaks](https://github.com/gitleaks/gitleaks)
 and [actionlint](https://github.com/rhysd/actionlint) at the versions set in the `Makefile`.
+`make check-fast` runs the quick part, linting, types, architecture contracts and the tests, and
+is enough before you open a pull request from a fork: the continuous integration runs the rest.
 
 New behaviour comes with its tests, written first. The code keeps its layers apart: the domain
 holds the rules and no input or output, the adapters talk to files, git and the platform, and
@@ -128,12 +131,17 @@ holds the rules and no input or output, the adapters talk to files, git and the 
   with the issue: `type(scope): description (#issue)`, the description in lower case with no
   final period. For example `feat(scenarios): add easm (#72)` or
   `fix(tooling): read a link as a link (#123)`.
-- **Signed commits.** See the
+- **Signed commits**, with a GPG or SSH signature GitHub verifies. See the
   [GitHub documentation on signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits).
 - **Checks.** Three checks must pass before a merge: the tools pipeline, the title, and the
   checks of the entries the pull request adds or changes. The title and entry checks run as the
   target branch has them, so that a pull request cannot change them; the tools pipeline runs the
   pull request's own version, which the review covers.
+- **From a fork.** The title and entry checks run at once, as the target branch has them, with
+  no secret and none of your pull request's code. The tools pipeline runs your pull request's
+  code, so for a first contribution it waits until a maintainer approves the run. One of its
+  tests reads a list that only the repository's own branches receive: it is skipped on a fork,
+  and runs once the change reaches the repository.
 - **Review.** Every change is reviewed by a maintainer before it is merged.
 
 ## Code of conduct
