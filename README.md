@@ -3,12 +3,11 @@
 A catalogue of shareable attack scenarios for
 [OpenAEV](https://github.com/OpenAEV-Platform/openaev), and the tools that prepare and check them.
 
-> **Status: early.** The catalogue holds two scenarios:
-> [EASM Scenario](scenarios/techniques/easm/), the first of the three scenarios of the platform's
-> starter pack, and
-> [Linux discovery then local account creation](scenarios/techniques/linux-discovery-local-account/),
-> its first scenario in chaining. Releases, and installing a scenario from the catalogue straight
-> into a platform, come later.
+> **Status: first releases.** The catalogue holds four scenarios, among them two of the
+> platform's starter pack and a first scenario in chaining, and its releases are published on the
+> `edge` channel. You can import any of them by hand today ([Getting the
+> scenarios](#getting-the-scenarios)); receiving them straight into a platform's catalogue comes
+> with a coming release of OpenAEV.
 
 ## What this repository is for
 
@@ -23,8 +22,8 @@ a blocked command, a report from the team.
 
 Anyone can build a scenario on their own platform. This repository is where scenarios are
 **shared**. Each one is reviewed, described in the same way, and kept under version control. Any
-OpenAEV user will be able to find it, understand what it does before running it, and get the next
-version when it improves.
+OpenAEV user can find it, understand what it does before running it, and get the next version
+when it improves.
 
 ## How a scenario gets here
 
@@ -34,8 +33,9 @@ flowchart LR
     B -->|"scenario-tools intake"| C["Entry in this repository<br/>scenario.json + scenario.yaml"]
     C --> D["Pull request<br/>checks and human review"]
     D -->|merge| E["Catalogue"]
-    E -.-> F["Release (planned):<br/>archives and their hashes"]
-    F -.-> G["OpenAEV platforms (planned):<br/>install and update"]
+    E -->|release| F["Release:<br/>archives, payload files<br/>and their hashes"]
+    F --> G["Channel pointer<br/>edge"]
+    G -->|"collector"| H["OpenAEV platforms"]
 ```
 
 1. Someone builds and tests a scenario on an OpenAEV platform, then **exports** it as an archive.
@@ -45,12 +45,46 @@ flowchart LR
 3. The entry is proposed in a **pull request**. Automated checks run `validate` and a secret scan
    on every entry it adds or changes, and the secret scan on every commit it brings. The tools,
    the rules and the workflow that run them are those of the branch the pull request targets, so
-   that a pull request cannot change what judges it. Some rules of `validate` are not run yet. A
+   that a pull request cannot change what judges it. A
    human review then checks that the entry is complete, safe to publish, and does what it says.
 4. Once merged, the scenario is part of the **catalogue**.
-5. *Planned:* the catalogue is published in releases. Each archive comes with its hash (a
-   fingerprint of the file), so that a platform can verify what it installs. OpenAEV platforms
-   will then install a scenario from the catalogue and be told when a new version exists.
+5. A maintainer publishes the catalogue in a **release**: one import archive per scenario and one
+   file per payload version, listed in a manifest with their hashes (fingerprints of the files),
+   so that a platform can verify what it installs. A **channel** points at the latest release;
+   `edge` receives every release. A collector follows the channel and hands each new release to
+   its platform.
+
+## Getting the scenarios
+
+- **By hand.** Open the [latest release](https://github.com/OpenAEV-Platform/scenarios/releases/latest),
+  find the scenario in its `manifest.json` (its `name`, `external_id` and `version`), download
+  its archive, `<external_id>-<version>.zip`, and import it with the platform's scenario import.
+  Check first what it needs, in its `requires`: the OpenAEV versions, the edition, the injectors
+  and the executors. A scenario in chaining needs the Enterprise edition and OpenAEV 3.261024.0 or
+  later. If your platform already holds a payload under one of the scenario's identifiers with
+  other content, the platform runs its own: `scenario-tools openaev check` tells you before you
+  import ([the tools](#the-tools)).
+- **Through a collector.** The
+  [scenarios collector](https://github.com/OpenAEV-Platform/collectors/tree/main/scenarios) reads
+  the channel's pointer every hour, downloads the release it names, checks every file against
+  the manifest, and sends the release to the platform's catalogue. That catalogue comes with a
+  coming release of OpenAEV; until then, the collector's dry run checks each release and sends
+  nothing.
+- **Building your own consumer:** [`docs/consumers.md`](docs/consumers.md) says what a release
+  holds and what to check before using it.
+
+Each scenario has a `status`: `VERIFIED` once reviewed, `DEPRECATED` when it is replaced or no
+longer maintained, `REVOKED` when it must no longer run. A withdrawn scenario stays in the
+catalogue with its new status, so that platforms learn it.
+
+## This repository and `payloads`
+
+[`OpenAEV-Platform/payloads`](https://github.com/OpenAEV-Platform/payloads) holds the payloads
+that the OpenAEV Datasets collector installs on platforms today. This repository takes over: its
+payload catalogue, [`payloads/`](payloads/), already holds them under the same identifiers, one
+frozen file per version, all but the one that carries an attached file, and the collector is to
+read this repository's releases instead. A payload enters this catalogue with a scenario that runs
+it, through `intake` ([`docs/payloads.md`](docs/payloads.md)).
 
 ## What an entry looks like
 
@@ -88,7 +122,7 @@ take, and the commands that need a cleanup.
 OpenAEV installs three scenarios on each new platform, unless this is turned off: *EASM Scenario*
 (external attack surface management), *Tabletop Exercise - Akira Ransomware Crisis* and *[SALT
 TYPHOON] CVE & TTPs validation*. They are the catalogue's first entries, at version 1.0.0; EASM
-Scenario is in, the two others follow.
+Scenario and the Akira tabletop exercise are in, the third follows.
 Their identifiers are taken from the platform itself, and listed in
 [`docs/starter-pack-ids.md`](docs/starter-pack-ids.md).
 
@@ -100,7 +134,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 |---|---|
 | `intake` | Turns a platform export and a short request into a new entry, or an update of one, with the version files of its new payloads, and writes the plan of the pull request; with `--check`, gives the verdict on each payload without git and writing nothing |
 | `normalize` | Writes the normalised `scenario.json` of an export |
-| `validate` | Checks entries against the schemas and the repository's rules (some rules are not run yet) |
+| `validate` | Checks entries against the schemas and the repository's rules |
 | `render` | Writes the sheet of entries, their `README.md`, from `scenario.yaml` and `scenario.json`; with `--check`, reports a sheet out of date |
 | `diff` | Lists what changed in entries since the base branch's copy, each change with the version it needs |
 | `payloads` | Checks that `scenario.yaml` names each payload an entry embeds by a version of the catalogue, with its hash; with `--assign`, gives each payload its ID and version |
@@ -116,7 +150,8 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |
 
-To run them, install [uv](https://docs.astral.sh/uv/), then, from a clone of this repository:
+To run them, install [uv](https://docs.astral.sh/uv/) 0.12.23, the version `pyproject.toml`
+requires, and Python 3.12, then, from a clone of this repository:
 
 ```sh
 uv sync --frozen
@@ -126,8 +161,8 @@ uv run scenario-tools validate scenarios/techniques/easm
 
 The `openaev` commands read the platform's address and an API token from the `OPENAEV_URL` and
 `OPENAEV_TOKEN` environment variables. `openaev import` runs the check of `openaev check` first,
-and imports nothing when it finds a payload the platform would run instead of the one released. Until scenarios can be installed from the
-catalogue, `archive` then `openaev import` is the way to try an entry on your own platform.
+and imports nothing when it finds a payload the platform would run instead of the one released. To
+try an entry of your clone on your own platform, run `archive`, then `openaev import`.
 
 The tools run on Linux, with git 2.40 or later; macOS is not tested yet. They read every file with
 strict limits on size and depth, and never follow a symbolic link inside the repository. They
@@ -142,10 +177,15 @@ always read it before you run it, and only run it against systems you are allowe
 
 ## Contributing a scenario
 
-1. Build and test your scenario on an OpenAEV platform, then export it.
-2. Follow [`docs/intake.md`](docs/intake.md): write a short request (identifier, domain, short
+1. Build and test your scenario on an OpenAEV platform you are allowed to test, then export it.
+2. Open an issue that describes the scenario and the threat it plays.
+3. Follow [`docs/intake.md`](docs/intake.md): write a short request (identifier, domain, short
    name, threat, sources), run `intake`, and complete what its plan lists.
-3. Run `validate` on your entry, then open a pull request with the title and body the plan gives.
+4. Run `render`, then `validate`, on your entry, and open a pull request with the title and body
+   the plan gives.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) gives the details, and what runs on a pull request from a
+fork.
 
 An agent that proposes scenarios starts from [`AGENTS.md`](AGENTS.md).
 
@@ -153,7 +193,7 @@ A few rules apply to every pull request:
 
 - **Public content only.** No customer data, no internal addresses, no real credentials. Targets
   are placeholders that each user fills in on their own platform. Reviewers check this.
-- **Signed commits.**
+- **Signed commits**, with a GPG or SSH signature GitHub verifies.
 - **A title** that follows [Conventional Commits](https://www.conventionalcommits.org/) and ends
   with the issue number, for example `feat(scenarios): add easm (#72)`.
 - **A human review** of every change.
@@ -174,6 +214,7 @@ A few rules apply to every pull request:
 | [`payloads/`](payloads/) | The payload catalogue: one folder per payload, one frozen file per version ([`docs/payloads.md`](docs/payloads.md)) |
 | [`schemas/`](schemas/) | JSON schemas of an entry's description, an intake request, a payload version file and a release manifest |
 | [`policy/`](policy/) | The data the checks rely on |
+| [`conformance/`](conformance/README.md) | Shared test vectors and release fixtures, for those who build a consumer |
 | [`docs/`](docs/) | Guides: adding an entry, proposing one as an agent, the payload catalogue, the findings, releases and their consumers, security, the tools' architecture |
 | [`src/`](src/) | The source of `scenario-tools`: how it is built, what it trusts and where to start reading, in [`docs/architecture.md`](docs/architecture.md) |
 | [`tests/`](tests/) | Its tests, with real platform exports as reference data |

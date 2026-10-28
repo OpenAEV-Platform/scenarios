@@ -43,11 +43,10 @@ finding code and never as an internal error, within a budget of time and of memo
   refuse a version lower than one it installed, but a platform that installs for the first time
   cannot tell an old release from the latest.
 - **The release is approved by starting its run.** The repository has no protected environment
-  yet, so whoever can start the release workflow approves the release; GitHub does not make
-  published releases immutable, and does not keep others from writing on `channels`. The
-  workflow never replaces a release and alone writes the pointers, and a consumer checks the
-  manifest's hash against the pointer; a protected environment, immutable releases and a rule on
-  `channels` are the next step.
+  yet, so whoever can start the release workflow approves the release, and GitHub does not keep
+  others from writing on `channels`. Published releases are immutable on GitHub, the workflow
+  alone writes the pointers, and a consumer checks the manifest's hash against the pointer; a
+  protected environment and a rule on `channels` are the next step.
 - **There is no revocation list.** A scenario is withdrawn by a new version, which a platform
   learns from the next release it reads.
 

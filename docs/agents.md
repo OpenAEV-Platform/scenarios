@@ -14,7 +14,7 @@ Run every command from the root of the checkout.
   request closes one, and the request names it.
 - **The scenario's export**, from a platform it is allowed to test on, as the platform exports it.
 - **A checkout** of this repository at `main`, with nothing left to commit under `scenarios/`,
-  `policy/` or `schemas/`, and the tools installed (`uv sync --frozen`).
+  `payloads/`, `policy/` or `schemas/`, and the tools installed (`uv sync --frozen`).
 - **A request**, a short YAML file: `mode: new` with the entry's `external_id` (a lower-case
   UUID, chosen once), `domain`, `slug`, `threat`, `sources` and the `issue`; or `mode: update`
   for a new version of an entry, whose `external_id`, `domain` and `slug` are the entry's, with
@@ -50,7 +50,7 @@ a release's version files, a copy of the repository's rules and the entry's exte
    | `0` | The entry and its plan are written; what the plan lists is left to complete | Go on, unless the plan's `changed` is `false`: the export gives the stored scenario again, there is nothing to propose, so stop |
    | `1` | The request is refused (no plan), or a check blocks the entry (a plan) | Read the findings in [`findings.md`](findings.md): fix the request and run again, or fix the entry's files in place |
    | `2` | A usage error, nothing ran: the options, or a plan already there | Fix the command, or remove the old plan |
-   | `3` | The environment stopped the run | Read the message. Another `intake` run holding the checkout: wait. A change not committed under `scenarios/`, `policy/` or `schemas/`: if it is an entry this agent left unfinished, complete and commit it on its own branch first; if it is not, stop and report it, never discard another's work. Otherwise stop, and report the message as it is |
+   | `3` | The environment stopped the run | Read the message. Another `intake` run holding the checkout: wait. A change not committed under `scenarios/`, `payloads/`, `policy/` or `schemas/`: if it is an entry this agent left unfinished, complete and commit it on its own branch first; if it is not, stop and report it, never discard another's work. Otherwise stop, and report the message as it is |
    | `4` | A defect of the tools | Stop, and report it |
 
 2. **Complete what the plan's `body` lists:** the fields of `scenario.yaml` it names; the
@@ -72,10 +72,10 @@ a release's version files, a copy of the repository's rules and the entry's exte
    merge. Without `--previous-root`, the version is not compared: for an update, always give it.
 4. **Propose the entry:** a branch from the plan's `base`, the whole entry directory added, a
    signed commit with the plan's `title`, then a pull request with the plan's `title` and `body`.
-   It adds or changes only that entry.
+   It adds or changes only that entry, with the version files of its new payloads.
 5. **Go back** to `main` before the next intake, once the entry is committed on its branch:
    switching does not clear what is not committed, and the next run refuses any change left
-   under `scenarios/`, `policy/` or `schemas/`.
+   under `scenarios/`, `payloads/`, `policy/` or `schemas/`.
 
 ## When a check refuses the pull request
 

@@ -78,7 +78,7 @@ A maintainer's, a reviewer's or an automated account, or a token.
    collaborators, the keys or the workflows.
 3. For each merge it made or approved, review the change again. A scenario it touched that may
    be malicious is withdrawn at once, as below.
-4. Once releases are published, check any release published since then against what its commit
+4. Check any release published since then against what its commit
    builds: build that commit again on the same channel, with the approvals file and the previous
    manifest the release was built from, never approvals collected again, as reviews may have
    changed since. The archives must be the same bytes; so must the manifest, but for its
@@ -98,6 +98,5 @@ A released scenario is never removed from the catalogue: the next release would 
 4. Render its sheet again (`scenario-tools render <entry>`): the sheet shows the status.
 5. Open the pull request and have it reviewed and merged.
 
-Platforms learn it from the next release they read, once releases are published: there is no
-revocation list yet. For a dangerous scenario, also report it as [`SECURITY.md`](../SECURITY.md)
+Platforms learn it from the next release they read: there is no revocation list yet. For a dangerous scenario, also report it as [`SECURITY.md`](../SECURITY.md)
 says, so that an advisory can tell the platforms that installed it without waiting.

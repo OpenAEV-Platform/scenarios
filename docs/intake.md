@@ -13,12 +13,12 @@ scenario-tools --format json intake export.zip --request request.yaml --repo . -
 - `export.zip`: the scenario as the platform exports it: a `.zip`, or else its JSON.
 - `--request`: what the export cannot say (below).
 - `--repo`: the root of a checkout of this repository, at the commit the change starts from,
-  with nothing left to commit under `scenarios/`, `policy/` or `schemas/`, untracked, ignored
+  with nothing left to commit under `scenarios/`, `payloads/`, `policy/` or `schemas/`, untracked, ignored
   or skipped files and submodules included, and no file there that git converts by
   `.gitattributes`: the plan describes what that commit gives. The rest of the checkout does
   not count.
 - `--plan`: where the plan is written. Nothing may be there yet, its directory must exist and
-  not be a link, and it may not be inside `scenarios/`, `policy/` or `schemas/`, which stay as
+  not be a link, and it may not be inside `scenarios/`, `payloads/`, `policy/` or `schemas/`, which stay as
   committed. Neither may the export nor the request, wherever the path they are given by leads.
 - `--format json` goes before `intake`, as for every command.
 
@@ -100,7 +100,7 @@ already has, whose name gives no slug or carries a version suffix, or whose file
 schema would refuse, is refused before anything is written (`PAY-009`): rename or complete it
 in OpenAEV and export again. A payload without a description is given its name as one, in the
 scenario and in its version file alike, so that both keep one hash. Nothing under `payloads/`
-may differ from the commit when intake runs, as for `scenarios/`, `policy/` and `schemas/`.
+may differ from the commit when intake runs, as for `scenarios/`, `payloads/`, `policy/` and `schemas/`.
 
 A payload copied from a catalogue payload on the platform and changed there keeps that payload's
 name, which the catalogue already holds. The request then says so in `payloads`, by the copy's
@@ -197,9 +197,10 @@ edition. It also writes `requires.openaev` as at least `>=3.261024.0`, the first
 whose import points each step's dependency at the step it creates, and `validate` blocks a
 scenario in chaining that allows an earlier release (`SCH-015`).
 
-A scenario in chaining can be prepared and checked, with `normalize`, `intake` and `validate`,
-but none enters the catalogue yet. The repository does not accept one until the platform's
-import does what check 9 of [the consumers' checks](consumers.md) asks.
+A scenario in chaining enters the catalogue as any other. The platform's import points each
+step's dependency at the step it creates from OpenAEV 3.261024.0, which its `requires.openaev`
+states; check 9 of [the consumers' checks](consumers.md), on the payloads a platform already
+holds, is the installer's: `scenario-tools openaev import` runs it.
 
 ## Checking the payloads first
 
@@ -290,10 +291,10 @@ plan.
   directory for a new entry, or the change to `scenario.json` for an update
   (`git checkout -- <entry>/scenario.json`, which also drops any change made to it by hand).
 - `2`: a usage error, and nothing is run: the options, a plan already there, or a plan, an export
-  or a request inside `scenarios/`, `policy/` or `schemas/`.
+  or a request inside `scenarios/`, `payloads/`, `policy/` or `schemas/`.
 - `3`: the environment stops the run. Nothing is kept, except in the last case below, which the
   run names. This covers:
-  - the checkout has changes that are not committed under `scenarios/`, `policy/` or
+  - the checkout has changes that are not committed under `scenarios/`, `payloads/`, `policy/` or
     `schemas/`, untracked, ignored or skipped files and submodules included, files git converts
     there, or a commit that changes while it is checked: commit or remove them first;
   - the export or the request cannot be read, or the paths given cannot be resolved;
@@ -332,7 +333,7 @@ before the run, so that a plan left by another run is never taken for this one's
     without hard links, by its name, which leaves a tiny window).
   - The plan is published only if the checkout, the entry and each file written, or read for
     an update that writes nothing, are still what the run wrote or read, nothing else under
-    `scenarios/`, `policy/` or `schemas/` differs from the plan's `base`, which is still the
+    `scenarios/`, `payloads/`, `policy/` or `schemas/` differs from the plan's `base`, which is still the
     checkout's commit, and the plan's own place is still the one reserved.
 - **All or nothing:** the entry is kept only once its plan is published. A run that fails before
   then takes back what it wrote: a new entry's files, the entry and the directories made for it
@@ -371,5 +372,5 @@ the entry to a commit.
 
 The command runs on Linux, and is meant to run on macOS too, which its tests do not cover yet,
 with git 2.40 or later: the attributes of the checkout's
-commit are read too, so that a change to them outside the three directories cannot hide a
+commit are read too, so that a change to them outside the four directories cannot hide a
 conversion. The git a macOS release ships may be older: install a recent one first.

@@ -15,8 +15,9 @@ endpoints: what this repository holds must be safe to run and public.
 | Path | What it holds |
 |---|---|
 | `scenarios/` | The entries, by domain |
+| `payloads/` | The payload catalogue: one folder per payload, one frozen file per version |
 | `policy/data/` | The data the policy rules read, and the exceptions the maintainers grant |
-| `schemas/` | The schemas of an entry, an intake request, a release manifest |
+| `schemas/` | The schemas of an entry, an intake request, a payload version file, a release manifest and a channel pointer |
 | `src/scenario_tools/` | The tools, in layers: `domain` (rules, no input or output), `application`, `ports`, `adapters`, `interface` (the command line) |
 | `tests/` | The tests, organised by those layers, plus architecture, workflow and secret-scan tests |
 | `conformance/` | Shared test vectors and release fixtures |
@@ -56,7 +57,8 @@ make check                           # everything the continuous integration run
 - **Never commits** the export, the request or the plan of an intake run: keep them outside
   the checkout.
 - **Never approves, merges or publishes.** An automated account opens pull requests; people
-  review them. A pull request that proposes a scenario adds or changes only that entry; a policy
+  review them. A pull request that proposes a scenario adds or changes only that entry, with the
+  version files of its new payloads; a policy
   exception in `policy/data/` is added by a maintainer, never by the agent.
 - **Never ticks a box** of the pull request template's checklist: its scenario boxes attest a
   human test run, and the human author ticks them.
