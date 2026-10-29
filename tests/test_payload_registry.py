@@ -1,15 +1,16 @@
-"""The payload ID registry and the catalogue agree: every ID the registry agrees names a version
-file with that ID and that hash, and every version file whose ID is not derived from its hash is
-in the registry."""
+"""The payload ID registry and the catalogue agree: every ID the registry agrees names a first
+version file with that ID and that hash, and every version file carries its payload's ID, the one
+of its first version, unless the registry lists it as keeping its own."""
 
 import json
 from pathlib import Path
 
 from scenario_tools.adapters.data_files import YamlDataLoader
-from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
+from scenario_tools.domain.verification.payload_references import AgreedIds
 from scenario_tools.domain.verification.payload_version import PayloadVersion
 
 ROOT = Path(__file__).parents[1]
+FIRST = "1.0.0"
 AGREED = AgreedIds.from_document(YamlDataLoader(ROOT / "policy" / "data").load("payload-ids"))
 
 
@@ -25,17 +26,21 @@ def _versions() -> list[PayloadVersion]:
     ]
 
 
-def test_every_agreed_id_names_a_version_file_with_its_hash() -> None:
-    held = {version.identifier: version.digest() for version in _versions()}
+def test_every_agreed_id_names_a_first_version_file_with_its_hash() -> None:
+    held = {v.identifier: v.digest() for v in _versions() if v.version == FIRST}
     for digest, agreed in AGREED.by_hash.items():
         assert held.get(agreed.id) == digest, agreed.name
 
 
-def test_every_version_file_whose_id_is_not_derived_is_in_the_registry() -> None:
-    for version in _versions():
+def test_every_version_file_carries_its_payloads_id() -> None:
+    versions = _versions()
+    first = {v.slug: AGREED.id_for(v.digest()) for v in versions if v.version == FIRST}
+    for version in versions:
         digest = version.digest()
-        if version.identifier != derived_id(digest):
-            assert AGREED.id_for(digest) == version.identifier, version.path
+        if AGREED.keeps_own_id(version.slug, version.version, digest):
+            assert version.identifier == AGREED.id_for(digest), version.path
+        else:
+            assert version.identifier == first[version.slug], version.path
 
 
 def test_the_registry_names_each_version_as_its_file_does() -> None:

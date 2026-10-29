@@ -408,9 +408,9 @@
               "payload_execution_arch": "ALL_ARCHITECTURES",
               "payload_expectations": [],
               "payload_expected_security_platforms": {},
-              "payload_external_id": "c297e3ae-0cc2-5500-a923-1d0d7c1f67df",
+              "payload_external_id": "4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7",
               "payload_id": "737b5eb7-a3ee-536d-88a7-70da1795a2da",
-              "payload_name": "Process Discovery - ps (1.1.0)",
+              "payload_name": "Process Discovery - ps (1.2.0)",
               "payload_output_parsers": [
                 {
                   "output_parser_contract_output_elements": [
@@ -932,9 +932,9 @@
                   "XDR"
                 ]
               },
-              "payload_external_id": "d8b64542-22c5-5b64-8828-f578fdf02b05",
+              "payload_external_id": "84ad1dfe-0b96-452c-a122-4767aab6584e",
               "payload_id": "d9a1f23b-759f-5524-905d-cd7d62bf41b2",
-              "payload_name": "Create local account (1.1.0)",
+              "payload_name": "Create local account (1.2.0)",
               "payload_output_parsers": [],
               "payload_platforms": [
                 "Linux"
