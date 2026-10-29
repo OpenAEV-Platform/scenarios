@@ -97,6 +97,27 @@ on the `channels` branch: `scenario-tools channel previous` checks that a pointe
 manifest, and `scenario-tools channel pointer` writes the pointer to an approved release, refused
 unless it moves the channel forward.
 
+## When the format changes
+
+The manifest and the pointers each carry a `schema_version`, 1 today. Collectors and platforms are
+installed at customers and upgraded later than the repository changes, so a release keeps to what
+an installed reader understands:
+
+- **Within a format, fields are only added.** A later release may add a field to the manifest or
+  to a pointer, never rename or remove one, nor change what one means. Readers ignore the fields
+  they do not know, so an installed collector keeps syncing.
+- **A field a reader must understand to stay safe is a break.** If ignoring it would let a reader
+  accept what it should refuse (a revocation, an expiry, a minimum reader version, a signature),
+  it is not added: it comes with a new `schema_version`.
+- **A break is published beside the old format.** A new format has a pointer of its own on the
+  `channels` branch, and the pointer of format 1 keeps moving to releases in format 1 while readers
+  upgrade. Readers refuse a `schema_version` they do not read, so none reads a new format as the
+  old one.
+
+The schemas in [`schemas/`](../schemas) stay closed: they describe exactly what the checkout
+builds, and `build` refuses a field they do not name. A schema is therefore read with the release
+it describes, the one at the release's tag: a copy taken earlier refuses a field added since.
+
 ## Release fixtures
 
 [`conformance/releases`](../conformance/README.md) holds one release `verify` accepts, and one for

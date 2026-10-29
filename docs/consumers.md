@@ -61,8 +61,11 @@ A release with any finding below is not used at all.
    Make changing that location an administrator's action, and log it.
 2. **Manifest.** Read it as strict JSON, as every JSON document of a release is read: UTF-8, at
    most 20 MiB and 64 levels deep, no key twice in an object, no `NaN` nor infinite number, no
-   integer beyond ±(2^53 − 1), no unpaired surrogate. Then check it against the manifest schema,
-   which cannot see a key a parser already dropped. Its `repository` and `channel` are the ones
+   integer beyond ±(2^53 − 1), no unpaired surrogate. Its `schema_version` is one you read, 1
+   today. Then check it against the manifest schema at the release's tag, which cannot see a key
+   a parser already dropped; a copy of the schema taken earlier refuses a field added since (see
+   [When the format changes](releases.md#when-the-format-changes)). If you read only the fields
+   you use instead, ignore the others. Its `repository` and `channel` are the ones
    you follow, and it names its `release_approver`: a manifest without one was built, never
    approved. A scenario listed twice, or an archive named after another scenario or version than
    its item's, refuses the release.
@@ -164,7 +167,7 @@ uv run scenario-tools verify <manifest.json> --schemas schemas [--archives <dir>
 ```
 
 `--approved` requires the `release_approver`; `--archives` gives the archives' directory, the
-manifest's by default. The findings are explained in
+manifest's by default; `--schemas` gives the schemas of the release's tag. The findings are explained in
 [`findings.md`](findings.md#verifying-a-release-vrf). The release workflow runs it, without
 `--approved`, on every release it builds.
 
