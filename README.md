@@ -27,16 +27,10 @@ when it improves.
 
 ## How a scenario gets here
 
-```mermaid
-flowchart LR
-    A["Scenario built<br/>on an OpenAEV platform"] -->|export| B["Export archive<br/>(.zip)"]
-    B -->|"scenario-tools intake"| C["Entry in this repository<br/>scenario.json + scenario.yaml"]
-    C --> D["Pull request<br/>checks and human review"]
-    D -->|merge| E["Catalogue"]
-    E -->|release| F["Release:<br/>archives, payload files<br/>and their hashes"]
-    F --> G["Channel pointer<br/>edge"]
-    G -->|"collector"| H["OpenAEV platforms"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/img/scenarios-flow-dark.svg">
+  <img src=".github/img/scenarios-flow-light.svg" width="100%" alt="OpenAEV agents and people open pull requests on OpenAEV-Platform/scenarios. Every pull request is checked automatically, reviewed by a person, then released by a maintainer on the edge channel. At the customer, the collector checks every file and syncs the release to the OpenAEV Marketplace.">
+</picture>
 
 1. Someone builds and tests a scenario on an OpenAEV platform, then **exports** it as an archive.
 2. The `intake` command turns the export into an **entry** of this repository. It replaces or

@@ -41,7 +41,10 @@ _GENERIC = re.compile(
 # contributor set on hiding one.
 _IDENTIFIER = re.compile(
     r"(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
-    r"(?![0-9a-f])",
+    r"(?![0-9a-f])"
+    # Data embedded as base64, such as the fonts of an image: its letters can spell a task number
+    # by chance too, and a reference written beside it is still found.
+    r"|data:[a-z0-9.+-]+/[a-z0-9.+-]+;base64,[a-z0-9+/]+=*",
     re.IGNORECASE,
 )
 
@@ -142,6 +145,23 @@ def test_the_generic_patterns_accept_ordinary_text(text: str) -> None:
 def test_an_identifier_is_never_read_as_a_reference(text: str) -> None:
     """A derived identifier's hex groups can spell a task number by chance: not a reference."""
     assert _generic_lines(text) == []
+
+
+def test_embedded_base64_data_is_never_read_as_a_reference() -> None:
+    """A font embedded in an image is base64, whose letters can spell a task number by chance."""
+    assert _generic_lines("src:url(data:font/woff2;base64,AAx/T012/Fr+A034=) format('woff2')") == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "src:url(data:font/woff2;base64,AAxF) for T012",
+        "Done in T012: data:image/png;base64,AAxF",
+        "data:font/woff2,T012 is not base64",
+    ],
+)
+def test_a_reference_beside_embedded_data_is_still_refused(text: str) -> None:
+    assert _generic_lines(text) == [1]
 
 
 def test_the_private_list_is_read_from_the_environment_or_a_file(
