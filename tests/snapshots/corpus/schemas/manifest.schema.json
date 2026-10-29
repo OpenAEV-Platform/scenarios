@@ -38,7 +38,7 @@
     "release": {
       "description": "The release's name: its date and a sequence number, YYYY.MM.DD.N.",
       "type": "string",
-      "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+$"
+      "pattern": "^([0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+|[1-9][0-9]{0,2}\\.[0-9]{6}\\.(0|[1-9][0-9]{0,8}))$"
     },
     "items": {
       "description": "The scenarios of the release.",
@@ -339,7 +339,7 @@
             "release": {
               "description": "The release the test report belongs to.",
               "type": "string",
-              "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+$"
+              "pattern": "^([0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+|[1-9][0-9]{0,2}\\.[0-9]{6}\\.(0|[1-9][0-9]{0,8}))$"
             }
           }
         },

@@ -5,7 +5,11 @@ A release of the catalogue is every entry's import archive, the file of every pa
 what it imports. This page is for the
 maintainers who build releases; what a platform checks of a release is in
 [`consumers.md`](consumers.md). Releases are published as GitHub releases of this repository,
-named `YYYY.MM.DD.N`, each channel's pointer on the `channels` branch.
+named `MAJOR.YYMMDD.N` as the other OpenAEV products name theirs, each channel's pointer on the
+`channels` branch. The major is the manifest's `schema_version`, `YYMMDD` the day of the release
+in UTC, and `N` its rank that day, from 0: `1.261030.0`, then `1.261030.1`. The first releases,
+up to `2026.10.29.2`, keep their names, `YYYY.MM.DD.N` with `N` from 1, and come before every
+name of the new form.
 
 ## How a release is built
 
@@ -115,7 +119,7 @@ an installed reader understands:
 - **A break is published beside the old format.** A new format has a pointer of its own on the
   `channels` branch, and the pointer of format 1 keeps moving to releases in format 1 while readers
   upgrade. Readers refuse a `schema_version` they do not read, so none reads a new format as the
-  old one.
+  old one. Its releases carry the new `schema_version` as their major: `2.YYMMDD.N`.
 
 The schemas in [`schemas/`](../schemas) stay closed: they describe exactly what the checkout
 builds, and `build` refuses a field they do not name. A schema is therefore read with the release

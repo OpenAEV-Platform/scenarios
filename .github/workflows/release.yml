@@ -63,7 +63,7 @@ jobs:
             printf '%s' "$sha" > "$RUNNER_TEMP"/previous/pointer.sha
             printf '%s' "$answer" | jq -r .content | base64 -d > "$RUNNER_TEMP"/previous/pointer.json
             release=$(jq -r .release "$RUNNER_TEMP"/previous/pointer.json)
-            if ! [[ "$release" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]{0,8}$ ]]; then
+            if ! [[ "$release" =~ ^([0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]{0,8}|[1-9][0-9]{0,2}\.[0-9]{6}\.(0|[1-9][0-9]{0,8}))$ ]]; then
               echo "The pointer of $CHANNEL names no release."
               exit 1
             fi
