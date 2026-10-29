@@ -154,8 +154,10 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
         # The one job that writes: the release, and the channel's pointer.
         "publish": {"contents": "write"},
     },
+    # The scenario publish commits through the bot token (via the API), not the
+    # workflow's own GITHUB_TOKEN, so its GITHUB_TOKEN stays read-only.
 }
-# The jobs whose token may write, by workflow: the release workflow's publication only.
+# The jobs whose token may write, by workflow: the release's publication only.
 WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
 
 
@@ -234,12 +236,27 @@ def test_a_pull_request_target_checks_out_the_pull_request_beside_the_base_only(
 ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "tools-ci.yml": frozenset({"HYGIENE_TERMS"}),  # the private terms of the hygiene test
     "release.yml": frozenset({"github.token"}),  # to read the reviews, in its approvals job
+    # The scenario publish: only the bot token for the entry commit (no platform access).
+    "scenario-publish.yml": frozenset({"FILIGRAN_AUTOMATION_TOKEN"}),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"approvals", "publish"}),
+    "scenario-publish.yml": frozenset({"publish"}),
+}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "scenario-publish.yml": {
+        "publish": {
+            "Materialise the entry and commit it": {
+                "env": {
+                    "FILIGRAN_AUTOMATION_TOKEN": "${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}",
+                },
+                "run": "uv run --frozen --no-dev python scripts/scenario_publish.py",
+            },
+        },
+    },
     "release.yml": {
         "approvals": {
             "Read the channel's previous release": {
@@ -360,7 +377,7 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                 ),
             },
         },
-    }
+    },
 }
 
 
