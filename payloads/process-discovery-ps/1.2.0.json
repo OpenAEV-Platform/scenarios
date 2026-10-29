@@ -1,0 +1,70 @@
+{
+  "command_content": "ps aux | tail -n +2",
+  "command_executor": "sh",
+  "payload_attack_patterns": [
+    "T1057"
+  ],
+  "payload_description": "Utilize ps to identify processes.",
+  "payload_domains": [
+    {
+      "domain_color": "#389CFF",
+      "domain_name": "Endpoint"
+    }
+  ],
+  "payload_elevation_required": false,
+  "payload_execution_arch": "ALL_ARCHITECTURES",
+  "payload_external_id": "4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7",
+  "payload_name": "Process Discovery - ps (1.2.0)",
+  "payload_output_parsers": [
+    {
+      "output_parser_contract_output_elements": [
+        {
+          "contract_output_element_is_finding": true,
+          "contract_output_element_key": "pid",
+          "contract_output_element_name": "PID",
+          "contract_output_element_regex_groups": [
+            {
+              "regex_group_field": "number",
+              "regex_group_index_values": "$1"
+            }
+          ],
+          "contract_output_element_rule": "^\\S+\\s+(\\d+)",
+          "contract_output_element_type": "number"
+        },
+        {
+          "contract_output_element_is_finding": true,
+          "contract_output_element_key": "user",
+          "contract_output_element_name": "User",
+          "contract_output_element_regex_groups": [
+            {
+              "regex_group_field": "text",
+              "regex_group_index_values": "$1"
+            }
+          ],
+          "contract_output_element_rule": "^(\\S+)",
+          "contract_output_element_type": "text"
+        },
+        {
+          "contract_output_element_is_finding": true,
+          "contract_output_element_key": "command",
+          "contract_output_element_name": "Command",
+          "contract_output_element_regex_groups": [
+            {
+              "regex_group_field": "text",
+              "regex_group_index_values": "$1"
+            }
+          ],
+          "contract_output_element_rule": "^\\S+\\s+\\d+\\s+[\\d\\.]+\\s+[\\d\\.]+\\s+\\d+\\s+\\d+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(.+)$",
+          "contract_output_element_type": "text"
+        }
+      ],
+      "output_parser_mode": "STDOUT",
+      "output_parser_type": "REGEX"
+    }
+  ],
+  "payload_platforms": [
+    "Linux",
+    "MacOS"
+  ],
+  "payload_type": "Command"
+}

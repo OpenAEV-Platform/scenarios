@@ -1,6 +1,6 @@
 schema_version: 1
 external_id: f43a1c51-f4e6-4bad-9d41-1858bdde0888
-version: 1.0.0
+version: 1.1.0
 status: VERIFIED
 name: Linux discovery then local account creation
 description: 'List the running processes on the endpoint, then create a local account and remove it again, the second step started once the platform has started the first: a short chain from process discovery (T1057) to a local account (T1078.003). The second step runs on Linux only, and the agent must run as root; an account named art that already exists is left as it is. Run it once at a time on an endpoint.'
@@ -28,9 +28,9 @@ requires:
   executors:
   - openaev
 payloads:
-- id: c297e3ae-0cc2-5500-a923-1d0d7c1f67df
-  version: 1.1.0
-  sha256: d92ac612caee2685cd00e416ebd8ba0949715c2fb0948ddc3a9b65aa1baec1bb
-- id: d8b64542-22c5-5b64-8828-f578fdf02b05
-  version: 1.1.0
-  sha256: a63c2755eef16540127edc9ae0e90988f8daa0873707c0c938e433f40924e251
+- id: 4cd2c65a-8b86-4ff5-9c0d-dc1d39de76a7
+  version: 1.2.0
+  sha256: e84f51c99245d2008262ff0d4a3fa449261479f7d535ebea83dd9c67e47dcb7e
+- id: 84ad1dfe-0b96-452c-a122-4767aab6584e
+  version: 1.2.0
+  sha256: c0d7e588fe473e6d66e44534926443dc7986e251cadd19dba9151c128bab1478

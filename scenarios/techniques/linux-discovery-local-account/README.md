@@ -2,7 +2,7 @@
 
 # Linux discovery then local account creation
 
-Version 1\.0\.0 · VERIFIED · chained
+Version 1\.1\.0 · VERIFIED · chained
 
 List the running processes on the endpoint\, then create a local account and remove it again\, the second step started once the platform has started the first\: a short chain from process discovery \(T1057\) to a local account \(T1078\.003\)\. The second step runs on Linux only\, and the agent must run as root\; an account named art that already exists is left as it is\. Run it once at a time on an endpoint\.
 
@@ -44,7 +44,7 @@ List the running processes on the endpoint\, then create a local account and rem
 
 - Starts when the scenario is launched.
 - Injector: openaev\_implant
-- Payload: Process Discovery \- ps \(1\.1\.0\) \(c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df\)
+- Payload: Process Discovery \- ps \(1\.2\.0\) \(4cd2c65a\-8b86\-4ff5\-9c0d\-dc1d39de76a7\)
 
 Command (sh):
 
@@ -56,7 +56,7 @@ ps aux | tail -n +2
 
 - Waits for: step 1.
 - Injector: openaev\_implant
-- Payload: Create local account \(1\.1\.0\) \(d8b64542\-22c5\-5b64\-8828\-f578fdf02b05\)
+- Payload: Create local account \(1\.2\.0\) \(84ad1dfe\-0b96\-452c\-a122\-4767aab6584e\)
 
 Command (bash):
 
@@ -100,8 +100,8 @@ rm -rf "$dir"
 
 | Name | ID | Type | Platforms |
 |---|---|---|---|
-| Create local account \(1\.1\.0\) | d8b64542\-22c5\-5b64\-8828\-f578fdf02b05 | Command | Linux |
-| Process Discovery \- ps \(1\.1\.0\) | c297e3ae\-0cc2\-5500\-a923\-1d0d7c1f67df | Command | Linux, MacOS |
+| Create local account \(1\.2\.0\) | 84ad1dfe\-0b96\-452c\-a122\-4767aab6584e | Command | Linux |
+| Process Discovery \- ps \(1\.2\.0\) | 4cd2c65a\-8b86\-4ff5\-9c0d\-dc1d39de76a7 | Command | Linux, MacOS |
 
 ## Targets to fill in
 
