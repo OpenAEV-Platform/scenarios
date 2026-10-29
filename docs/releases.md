@@ -50,13 +50,16 @@ the head of the default branch, whose changes were reviewed. Who starts it appro
    (`verify --approved`), writes the channel's next pointer (`scenario-tools channel pointer`,
    refused unless it moves the channel forward), publishes the release, refused when its tag
    exists, reads it back and checks it against that pointer and as its consumers will, and then
-   moves the channel to it, refused if the pointer changed since the run read it. The run's summary
+   moves the channel to it with a token of the release app, refused if the pointer changed since
+   the run read it. The run's summary
    names the release and each scenario whose last change was merged without approval.
 
 The two builds are kept as the run's artifacts for seven days. Published releases are immutable
-on GitHub. For now the repository has no protected environment to approve a release in, and
-nothing but the workflow's practice keeps others from writing on `channels`: starting the run
-stands for the approval, and only the workflow writes the pointers.
+on GitHub. The publication runs in the `release` environment, which only the default branch can
+deploy to and which keeps the key of the release app, a GitHub App installed on this repository
+only. The rule on `channels` lets that app alone update it, so only a run of the reviewed
+workflow moves a pointer. The environment asks for no reviewer: starting the run stands for the
+approval.
 
 **What it assumes.** A change of the catalogue goes through a pull request that is squash-merged:
 the last commit that changed an entry is then the one the pull request was merged as. An entry

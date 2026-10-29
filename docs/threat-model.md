@@ -42,11 +42,13 @@ finding code and never as an internal error, within a budget of time and of memo
 - **An older release replayed is not detected** by the release alone. A consumer is asked to
   refuse a version lower than one it installed, but a platform that installs for the first time
   cannot tell an old release from the latest.
-- **The release is approved by starting its run.** The repository has no protected environment
-  yet, so whoever can start the release workflow approves the release, and GitHub does not keep
-  others from writing on `channels`. Published releases are immutable on GitHub, the workflow
-  alone writes the pointers, and a consumer checks the manifest's hash against the pointer; a
-  protected environment and a rule on `channels` are the next step.
+- **The release is approved by starting its run.** The `release` environment asks for no
+  reviewer, so whoever can start the release workflow approves the release. Only the release
+  app can update `channels`, and its key is kept in that environment, which only the default
+  branch can deploy to: a workflow changed on another branch cannot move a pointer. An
+  administrator can still change the rule. Published releases are immutable on GitHub, and a
+  consumer checks the manifest's hash against the pointer; required reviewers on the
+  environment are the next step.
 - **There is no revocation list.** A scenario is withdrawn by a new version, which a platform
   learns from the next release it reads.
 

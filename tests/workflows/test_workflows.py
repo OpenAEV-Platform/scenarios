@@ -100,8 +100,11 @@ def test_no_job_calls_a_workflow_or_runs_in_an_image(path: Path) -> None:
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> None:
-    """An action's input may run what it is given, as a script does: only a ref is computed."""
+    """An action's input may run what it is given, as a script does: only a ref is computed,
+    but in a step the secret rules fix to the letter, inputs included."""
     for step in _steps(_load(path)):
+        if _fixed(path, step):
+            continue
         for key, value in (step.get("with") or {}).items():
             computed = "${{" in str(value)
             in_temp = key == "path" and _IN_RUNNER_TEMP.fullmatch(str(value)) is not None
@@ -110,6 +113,15 @@ def test_an_expression_given_to_an_action_names_a_commit_only(path: Path) -> Non
                 step.get("name"),
                 key,
             )
+
+
+def _fixed(path: Path, step: dict[str, Any]) -> bool:
+    """Whether the secret rules of ``path`` declare ``step`` as it is, to the letter."""
+    for steps in SECRET_STEPS.get(path.name, {}).values():
+        allowed = steps.get(step.get("name", ""))
+        if allowed is not None and step == {"name": step["name"], **allowed}:
+            return True
+    return False
 
 
 @pytest.mark.parametrize(
@@ -157,6 +169,9 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
 }
 # The jobs whose token may write, by workflow: the release workflow's publication only.
 WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
+# The environment of each job that runs in one, by workflow: the release app's key is kept in
+# `release`, which only the default branch can deploy to, and only the publication reads it.
+ENVIRONMENTS: dict[str, dict[str, str]] = {"release.yml": {"publish": "release"}}
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -172,6 +187,13 @@ def test_every_workflow_reads_the_repository_only(path: Path) -> None:
                 assert set(job["permissions"].values()) == {"read"}
         else:
             assert "permissions" not in job, "a job never widens the token"
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_only_the_jobs_declared_run_in_an_environment(path: Path) -> None:
+    allowed = ENVIRONMENTS.get(path.name, {})
+    for name, job in _load(path)["jobs"].items():
+        assert job.get("environment") == allowed.get(name), name
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -233,7 +255,13 @@ def test_a_pull_request_target_checks_out_the_pull_request_beside_the_base_only(
 # decoded its escapes.
 ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "tools-ci.yml": frozenset({"HYGIENE_TERMS"}),  # the private terms of the hygiene test
-    "release.yml": frozenset({"github.token"}),  # to read the reviews, in its approvals job
+    "release.yml": frozenset(
+        {
+            "github.token",  # to read the reviews, in its approvals job, and publish the release
+            "RELEASE_APP_PRIVATE_KEY",  # the release app's key, for a token to move the channel
+            "steps.app.outputs.token",  # that token
+        }
+    ),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
 SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
@@ -342,9 +370,18 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     'TEMP"/published\n'
                 ),
             },
+            "Take a token of the release app": {
+                "id": "app",
+                "uses": "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+                "with": {
+                    "client-id": "${{ vars.RELEASE_APP_ID }}",
+                    "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+                    "permission-contents": "write",
+                },
+            },
             "Move the channel to the release": {
                 "env": {
-                    "GH_TOKEN": "${{ github.token }}",
+                    "GH_TOKEN": "${{ steps.app.outputs.token }}",
                     "CHANNEL": "${{ inputs.channel }}",
                 },
                 "run": (
@@ -384,12 +421,16 @@ _TOKEN = re.compile(  # any `github` that is not one of its named fields, the to
     r"\bgithub\b(?:\s*\[|\s*\.\s*token\b|(?!\s*\.\s*[A-Za-z_]))", re.IGNORECASE
 )
 _INHERIT = re.compile(r"\bsecrets\s*:\s*inherit\b", re.IGNORECASE)
+# A step's outputs, which may hold a token: any `steps`, by the output it names if it names one.
+_STEPS = re.compile(
+    r"\bsteps\b(?:\s*\.\s*[A-Za-z_][\w-]*\s*\.\s*outputs\s*\.\s*[A-Za-z_][\w-]*)?", re.IGNORECASE
+)
 
 
 def secrets_used(text: str) -> set[str]:
     """The secrets a workflow's text names, by name, and every other way to a secret, the token
     included, by the text that reaches it: any `secrets` not followed by a name, any `github`
-    that is not one of its named fields."""
+    that is not one of its named fields, any `steps`."""
     used: set[str] = {match.group(0) for match in _INHERIT.finditer(text)}
     for expression in _expressions(text):
         named = _NAMED_SECRET.findall(expression)
@@ -397,6 +438,7 @@ def secrets_used(text: str) -> set[str]:
         if len(_SECRETS.findall(expression)) > len(named):
             used.add("secrets")
         used |= {match.group(0) for match in _TOKEN.finditer(expression)}
+        used |= {match.group(0) for match in _STEPS.finditer(expression)}
     return used
 
 
@@ -442,6 +484,9 @@ def workflow_secrets(text: str) -> set[str]:
         ("ref: ${{ github.event.pull_request.base.sha }}", set()),
         ("run: echo the secrets of a scenario, on GitHub, from https://github.com/x", set()),
         ("run: echo ${{ github.tokens_count }}", set()),
+        ("token: ${{ steps.app.outputs.token }}", {"steps.app.outputs.token"}),
+        ("all: ${{ toJSON(steps) }}", {"steps"}),
+        ("id: ${{ vars.RELEASE_APP_ID }}", set()),
     ],
 )
 def test_every_way_to_a_secret_is_seen(text: str, used: set[str]) -> None:
@@ -514,6 +559,7 @@ def test_every_declared_workflow_exists() -> None:
     assert set(ALLOWED_JOB_PERMISSIONS) <= names
     assert set(SECRET_JOBS) <= names
     assert set(WRITING_JOBS) <= names
+    assert set(ENVIRONMENTS) <= names
 
 
 def test_the_two_builds_of_a_release_are_the_same_job() -> None:
@@ -572,6 +618,7 @@ def test_a_release_is_published_after_its_builds_compared_approved_and_verified(
         "Write the channel's next pointer",
         "Publish the release",
         "Check the published release against the next pointer",
+        "Take a token of the release app",
         "Move the channel to the release",
         "Say what was published",
     ]
