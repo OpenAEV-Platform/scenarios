@@ -273,6 +273,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # The only job that writes: the release, and the channel's pointer on the channels branch.
+    # The pointer is written with a token of the release app, the one writer of channels; its key
+    # is kept in the release environment, which only the default branch can deploy to.
+    environment: release
     permissions:
       contents: write
     steps:
@@ -302,8 +305,8 @@ jobs:
           name: previous
           path: ${{ runner.temp }}/previous
 
-      # Without a protected environment to approve in, starting the run is the approval: the one
-      # who started it is the release approver.
+      # The release environment asks for no reviewer: starting the run is the approval, and the
+      # one who started it is the release approver.
       - name: Approve the release
         env:
           APPROVER: ${{ github.triggering_actor }}
@@ -361,9 +364,17 @@ jobs:
           uv run --frozen --no-dev scenario-tools channel previous --pointer "$RUNNER_TEMP/pointer/${CHANNEL}.json" --manifest "$RUNNER_TEMP"/published/manifest.json --channel "$CHANNEL"
           uv run --frozen --no-dev scenario-tools verify "$RUNNER_TEMP"/published/manifest.json --schemas schemas --approved
 
+      - name: Take a token of the release app
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Move the channel to the release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           CHANNEL: ${{ inputs.channel }}
         run: |
           release=$(jq -r .release "$RUNNER_TEMP/pointer/${CHANNEL}.json")
