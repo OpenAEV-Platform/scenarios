@@ -86,7 +86,7 @@ def test_a_release_is_built_from_the_commit(
     document = json.loads(data)
     assert data == jcs(document)
     assert JsonSchemaValidator(ROOT / "schemas").validate("manifest", document) == ()
-    assert (document["issued_at"], document["release"]) == ("2026-10-30T09:15:02Z", "2026.10.30.1")
+    assert (document["issued_at"], document["release"]) == ("2026-10-30T09:15:02Z", "1.261030.0")
     [item] = document["items"]
     archive = (out / ARCHIVE).read_bytes()
     assert item["archive"] == {
@@ -203,7 +203,7 @@ def test_a_release_after_the_previous_one_of_the_day_takes_the_next_rank(
     result = _build(root, approvals, out, str(tmp_path / "first" / "manifest.json"))
 
     assert result.exit_code == 0, result.output
-    assert json.loads((out / "manifest.json").read_bytes())["release"] == "2026.10.30.2"
+    assert json.loads((out / "manifest.json").read_bytes())["release"] == "1.261030.1"
 
 
 def test_a_previous_release_that_is_no_manifest_builds_nothing(

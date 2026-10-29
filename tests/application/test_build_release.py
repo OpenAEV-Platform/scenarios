@@ -97,7 +97,7 @@ def test_a_release_holds_every_archive_and_the_manifest_in_its_canonical_form() 
     assert (document["channel"], document["issued_at"], document["release"]) == (
         "edge",
         "2026-10-30T09:15:02Z",
-        "2026.10.30.1",
+        "1.261030.0",
     )
     [first, second] = document["items"]  # sorted by external ID
     assert (first["external_id"], second["external_id"]) == (IDS[FIRST], IDS[SECOND])
@@ -168,12 +168,21 @@ def test_a_released_version_whose_archive_changed_leaves_the_release_unbuilt() -
 
 
 def test_a_release_takes_its_rank_after_the_previous_one_of_the_day() -> None:
+    previous = PreviousRelease("edge", "1.261030.3", {})
+
+    _, release = _build(previous=previous)
+
+    assert release is not None
+    assert json.loads(release.manifest)["release"] == "1.261030.4"
+
+
+def test_a_release_after_one_named_in_the_old_form_takes_the_first_rank() -> None:
     previous = PreviousRelease("edge", "2026.10.30.3", {})
 
     _, release = _build(previous=previous)
 
     assert release is not None
-    assert json.loads(release.manifest)["release"] == "2026.10.30.4"
+    assert json.loads(release.manifest)["release"] == "1.261030.0"
 
 
 def test_a_previous_release_of_another_channel_is_refused() -> None:
@@ -185,7 +194,7 @@ def test_a_previous_release_of_another_channel_is_refused() -> None:
 
 def test_a_previous_release_dated_after_the_commit_is_refused() -> None:
     with pytest.raises(EnvironmentProblemError, match="dated after this commit"):
-        _build(previous=PreviousRelease("edge", "2026.11.01.1", {}))
+        _build(previous=PreviousRelease("edge", "1.261101.0", {}))
 
 
 def test_a_released_scenario_that_no_entry_has_leaves_the_release_unbuilt() -> None:

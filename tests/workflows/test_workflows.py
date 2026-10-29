@@ -297,7 +297,8 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     '  printf \'%s\' "$answer" | jq -r .content | base64 -d > "$RUNNER_TEMP"/pr'
                     "evious/pointer.json\n"
                     '  release=$(jq -r .release "$RUNNER_TEMP"/previous/pointer.json)\n'
-                    '  if ! [[ "$release" =~ ^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}$'
+                    '  if ! [[ "$release" =~ ^([0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}'
+                    "|[1-9][0-9]{0,2}\\.[0-9]{6}\\.(0|[1-9][0-9]{0,8}))$"
                     " ]]; then\n"
                     '    echo "The pointer of $CHANNEL names no release."\n'
                     "    exit 1\n"
