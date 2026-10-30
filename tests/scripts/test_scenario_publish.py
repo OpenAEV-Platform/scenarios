@@ -54,8 +54,9 @@ def test_the_description_loses_the_neutralised_host() -> None:
     changed = publish._sanitise_scenario(scenario, _DOMAINS)
 
     assert changed is True
-    assert "honey.scanme.sh" not in scenario["scenario_information"]["scenario_description"]
-    assert "host.example.com" in scenario["scenario_information"]["scenario_description"]
+    assert scenario["scenario_information"]["scenario_description"] == (
+        "Two probes against host.example.com to validate detection."
+    )
 
 
 def test_a_port_is_kept_when_the_host_is_replaced() -> None:
@@ -120,5 +121,7 @@ def test_allowed_domains_are_read_from_the_policy() -> None:
 
     domains = publish._allowed_domains(root)
 
-    assert "example.com" in domains
-    assert "scanme.sh" not in domains
+    # The policy names the example domains, so a probe host under one is allowed and a real one
+    # is not — the behaviour the sanitiser relies on.
+    assert publish._host_is_allowed("probe.example.com", domains) is True
+    assert publish._host_is_allowed("honey.scanme.sh", domains) is False
