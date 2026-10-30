@@ -175,7 +175,9 @@ WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})
 # `release`, which only the default branch can deploy to; the approvals read it for a token that
 # reads the organisation's members, the publication for one that moves the channel.
 ENVIRONMENTS: dict[str, dict[str, str]] = {
-    "release.yml": {"approvals": "release", "publish": "release"}
+    "release.yml": {"approvals": "release", "publish": "release"},
+    # The scenario publish deploys to its protected environment to read the bot token.
+    "scenario-publish.yml": {"publish": "scenario-publish"},
 }
 
 
