@@ -22,6 +22,7 @@ No OpenAEV URL or token is needed here any more; the only secret this uses is th
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import subprocess
@@ -29,8 +30,10 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import jsonschema
 import yaml
@@ -41,6 +44,9 @@ _REQUEST = f"{_STAGING_DIR}/request.yaml"
 #: The export the Publisher committed, by preference: a .zip (keeps documents),
 #: or the .json intake also accepts.
 _EXPORT_NAMES = ("export.zip", "export.json")
+#: The example host and sender a lab target is neutralised to for publication.
+_EXAMPLE_HOST = "host.example.com"
+_EXAMPLE_SENDER = "user@example.com"
 
 
 def _fail(message: str) -> None:
@@ -87,6 +93,92 @@ def _staging(root: Path) -> tuple[dict[str, Any], Path, Path]:
     except jsonschema.ValidationError as error:
         _fail(f"{_REQUEST} is not a valid intake request: {error.message}")
     return request, export_path, request_path
+
+
+def _allowed_domains(root: Path) -> frozenset[str]:
+    """The example domain names a target may keep, from the policy data."""
+    data = yaml.safe_load((root / "policy" / "data" / "allowed-targets.yaml").read_text("utf-8"))
+    names = data.get("domains") if isinstance(data, dict) else None
+    return frozenset(name for name in (names or []) if isinstance(name, str) and name)
+
+
+def _host_is_allowed(host: str, domains: frozenset[str]) -> bool:
+    """A host a published entry may keep: an IP literal (the policy judges its range), or an
+    example name. Anything else is a real target, neutralised for publication."""
+    host = host.strip("[]").lower()
+    if not host:
+        return True
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return any(host == name or host.endswith(f".{name}") for name in domains)
+    return True  # an IP literal is left to the policy's documentation-range check
+
+
+def _sanitise_scenario(scenario: dict[str, Any], domains: frozenset[str]) -> bool:
+    """Point the lab target at the example host and the sender at the example address, so a
+    published entry never names a real system. Returns whether anything changed."""
+    changed = False
+    information = scenario.get("scenario_information")
+    if isinstance(information, dict):
+        sender = information.get("scenario_mail_from")
+        if (
+            isinstance(sender, str)
+            and "@" in sender
+            and not _host_is_allowed(sender.rsplit("@", 1)[1], domains)
+        ):
+            information["scenario_mail_from"] = _EXAMPLE_SENDER
+            changed = True
+    neutralised: set[str] = set()
+    for inject in scenario.get("scenario_injects") or []:
+        content = inject.get("inject_content") if isinstance(inject, dict) else None
+        uri = content.get("uri") if isinstance(content, dict) else None
+        if isinstance(uri, str) and uri:
+            parts = urlsplit(uri)
+            if parts.hostname and not _host_is_allowed(parts.hostname, domains):
+                netloc = _EXAMPLE_HOST if parts.port is None else f"{_EXAMPLE_HOST}:{parts.port}"
+                content["uri"] = urlunsplit(
+                    (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+                )
+                neutralised.add(parts.hostname)
+                changed = True
+    # The same real host may be named in the prose; replace exactly the hosts just neutralised,
+    # so the description never points at a real system either, without guessing at other words.
+    if isinstance(information, dict) and neutralised:
+        description = information.get("scenario_description")
+        if isinstance(description, str):
+            new = description
+            for host in neutralised:
+                new = new.replace(host, _EXAMPLE_HOST)
+            if new != description:
+                information["scenario_description"] = new
+                changed = True
+    return changed
+
+
+def _sanitise_export(export: Path, domains: frozenset[str]) -> None:
+    """Neutralise the lab targets in the committed export in place, before intake reads it, so
+    the lab exercises the real host but the published entry ships the example one."""
+    if export.suffix == ".json":
+        scenario = json.loads(export.read_text(encoding="utf-8"))
+        if _sanitise_scenario(scenario, domains):
+            export.write_text(json.dumps(scenario, ensure_ascii=False), encoding="utf-8")
+        return
+    with zipfile.ZipFile(export) as archive:
+        infos = archive.infolist()  # kept whole: writestr(info, ...) preserves the entry comment
+        data = {info.filename: archive.read(info.filename) for info in infos}
+    changed = False
+    for info in infos:
+        # The scenario entry is the member the platform commented "Scenario", whatever its name.
+        if info.comment == b"Scenario":
+            scenario = json.loads(data[info.filename].decode("utf-8"))
+            if _sanitise_scenario(scenario, domains):
+                data[info.filename] = json.dumps(scenario, ensure_ascii=False).encode("utf-8")
+                changed = True
+    if changed:
+        with zipfile.ZipFile(export, "w", zipfile.ZIP_DEFLATED) as archive:
+            for info in infos:
+                archive.writestr(info, data[info.filename])
 
 
 def _materialise(
@@ -206,6 +298,9 @@ def main() -> None:
         _fail("GITHUB_REPOSITORY, GITHUB_REF_NAME and FILIGRAN_AUTOMATION_TOKEN are required")
 
     request, export, request_path = _staging(root)
+    # Neutralise the lab targets before intake: the lab exercised the real host, the published
+    # entry ships the example one, as the catalogue policy requires.
+    _sanitise_export(export, _allowed_domains(root))
     # Outside the repo: intake refuses a dirty checkout, so nothing it does not write lands there.
     with tempfile.TemporaryDirectory() as tmp:
         entry = _materialise(root, request, export, request_path, Path(tmp))
