@@ -1,0 +1,20 @@
+# The maintainers review every change of the repository; once the branch rules require a code
+# owner's review, none is merged without one of them. What judges a pull request is named too:
+# the workflows, the policy data (the exceptions and payload IDs registries among them), the
+# schemas, the conformance vectors, the tools and their tests, and their configuration. The pull
+# request workflow takes a pull request's policy exceptions only while this file names an owner
+# of the policy data.
+*                         @OpenAEV-Platform/scenarios-maintainers
+/.github/                 @OpenAEV-Platform/scenarios-maintainers
+/policy/                  @OpenAEV-Platform/scenarios-maintainers
+/schemas/                 @OpenAEV-Platform/scenarios-maintainers
+/conformance/             @OpenAEV-Platform/scenarios-maintainers
+/src/                     @OpenAEV-Platform/scenarios-maintainers
+/tests/                   @OpenAEV-Platform/scenarios-maintainers
+/pyproject.toml           @OpenAEV-Platform/scenarios-maintainers
+/uv.lock                  @OpenAEV-Platform/scenarios-maintainers
+/.python-version          @OpenAEV-Platform/scenarios-maintainers
+/Makefile                 @OpenAEV-Platform/scenarios-maintainers
+/.pre-commit-config.yaml  @OpenAEV-Platform/scenarios-maintainers
+/.gitleaks.toml           @OpenAEV-Platform/scenarios-maintainers
+/.gitleaks.local.toml     @OpenAEV-Platform/scenarios-maintainers
