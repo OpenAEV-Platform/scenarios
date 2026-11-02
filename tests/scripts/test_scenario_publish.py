@@ -41,7 +41,10 @@ def test_a_real_host_and_sender_are_neutralised() -> None:
     changed = publish._sanitise_scenario(scenario, _DOMAINS)
 
     assert changed is True
-    assert scenario["scenario_injects"][0]["inject_content"]["uri"] == "https://host.example.com/path?q=1"
+    assert (
+        scenario["scenario_injects"][0]["inject_content"]["uri"]
+        == "https://host.example.com/path?q=1"
+    )
     assert scenario["scenario_information"]["scenario_mail_from"] == "user@example.com"
 
 
@@ -74,7 +77,9 @@ def test_an_example_host_and_sender_are_left_untouched() -> None:
     changed = publish._sanitise_scenario(scenario, _DOMAINS)
 
     assert changed is False
-    assert scenario["scenario_injects"][0]["inject_content"]["uri"] == "https://host.example.com/probe"
+    assert (
+        scenario["scenario_injects"][0]["inject_content"]["uri"] == "https://host.example.com/probe"
+    )
 
 
 def test_a_non_default_port_survives_the_rewrite() -> None:
@@ -82,7 +87,9 @@ def test_a_non_default_port_survives_the_rewrite() -> None:
 
     publish._sanitise_scenario(scenario, _DOMAINS)
 
-    assert scenario["scenario_injects"][0]["inject_content"]["uri"] == "https://host.example.com:9000/"
+    assert (
+        scenario["scenario_injects"][0]["inject_content"]["uri"] == "https://host.example.com:9000/"
+    )
 
 
 def test_a_json_export_is_sanitised_in_place(tmp_path: Path) -> None:
