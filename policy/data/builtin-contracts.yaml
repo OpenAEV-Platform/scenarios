@@ -32,6 +32,12 @@ contracts:
     needs_executor: false
     platforms: []
     copy_sha256: 9ef8a99cc1085100e5989f2e857b81652659f455d6d3b63998b2d015a9f16c48
+  - id: 611f223d-0e95-4f5b-ad89-a09ec2be50ae
+    name: HTTP Request
+    injector_type: openaev_http_query
+    needs_executor: false
+    platforms: []
+    copy_sha256: e97239de86fe7825e49e664baa1e261cb492f8c0a8b32c94e2f62f722274acf9
   - id: 93d27459-68d0-43b1-ad65-eacc3cfa5cf7
     name: Nmap - TCP Connect Scan
     injector_type: openaev_nmap
