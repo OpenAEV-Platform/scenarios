@@ -108,6 +108,38 @@ jobs:
               >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Take the pull request's built-in contracts
+        run: |
+          set -euo pipefail
+          # Recorded beside the scenario that first uses a built-in contract, reviewed in the same
+          # diff; a code owner approves the facts a cross-check takes from it (injector type,
+          # executor need, platforms) and its copy digest before the merge, so none is taken while
+          # the base branch names no code owner. An entry that introduces a built-in contract is
+          # then judged against it, as the recorded contracts are kept exactly those in use.
+          contracts=policy/data/builtin-contracts.yaml
+          for part in pull/policy pull/policy/data "pull/$contracts"; do
+            if [ -L "$part" ]; then echo "refused, a link: $part" >&2; exit 1; fi
+          done
+          if [ ! -e "pull/$contracts" ]; then
+            echo "The pull request records no built-in contracts of its own: the base branch's are kept." \
+              >> "$GITHUB_STEP_SUMMARY"
+          elif [ ! -f "pull/$contracts" ]; then
+            echo "refused, not a regular file: pull/$contracts" >&2
+            exit 1
+          elif ! cmp -s -- "pull/$contracts" "$contracts"; then
+            # A rule of the base branch's code owners for the policy data, the file or above.
+            owners='^/policy/(data/(builtin-contracts\.yaml)?)?[[:space:]]+@'
+            if [ ! -f .github/CODEOWNERS ] || [ -L .github/CODEOWNERS ] \
+              || ! grep -qE "$owners" .github/CODEOWNERS; then
+              echo "refused: the pull request changes the built-in contracts, and no code owner can approve them yet" >&2
+              exit 1
+            fi
+            cp -- "pull/$contracts" "$contracts"
+            echo "::warning file=$contracts::the pull request changes the built-in contracts: a code owner approves them before the merge"
+            echo "The pull request changes the built-in contracts: a code owner approves them before the merge." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Take the pull request's payload catalogue
         run: |
           set -euo pipefail
