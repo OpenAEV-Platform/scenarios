@@ -5,7 +5,11 @@ A release of the catalogue is every entry's import archive, the file of every pa
 what it imports. This page is for the
 maintainers who build releases; what a platform checks of a release is in
 [`consumers.md`](consumers.md). Releases are published as GitHub releases of this repository,
-named `YYYY.MM.DD.N`, each channel's pointer on the `channels` branch.
+named `MAJOR.YYMMDD.N` as the other OpenAEV products name theirs, each channel's pointer on the
+`channels` branch. The major is the manifest's `schema_version`, `YYMMDD` the day of the release
+in UTC, and `N` its rank that day, from 0: `1.261030.0`, then `1.261030.1`. The first releases,
+up to `2026.10.29.2`, keep their names, `YYYY.MM.DD.N` with `N` from 1, and come before every
+name of the new form.
 
 ## How a release is built
 
@@ -50,13 +54,16 @@ the head of the default branch, whose changes were reviewed. Who starts it appro
    (`verify --approved`), writes the channel's next pointer (`scenario-tools channel pointer`,
    refused unless it moves the channel forward), publishes the release, refused when its tag
    exists, reads it back and checks it against that pointer and as its consumers will, and then
-   moves the channel to it, refused if the pointer changed since the run read it. The run's summary
+   moves the channel to it with a token of the release app, refused if the pointer changed since
+   the run read it. The run's summary
    names the release and each scenario whose last change was merged without approval.
 
 The two builds are kept as the run's artifacts for seven days. Published releases are immutable
-on GitHub. For now the repository has no protected environment to approve a release in, and
-nothing but the workflow's practice keeps others from writing on `channels`: starting the run
-stands for the approval, and only the workflow writes the pointers.
+on GitHub. The publication runs in the `release` environment, which only the default branch can
+deploy to and which keeps the key of the release app, a GitHub App installed on this repository
+only. The rule on `channels` lets that app alone update it, so only a run of the reviewed
+workflow moves a pointer. The environment asks for no reviewer: starting the run stands for the
+approval.
 
 **What it assumes.** A change of the catalogue goes through a pull request that is squash-merged:
 the last commit that changed an entry is then the one the pull request was merged as. An entry
@@ -112,7 +119,7 @@ an installed reader understands:
 - **A break is published beside the old format.** A new format has a pointer of its own on the
   `channels` branch, and the pointer of format 1 keeps moving to releases in format 1 while readers
   upgrade. Readers refuse a `schema_version` they do not read, so none reads a new format as the
-  old one.
+  old one. Its releases carry the new `schema_version` as their major: `2.YYMMDD.N`.
 
 The schemas in [`schemas/`](../schemas) stay closed: they describe exactly what the checkout
 builds, and `build` refuses a field they do not name. A schema is therefore read with the release

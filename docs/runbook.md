@@ -37,7 +37,8 @@ the publication.
   security problem.
 - **Publication.** The tag of the release exists: a release is never replaced; find why, then
   release again from a later commit. The release is published but the channel did not move:
-  write the pointer to it with `scenario-tools channel pointer` and put it on `channels` by hand.
+  write the pointer to it with `scenario-tools channel pointer` and ask an administrator to put
+  it on `channels`, which only the release app can update otherwise.
   Until the pointer is restored, a run the same day stops on the existing tag, as it names the
   release again: restore the pointer first. A release tagged on another commit than the run's,
   or one that fails its check once read back, is not pointed at: find why before anything else,

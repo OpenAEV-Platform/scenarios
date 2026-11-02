@@ -1,6 +1,7 @@
 """The pointer of a release channel: the channel's release, by its name, and the SHA-256 of its
 manifest, so that what a consumer reads next is the release the pointer names."""
 
+import datetime
 import hashlib
 import re
 from typing import Any
@@ -132,6 +133,8 @@ def _written(**fields: Any) -> dict[str, Any]:
         (_written(channel=None), "None is not a channel"),
         (_written(release="2026.02.30.1"), "'2026.02.30.1' is not a release name"),
         (_written(release="2026.10.15.0"), "'2026.10.15.0' is not a release name"),
+        (_written(release="1.260230.0"), "'1.260230.0' is not a release name"),
+        (_written(release="1.261015.01"), "'1.261015.01' is not a release name"),
         (_written(release=["2026.10.15.1"]), "['2026.10.15.1'] is not a release name"),
         (_written(manifest_sha256=7), "its manifest_sha256 must be 64 lower-case hex digits"),
     ],
@@ -141,25 +144,64 @@ def test_a_pointer_out_of_shape_is_refused(document: object, why: str) -> None:
         pointer_from_document(document)
 
 
-def test_releases_are_ordered_by_their_day_then_their_rank() -> None:
-    names = ["2026.10.15.10", "2026.10.15.2", "2025.12.31.9", "2026.10.16.1"]
+def test_releases_are_ordered_by_their_format_their_day_then_their_rank() -> None:
+    """A name of the old form, YYYY.MM.DD.N, comes before every name of the new one."""
+    names = [
+        "1.261015.10",
+        "2026.10.15.10",
+        "1.261015.2",
+        "2.250101.0",
+        "2026.10.15.2",
+        "1.251231.9",
+        "2025.12.31.9",
+        "2026.10.16.1",
+    ]
 
     assert sorted(names, key=release_key) == [
         "2025.12.31.9",
         "2026.10.15.2",
         "2026.10.15.10",
         "2026.10.16.1",
+        "1.251231.9",
+        "1.261015.2",
+        "1.261015.10",
+        "2.250101.0",
     ]
 
 
+@pytest.mark.parametrize(
+    ("name", "key"),
+    [
+        ("2026.10.29.2", (0, datetime.date(2026, 10, 29), 2)),
+        ("1.261030.0", (1, datetime.date(2026, 10, 30), 0)),
+        ("12.990101.7", (12, datetime.date(2099, 1, 1), 7)),
+    ],
+)
+def test_a_release_name_gives_its_major_its_day_and_its_rank(
+    name: str, key: tuple[int, datetime.date, int]
+) -> None:
+    assert release_key(name) == key
+
+
 @pytest.mark.parametrize("rank", ["1" + "0" * 9, "9" * 5000], ids=["ten digits", "5000 digits"])
-def test_a_rank_over_nine_digits_is_no_release_name(rank: str) -> None:
+@pytest.mark.parametrize("day", ["2026.10.15", "1.261015"], ids=["old form", "new form"])
+def test_a_rank_over_nine_digits_is_no_release_name(day: str, rank: str) -> None:
     with pytest.raises(ValueError, match=r"is not a release name$"):
-        release_key(f"2026.10.15.{rank}")
+        release_key(f"{day}.{rank}")
 
 
-def test_a_rank_of_nine_digits_is_a_release_name() -> None:
-    assert release_key("2026.10.15.999999999")[1] == 999_999_999
+@pytest.mark.parametrize("day", ["2026.10.15", "1.261015"], ids=["old form", "new form"])
+def test_a_rank_of_nine_digits_is_a_release_name(day: str) -> None:
+    assert release_key(f"{day}.999999999")[-1] == 999_999_999
+
+
+def test_a_channel_moves_from_a_name_of_the_old_form_to_one_of_the_new() -> None:
+    old = ChannelPointer("edge", "2026.10.29.2", "a" * 64)
+    new = ChannelPointer("edge", "1.261030.0", "b" * 64)
+
+    check_moved_forward(old, new)
+    with _refused("edge would go back from 1.261030.0 to 2026.10.29.2"):
+        check_moved_forward(new, old)
 
 
 def test_a_channel_moves_to_a_later_release_or_stays_on_its_own() -> None:

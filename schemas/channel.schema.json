@@ -29,9 +29,9 @@
       ]
     },
     "release": {
-      "description": "The name of the channel's release: its date, a day the calendar has, and its rank that day, from 1, YYYY.MM.DD.N. A channel moves to a later release, never back.",
+      "description": "The name of the channel's release, MAJOR.YYMMDD.N: the manifest's schema_version, its date, a day the calendar has, and its rank that day, from 0. The releases published before were named YYYY.MM.DD.N, the rank from 1, and come before every name of that form. A channel moves to a later release, never back.",
       "type": "string",
-      "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}$"
+      "pattern": "^([0-9]{4}\\.[0-9]{2}\\.[0-9]{2}\\.[1-9][0-9]{0,8}|[1-9][0-9]{0,2}\\.[0-9]{6}\\.(0|[1-9][0-9]{0,8}))$"
     },
     "manifest_sha256": {
       "description": "The SHA-256 of that release's manifest.json, as published.",

@@ -4,8 +4,11 @@ This page is for those who build what consumes the catalogue: a collector that i
 scenarios on a platform, a marketplace, an offline import. It says what a release holds, what to
 check before any of its content is used, and how to test those checks.
 
-Releases are published as GitHub releases of this repository, named `YYYY.MM.DD.N`. Each channel's
-pointer is `<channel>.json` on the `channels` branch: read it, then the release it names.
+Releases are published as GitHub releases of this repository, named `MAJOR.YYMMDD.N`: the
+manifest's `schema_version`, the day in UTC and the rank that day, from 0 (`1.261030.0`). The first
+releases, up to `2026.10.29.2`, are named `YYYY.MM.DD.N`, the rank from 1; order them before every name of the new form, then by major, day and rank,
+each as a number. Each channel's pointer is `<channel>.json` on the `channels` branch: read it,
+then the release it names.
 
 ## What a release holds
 
@@ -14,7 +17,7 @@ A release is a `manifest.json` and, beside it, one import archive per scenario, 
 `<payload>-<version>.json`. The manifest follows
 [`schemas/manifest.schema.json`](../schemas/manifest.schema.json). It names its `repository`, its
 `channel` (`edge` for every release, `stable` for those recommended to everyone), its name
-`release` (`YYYY.MM.DD.N`), `issued_at` (the time of the commit it is built from) and, once the
+`release` (`MAJOR.YYMMDD.N`), `issued_at` (the time of the commit it is built from) and, once the
 release is approved, its `release_approver`. For each scenario it gives:
 
 - its `external_id`, which never changes from one version to the next, its `version` and its

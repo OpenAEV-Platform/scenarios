@@ -34,7 +34,11 @@ _COPIED = (
     "threat",
     "type",
 )
-_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]{0,8})")
+# A release's name: MAJOR.YYMMDD.N, the major the manifest's schema_version and N from 0, as the
+# other products name theirs; the releases published before were named YYYY.MM.DD.N, N from 1,
+# and keep their names, before every name of the new form.
+_RELEASE = re.compile(r"([1-9][0-9]{0,2})\.([0-9]{2})([0-9]{2})([0-9]{2})\.(0|[1-9][0-9]{0,8})")
+_OLD_RELEASE = re.compile(r"([0-9]{4})\.([0-9]{2})\.([0-9]{2})\.([1-9][0-9]{0,8})")
 _LAST_RANK = 999_999_999  # a rank has nine digits at most
 _LOGIN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _LOGIN_LIMIT = 39
@@ -202,36 +206,44 @@ def issued_at_text(moment: datetime.datetime) -> str:
     return moment.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def release_key(name: object) -> tuple[datetime.date, int]:
-    """The day and the rank that day of the release ``name``, by which releases are ordered;
-    ``ValueError`` for a name that is none, or names a day no calendar has."""
-    found = _RELEASE.fullmatch(name) if isinstance(name, str) else None
-    try:
-        day = datetime.date(*(int(part) for part in found.groups()[:3])) if found else None
-    except ValueError:  # a day no calendar has
-        day = None
-    if found is None or day is None:
-        raise ValueError(f"{name!r} is not a release name")
-    return day, int(found.group(4))
+def release_key(name: object) -> tuple[int, datetime.date, int]:
+    """The major, the day and the rank that day of the release ``name``, by which releases are
+    ordered, a name of the old form of major 0; ``ValueError`` for a name that is none, or
+    names a day no calendar has."""
+    found, major, century = None, 0, 0
+    if isinstance(name, str):
+        found = _OLD_RELEASE.fullmatch(name)
+        if found is None and (found := _RELEASE.fullmatch(name)) is not None:
+            major, century = int(found.group(1)), 2000
+    if found is not None:
+        year, month, day, rank = (int(part) for part in found.groups()[-4:])
+        try:
+            return major, datetime.date(century + year, month, day), rank
+        except ValueError:  # a day no calendar has
+            pass
+    raise ValueError(f"{name!r} is not a release name")
 
 
 def release_name(moment: datetime.datetime, previous: str | None) -> str:
-    """The name of a release made at ``moment``: its day in UTC and its rank that day, one
-    after ``previous``, the channel's previous release, when it is of the same day."""
+    """The name of a release made at ``moment``: the manifest's schema_version, its day in UTC
+    and its rank that day, one after ``previous``, the channel's previous release, when it is
+    of the same day and form."""
     day = moment.astimezone(datetime.UTC).date()
-    rank = 1
+    rank = 0
     if previous is not None:
-        before, before_rank = release_key(previous)
-        if before > day:
+        major, before, before_rank = release_key(previous)
+        if major > SCHEMA_VERSION:
+            raise ValueError(f"the previous release {previous} is of a later format")
+        if major == SCHEMA_VERSION and before > day:
             raise ValueError(f"the previous release {previous} is dated after this commit")
-        if before == day:
+        if major == SCHEMA_VERSION and before == day:
             rank = before_rank + 1
             if rank > _LAST_RANK:
                 raise ValueError(
                     f"the previous release {previous} is the day's last: no release can follow "
-                    f"it on {day:%Y.%m.%d}"
+                    f"it on {day:%Y-%m-%d}"
                 )
-    return f"{day:%Y.%m.%d}.{rank}"
+    return f"{SCHEMA_VERSION}.{day:%y%m%d}.{rank}"
 
 
 def _malformed(why: str) -> ValueError:

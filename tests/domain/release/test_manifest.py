@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from scenario_tools.domain.release.manifest import (
+    SCHEMA_VERSION,
     Approval,
     Approvals,
     ArchiveFacts,
@@ -151,17 +152,24 @@ def test_a_moment_without_its_offset_has_no_issue_time() -> None:
 @pytest.mark.parametrize(
     ("previous", "name"),
     [
-        (None, "2026.10.30.1"),
-        ("2026.10.29.4", "2026.10.30.1"),
-        ("2026.10.30.1", "2026.10.30.2"),
-        ("2026.10.30.9", "2026.10.30.10"),
-        ("2025.12.31.3", "2026.10.30.1"),
+        (None, "1.261030.0"),
+        ("1.261029.4", "1.261030.0"),
+        ("1.261030.0", "1.261030.1"),
+        ("1.261030.9", "1.261030.10"),
+        ("1.251231.3", "1.261030.0"),
+        ("2026.10.29.2", "1.261030.0"),  # a name of the old form, before every new one
+        ("2026.10.30.4", "1.261030.0"),
+        ("2026.10.31.1", "1.261030.0"),
     ],
 )
-def test_a_release_is_named_by_its_day_and_its_rank_that_day(
+def test_a_release_is_named_by_its_format_its_day_and_its_rank_that_day(
     previous: str | None, name: str
 ) -> None:
     assert release_name(MOMENT, previous) == name
+
+
+def test_the_major_of_a_release_name_is_the_manifest_s_schema_version() -> None:
+    assert release_name(MOMENT, None).split(".")[0] == str(SCHEMA_VERSION)
 
 
 def test_the_day_of_a_release_is_its_day_in_utc() -> None:
@@ -169,26 +177,46 @@ def test_the_day_of_a_release_is_its_day_in_utc() -> None:
         2026, 10, 31, 1, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=2))
     )
 
-    assert release_name(late, "2026.10.30.1") == "2026.10.30.2"
+    assert release_name(late, "1.261030.0") == "1.261030.1"
 
 
-@pytest.mark.parametrize("previous", ["2026.10.31.1", "2027.01.01.1"])
+@pytest.mark.parametrize("previous", ["1.261031.0", "1.270101.0"])
 def test_a_previous_release_dated_after_the_commit_is_refused(previous: str) -> None:
     with pytest.raises(ValueError, match=f"the previous release {previous} is dated after"):
         release_name(MOMENT, previous)
 
 
+def test_a_previous_release_of_a_later_format_is_refused() -> None:
+    with pytest.raises(ValueError, match=r"the previous release 2\.250101\.0 is of a later format"):
+        release_name(MOMENT, "2.250101.0")
+
+
 def test_a_day_s_last_rank_is_followed_by_none() -> None:
-    assert release_name(MOMENT, "2026.10.30.999999998") == "2026.10.30.999999999"
+    assert release_name(MOMENT, "1.261030.999999998") == "1.261030.999999999"
     with pytest.raises(ValueError, match="is the day's last") as error:
-        release_name(MOMENT, "2026.10.30.999999999")
+        release_name(MOMENT, "1.261030.999999999")
     assert str(error.value) == (
-        "the previous release 2026.10.30.999999999 is the day's last: no release can follow it "
-        "on 2026.10.30"
+        "the previous release 1.261030.999999999 is the day's last: no release can follow it "
+        "on 2026-10-30"
     )
 
 
-@pytest.mark.parametrize("previous", ["2026.10.30", "2026.10.30.0", "2026.13.01.1", "x"])
+@pytest.mark.parametrize(
+    "previous",
+    [
+        "2026.10.30",
+        "2026.10.30.0",
+        "2026.13.01.1",
+        "x",
+        "1.261030",
+        "1.261030.01",
+        "0.261030.0",
+        "01.261030.0",
+        "1.261330.0",
+        "1.260230.0",
+        "1.2610300.0",
+    ],
+)
 def test_a_previous_release_name_that_is_none_is_refused(previous: str) -> None:
     with pytest.raises(ValueError, match="is not a release name"):
         release_name(MOMENT, previous)
@@ -417,8 +445,8 @@ def test_the_issue_time_and_the_day_are_utc_s_whatever_the_machine_s_zone() -> N
     late = datetime.datetime(2026, 10, 30, 21, 0, tzinfo=datetime.UTC)  # the 31st in Kiritimati
 
     assert issued_at_text(late) == "2026-10-30T21:00:00Z"
-    assert release_name(late, None) == "2026.10.30.1"
-    assert release_name(late, "2026.10.30.1") == "2026.10.30.2"
+    assert release_name(late, None) == "1.261030.0"
+    assert release_name(late, "1.261030.0") == "1.261030.1"
 
 
 def _released(item: dict[str, Any]) -> PreviousRelease:

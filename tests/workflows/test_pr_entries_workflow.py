@@ -352,6 +352,154 @@ def test_exceptions_reached_through_a_link_are_refused(tmp_path: Path, linked: s
     assert (tmp_path / "summary").read_text() == ""
 
 
+# The built-in contracts a pull request records
+
+CONTRACTS = "policy/data/builtin-contracts.yaml"
+_BASE_CONTRACTS = "platform_version: 3.261016.0\ncontracts: []\n"
+_PULL_CONTRACTS = "platform_version: 3.261016.0\ncontracts: [recorded]\n"
+
+
+def _contracts_script() -> str:
+    [step] = [
+        step for step in STEPS if step.get("name") == "Take the pull request's built-in contracts"
+    ]
+    return str(step["run"])
+
+
+def _run_contracts(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    (tmp_path / "summary").write_text("")
+    environment = {"PATH": "/usr/bin:/bin", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary")}
+    return subprocess.run(  # noqa: S603 - bash runs the workflow's own step
+        ["/bin/bash", "-c", _contracts_script()],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _base_and_pull_contracts(tmp_path: Path, pull: str | None, *, owners: bool = True) -> None:
+    """A base branch with its own built-in contracts, with code owners or not, and a pull request
+    whose contracts hold ``pull``, or that records none of its own."""
+    (tmp_path / "policy" / "data").mkdir(parents=True)
+    (tmp_path / CONTRACTS).write_text(_BASE_CONTRACTS)
+    if owners:
+        (tmp_path / ".github").mkdir()
+        (tmp_path / ".github" / "CODEOWNERS").write_text("* @everyone\n/policy/ @maintainers\n")
+    (tmp_path / "pull" / "policy" / "data").mkdir(parents=True)
+    if pull is not None:
+        (tmp_path / "pull" / CONTRACTS).write_text(pull)
+
+
+def test_the_contracts_are_taken_after_the_entries_and_before_the_validation() -> None:
+    names = [step.get("name", "") for step in STEPS]
+
+    taken = names.index("Take the pull request's built-in contracts")
+    assert names.index("Take the changed entries from the pull request") < taken
+    assert taken < names.index("Validate the changed entries")
+
+
+def test_the_contracts_a_pull_request_records_are_taken_and_pointed_out(tmp_path: Path) -> None:
+    """Recorded in the same diff as the scenario that first uses them, a code owner approving."""
+    _base_and_pull_contracts(tmp_path, _PULL_CONTRACTS)
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _PULL_CONTRACTS
+    assert result.stdout.startswith(f"::warning file={CONTRACTS}::")  # in the checks list
+    assert "a code owner approves them" in (tmp_path / "summary").read_text()
+
+
+@pytest.mark.parametrize("owners", [False, True])
+def test_no_contract_is_taken_while_no_code_owner_can_approve_it(
+    tmp_path: Path, owners: bool
+) -> None:
+    """No code owners at all, or none for the policy data: a file for /docs/ only, say."""
+    _base_and_pull_contracts(tmp_path, _PULL_CONTRACTS, owners=owners)
+    if owners:
+        (tmp_path / ".github" / "CODEOWNERS").write_text("/docs/ @maintainers\n/policy/data/x @a\n")
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode != 0
+    assert "no code owner can approve them yet" in result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _BASE_CONTRACTS
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["/policy/data/ @maintainers", "/policy/data/builtin-contracts.yaml @a @b", "/policy/\t@a"],
+)
+def test_code_owners_of_the_policy_data_let_the_contracts_be_taken(
+    tmp_path: Path, line: str
+) -> None:
+    _base_and_pull_contracts(tmp_path, _PULL_CONTRACTS)
+    (tmp_path / ".github" / "CODEOWNERS").write_text(f"# owners\n{line}\n")
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _PULL_CONTRACTS
+
+
+@pytest.mark.parametrize("owners", [True, False])
+def test_unchanged_contracts_leave_the_base_s(tmp_path: Path, owners: bool) -> None:
+    _base_and_pull_contracts(tmp_path, _BASE_CONTRACTS, owners=owners)
+
+    result = _run_contracts(tmp_path)
+
+    assert (result.returncode, result.stdout) == (0, ""), result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _BASE_CONTRACTS
+    assert (tmp_path / "summary").read_text() == ""
+
+
+def test_a_pull_request_without_contracts_keeps_the_base_s(tmp_path: Path) -> None:
+    _base_and_pull_contracts(tmp_path, None)
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _BASE_CONTRACTS
+    assert "the base branch's are kept" in (tmp_path / "summary").read_text()
+
+
+def test_contracts_that_are_no_file_are_refused(tmp_path: Path) -> None:
+    _base_and_pull_contracts(tmp_path, None)
+    (tmp_path / "pull" / CONTRACTS).mkdir()
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode != 0
+    assert "refused, not a regular file" in result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _BASE_CONTRACTS
+
+
+@pytest.mark.parametrize("linked", ["pull/policy", "pull/policy/data", f"pull/{CONTRACTS}"])
+def test_contracts_reached_through_a_link_are_refused(tmp_path: Path, linked: str) -> None:
+    (tmp_path / "policy" / "data").mkdir(parents=True)
+    (tmp_path / CONTRACTS).write_text(_BASE_CONTRACTS)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "data").mkdir(parents=True)
+    (elsewhere / "data" / "builtin-contracts.yaml").write_text(_PULL_CONTRACTS)
+    (elsewhere / "builtin-contracts.yaml").write_text(_PULL_CONTRACTS)
+    target = {
+        "pull/policy": elsewhere,
+        "pull/policy/data": elsewhere / "data",
+        f"pull/{CONTRACTS}": elsewhere / "builtin-contracts.yaml",
+    }[linked]
+    (tmp_path / linked).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / linked).symlink_to(target)
+
+    result = _run_contracts(tmp_path)
+
+    assert result.returncode != 0
+    assert f"refused, a link: {linked}" in result.stderr
+    assert (tmp_path / CONTRACTS).read_text() == _BASE_CONTRACTS
+    assert (tmp_path / "summary").read_text() == ""
+
+
 # The pull request's commits, scanned for secrets
 
 COMMITS = "Look for secrets in the pull request's commits"
