@@ -166,12 +166,18 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
         # The one job that writes: the release, and the channel's pointer.
         "publish": {"contents": "write"},
     },
+    # The scenario publish commits through the bot token (via the API), not the
+    # workflow's own GITHUB_TOKEN, so its GITHUB_TOKEN stays read-only.
 }
-# The jobs whose token may write, by workflow: the release workflow's publication only.
+# The jobs whose token may write, by workflow: the release's publication only.
 WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
 # The environment of each job that runs in one, by workflow: the release app's key is kept in
 # `release`, which only the default branch can deploy to, and only the publication reads it.
-ENVIRONMENTS: dict[str, dict[str, str]] = {"release.yml": {"publish": "release"}}
+ENVIRONMENTS: dict[str, dict[str, str]] = {
+    "release.yml": {"publish": "release"},
+    # The scenario publish deploys to its protected environment to read the bot token.
+    "scenario-publish.yml": {"publish": "scenario-publish"},
+}
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -262,12 +268,27 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
             "steps.app.outputs.token",  # that token
         }
     ),
+    # The scenario publish: only the bot token for the entry commit (no platform access).
+    "scenario-publish.yml": frozenset({"FILIGRAN_AUTOMATION_TOKEN"}),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"approvals", "publish"}),
+    "scenario-publish.yml": frozenset({"publish"}),
+}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "scenario-publish.yml": {
+        "publish": {
+            "Materialise the entry and commit it": {
+                "env": {
+                    "FILIGRAN_AUTOMATION_TOKEN": "${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}",
+                },
+                "run": "uv run --frozen --no-dev python scripts/scenario_publish.py",
+            },
+        },
+    },
     "release.yml": {
         "approvals": {
             "Read the channel's previous release": {
@@ -398,7 +419,7 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                 ),
             },
         },
-    }
+    },
 }
 
 

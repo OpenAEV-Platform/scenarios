@@ -79,6 +79,10 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# The publish script shells out to git and scenario-tools by name (PATH lookup,
+# fixed argv, no shell) and opens the fixed api.github.com host over urllib: the
+# subprocess and URL audit lints do not apply.
+"scripts/**" = ["S603", "S607", "S310"]
 
 [tool.importlinter]
 root_package = "scenario_tools"
