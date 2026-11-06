@@ -96,14 +96,21 @@ def test_an_item_of_the_community_names_its_contributor() -> None:
 
 
 @pytest.mark.parametrize(
-    ("origin", "contributor"),
-    [("filigran", "jdoe"), ("community", None), ("community", "JDoe"), ("someone", None)],
+    ("origin", "contributor", "why"),
+    [
+        ("filigran", "jdoe", "a Filigran origin names no contributor"),
+        ("community", None, "a community origin names its contributor's GitHub login"),
+        ("community", "JDoe", "a community origin names its contributor's GitHub login"),
+        ("someone", None, "the origin 'someone' is neither filigran nor community"),
+    ],
 )
 def test_an_origin_is_filigran_or_a_contributor_of_the_community(
-    origin: str, contributor: str | None
+    origin: str, contributor: str | None, why: str
 ) -> None:
-    with pytest.raises(ValueError, match="origin"):
+    with pytest.raises(ValueError, match="origin") as error:
         Approval(1, (), origin, contributor)
+
+    assert str(error.value) == why
 
 
 def test_an_item_shares_nothing_with_the_metadata_it_copies() -> None:
