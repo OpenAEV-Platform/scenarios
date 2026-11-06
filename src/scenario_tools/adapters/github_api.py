@@ -1,5 +1,6 @@
 """GitHub's API, read with the standard library, for what the release workflow asks of it: the
-pull requests a commit was merged by, and the reviews of a pull request.
+pull requests a commit was merged by, the reviews of a pull request, and whether someone is a
+member of the organisation that owns the repository.
 
 Only ``api.github.com``, over HTTPS, with the token the workflow gives; a redirect is never
 followed, as the token would go with it. Answers are read within a limit, each read within a
@@ -15,6 +16,7 @@ from typing import Any
 
 from scenario_tools.adapters.openaev_http import NoRedirect
 from scenario_tools.adapters.safe_readers import parse_json
+from scenario_tools.domain.release.manifest import is_github_login
 from scenario_tools.domain.shared.commits import is_commit_id
 from scenario_tools.ports.errors import EnvironmentProblemError, UnsafeInputError
 
@@ -46,9 +48,9 @@ class HttpGitHub:
         self._repository = repository
         self._open = open_url
 
-    def _get(self, path: str, what: str) -> list[Any]:
-        request = urllib.request.Request(  # noqa: S310 - the URL is API's, over HTTPS
-            f"{API}/repos/{self._repository}/{path}",
+    def _request(self, url: str) -> urllib.request.Request:
+        return urllib.request.Request(  # noqa: S310 - the URL is API's, over HTTPS
+            url,
             headers={
                 "Authorization": f"Bearer {self._token}",
                 "Accept": "application/vnd.github+json",
@@ -57,6 +59,9 @@ class HttpGitHub:
             },
             method="GET",
         )
+
+    def _get(self, path: str, what: str) -> list[Any]:
+        request = self._request(f"{API}/repos/{self._repository}/{path}")
         try:
             with self._open(request, TIMEOUT) as answer:
                 data = answer.read(ANSWER_LIMIT + 1)
@@ -106,3 +111,31 @@ class HttpGitHub:
         raise EnvironmentProblemError(
             f"pull request #{number} has more than {_PAGE * _PAGES} reviews: it cannot be read"
         )
+
+    def is_member(self, login: str) -> bool:
+        """Whether ``login``, a GitHub login in lower case, is a member of the organisation that
+        owns the repository, private members included: GitHub says so with a 204, and says
+        that one is not with a 404. Any other answer stops rather than guessing: a token that
+        cannot read the private members is redirected to the public ones, which would take
+        every private member for one of the community."""
+        if not is_github_login(login):
+            raise EnvironmentProblemError(f"{login!r} is not a GitHub login in lower case")
+        organisation = self._repository.split("/")[0]
+        what = f"whether {login} is a member of {organisation}"
+        request = self._request(f"{API}/orgs/{organisation}/members/{login}")
+        try:
+            with self._open(request, TIMEOUT) as answer:
+                status = answer.status
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return False
+            if error.code == 302:
+                raise EnvironmentProblemError(
+                    f"cannot read {what}: the token cannot read its private members"
+                ) from None
+            raise EnvironmentProblemError(f"cannot read {what}: HTTP {error.code}") from None
+        except (urllib.error.URLError, http.client.HTTPException, OSError):
+            raise EnvironmentProblemError(f"cannot reach GitHub to read {what}") from None
+        if status != 204:
+            raise EnvironmentProblemError(f"cannot read {what}: HTTP {status}")
+        return True

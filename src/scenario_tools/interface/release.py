@@ -12,7 +12,7 @@ import click
 from scenario_tools.adapters.catalogue_files import CatalogueDirectory
 from scenario_tools.adapters.data_files import scenario_from_archive, write_output
 from scenario_tools.adapters.fixture_zip import HandmadeArchives
-from scenario_tools.adapters.git import commit_time, head_commit, last_commit
+from scenario_tools.adapters.git import commit_time, first_commit, head_commit, last_commit
 from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.jsonschema_validator import JsonSchemaValidator
 from scenario_tools.adapters.repository import RepositoryEntries
@@ -106,7 +106,9 @@ def approvals_command(ctx: click.Context, repo: Path, out: Path) -> None:
     """Write to --out, a new file outside the repository, who approved the last change of every
     entry of the checkout at --repo, as build reads it: the pull request merged into the
     default branch as the last commit that changed the entry, and those who approved what it
-    merged, asked of GitHub with the token in GITHUB_TOKEN."""
+    merged, asked of GitHub with the token in GITHUB_TOKEN; and the entry's origin, whether the
+    author of the pull request merged as its first commit is a member of the organisation,
+    asked with the token in MEMBERS_TOKEN, which reads its private members."""
     root = Path(os.path.realpath(repo))
     out = _output(out, root, directory=False)
 
@@ -114,12 +116,19 @@ def approvals_command(ctx: click.Context, repo: Path, out: Path) -> None:
         token = os.environ.get("GITHUB_TOKEN", "")
         if not token:
             raise EnvironmentProblemError("GITHUB_TOKEN is not set: GitHub cannot be asked")
+        members_token = os.environ.get("MEMBERS_TOKEN", "")
+        if not members_token:
+            raise EnvironmentProblemError(
+                "MEMBERS_TOKEN is not set: the organisation's members cannot be asked, and an "
+                "origin is never guessed"
+            )
         running = os.environ.get("GITHUB_REPOSITORY") or REPOSITORY
         if running != REPOSITORY:  # a release names this repository: never another's history
             raise EnvironmentProblemError(
                 f"the release is of {REPOSITORY}, not of {running}: approvals are read there only"
             )
         github = HttpGitHub(token, REPOSITORY)
+        organisation = HttpGitHub(members_token, REPOSITORY)
         source = RepositoryEntries(root, strict=True)
         commit = head_commit(root)
         found = collect_approvals(
@@ -127,8 +136,10 @@ def approvals_command(ctx: click.Context, repo: Path, out: Path) -> None:
             commit=commit,
             repository=REPOSITORY,
             last_commit=lambda entry: last_commit(root, entry, at=commit),
+            first_commit=lambda entry: first_commit(root, entry, at=commit),
             pulls_of=github.pulls_of,
             reviews_of=github.reviews_of,
+            is_member=organisation.is_member,
         )
         document = approvals_document(found)
         try:

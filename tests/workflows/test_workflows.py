@@ -170,8 +170,11 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
 # The jobs whose token may write, by workflow: the release workflow's publication only.
 WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
 # The environment of each job that runs in one, by workflow: the release app's key is kept in
-# `release`, which only the default branch can deploy to, and only the publication reads it.
-ENVIRONMENTS: dict[str, dict[str, str]] = {"release.yml": {"publish": "release"}}
+# `release`, which only the default branch can deploy to; the approvals read it for a token that
+# reads the organisation's members, the publication for one that moves the channel.
+ENVIRONMENTS: dict[str, dict[str, str]] = {
+    "release.yml": {"approvals": "release", "publish": "release"}
+}
 
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
@@ -258,8 +261,9 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "release.yml": frozenset(
         {
             "github.token",  # to read the reviews, in its approvals job, and publish the release
-            "RELEASE_APP_PRIVATE_KEY",  # the release app's key, for a token to move the channel
-            "steps.app.outputs.token",  # that token
+            "RELEASE_APP_PRIVATE_KEY",  # the release app's key, for the two tokens below
+            "steps.app.outputs.token",  # a token to move the channel
+            "steps.members.outputs.token",  # a token to read the organisation's members
         }
     ),
 }
@@ -323,8 +327,21 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                     'rm "$RUNNER_TEMP"/previous/error.txt\n'
                 ),
             },
+            "Take a token of the release app to read the organisation's members": {
+                "id": "members",
+                "uses": "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+                "with": {
+                    "client-id": "${{ vars.RELEASE_APP_ID }}",
+                    "private-key": "${{ secrets.RELEASE_APP_PRIVATE_KEY }}",
+                    "owner": "${{ github.repository_owner }}",
+                    "permission-members": "read",
+                },
+            },
             "Collect the approvals": {
-                "env": {"GITHUB_TOKEN": "${{ github.token }}"},
+                "env": {
+                    "GITHUB_TOKEN": "${{ github.token }}",
+                    "MEMBERS_TOKEN": "${{ steps.members.outputs.token }}",
+                },
                 "run": (
                     'uv run --frozen --no-dev scenario-tools approvals --repo . --out "$RUNNER_'
                     'TEMP"/approvals.json'

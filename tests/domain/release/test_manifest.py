@@ -59,7 +59,7 @@ METADATA: dict[str, Any] = {
     "targets": [],
 }
 ARCHIVE = ArchiveFacts(f"{ID}-1.2.3.zip", "b" * 64, 1234)
-APPROVAL = Approval(122, ("alice", "bob"))
+APPROVAL = Approval(122, ("alice", "bob"), "filigran", None)
 MOMENT = datetime.datetime(2026, 10, 30, 9, 15, 2, tzinfo=datetime.UTC)
 
 
@@ -83,7 +83,27 @@ def test_an_item_copies_the_catalogue_facets_and_says_what_was_built_and_approve
         "archive": {"name": f"{ID}-1.2.3.zip", "sha256": "b" * 64, "size": 1234},
         "payloads": [{"id": "p1", "version": "1.0.0", "sha256": SHA}],
         "approvals": {"pull_request": 122, "approvers": ["alice", "bob"]},
+        "origin": "filigran",
     }
+
+
+def test_an_item_of_the_community_names_its_contributor() -> None:
+    approval = Approval(122, ("alice",), "community", "jdoe")
+
+    item = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=approval)
+
+    assert (item["origin"], item["contributor"]) == ("community", "jdoe")
+
+
+@pytest.mark.parametrize(
+    ("origin", "contributor"),
+    [("filigran", "jdoe"), ("community", None), ("community", "JDoe"), ("someone", None)],
+)
+def test_an_origin_is_filigran_or_a_contributor_of_the_community(
+    origin: str, contributor: str | None
+) -> None:
+    with pytest.raises(ValueError, match="origin"):
+        Approval(1, (), origin, contributor)
 
 
 def test_an_item_shares_nothing_with_the_metadata_it_copies() -> None:
@@ -231,12 +251,16 @@ def _approvals(**entries: Any) -> dict[str, Any]:
 
 def test_the_approvals_file_gives_each_entry_its_pull_request_and_its_approvers() -> None:
     document = _approvals(
-        **{ENTRY: {"pull_request": 122, "approvers": ["bob", "alice"]}},
-        **{"scenarios/x/y": {"pull_request": 7, "approvers": []}},
+        **{ENTRY: {"pull_request": 122, "approvers": ["bob", "alice"], "origin": "filigran"}},
+        **{"scenarios/x/y": {"pull_request": 7, "approvers": [], "origin": "filigran"}},
     )
 
     assert approvals_from_document(document) == Approvals(
-        COMMIT, {ENTRY: Approval(122, ("alice", "bob")), "scenarios/x/y": Approval(7, ())}
+        COMMIT,
+        {
+            ENTRY: Approval(122, ("alice", "bob"), "filigran", None),
+            "scenarios/x/y": Approval(7, (), "filigran", None),
+        },
     )
 
 
@@ -250,18 +274,28 @@ def test_the_approvals_file_gives_each_entry_its_pull_request_and_its_approvers(
         {"schema_version": 1, "commit": COMMIT, "entries": {}, "more": 1},
         {"schema_version": 1, "entries": {}},
         {"schema_version": 1, "commit": "HEAD", "entries": {}},
-        _approvals(**{ENTRY: {"pull_request": 0, "approvers": []}}),
-        _approvals(**{ENTRY: {"pull_request": True, "approvers": []}}),
-        _approvals(**{ENTRY: {"pull_request": "122", "approvers": []}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["Alice"]}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a" * 40]}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["-a"]}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a", "a"]}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": [f"u{n}" for n in range(11)]}}),
+        _approvals(**{ENTRY: {"pull_request": 0, "approvers": [], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": True, "approvers": [], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": "122", "approvers": [], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["Alice"], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a" * 40], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["-a"], "origin": "filigran"}}),
+        _approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a", "a"], "origin": "filigran"}}),
+        _approvals(
+            **{
+                ENTRY: {
+                    "pull_request": 1,
+                    "approvers": [f"u{n}" for n in range(11)],
+                    "origin": "filigran",
+                }
+            }
+        ),
         _approvals(**{ENTRY: {"pull_request": 1}}),
-        _approvals(**{ENTRY: {"pull_request": 1, "approvers": [], "more": 1}}),
-        _approvals(**{"scenarios/x": {"pull_request": 1, "approvers": []}}),
-        _approvals(**{"elsewhere/x/y": {"pull_request": 1, "approvers": []}}),
+        _approvals(
+            **{ENTRY: {"pull_request": 1, "approvers": [], "origin": "filigran", "more": 1}}
+        ),
+        _approvals(**{"scenarios/x": {"pull_request": 1, "approvers": [], "origin": "filigran"}}),
+        _approvals(**{"elsewhere/x/y": {"pull_request": 1, "approvers": [], "origin": "filigran"}}),
     ],
 )
 def test_an_approvals_file_out_of_its_shape_is_refused(document: Any) -> None:
@@ -271,9 +305,9 @@ def test_an_approvals_file_out_of_its_shape_is_refused(document: Any) -> None:
 
 def test_every_entry_needs_its_approvals_and_one_without_an_approver_is_said() -> None:
     approvals = {
-        ENTRY: Approval(122, ("alice",)),
-        "scenarios/x/unapproved": Approval(9, ()),
-        "scenarios/x/early": Approval(73, ()),
+        ENTRY: Approval(122, ("alice",), "filigran", None),
+        "scenarios/x/unapproved": Approval(9, (), "filigran", None),
+        "scenarios/x/early": Approval(73, (), "filigran", None),
     }
     entries = [ENTRY, "scenarios/x/unapproved", "scenarios/x/early", "scenarios/x/missing"]
 
@@ -371,16 +405,28 @@ NEEDED = "schema_version 1 and an object of entries are needed"
         ({"schema_version": 2, "commit": COMMIT, "entries": {}}, NEEDED),
         ({"schema_version": 1, "commit": COMMIT, "entries": []}, NEEDED),
         ({"schema_version": 1, "commit": "HEAD", "entries": {}}, "'HEAD' is not a commit ID"),
-        (_approvals(x={"pull_request": 1, "approvers": []}), "'x' is not the path of an entry"),
+        (_approvals(x={"pull_request": 1, "approvers": [], "origin": "filigran"}),
+         "'x' is not the path of an entry"),
         (_approvals(**{ENTRY: {"pull_request": 1}}),
-         f"{ENTRY} needs a pull request and its approvers, and nothing else"),
-        (_approvals(**{ENTRY: {"pull_request": 0, "approvers": []}}),
+         f"{ENTRY} needs a pull request, its approvers and its origin, and nothing else"),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [], "origin": "someone"}}),
+         f"{ENTRY} has an origin that is neither filigran nor community"),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [], "origin": "community"}}),
+         f"{ENTRY} is of the community and names no contributor"),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [], "origin": "filigran",
+                               "contributor": "jdoe"}}),
+         f"{ENTRY} is Filigran's and names a contributor"),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [], "origin": "community",
+                               "contributor": "J_Doe"}}),
+         f"{ENTRY} has a contributor that is no GitHub login in lower case"),
+        (_approvals(**{ENTRY: {"pull_request": 0, "approvers": [], "origin": "filigran"}}),
          f"{ENTRY} has no pull request number"),
-        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [f"u{n}" for n in range(11)]}}),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": [f"u{n}" for n in range(11)],
+                               "origin": "filigran"}}),
          f"{ENTRY} needs a list of at most 10 approvers"),
-        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a" * 40]}}),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a" * 40], "origin": "filigran"}}),
          f"{ENTRY} has an approver that is no GitHub login in lower case"),
-        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a", "a"]}}),
+        (_approvals(**{ENTRY: {"pull_request": 1, "approvers": ["a", "a"], "origin": "filigran"}}),
          f"{ENTRY} names an approver twice"),
     ],
 )  # fmt: skip
@@ -394,10 +440,12 @@ def test_an_approvals_file_out_of_its_shape_says_where(document: Any, why: str) 
 def test_the_approvals_file_takes_its_bounds_whole() -> None:
     """The first pull request, ten approvers and a login of 39 characters are all GitHub's."""
     approvers = ["a" * 39, *(f"u{n}" for n in range(9))]
-    document = _approvals(**{ENTRY: {"pull_request": 1, "approvers": approvers}})
+    document = _approvals(
+        **{ENTRY: {"pull_request": 1, "approvers": approvers, "origin": "filigran"}}
+    )
 
     assert approvals_from_document(document).entries == {
-        ENTRY: Approval(1, tuple(sorted(approvers)))
+        ENTRY: Approval(1, tuple(sorted(approvers)), "filigran", None)
     }
 
 
@@ -481,7 +529,10 @@ def test_a_released_version_that_says_otherwise_of_the_scenario_is_refused() -> 
 def test_a_released_version_built_again_as_it_was_is_no_finding() -> None:
     before = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
     approved_again = manifest_item(
-        METADATA, tabletop=False, archive=ARCHIVE, approval=Approval(200, ("carol",))
+        METADATA,
+        tabletop=False,
+        archive=ARCHIVE,
+        approval=Approval(200, ("carol",), "filigran", None),
     )
     raised = manifest_item(
         dict(METADATA, version="1.3.0", status="DEPRECATED"),
@@ -492,6 +543,15 @@ def test_a_released_version_built_again_as_it_was_is_no_finding() -> None:
 
     assert released_item_findings(ENTRY, approved_again, _released(before)) == ()
     assert released_item_findings(ENTRY, raised, _released(before)) == ()
+
+
+def test_a_version_released_before_its_origin_was_said_is_no_finding() -> None:
+    """The origin is the release's to compute, as the approvals are: a version released before
+    it was said gains it without changing."""
+    now = manifest_item(METADATA, tabletop=False, archive=ARCHIVE, approval=APPROVAL)
+    before = {key: value for key, value in now.items() if key != "origin"}
+
+    assert released_item_findings(ENTRY, now, _released(before)) == ()
 
 
 def test_a_previous_release_listing_a_scenario_twice_is_refused() -> None:
@@ -513,7 +573,10 @@ def test_what_only_one_release_says_of_a_version_is_a_change() -> None:
 
 
 def test_the_approvals_document_is_what_build_reads() -> None:
-    entries = {"scenarios/x/b": Approval(12, ("bob",)), "scenarios/x/a": Approval(7, ())}
+    entries = {
+        "scenarios/x/b": Approval(12, ("bob",), "filigran", None),
+        "scenarios/x/a": Approval(7, (), "community", "jdoe"),
+    }
 
     document = approvals_document(Approvals(COMMIT, entries))
 
@@ -521,8 +584,13 @@ def test_the_approvals_document_is_what_build_reads() -> None:
         "schema_version": 1,
         "commit": COMMIT,
         "entries": {
-            "scenarios/x/a": {"pull_request": 7, "approvers": []},
-            "scenarios/x/b": {"pull_request": 12, "approvers": ["bob"]},
+            "scenarios/x/a": {
+                "pull_request": 7,
+                "approvers": [],
+                "origin": "community",
+                "contributor": "jdoe",
+            },
+            "scenarios/x/b": {"pull_request": 12, "approvers": ["bob"], "origin": "filigran"},
         },
     }
     assert list(document["entries"]) == ["scenarios/x/a", "scenarios/x/b"]

@@ -166,6 +166,7 @@ def fixture_item(
     its ``payloads`` referenced at ``payload_version``."""
     return {
         "approvals": {"approvers": ["fixture-maintainer"], "pull_request": 1},
+        "origin": "filigran",
         "archive": {
             "name": f"{external_id}-1.0.0.zip",
             "sha256": hashlib.sha256(archive).hexdigest(),

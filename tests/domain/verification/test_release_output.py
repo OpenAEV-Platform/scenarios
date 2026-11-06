@@ -285,6 +285,20 @@ def test_a_manifest_that_meets_its_schema_is_accepted_and_an_approved_one_names_
 ):
     assert manifest_findings((), {}, approved=False) == ()
     assert manifest_findings((), {"release_approver": "alice"}, approved=True) == ()
+    said = {"release_approver": "alice", "items": [{"origin": "filigran"}]}
+    assert manifest_findings((), said, approved=True) == ()
+
+
+def test_an_approved_manifest_says_the_origin_of_each_scenario() -> None:
+    """A release built before the origin was said is read as a previous one, never approved
+    again: an approved manifest without it was built by tools that do not compute it."""
+    document = {"release_approver": "alice", "items": [{"origin": "community"}, {}]}
+
+    assert _codes(manifest_findings((), document, approved=True)) == [
+        ("VRF-009", "manifest.json", "/items/1/origin",
+         "an approved manifest says the origin of each scenario"),
+    ]  # fmt: skip
+    assert manifest_findings((), {"items": [{}]}, approved=False) == ()
 
 
 def test_a_manifest_out_of_its_schema_or_approved_without_its_approver_is_refused_with_why() -> (

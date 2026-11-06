@@ -22,6 +22,7 @@ def _item(name: str) -> dict[str, Any]:
         "version": version,
         "archive": {"name": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)},
         "payloads": [],
+        "origin": "filigran",
     }
 
 

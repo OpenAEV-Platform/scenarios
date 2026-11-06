@@ -24,7 +24,7 @@ def _released(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = _repository(tmp_path, monkeypatch)
     _chained_entry(root)
     approvals = tmp_path / "approvals.json"
-    approved = {"pull_request": 124, "approvers": ["alice"]}
+    approved = {"pull_request": 124, "approvers": ["alice"], "origin": "filigran"}
     commit = _git(root, "rev-parse", "HEAD")
     entries = {EASM: approved, CHAINED: approved}
     approvals.write_text(json.dumps({"schema_version": 1, "commit": commit, "entries": entries}))
