@@ -44,6 +44,7 @@ _LOGIN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _LOGIN_LIMIT = 39
 _APPROVERS_LIMIT = 10
 _ENTRY = re.compile(r"scenarios/[^/]+/[^/]+")
+FILIGRAN, COMMUNITY = "filigran", "community"
 
 
 @dataclass(frozen=True)
@@ -79,11 +80,23 @@ class PayloadFile:
 
 @dataclass(frozen=True)
 class Approval:
-    """The pull request that last changed an entry, and the logins of those who approved it,
-    sorted."""
+    """The pull request that last changed an entry, the logins of those who approved it,
+    sorted, and the entry's origin: ``filigran`` when a member of the organisation wrote the
+    pull request that brought its first version, ``community`` otherwise, with that author's
+    login as its contributor."""
 
     pull_request: int
     approvers: tuple[str, ...]
+    origin: str
+    contributor: str | None
+
+    def __post_init__(self) -> None:
+        if self.origin == FILIGRAN and self.contributor is not None:
+            raise ValueError("a Filigran origin names no contributor")
+        if self.origin == COMMUNITY and not is_github_login(self.contributor):
+            raise ValueError("a community origin names its contributor's GitHub login")
+        if self.origin not in (FILIGRAN, COMMUNITY):
+            raise ValueError(f"the origin {self.origin!r} is neither filigran nor community")
 
 
 @dataclass(frozen=True)
@@ -108,9 +121,10 @@ class PreviousRelease:
     payloads: Mapping[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
 
 
-# What may differ between two releases of one version: who approved its last change, and the
-# report of its test run; the archive is compared by its hash.
-_NOT_SAID = frozenset({"archive", "approvals", "test_report"})
+# What may differ between two releases of one version: who approved its last change, its origin,
+# which the release computes as it does the approvals (a version released before the origin was
+# said gains it), and the report of its test run; the archive is compared by its hash.
+_NOT_SAID = frozenset({"archive", "approvals", "origin", "contributor", "test_report"})
 
 
 def _said(item: Mapping[str, Any]) -> dict[str, Any]:
@@ -126,7 +140,8 @@ def manifest_item(
     metadata: Mapping[str, Any], *, tabletop: bool, archive: ArchiveFacts, approval: Approval
 ) -> dict[str, Any]:
     """The item of an entry whose ``scenario.yaml`` holds ``metadata``, as checked against its
-    schema: its catalogue facets, as copies, then what was built and who approved it."""
+    schema: its catalogue facets, as copies, then what was built, who approved it and its
+    origin."""
     item = {key: copy.deepcopy(metadata[key]) for key in _COPIED}
     item["tabletop"] = tabletop
     item["requires"] = copy.deepcopy(metadata["requires"])
@@ -139,6 +154,9 @@ def manifest_item(
         "pull_request": approval.pull_request,
         "approvers": list(approval.approvers),
     }
+    item["origin"] = approval.origin
+    if approval.contributor is not None:
+        item["contributor"] = approval.contributor
     return item
 
 
@@ -257,8 +275,14 @@ def is_github_login(value: object) -> bool:
 
 
 def _approval(entry: str, value: object) -> Approval:
-    if not isinstance(value, dict) or set(value) != {"pull_request", "approvers"}:
-        raise _malformed(f"{entry} needs a pull request and its approvers, and nothing else")
+    if not isinstance(value, dict) or set(value) - {"contributor"} != {
+        "pull_request",
+        "approvers",
+        "origin",
+    }:
+        raise _malformed(
+            f"{entry} needs a pull request, its approvers and its origin, and nothing else"
+        )
     number, approvers = value["pull_request"], value["approvers"]
     if type(number) is not int or number < 1:
         raise _malformed(f"{entry} has no pull request number")
@@ -269,7 +293,16 @@ def _approval(entry: str, value: object) -> Approval:
             raise _malformed(f"{entry} has an approver that is no GitHub login in lower case")
     if len(set(approvers)) != len(approvers):
         raise _malformed(f"{entry} names an approver twice")
-    return Approval(number, tuple(sorted(approvers)))
+    origin, contributor = value["origin"], value.get("contributor")
+    if origin not in (FILIGRAN, COMMUNITY):
+        raise _malformed(f"{entry} has an origin that is neither filigran nor community")
+    if origin == FILIGRAN and "contributor" in value:
+        raise _malformed(f"{entry} is Filigran's and names a contributor")
+    if origin == COMMUNITY and contributor is None:
+        raise _malformed(f"{entry} is of the community and names no contributor")
+    if origin == COMMUNITY and not is_github_login(contributor):
+        raise _malformed(f"{entry} has a contributor that is no GitHub login in lower case")
+    return Approval(number, tuple(sorted(approvers)), origin, contributor)
 
 
 def approvals_from_document(document: object) -> Approvals:
@@ -291,17 +324,24 @@ def approvals_from_document(document: object) -> Approvals:
     return Approvals(commit, approvals)
 
 
+def _approval_entry(approval: Approval) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "pull_request": approval.pull_request,
+        "approvers": list(approval.approvers),
+        "origin": approval.origin,
+    }
+    if approval.contributor is not None:
+        entry["contributor"] = approval.contributor
+    return entry
+
+
 def approvals_document(approvals: Approvals) -> dict[str, Any]:
     """The approvals file ``build`` reads, its entries sorted by path."""
     return {
         "schema_version": 1,
         "commit": approvals.commit,
         "entries": {
-            entry: {
-                "pull_request": approvals.entries[entry].pull_request,
-                "approvers": list(approvals.entries[entry].approvers),
-            }
-            for entry in sorted(approvals.entries)
+            entry: _approval_entry(approvals.entries[entry]) for entry in sorted(approvals.entries)
         },
     }
 

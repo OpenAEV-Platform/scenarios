@@ -30,7 +30,12 @@ the head of the default branch, whose changes were reviewed. Who starts it appro
    commit they were collected at. It is the only job that reads more than the code: the pull
    requests and their reviews, read only. A role on GitHub is no proof of write access: what
    makes an approval count for a merge is the default branch's rules, which this check stands
-   behind, never in place of.
+   behind, never in place of. It also gives each entry its origin: it finds the pull request
+   merged as the first commit that changed the entry, and asks GitHub whether its author is a
+   member of the organisation (`filigran`) or not (`community`, with the author as the
+   `contributor`). Most members are private, and `GITHUB_TOKEN` cannot read them: it asks with a
+   token of the release app that can only read the organisation's members. Any answer but
+   "member" or "not a member" stops the run: an origin is never guessed.
 2. **Two builds.** `scenario-tools build` runs on two runners, each from its own checkout of the
    commit, with those approvals; it refuses approvals collected at another commit. It runs the
    checks of `validate-payloads` on the catalogue first, then lists every payload version with
@@ -62,7 +67,9 @@ The two builds are kept as the run's artifacts for seven days. Published release
 on GitHub. The publication runs in the `release` environment, which only the default branch can
 deploy to and which keeps the key of the release app, a GitHub App installed on this repository
 only. The rule on `channels` lets that app alone update it, so only a run of the reviewed
-workflow moves a pointer. The environment asks for no reviewer: starting the run stands for the
+workflow moves a pointer. The app also holds the organisation permission **Members: read**,
+which an organisation owner grants, for the approvals job to tell the origin of each entry; that
+job runs in the same environment. The environment asks for no reviewer: starting the run stands for the
 approval.
 
 **What it assumes.** A change of the catalogue goes through a pull request that is squash-merged:
@@ -70,9 +77,11 @@ the last commit that changed an entry is then the one the pull request was merge
 last changed by a commit pushed straight to the default branch, or merged another way, stops
 the workflow, and no list can admit it: change the entry again through a reviewed pull request.
 A pull request or a review whose account was deleted cannot be read as approved: it stops the
-workflow, naming the pull request; change the entry again through a reviewed pull request. To
-run `approvals` by hand, `GITHUB_TOKEN` must hold a token that can read the pull requests,
-and the checkout its whole history.
+workflow, naming the pull request; change the entry again through a reviewed pull request. The
+same holds for the first commit that changed an entry, which gives its origin. To run
+`approvals` by hand, `GITHUB_TOKEN` must hold a token that can read the pull requests,
+`MEMBERS_TOKEN` one that can read the organisation's private members, and the checkout its whole
+history.
 
 ## What `build` checks
 

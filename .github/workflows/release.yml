@@ -26,7 +26,11 @@ jobs:
     name: Approvals of every entry
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # The only job that reads more than the code: the pull requests and their reviews, read only.
+    # The only job that reads more than the code: the pull requests and their reviews, read only,
+    # and whether the author of the pull request that brought each entry is a member of the
+    # organisation, with a token of the release app: GITHUB_TOKEN cannot read private members.
+    # The app's key is kept in the release environment, which only the default branch can deploy to.
+    environment: release
     permissions:
       contents: read
       pull-requests: read
@@ -104,9 +108,19 @@ jobs:
             uv run --frozen --no-dev scenario-tools channel previous --pointer "$RUNNER_TEMP"/previous/pointer.json --manifest "$RUNNER_TEMP"/previous/manifest.json --channel "$CHANNEL"
           fi
 
+      - name: Take a token of the release app to read the organisation's members
+        id: members
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-members: read
+
       - name: Collect the approvals
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          MEMBERS_TOKEN: ${{ steps.members.outputs.token }}
         run: uv run --frozen --no-dev scenario-tools approvals --repo . --out "$RUNNER_TEMP"/approvals.json
 
       - name: Keep the approvals for the builds

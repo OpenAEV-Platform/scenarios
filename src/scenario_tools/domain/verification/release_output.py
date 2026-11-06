@@ -37,7 +37,7 @@ def manifest_findings(
 ) -> tuple[Finding, ...]:
     """``VRF-009`` for each place, by its pointer and with why, where the manifest
     ``document`` does not meet its schema, and when an ``approved`` one does not name its
-    release approver."""
+    release approver, or does not say the origin of one of its scenarios."""
     findings = [
         _refused("VRF-009", MANIFEST, pointer, f"does not meet the manifest's schema: {why}")
         for pointer, why in violations
@@ -45,6 +45,12 @@ def manifest_findings(
     if approved and "release_approver" not in document:
         message = "an approved manifest names its release approver"
         findings.append(_refused("VRF-009", MANIFEST, "/release_approver", message))
+    items = document.get("items")
+    if approved and isinstance(items, list):
+        for index, item in enumerate(items):
+            if isinstance(item, Mapping) and "origin" not in item:
+                message = "an approved manifest says the origin of each scenario"
+                findings.append(_refused("VRF-009", MANIFEST, f"/items/{index}/origin", message))
     return tuple(findings)
 
 

@@ -33,7 +33,10 @@ IDS = {
     SECOND: "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
 }
 MOMENT = datetime.datetime(2026, 10, 30, 9, 15, 2, tzinfo=datetime.UTC)
-APPROVALS = {FIRST: Approval(12, ("alice",)), SECOND: Approval(13, ("bob",))}
+APPROVALS = {
+    FIRST: Approval(12, ("alice",), "filigran", None),
+    SECOND: Approval(13, ("bob",), "filigran", None),
+}
 
 
 def _metadata(entry: str) -> dict[str, Any]:
@@ -135,7 +138,9 @@ def test_an_informative_finding_is_said_and_the_release_built() -> None:
 
 
 def test_an_entry_without_an_approval_is_said_and_the_release_built() -> None:
-    report, release = _build(approvals={FIRST: APPROVALS[FIRST], SECOND: Approval(9, ())})
+    report, release = _build(
+        approvals={FIRST: APPROVALS[FIRST], SECOND: Approval(9, (), "filigran", None)}
+    )
 
     assert [(f.code, f.path, f.severity) for f in report.findings] == [
         ("REL-002", SECOND, Severity.INFO)
@@ -147,7 +152,8 @@ def test_an_entry_without_an_approval_is_said_and_the_release_built() -> None:
 
 def test_a_pull_request_merged_before_review_needs_no_approver() -> None:
     report, release = _build(
-        approvals={FIRST: APPROVALS[FIRST], SECOND: Approval(9, ())}, before_review=frozenset({9})
+        approvals={FIRST: APPROVALS[FIRST], SECOND: Approval(9, (), "filigran", None)},
+        before_review=frozenset({9}),
     )
 
     assert report.ok

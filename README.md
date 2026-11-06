@@ -135,7 +135,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `archive` | Builds the archive of an entry that the platform's importer reads |
 | `validate-payloads` | Checks the payload catalogue, `payloads/`: its layout, each version file, and the rules across its versions ([`docs/payloads.md`](docs/payloads.md)) |
 | `build` | Builds a release of the catalogue from a commit: every entry's archive, every payload version's file, and the manifest that lists them ([`docs/releases.md`](docs/releases.md)) |
-| `approvals` | Collects who approved the last change of every entry, for `build` |
+| `approvals` | Collects who approved the last change of every entry, and its origin, for `build` |
 | `approve` | Names the release approver in a manifest `build` wrote, once the release is approved; the release job runs it |
 | `verify` | Verifies a release as its consumers will: each archive and payload file against the manifest, safe extraction, the parts of its scenario, payload hashes ([`docs/consumers.md`](docs/consumers.md)) |
 | `conformance build`, `conformance run` | Writes the release fixtures, or runs `verify` on them and compares what it gives with what they expect ([`conformance/`](conformance/README.md)) |

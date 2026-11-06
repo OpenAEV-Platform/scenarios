@@ -98,6 +98,49 @@
         "payloads",
         "approvals"
       ],
+      "dependentRequired": {
+        "contributor": [
+          "origin"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "origin"
+            ],
+            "properties": {
+              "origin": {
+                "const": "community"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "contributor"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "origin"
+            ],
+            "properties": {
+              "origin": {
+                "const": "filigran"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "contributor"
+              ]
+            }
+          }
+        }
+      ],
       "properties": {
         "external_id": {
           "description": "The scenario's identifier: a UUID in lower case, chosen once, that never changes from one version to the next.",
@@ -372,6 +415,17 @@
               }
             }
           }
+        },
+        "origin": {
+          "description": "Who wrote the scenario: filigran when the author of the pull request that brought its first version is a member of the organisation, community otherwise. The release computes it from GitHub, never from the entry. Absent from releases built before it was said; required by the verifier in a new one.",
+          "enum": [
+            "filigran",
+            "community"
+          ]
+        },
+        "contributor": {
+          "$ref": "#/$defs/github_login",
+          "description": "The GitHub login of the author of the pull request that brought the first version of a community scenario. Absent from a Filigran one."
         }
       }
     },

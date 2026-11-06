@@ -29,7 +29,11 @@ release is approved, its `release_approver`. For each scenario it gives:
 - what a platform needs to run it, in `requires`: the OpenAEV versions (`openaev`), the edition
   (`CE` or `EE`), the injectors and the executors;
 - the facets a catalogue shows, and who approved its change, in which pull request (possibly
-  no one: the release names a pull request merged without approval with no approver).
+  no one: the release names a pull request merged without approval with no approver);
+- its `origin`: `filigran` when the author of the pull request that brought its first version
+  is a member of the organisation, `community` otherwise, with that author's GitHub login as its
+  `contributor`. The release asks GitHub; an entry never says it of itself. A release built
+  before the origin was said has none: never take its absence for Filigran.
 
 Under `payloads`, the manifest lists every payload version of the catalogue at the commit the
 release is built from, used by a scenario or not: its `payload` (the folder it lives in), its
@@ -50,7 +54,7 @@ injects.
 The repository builds every release against the channel's previous one, and guarantees that:
 
 - a released version never changes: neither its archive nor what the manifest says of it, but
-  for its approvals and its test report; a correction is a new version;
+  for its approvals, its origin and its test report; a correction is a new version;
 - a version never decreases;
 - a released scenario stays in every later release: it is withdrawn by a new version, never
   removed;
@@ -73,7 +77,7 @@ A release with any finding below is not used at all.
    approved. A scenario listed twice, or an archive named after another scenario or version than
    its item's, refuses the release.
 3. **Versions.** If a version you already installed comes with another archive hash, or with
-   anything else the manifest says of it but its approvals and its test report, the release
+   anything else the manifest says of it but its approvals, its origin and its test report, the release
    breaks the repository's guarantee: refuse it. So with a version lower than one you installed,
    or a scenario you installed that the release no longer lists.
 4. **Integrity, before opening.** The size and the SHA-256 of every archive match the manifest.

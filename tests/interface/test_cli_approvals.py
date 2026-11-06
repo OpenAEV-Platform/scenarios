@@ -16,6 +16,7 @@ ROOT = Path(__file__).parents[2]
 EASM = "scenarios/techniques/easm"
 REPOSITORY = "OpenAEV-Platform/scenarios"
 TOKEN = "test-token-0123456789"  # noqa: S105 - the tests' own, never a real one
+MEMBERS = "test-members-token-9876543210"  # the tests' own, never a real one
 
 
 def _git(root: Path, *arguments: str) -> str:
@@ -63,6 +64,7 @@ def _run(
     out: Path,
     pulls: dict[str, Any] | None = None,
     reviews: dict[int, Any] | None = None,
+    members: frozenset[str] = frozenset({"author"}),
     **env: str,
 ) -> tuple[Any, list[tuple[str, str]]]:
     made: list[tuple[str, str]] = []
@@ -70,15 +72,22 @@ def _run(
     class GitHub:
         def __init__(self, token: str, repository: str) -> None:
             made.append((token, repository))
+            self._token = token
 
         def pulls_of(self, commit: str) -> Any:
+            assert self._token == TOKEN  # the pull requests are read with the workflow's token
             return (pulls or {})[commit]
 
         def reviews_of(self, number: int) -> Any:
+            assert self._token == TOKEN
             return (reviews or {})[number]
 
+        def is_member(self, login: str) -> bool:
+            assert self._token == MEMBERS  # the members, with the token that reads them only
+            return login in members
+
     patch_interface(monkeypatch, "HttpGitHub", GitHub)
-    environment = {"GITHUB_TOKEN": TOKEN, **env}
+    environment = {"GITHUB_TOKEN": TOKEN, "MEMBERS_TOKEN": MEMBERS, **env}
     result = CliRunner(env=environment).invoke(
         main, ["--format", "json", "approvals", "--repo", str(root), "--out", str(out)]
     )
@@ -97,10 +106,43 @@ def test_the_approvals_of_every_entry_are_written_for_build(
     assert json.loads(out.read_bytes()) == {
         "schema_version": 1,
         "commit": commit,
-        "entries": {EASM: {"pull_request": 123, "approvers": ["alice"]}},
+        "entries": {EASM: {"pull_request": 123, "approvers": ["alice"], "origin": "filigran"}},
     }
-    assert made == [(TOKEN, REPOSITORY)]
+    assert made == [(TOKEN, REPOSITORY), (MEMBERS, REPOSITORY)]
     assert TOKEN not in result.output
+    assert MEMBERS not in result.output
+
+
+def test_an_entry_first_brought_by_one_who_is_no_member_is_of_the_community(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, commit = _repository(tmp_path)
+    out = tmp_path / "approvals.json"
+
+    result, _ = _run(
+        monkeypatch, root, out, {commit: [_pull(123, commit)]}, {123: []}, members=frozenset()
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(out.read_bytes())["entries"][EASM] == {
+        "pull_request": 123,
+        "approvers": [],
+        "origin": "community",
+        "contributor": "author",
+    }
+
+
+def test_without_a_token_to_read_the_members_nothing_is_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _ = _repository(tmp_path)
+    out = tmp_path / "approvals.json"
+
+    result, made = _run(monkeypatch, root, out, MEMBERS_TOKEN="")
+
+    assert result.exit_code == 3, result.output
+    assert "MEMBERS_TOKEN" in result.output
+    assert (made, out.exists()) == ([], False)
 
 
 def test_a_run_for_another_repository_is_refused(

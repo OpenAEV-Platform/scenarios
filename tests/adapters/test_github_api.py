@@ -157,3 +157,58 @@ def test_a_redirect_comes_back_as_an_error_and_the_token_never_goes_further(
         server.shutdown()
         server.server_close()
     assert followed == []
+
+
+MEMBER_URL = "https://api.github.com/orgs/OpenAEV-Platform/members/jdoe"
+
+
+def _member_api(answer: Any, asked: list[urllib.request.Request] | None = None) -> HttpGitHub:
+    def open_url(request: urllib.request.Request, timeout: float) -> _Answer:
+        assert timeout > 0
+        if asked is not None:
+            asked.append(request)
+        assert request.full_url == MEMBER_URL
+        if isinstance(answer, Exception):
+            raise answer
+        found = _Answer(b"")
+        found.status = answer
+        return found
+
+    return HttpGitHub(TOKEN, REPOSITORY, open_url=open_url)
+
+
+def test_a_member_of_the_organisation_is_told_by_a_204_asked_with_the_token() -> None:
+    asked: list[urllib.request.Request] = []
+
+    assert _member_api(204, asked).is_member("jdoe") is True
+    [request] = asked
+    assert request.get_header("Authorization") == f"Bearer {TOKEN}"
+    assert request.get_method() == "GET"
+
+
+def test_one_who_is_no_member_is_told_by_a_404() -> None:
+    gone = urllib.error.HTTPError(MEMBER_URL, 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+    assert _member_api(gone).is_member("jdoe") is False
+
+
+@pytest.mark.parametrize(
+    ("answer", "said"),
+    [
+        (urllib.error.HTTPError("u", 302, "Found", None, None), "cannot read its private members"),  # type: ignore[arg-type]
+        (urllib.error.HTTPError("u", 403, "Forbidden", None, None), "HTTP 403"),  # type: ignore[arg-type]
+        (200, "HTTP 200"),
+        (urllib.error.URLError("down"), "cannot reach GitHub"),
+    ],
+)
+def test_any_other_answer_on_membership_stops_rather_than_guessing(answer: Any, said: str) -> None:
+    with pytest.raises(EnvironmentProblemError, match=said) as error:
+        _member_api(answer).is_member("jdoe")
+
+    assert TOKEN not in str(error.value)
+
+
+@pytest.mark.parametrize("login", ["JDoe", "a" * 40, "../x", ""])
+def test_a_login_that_is_no_github_login_is_never_asked(login: str) -> None:
+    with pytest.raises(EnvironmentProblemError, match="GitHub login"):
+        _member_api(204).is_member(login)

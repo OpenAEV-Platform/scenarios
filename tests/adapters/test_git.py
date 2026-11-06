@@ -15,6 +15,7 @@ from scenario_tools.adapters.git import (
     commit_time,
     converted,
     converting,
+    first_commit,
     head_commit,
     last_commit,
     uncommitted,
@@ -664,6 +665,37 @@ def test_the_last_commit_is_read_in_the_history_of_the_commit_given(tmp_path: Pa
     assert last_commit(root, "scenarios/a/b", at=first) == first
     with pytest.raises(EnvironmentProblemError, match="cannot read the last commit"):
         last_commit(root, "scenarios/a/b", at="HEAD")
+
+
+def test_the_first_of_two_commits_that_changed_a_path_is_given(tmp_path: Path) -> None:
+    root = _committed(tmp_path)
+    first = _git(root, "rev-parse", "HEAD")
+    (root / "scenarios/a/b/scenario.json").write_text("y")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@example.org", "-c",
+         "commit.gpgsign=false", "commit", "-q", "-am", "two")  # fmt: skip
+
+    assert first_commit(root, "scenarios/a/b", at=_head(root)) == first
+    assert first_commit(root, "scenarios/a/b", at=first) == first
+
+
+@pytest.mark.parametrize("path", ["scenarios/none", "-p", "", "../x", "/etc", "scenarios/a/*"])
+def test_a_first_commit_is_read_for_a_path_of_the_checkout_only(tmp_path: Path, path: str) -> None:
+    root = _committed(tmp_path)
+
+    with pytest.raises(EnvironmentProblemError, match="cannot read the first commit"):
+        first_commit(root, path, at=_head(root))
+    with pytest.raises(EnvironmentProblemError, match="cannot read the first commit"):
+        first_commit(root, "scenarios/a/b", at="HEAD")
+
+
+def test_a_shallow_clone_has_no_first_commit_to_read(tmp_path: Path) -> None:
+    """The first commit that changed a path may be beyond its boundary, which git would hide."""
+    root = _committed(tmp_path / "full")
+    shallow = tmp_path / "shallow"
+    _git(tmp_path, "clone", "-q", "--depth", "1", f"file://{root}", str(shallow))
+
+    with pytest.raises(EnvironmentProblemError, match="shallow"):
+        first_commit(shallow, "scenarios/a/b", at=_head(shallow))
 
 
 def _head(root: Path) -> str:

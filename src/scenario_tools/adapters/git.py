@@ -95,10 +95,8 @@ def commit_time(root: Path, commit: str) -> datetime.datetime:
     return moment
 
 
-def last_commit(root: Path, path: str, *, at: str) -> str:
-    """The full ID of the last commit that changed ``path``, relative to the checkout at
-    ``root``, in the history of ``at``, a full commit ID, whatever the checkout is at."""
-    unread = EnvironmentProblemError(f"cannot read the last commit that changed {path!r}")
+def _commit_that_changed(root: Path, path: str, *, at: str, which: str) -> str:
+    unread = EnvironmentProblemError(f"cannot read the {which} commit that changed {path!r}")
     parts = path.split("/")
     if not path or path.startswith(("-", "/")) or any(part in ("", ".", "..") for part in parts):
         raise unread  # never read by git as an option, nor as a place outside the checkout
@@ -106,15 +104,30 @@ def last_commit(root: Path, path: str, *, at: str) -> str:
         raise unread
     if (_git(root, "rev-parse", "--is-shallow-repository") or "").strip() != "false":
         raise EnvironmentProblemError(
-            f"cannot read the last commit that changed {path!r}: the checkout is shallow, or "
-            "its history cannot be read; fetch its whole history"
+            f"cannot read the {which} commit that changed {path!r}: the checkout is shallow, "
+            "or its history cannot be read; fetch its whole history"
         )
     # Literally: a path is never read as a pattern, which could name another's.
-    told = _git(root, "--literal-pathspecs", "log", "-1", "--format=%H", at, "--", path)
-    told = (told or "").strip()
-    if not is_commit_id(told):
+    if which == "last":
+        told = _git(root, "--literal-pathspecs", "log", "-1", "--format=%H", at, "--", path)
+    else:  # git applies -1 before --reverse: the whole list is read, oldest first
+        told = _git(root, "--literal-pathspecs", "log", "--reverse", "--format=%H", at, "--", path)
+    lines = (told or "").split("\n")
+    if not is_commit_id(lines[0].strip()):
         raise unread
-    return told
+    return lines[0].strip()
+
+
+def last_commit(root: Path, path: str, *, at: str) -> str:
+    """The full ID of the last commit that changed ``path``, relative to the checkout at
+    ``root``, in the history of ``at``, a full commit ID, whatever the checkout is at."""
+    return _commit_that_changed(root, path, at=at, which="last")
+
+
+def first_commit(root: Path, path: str, *, at: str) -> str:
+    """The full ID of the first commit that changed ``path``, relative to the checkout at
+    ``root``, in the history of ``at``, a full commit ID, whatever the checkout is at."""
+    return _commit_that_changed(root, path, at=at, which="first")
 
 
 def uncommitted(root: Path, paths: tuple[str, ...]) -> tuple[str, ...]:

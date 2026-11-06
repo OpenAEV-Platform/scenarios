@@ -100,7 +100,10 @@ def _approvals(workspace: Path) -> None:
     """The approvals file build reads, beside the workspace, naming every entry, for the commit
     of the workspace."""
     commit = _git(workspace, "rev-parse", "HEAD")
-    entries = {entry: {"pull_request": 1, "approvers": ["snapshot"]} for entry in ENTRIES}
+    entries = {
+        entry: {"pull_request": 1, "approvers": ["snapshot"], "origin": "filigran"}
+        for entry in ENTRIES
+    }
     document = {"schema_version": 1, "commit": commit, "entries": entries}
     (workspace.parent / "outside" / "approvals.json").write_text(
         json.dumps(document, indent=2) + "\n"

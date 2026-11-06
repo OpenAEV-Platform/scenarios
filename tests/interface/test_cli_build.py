@@ -56,7 +56,11 @@ def _repository(
 def _approvals(tmp_path: Path, approvers: list[str] | None = None) -> Path:
     """The approvals of the checkout's commit, as the release workflow collects them."""
     path = tmp_path / "approvals.json"
-    entry = {"pull_request": 123, "approvers": ["alice"] if approvers is None else approvers}
+    entry = {
+        "pull_request": 123,
+        "approvers": ["alice"] if approvers is None else approvers,
+        "origin": "filigran",
+    }
     commit = _git(tmp_path / "repository", "rev-parse", "HEAD")
     path.write_text(json.dumps({"schema_version": 1, "commit": commit, "entries": {EASM: entry}}))
     return path
@@ -498,7 +502,7 @@ def test_a_release_of_a_scenario_in_chaining_lists_its_steps_payloads_and_verifi
     root = _repository(tmp_path, monkeypatch)
     _chained_entry(root)
     approvals = tmp_path / "approvals.json"
-    approved = {"pull_request": 124, "approvers": ["alice"]}
+    approved = {"pull_request": 124, "approvers": ["alice"], "origin": "filigran"}
     approvals.write_text(
         json.dumps(
             {
