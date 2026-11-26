@@ -195,7 +195,7 @@ jobs:
             mutants: >-
               scenario_tools.domain.policy.actions. scenario_tools.domain.policy.payloads.
               scenario_tools.domain.policy.registry. scenario_tools.domain.policy.targets.
-              scenario_tools.domain.policy.vendors.
+              scenario_tools.domain.policy.templates. scenario_tools.domain.policy.vendors.
           - share: verification versioning
             mutants: >-
               scenario_tools.domain.verification.versioning.
