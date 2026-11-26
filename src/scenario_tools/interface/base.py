@@ -39,6 +39,7 @@ from scenario_tools.domain.policy.actions import forbidden_from_document, side_e
 from scenario_tools.domain.policy.exceptions import exceptions_from_document
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.templates import TemplateSources
 from scenario_tools.domain.policy.vendors import vendors_from_document
 from scenario_tools.domain.release.manifest import archive_name
 from scenario_tools.domain.shared.finding import ERROR_LIMIT, Finding, Report, Severity, shorten
@@ -279,14 +280,15 @@ def _catalogue(source: RepositoryEntries) -> HeldVersions:
 
 def _policy_data(loader: YamlDataLoader) -> PolicyData:
     """The data the policy rules read: the allowed targets, the forbidden actions, the
-    commands that change an endpoint, the vendors' names, and the exceptions the maintainers
-    accept."""
+    commands that change an endpoint, the vendors' names, the exceptions the maintainers
+    accept, and the repositories a Nuclei template may come from."""
     return PolicyData(
         AllowedTargets.from_document(loader.load("allowed-targets")),
         forbidden_from_document(loader.load("forbidden-actions")),
         side_effects_from_document(loader.load("side-effects")),
         vendors_from_document(loader.load("vendor-names")),
         exceptions_from_document(loader.load("exceptions")),
+        TemplateSources.from_document(loader.load("nuclei-templates")),
     )
 
 

@@ -1,0 +1,6 @@
+# The repositories a Nuclei inject may fetch its template from (POL-012): GitHub repositories,
+# each as <owner>/<repository> in lower case. The platform fetches the template and runs it, so
+# a link names one of these at a commit, never a branch or a tag, and what the reviewers read is
+# what runs: https://raw.githubusercontent.com/<owner>/<repository>/<commit>/<path>.
+github_repositories:
+  - projectdiscovery/nuclei-templates

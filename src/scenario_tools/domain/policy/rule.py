@@ -2,12 +2,13 @@
 
 import re
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from scenario_tools.domain.policy.actions import ForbiddenAction, Steps
 from scenario_tools.domain.policy.exceptions import PolicyException
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.templates import TemplateSources
 from scenario_tools.domain.shared.finding import Severity
 
 
@@ -35,6 +36,8 @@ class PolicyData:
     side_effects: tuple[Steps, ...]
     vendors: re.Pattern[str]
     exceptions: tuple[PolicyException, ...] = ()  # the breaches the maintainers accept
+    # Where a Nuclei template may come from: from nowhere unless said.
+    templates: TemplateSources = field(default_factory=lambda: TemplateSources(()))
 
 
 @dataclass(frozen=True)

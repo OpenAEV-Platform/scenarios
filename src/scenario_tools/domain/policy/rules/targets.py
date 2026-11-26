@@ -2,9 +2,10 @@
 loopback and test addresses, the test environment's ranges and authorised external targets, so
 that a shared scenario never points at someone's system.
 
-The content of every inject, the exercise texts (articles, channels, challenges) and the name,
-description, key and value of the conditions of a workflow's steps (each item of a list on its own,
-never the step a dependency names) are read;
+The content of every inject but the link of its Nuclei template, which a rule of its own reads
+(POL-012), the exercise texts (articles, channels, challenges) and the name, description, key and
+value of the conditions of a workflow's steps (each item of a list on its own, never the step a
+dependency names) are read;
 descriptions, which hold references, recorded contract copies, which their own check compares,
 and e-mail addresses, which a rule of their own reads, are not. A text is first read as a tool
 would: compatibility forms folded, invisible characters dropped, and every variable the platform
@@ -32,6 +33,7 @@ from scenario_tools.domain.policy.payloads import (
 )
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData, Rule, Violation
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.templates import TEMPLATE_URL
 from scenario_tools.domain.shared.finding import Severity
 from scenario_tools.domain.shared.stored import injects
 from scenario_tools.domain.shared.stored_workflow import conditions
@@ -279,12 +281,20 @@ def _names_another_host(text: str, allowed: AllowedTargets, *, key: bool) -> boo
     return host is not None and not allowed.allows(host)
 
 
+def _without_template(held: object) -> object:
+    """The content of an inject without the link of its Nuclei template, which names where the
+    template comes from, never a target: its own rule reads it (POL-012)."""
+    if not isinstance(held, Mapping):
+        return held
+    return {key: value for key, value in held.items() if key != TEMPLATE_URL}
+
+
 def _read(stored: object) -> Iterator[tuple[str, object]]:
     """The parts of the stored scenario the rule reads, with their pointers."""
     if not isinstance(stored, Mapping):
         return
     for found in injects(stored):
-        yield f"{found.pointer}/{_CONTENT}", found.inject.get(_CONTENT)
+        yield f"{found.pointer}/{_CONTENT}", _without_template(found.inject.get(_CONTENT))
     for part in _EXERCISE_TEXTS:
         yield f"/{part}", stored.get(part)
     for pointer, condition in conditions(stored):

@@ -172,6 +172,41 @@ def test_unusable_allowed_targets_are_the_environment_s_fault(
 @pytest.mark.parametrize(
     "text",
     [
+        "github_repositories: projectdiscovery/nuclei-templates\n",
+        "",
+        "github_repositories: [ProjectDiscovery/nuclei-templates]\n",
+        "github_repositories: []\nextra: []\n",
+    ],
+)
+def test_unusable_nuclei_templates_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / "policy" / "data" / "nuclei-templates.yaml").write_text(text)
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3
+    assert "policy data cannot be used: nuclei-templates" in json.loads(result.stdout)["error"]
+
+
+def test_missing_nuclei_templates_are_the_environment_s_fault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _repository(tmp_path)
+    entry = _complete_entry(monkeypatch, root)
+    (root / "policy" / "data" / "nuclei-templates.yaml").unlink()
+
+    result = _invoke(monkeypatch, "validate", str(entry))
+
+    assert result.exit_code == 3
+    assert "policy data cannot be used" in json.loads(result.stdout)["error"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "exceptions: {}\n",
         "",
         f"exceptions:\n  - entry: x\n    code: POL-006\n    field: ''\n    sha256: {'a' * 64}\n"

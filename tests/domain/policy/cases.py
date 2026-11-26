@@ -5,6 +5,7 @@ from typing import Any
 from scenario_tools.domain.policy.actions import forbidden_from_document, side_effects_from_document
 from scenario_tools.domain.policy.rule import EntryContent, PolicyData
 from scenario_tools.domain.policy.targets import AllowedTargets
+from scenario_tools.domain.policy.templates import TemplateSources
 from scenario_tools.domain.policy.vendors import vendors_from_document
 
 ENTRY = "scenarios/techniques/easm"
@@ -58,11 +59,18 @@ VENDORS: dict[str, Any] = {
     "products": ["crowdstrike", "carbon black", "trend micro", "sentinel one"],
     "words": ["eset", "tanium"],
 }
+TEMPLATES: dict[str, Any] = {"github_repositories": ["projectdiscovery/nuclei-templates"]}
+COMMIT = "0123456789abcdef0123456789abcdef01234567"  # a full commit hash
+PINNED = (
+    f"https://raw.githubusercontent.com/projectdiscovery/nuclei-templates/{COMMIT}"
+    "/http/cves/2023/CVE-2023-22515.yaml"
+)
 DATA = PolicyData(
     AllowedTargets.from_document(TARGETS),
     forbidden_from_document(FORBIDDEN),
     side_effects_from_document(SIDE_EFFECTS),
     vendors_from_document(VENDORS),
+    templates=TemplateSources.from_document(TEMPLATES),
 )
 PAYLOAD = "/scenario_injects/0/inject_injector_contract/injector_contract_payload"
 
@@ -149,6 +157,10 @@ CASES: dict[str, tuple[EntryContent, EntryContent]] = {
     "POL-010": (
         content(stored={"scenario_information": {"scenario_mail_from": "a@example.org"}}),
         content(stored={"scenario_information": {"scenario_mail_from": "a@corp.com"}}),
+    ),
+    "POL-012": (
+        with_inject_content({"template_url": PINNED, "targets": ""}),
+        with_inject_content({"template_url": PINNED.replace(COMMIT, "main"), "targets": ""}),
     ),
     "POL-005": (
         with_payload(
