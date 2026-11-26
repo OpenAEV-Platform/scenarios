@@ -1,19 +1,23 @@
 """Materialise a scenario entry on a ``scenario-publish/*`` branch.
 
-The Publisher agent exports the scenario itself and commits two files to the
-branch: ``.scenario-publish/export.zip`` (the platform export, a ``.zip`` so a
-scenario with documents survives) and ``.scenario-publish/request.yaml`` (the
-intake request). This script runs in the scenario-publish Action to fill the
-draft pull request, with **no call to the OpenAEV platform**:
+The Publisher agent exports the scenario itself, its lab targets already
+neutralised, and commits two files to the branch: ``.scenario-publish/export.zip``
+(the platform export, a ``.zip`` so a scenario with documents survives) and
+``.scenario-publish/request.yaml`` (the intake request). This script runs in the
+scenario-publish Action, from the base branch (``pull_request_target``), to fill
+the draft pull request, with **no call to the OpenAEV platform**. The pull
+request's head is checked out beside the base, in ``pull/``, as data only:
 
-1. find the committed export and request on the branch;
-2. run ``scenario-tools intake`` to write the catalogue entry, then ``validate``
-   it as a smoke check;
-3. remove the staging files;
-4. commit the result as ONE commit through the REST API with the
-   ``filigran-automation`` token, so the author is the bot (not a person), the
-   commit is GitHub-verified, and — unlike ``GITHUB_TOKEN`` — it triggers the
-   pull request's checks. The existing checks then judge the entry.
+1. copy the staging files out of ``pull/`` (regular files only, never a link),
+   then drop ``pull/`` so the base checkout stays clean for intake;
+2. neutralise any lab target left in the export, as POL-003 reads them;
+3. run ``scenario-tools intake`` on the base checkout to write the catalogue
+   entry, then ``validate`` it as a smoke check;
+4. commit the entry and the removal of the staging files as ONE commit on top of
+   the pull request's head, through the REST API with the ``filigran-automation``
+   token, so the author is the bot (not a person), the commit is GitHub-verified,
+   and — unlike ``GITHUB_TOKEN`` — it triggers the pull request's checks. The
+   existing checks then judge the entry.
 
 No OpenAEV URL or token is needed here any more; the only secret this uses is the
 ``filigran-automation`` GitHub token, sent in an Authorization header.
@@ -25,6 +29,8 @@ import base64
 import ipaddress
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -38,6 +44,8 @@ from urllib.parse import urlsplit, urlunsplit
 import jsonschema
 import yaml
 
+from scenario_tools.domain.policy.targets import AllowedTargets
+
 _API = "https://api.github.com"
 _STAGING_DIR = ".scenario-publish"
 _REQUEST = f"{_STAGING_DIR}/request.yaml"
@@ -46,7 +54,15 @@ _REQUEST = f"{_STAGING_DIR}/request.yaml"
 _EXPORT_NAMES = ("export.zip", "export.json")
 #: The example host and sender a lab target is neutralised to for publication.
 _EXAMPLE_HOST = "host.example.com"
+_EXAMPLE_IPV4 = "192.0.2.10"  # RFC 5737
+_EXAMPLE_IPV6 = "2001:db8::10"  # RFC 3849
 _EXAMPLE_SENDER = "user@example.com"
+#: Where the pull request's head is checked out, as data, beside the base.
+_PULL = "pull"
+#: The separators of a list of targets typed by hand: kept as they are.
+_TARGET_SEPARATORS = re.compile(r"([,;\s]+)")
+#: A platform variable, filled at launch: never a host to rewrite.
+_VARIABLE = re.compile(r"#\{|\$\{|\{\{")
 
 
 def _fail(message: str) -> None:
@@ -69,22 +85,29 @@ def _git(args: list[str], *, cwd: Path) -> str:
     ).stdout
 
 
-def _staging(root: Path) -> tuple[dict[str, Any], Path, Path]:
-    """The intake request (schema-checked) and the export the Publisher committed."""
-    request_path = root / _REQUEST
-    if not request_path.is_file():
+def _staging(root: Path, work: Path) -> tuple[dict[str, Any], Path, Path, list[str]]:
+    """The intake request (schema-checked) and the export the Publisher committed, copied from the
+    pull request's head (``pull/``) into ``work``, with the staging paths to remove from the branch.
+    Only regular files are taken: a link, which could point anywhere, is refused."""
+    staging = root / _PULL / _STAGING_DIR
+    if staging.is_symlink() or not staging.is_dir():
+        print(f"scenario-publish: no {_STAGING_DIR}/ on this branch; nothing to do.")
+        raise SystemExit(0)
+    names = sorted(child.name for child in staging.iterdir())
+    for name in names:
+        member = staging / name
+        if member.is_symlink() or not member.is_file():
+            _fail(f"{_STAGING_DIR}/{name} is not a regular file")
+    if "request.yaml" not in names:
         print(f"scenario-publish: no {_REQUEST} on this branch; nothing to do.")
         raise SystemExit(0)
-    export_path = next(
-        (
-            root / _STAGING_DIR / name
-            for name in _EXPORT_NAMES
-            if (root / _STAGING_DIR / name).is_file()
-        ),
-        None,
-    )
-    if export_path is None:
+    export_name = next((name for name in _EXPORT_NAMES if name in names), None)
+    if export_name is None:
         _fail(f"{_REQUEST} is present but no {' or '.join(_EXPORT_NAMES)} beside it")
+    request_path = work / "request.yaml"
+    export_path = work / str(export_name)
+    shutil.copyfile(staging / "request.yaml", request_path)
+    shutil.copyfile(staging / str(export_name), export_path)
 
     request = yaml.safe_load(request_path.read_text(encoding="utf-8"))
     schema = json.loads((root / "schemas" / "intake-request.schema.json").read_text("utf-8"))
@@ -92,32 +115,73 @@ def _staging(root: Path) -> tuple[dict[str, Any], Path, Path]:
         jsonschema.validate(request, schema)
     except jsonschema.ValidationError as error:
         _fail(f"{_REQUEST} is not a valid intake request: {error.message}")
-    return request, export_path, request_path
+    if request["mode"] != "new":
+        # An update needs its version, changelog and sheet completed after intake and validated
+        # against the previous version; a maintainer does it in V1.
+        _fail("only a new entry is published this way in V1; an update goes through a maintainer")
+    return request, export_path, request_path, [f"{_STAGING_DIR}/{name}" for name in names]
 
 
-def _allowed_domains(root: Path) -> frozenset[str]:
-    """The example domain names a target may keep, from the policy data."""
-    data = yaml.safe_load((root / "policy" / "data" / "allowed-targets.yaml").read_text("utf-8"))
-    names = data.get("domains") if isinstance(data, dict) else None
-    return frozenset(name for name in (names or []) if isinstance(name, str) and name)
+def _allowed_targets(root: Path) -> AllowedTargets:
+    """What a published entry may name, from the policy data POL-003 reads."""
+    document = yaml.safe_load(
+        (root / "policy" / "data" / "allowed-targets.yaml").read_text(encoding="utf-8")
+    )
+    return AllowedTargets.from_document(document)
 
 
-def _host_is_allowed(host: str, domains: frozenset[str]) -> bool:
-    """A host a published entry may keep: an IP literal (the policy judges its range), or an
-    example name. Anything else is a real target, neutralised for publication."""
-    host = host.strip("[]").lower()
-    if not host:
-        return True
+def _replacement(host: str) -> str:
+    """The example a real host or address becomes: a name, or a documentation address."""
     try:
-        ipaddress.ip_address(host)
+        address = ipaddress.ip_address(host.strip("[]"))
     except ValueError:
-        return any(host == name or host.endswith(f".{name}") for name in domains)
-    return True  # an IP literal is left to the policy's documentation-range check
+        return _EXAMPLE_HOST
+    return _EXAMPLE_IPV4 if address.version == 4 else _EXAMPLE_IPV6
 
 
-def _sanitise_scenario(scenario: dict[str, Any], domains: frozenset[str]) -> bool:
-    """Point the lab target at the example host and the sender at the example address, so a
-    published entry never names a real system. Returns whether anything changed."""
+def _neutral_url(url: str, allowed: AllowedTargets, neutralised: set[str]) -> str:
+    """``url`` with its host neutralised, scheme, user, port, path, query and fragment kept."""
+    parts = urlsplit(url)
+    host = parts.hostname
+    if not host or allowed.allows(host):
+        return url
+    neutralised.add(host)
+    new_host = _replacement(host)
+    if ":" in new_host:
+        new_host = f"[{new_host}]"
+    user = parts.netloc.rpartition("@")[0]
+    netloc = (f"{user}@" if user else "") + new_host
+    if parts.port is not None:
+        netloc += f":{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
+def _neutral_target(token: str, allowed: AllowedTargets, neutralised: set[str]) -> str:
+    """One target typed by hand: a URL, a host, a host and its port, or an address."""
+    if not token or _VARIABLE.search(token):
+        return token
+    if "://" in token:
+        return _neutral_url(token, allowed, neutralised)
+    host, port = token, ""
+    if token.startswith("["):  # [IPv6]:port
+        host, _, rest = token[1:].partition("]")
+        port = rest
+    elif token.count(":") == 1:  # host:port; several colons are an IPv6 address
+        host, _, after = token.partition(":")
+        port = f":{after}"
+    if allowed.allows(host):
+        return token
+    neutralised.add(host)
+    new_host = _replacement(host)
+    if ":" in new_host and port:
+        new_host = f"[{new_host}]"
+    return new_host + port
+
+
+def _sanitise_scenario(scenario: dict[str, Any], allowed: AllowedTargets) -> bool:
+    """Point every lab target at an example host or address and the sender at the example
+    address, so a published entry never names a real system: the URL of an HTTP query, and the
+    targets typed by hand of a scanner (Nuclei, Nmap). Returns whether anything changed."""
     changed = False
     information = scenario.get("scenario_information")
     if isinstance(information, dict):
@@ -125,43 +189,59 @@ def _sanitise_scenario(scenario: dict[str, Any], domains: frozenset[str]) -> boo
         if (
             isinstance(sender, str)
             and "@" in sender
-            and not _host_is_allowed(sender.rsplit("@", 1)[1], domains)
+            and not allowed.example_domain(sender.rsplit("@", 1)[1])
         ):
             information["scenario_mail_from"] = _EXAMPLE_SENDER
             changed = True
     neutralised: set[str] = set()
-    for inject in scenario.get("scenario_injects") or []:
-        content = inject.get("inject_content") if isinstance(inject, dict) else None
-        uri = content.get("uri") if isinstance(content, dict) else None
+    injects = [
+        inject for inject in scenario.get("scenario_injects") or [] if isinstance(inject, dict)
+    ]
+    for inject in injects:
+        content = inject.get("inject_content")
+        if not isinstance(content, dict):
+            continue
+        uri = content.get("uri")
         if isinstance(uri, str) and uri:
-            parts = urlsplit(uri)
-            if parts.hostname and not _host_is_allowed(parts.hostname, domains):
-                netloc = _EXAMPLE_HOST if parts.port is None else f"{_EXAMPLE_HOST}:{parts.port}"
-                content["uri"] = urlunsplit(
-                    (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
-                )
-                neutralised.add(parts.hostname)
+            new = _neutral_url(uri, allowed, neutralised)
+            if new != uri:
+                content["uri"] = new
                 changed = True
-    # The same real host may be named in the prose; replace exactly the hosts just neutralised,
-    # so the description never points at a real system either, without guessing at other words.
-    if isinstance(information, dict) and neutralised:
-        description = information.get("scenario_description")
-        if isinstance(description, str):
-            new = description
-            for host in neutralised:
-                new = new.replace(host, _EXAMPLE_HOST)
-            if new != description:
-                information["scenario_description"] = new
+        targets = content.get("targets")
+        if content.get("target_selector") == "manual" and isinstance(targets, str):
+            pieces = _TARGET_SEPARATORS.split(targets)
+            new = "".join(
+                piece if index % 2 else _neutral_target(piece, allowed, neutralised)
+                for index, piece in enumerate(pieces)
+            )
+            if new != targets:
+                content["targets"] = new
                 changed = True
+    # The same real hosts may be named in the prose; replace exactly the hosts just neutralised,
+    # so no text points at a real system either, without guessing at other words.
+    texts: list[tuple[dict[str, Any], str]] = []
+    if isinstance(information, dict):
+        texts.append((information, "scenario_description"))
+    texts += [(inject, key) for inject in injects for key in ("inject_title", "inject_description")]
+    for holder, key in texts:
+        text = holder.get(key)
+        if not isinstance(text, str):
+            continue
+        new = text
+        for host in sorted(neutralised, key=len, reverse=True):
+            new = new.replace(host, _replacement(host))
+        if new != text:
+            holder[key] = new
+            changed = True
     return changed
 
 
-def _sanitise_export(export: Path, domains: frozenset[str]) -> None:
-    """Neutralise the lab targets in the committed export in place, before intake reads it, so
-    the lab exercises the real host but the published entry ships the example one."""
+def _sanitise_export(export: Path, allowed: AllowedTargets) -> None:
+    """Neutralise the lab targets in the export in place, before intake reads it. The Publisher
+    already exports them neutralised; this is the second line, as POL-003 reads them."""
     if export.suffix == ".json":
         scenario = json.loads(export.read_text(encoding="utf-8"))
-        if _sanitise_scenario(scenario, domains):
+        if _sanitise_scenario(scenario, allowed):
             export.write_text(json.dumps(scenario, ensure_ascii=False), encoding="utf-8")
         return
     with zipfile.ZipFile(export) as archive:
@@ -172,7 +252,7 @@ def _sanitise_export(export: Path, domains: frozenset[str]) -> None:
         # The scenario entry is the member the platform commented "Scenario", whatever its name.
         if info.comment == b"Scenario":
             scenario = json.loads(data[info.filename].decode("utf-8"))
-            if _sanitise_scenario(scenario, domains):
+            if _sanitise_scenario(scenario, allowed):
                 data[info.filename] = json.dumps(scenario, ensure_ascii=False).encode("utf-8")
                 changed = True
     if changed:
@@ -206,30 +286,19 @@ def _materialise(
     return entry
 
 
-def _remove_staging(root: Path) -> None:
-    staging_dir = root / _STAGING_DIR
-    for child in staging_dir.iterdir():
-        child.unlink()
-    staging_dir.rmdir()
-
-
-def _changes(root: Path) -> tuple[list[str], list[str]]:
-    """The paths written and the paths removed, from the staged diff against HEAD."""
+def _changes(root: Path) -> list[str]:
+    """The paths intake wrote in the base checkout, from the staged diff against its commit."""
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
     fields = _git(["diff", "--cached", "--name-status", "-z"], cwd=root).split("\0")
     written: list[str] = []
-    removed: list[str] = []
     i = 0
     while i < len(fields) and fields[i]:
         status = fields[i]
-        if status.startswith("R"):  # rename: old path removed, new path written
-            removed.append(fields[i + 1])
-            written.append(fields[i + 2])
-            i += 3
-            continue
-        (removed if status == "D" else written).append(fields[i + 1])
+        if status.startswith(("R", "C")) or status == "D":
+            _fail(f"intake did more than write files ({status} {fields[i + 1]})")
+        written.append(fields[i + 1])
         i += 2
-    return written, removed
+    return written
 
 
 def _api(token: str, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -252,13 +321,15 @@ def _commit(
     root: Path,
     repo: str,
     branch: str,
+    head: str,
     token: str,
     written: list[str],
     removed: list[str],
     message: str,
 ) -> str:
-    """Create one GitHub-verified commit from the changes, advance the branch."""
-    head = _git(["rev-parse", "HEAD"], cwd=root).strip()
+    """Create one GitHub-verified commit on top of the pull request's ``head``: the files intake
+    wrote in the base checkout, the staging files removed. Advance the branch, never forcing it, so
+    a branch that moved since the event is refused rather than overwritten."""
     base_tree = _api(token, "GET", f"/repos/{repo}/git/commits/{head}")["tree"]["sha"]
 
     tree: list[dict[str, Any]] = []
@@ -290,28 +361,31 @@ def _commit(
 def main() -> None:
     root = Path.cwd()
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    branch = os.environ.get("GITHUB_REF_NAME", "")
+    branch = os.environ.get("HEAD_REF", "")
+    head = os.environ.get("HEAD_SHA", "")
     # The filigran-automation token: its commit triggers the pull request's checks
     # (a GITHUB_TOKEN commit does not), and it keeps the author off a real person.
     token = os.environ.get("FILIGRAN_AUTOMATION_TOKEN", "")
-    if not (repo and branch and token):
-        _fail("GITHUB_REPOSITORY, GITHUB_REF_NAME and FILIGRAN_AUTOMATION_TOKEN are required")
+    if not (repo and branch and head and token):
+        _fail("GITHUB_REPOSITORY, HEAD_REF, HEAD_SHA and FILIGRAN_AUTOMATION_TOKEN are required")
+    if not branch.startswith("scenario-publish/"):
+        _fail(f"refused: {branch} is not a scenario-publish/ branch")
 
-    request, export, request_path = _staging(root)
-    # Neutralise the lab targets before intake: the lab exercised the real host, the published
-    # entry ships the example one, as the catalogue policy requires.
-    _sanitise_export(export, _allowed_domains(root))
     # Outside the repo: intake refuses a dirty checkout, so nothing it does not write lands there.
     with tempfile.TemporaryDirectory() as tmp:
-        entry = _materialise(root, request, export, request_path, Path(tmp))
-    _remove_staging(root)
+        work = Path(tmp)
+        request, export, request_path, staged = _staging(root, work)
+        shutil.rmtree(root / _PULL)  # the pull request's data, copied out: the checkout is clean
+        # Neutralise the lab targets before intake: the lab exercised the real host, the
+        # published entry ships the example one, as the catalogue policy requires.
+        _sanitise_export(export, _allowed_targets(root))
+        entry = _materialise(root, request, export, request_path, work)
 
-    written, removed = _changes(root)
+    written = _changes(root)
     if not written:
         _fail("intake wrote no entry files; see the log above")
-    verb = "add" if request["mode"] == "new" else "update"
-    message = f"feat(scenarios): {verb} {request['domain']}/{request['slug']} (#{request['issue']})"
-    commit = _commit(root, repo, branch, token, written, removed, message)
+    message = f"feat(scenarios): add {request['domain']}/{request['slug']} (#{request['issue']})"
+    commit = _commit(root, repo, branch, head, token, written, staged, message)
 
     line = f"Materialised `{entry}` and committed it as `{commit[:9]}`."
     print(f"scenario-publish: {line}")

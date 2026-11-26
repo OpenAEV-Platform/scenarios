@@ -286,6 +286,8 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
             "Materialise the entry and commit it": {
                 "env": {
                     "FILIGRAN_AUTOMATION_TOKEN": "${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}",
+                    "HEAD_REF": "${{ github.event.pull_request.head.ref }}",
+                    "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
                 },
                 "run": "uv run --frozen --no-dev python scripts/scenario_publish.py",
             },
@@ -564,6 +566,8 @@ SAFE_TRIGGERS = frozenset({"pull_request", "push", "workflow_dispatch", "schedul
 ALLOWED_TRIGGERS: dict[str, frozenset[str]] = {
     "pr-entries.yml": frozenset({"pull_request_target"}),  # the entries, read as data
     "pr-title.yml": frozenset({"pull_request_target"}),  # the title, read through env
+    # The bot's staging files, read as data; the base branch's script and tools run.
+    "scenario-publish.yml": frozenset({"pull_request_target"}),
 }
 
 

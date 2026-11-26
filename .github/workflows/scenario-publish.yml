@@ -1,40 +1,60 @@
 name: Scenario publish
 
 # The last mile of the scenario publishing pipeline. The Publisher agent exports
-# the scenario itself and commits .scenario-publish/export.zip and
-# .scenario-publish/request.yaml to a scenario-publish/* branch, then opens a
-# draft pull request. This workflow runs the real scenario-tools (intake, then
-# validate) on the committed export, removes the staging files, and commits the
-# entry. It never calls the OpenAEV platform. The pull request's pr-entries,
-# pr-title and Tools CI then judge the entry as for any contributor.
+# the scenario itself, with its lab targets already neutralised, commits
+# .scenario-publish/export.zip and .scenario-publish/request.yaml to a
+# scenario-publish/* branch, then opens a draft pull request. This workflow runs
+# the real scenario-tools (intake, then validate) on that export, and commits the
+# entry in place of the staging files. It never calls the OpenAEV platform. The
+# pull request's pr-entries, pr-title and Tools CI then judge the entry as for
+# any contributor.
 #
-# It runs ONLY on scenario-publish/* branches. The only secret is the
+# The base branch runs it: pull_request_target runs this file, the script and the
+# tools as they are on the base branch; the pull request's head is checked out
+# beside them as data only (its staging files), and no code of the pull request
+# runs, so whoever can push a branch cannot change what gets the token. It acts
+# only on a pull request the bot opened from a scenario-publish/* branch of this
+# repository, on an event the bot caused. The only secret is the
 # filigran-automation token (in the protected "scenario-publish" environment):
 # its commit, unlike GITHUB_TOKEN's, triggers the pull request's checks, and the
 # author is the bot, not a person. A run that finds no staging file (the entry
-# commit, or a hand-pushed branch) does nothing.
-on:
-  push:
-    branches: ["scenario-publish/**"]
+# commit itself) does nothing.
+on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
+  pull_request_target:
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
 
 concurrency:
-  group: scenario-publish-${{ github.ref }}
+  group: scenario-publish-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   publish:
     name: Materialise and commit the entry
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && startsWith(github.event.pull_request.head.ref, 'scenario-publish/')
+      && github.event.pull_request.user.login == 'Filigran-Automation'
+      && github.event.sender.login == 'Filigran-Automation'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: scenario-publish
     steps:
-      - name: Check out the branch
+      - name: Check out the base branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false  # the entry commit goes through the API with the bot token
+
+      - name: Check out the pull request's staging files, as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pull
+          sparse-checkout: .scenario-publish
+          persist-credentials: false
 
       - name: Set up uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -42,7 +62,7 @@ jobs:
           version: "0.12.23"
           enable-cache: false
 
-      - name: Install the tools
+      - name: Install the base branch's tools
         run: uv sync --frozen --no-dev
 
       - name: Materialise the entry and commit it
@@ -50,4 +70,6 @@ jobs:
           # The bot token: its commit triggers the pull request's checks (a
           # GITHUB_TOKEN commit does not), and keeps the author off a real person.
           FILIGRAN_AUTOMATION_TOKEN: ${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: uv run --frozen --no-dev python scripts/scenario_publish.py
