@@ -166,14 +166,18 @@ ALLOWED_JOB_PERMISSIONS: dict[str, dict[str, dict[str, str]]] = {
         # The one job that writes: the release, and the channel's pointer.
         "publish": {"contents": "write"},
     },
+    # The scenario publish commits through the bot token (via the API), not the
+    # workflow's own GITHUB_TOKEN, so its GITHUB_TOKEN stays read-only.
 }
-# The jobs whose token may write, by workflow: the release workflow's publication only.
+# The jobs whose token may write, by workflow: the release's publication only.
 WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})}
 # The environment of each job that runs in one, by workflow: the release app's key is kept in
 # `release`, which only the default branch can deploy to; the approvals read it for a token that
 # reads the organisation's members, the publication for one that moves the channel.
 ENVIRONMENTS: dict[str, dict[str, str]] = {
-    "release.yml": {"approvals": "release", "publish": "release"}
+    "release.yml": {"approvals": "release", "publish": "release"},
+    # The scenario publish deploys to its protected environment to read the publish app's key.
+    "scenario-publish.yml": {"publish": "scenario-publish"},
 }
 
 
@@ -266,12 +270,39 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
             "steps.members.outputs.token",  # a token to read the organisation's members
         }
     ),
+    # The scenario publish: the publish app's key, for a token that commits the entry (no
+    # platform access).
+    "scenario-publish.yml": frozenset({"PUBLISH_APP_PRIVATE_KEY", "steps.app.outputs.token"}),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"approvals", "publish"}),
+    "scenario-publish.yml": frozenset({"publish"}),
+}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "scenario-publish.yml": {
+        "publish": {
+            "Take a token of the publish app": {
+                "id": "app",
+                "uses": "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+                "with": {
+                    "client-id": "${{ vars.PUBLISH_APP_ID }}",
+                    "private-key": "${{ secrets.PUBLISH_APP_PRIVATE_KEY }}",
+                    "permission-contents": "write",
+                },
+            },
+            "Materialise the entry and commit it": {
+                "env": {
+                    "PUBLISH_TOKEN": "${{ steps.app.outputs.token }}",
+                    "HEAD_REF": "${{ github.event.pull_request.head.ref }}",
+                    "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+                },
+                "run": "uv run --frozen --no-dev python scripts/scenario_publish.py",
+            },
+        },
+    },
     "release.yml": {
         "approvals": {
             "Read the channel's previous release": {
@@ -415,7 +446,7 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                 ),
             },
         },
-    }
+    },
 }
 
 
@@ -545,6 +576,8 @@ SAFE_TRIGGERS = frozenset({"pull_request", "push", "workflow_dispatch", "schedul
 ALLOWED_TRIGGERS: dict[str, frozenset[str]] = {
     "pr-entries.yml": frozenset({"pull_request_target"}),  # the entries, read as data
     "pr-title.yml": frozenset({"pull_request_target"}),  # the title, read through env
+    # The bot's staging files, read as data; the base branch's script and tools run.
+    "scenario-publish.yml": frozenset({"pull_request_target"}),
 }
 
 
