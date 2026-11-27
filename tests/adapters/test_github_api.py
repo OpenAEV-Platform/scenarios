@@ -212,3 +212,113 @@ def test_any_other_answer_on_membership_stops_rather_than_guessing(answer: Any, 
 def test_a_login_that_is_no_github_login_is_never_asked(login: str) -> None:
     with pytest.raises(EnvironmentProblemError, match="GitHub login"):
         _member_api(204).is_member(login)
+
+
+# A repository's default branch, and how a commit compares with it.
+
+UPSTREAM = "projectdiscovery/nuclei-templates"
+COMPARE = f"https://api.github.com/repos/{UPSTREAM}/compare/main...{COMMIT}?per_page=1"
+
+
+def _upstream(
+    pages: dict[str, Any], asked: list[urllib.request.Request] | None = None
+) -> HttpGitHub:
+    def open_url(request: urllib.request.Request, timeout: float) -> _Answer:
+        assert timeout > 0
+        if asked is not None:
+            asked.append(request)
+        answer = pages[request.full_url]
+        if isinstance(answer, Exception):
+            raise answer
+        return _Answer(answer if isinstance(answer, bytes) else json.dumps(answer).encode())
+
+    return HttpGitHub(TOKEN, UPSTREAM, open_url=open_url)
+
+
+def test_the_default_branch_is_read_from_the_repository() -> None:
+    asked: list[urllib.request.Request] = []
+    url = f"https://api.github.com/repos/{UPSTREAM}"
+
+    assert _upstream({url: {"default_branch": "main"}}, asked).default_branch() == "main"
+    [request] = asked
+    assert request.get_header("Authorization") == f"Bearer {TOKEN}"
+    assert request.get_method() == "GET"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {},
+        {"default_branch": None},
+        {"default_branch": ""},
+        {"default_branch": "a/b"},  # a path, never a plain name
+        {"default_branch": "../x"},
+        {"default_branch": ".hidden"},
+        {"default_branch": "main\n"},
+        {"default_branch": "a" * 256},
+        ["main"],
+    ],
+)
+def test_a_default_branch_that_is_no_plain_name_is_the_environment_s_fault(answer: Any) -> None:
+    url = f"https://api.github.com/repos/{UPSTREAM}"
+
+    with pytest.raises(EnvironmentProblemError, match=r"names no plain branch$"):
+        _upstream({url: answer}).default_branch()
+
+
+@pytest.mark.parametrize("status", ["identical", "behind", "ahead", "diverged"])
+def test_how_a_commit_compares_with_the_branch_is_github_s_word(status: str) -> None:
+    asked: list[urllib.request.Request] = []
+
+    assert (
+        _upstream({COMPARE: {"status": status, "commits": []}}, asked).compared("main", COMMIT)
+        == status
+    )
+    [request] = asked
+    assert request.full_url == COMPARE  # one commit per page, never the whole history
+
+
+def test_a_commit_no_repository_of_the_network_holds_is_none() -> None:
+    missing = urllib.error.HTTPError(COMPARE, 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+    assert _upstream({COMPARE: missing}).compared("main", COMMIT) is None
+
+
+def test_another_refusal_of_the_comparison_is_the_environment_s_fault() -> None:
+    refused = urllib.error.HTTPError(COMPARE, 403, "Forbidden", None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(EnvironmentProblemError, match=r"HTTP 403$"):
+        _upstream({COMPARE: refused}).compared("main", COMMIT)
+
+
+def test_a_missing_repository_is_the_environment_s_fault() -> None:
+    url = f"https://api.github.com/repos/{UPSTREAM}"
+    missing = urllib.error.HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(EnvironmentProblemError, match=r"HTTP 404$"):
+        _upstream({url: missing}).default_branch()
+
+
+@pytest.mark.parametrize(
+    "answer", [{}, {"status": "unknown"}, {"status": None}, {"status": ["behind"]}, ["behind"]]
+)
+def test_a_comparison_without_a_known_status_is_the_environment_s_fault(answer: Any) -> None:
+    with pytest.raises(EnvironmentProblemError, match=r"gives no known status$"):
+        _upstream({COMPARE: answer}).compared("main", COMMIT)
+
+
+@pytest.mark.parametrize(
+    ("branch", "commit"),
+    [
+        ("a/b", COMMIT),
+        ("", COMMIT),
+        ("main", "main"),
+        ("main", COMMIT[:39]),
+        ("main", COMMIT.upper()),
+    ],
+)
+def test_a_comparison_is_asked_of_a_plain_branch_and_a_full_commit_only(
+    branch: str, commit: str
+) -> None:
+    with pytest.raises(EnvironmentProblemError):
+        _upstream({}).compared(branch, commit)

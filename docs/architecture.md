@@ -71,7 +71,7 @@ the hostile corpus, `tests/hostile/`, on every run of the tools pipeline.
 flowchart LR
   P[OpenAEV platform] -->|openaev export| X[export]
   X -->|intake| E[entry + plan]
-  E -->|pull request| V{validate, render --check,<br/>payloads, diff,<br/>changed-entries, check-title}
+  E -->|pull request| V{validate, render --check,<br/>payloads, diff,<br/>changed-entries, check-templates,<br/>check-title}
   V -->|review, merge| M[main]
   M -->|approvals, build twice,<br/>bytes compared| R[release]
   R -->|verify, approve| A[approved release]

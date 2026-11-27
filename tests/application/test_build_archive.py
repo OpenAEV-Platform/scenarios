@@ -10,7 +10,7 @@ from scenario_tools.domain.shared.finding import Finding, Severity
 from scenario_tools.domain.verification.payload_hash import payload_hash
 from scenario_tools.domain.verification.payload_references import AgreedIds, derived_id
 from scenario_tools.ports.errors import UnsafeInputError
-from tests.domain.policy.cases import DATA
+from tests.domain.policy.cases import COMMIT, DATA, PINNED
 from tests.support.catalogue import held
 
 PATH = "scenarios/ransomware/akira/scenario.json"
@@ -286,6 +286,59 @@ def test_an_entry_naming_a_host_outside_the_allowed_targets_is_never_built() -> 
     ]
     assert data is None
     assert builder.calls == []
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        PINNED.replace(COMMIT, "main"),  # a branch can move after the review
+        PINNED.replace("projectdiscovery", "someone"),  # a repository nobody allows
+    ],
+)
+def test_an_entry_whose_template_is_not_pinned_to_an_allowed_repository_is_never_built(
+    link: str,
+) -> None:
+    builder = FakeBuilder()
+    document = {
+        "scenario_information": {},
+        "scenario_injects": [{"inject_content": {"template_url": link}}],
+    }
+
+    report, data = build_archive(
+        document,
+        b"{}",
+        None,
+        PATH,
+        OUT,
+        builder,
+        renormalised=_same,
+        contract_findings=_no_contract_findings,
+        check=_unchecked,
+        limit=100,
+        policy=DATA,
+        declared=NO_PAYLOADS,
+        agreed=NONE,
+        condition_types=DEPENDENCIES,
+        catalogue=held(document),
+    )
+
+    assert [(f.code, f.field) for f in report.findings] == [
+        ("POL-012", "/scenario_injects/0/inject_content/template_url")
+    ]
+    assert data is None
+    assert builder.calls == []
+
+
+def test_an_entry_whose_template_is_pinned_to_an_allowed_repository_is_built() -> None:
+    document = {
+        "scenario_information": {},
+        "scenario_injects": [{"inject_content": {"template_url": PINNED}}],
+    }
+
+    report, data = _archive(document, NO_PAYLOADS)
+
+    assert report.findings == ()
+    assert data == b"archive"
 
 
 def _with_payload(**fields: Any) -> dict[str, Any]:

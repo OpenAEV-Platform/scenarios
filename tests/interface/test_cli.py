@@ -334,6 +334,7 @@ def _entry(tmp_path: Path, name: str = "entry") -> Path:
             "forbidden-actions.yaml",
             "side-effects.yaml",
             "vendor-names.yaml",
+            "nuclei-templates.yaml",
             "payload-ids.yaml",
             "exceptions.yaml",
         ):

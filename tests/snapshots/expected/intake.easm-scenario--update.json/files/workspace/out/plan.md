@@ -1,5 +1,5 @@
 {
-  "base": "3f8a5b2402a75404cab63b7ebb4c37ea4db5ed39",
+  "base": "1b5fe2810322b9cf3e4707501539af96d30d0ecb",
   "blocking": 0,
   "body": "Closes #3\n\nThe export gives the stored scenario.json again: nothing to propose.\n",
   "changed": false,

@@ -258,6 +258,7 @@ def test_a_pull_request_target_checks_out_the_pull_request_beside_the_base_only(
 # decoded its escapes.
 ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     "tools-ci.yml": frozenset({"HYGIENE_TERMS"}),  # the private terms of the hygiene test
+    "pr-entries.yml": frozenset({"github.token"}),  # read-only, to compare a template's commit
     "release.yml": frozenset(
         {
             "github.token",  # to read the reviews, in its approvals job, and publish the release
@@ -268,10 +269,40 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
     ),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
-SECRET_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"approvals", "publish"})}
+SECRET_JOBS: dict[str, frozenset[str]] = {
+    "release.yml": frozenset({"approvals", "publish"}),
+    "pr-entries.yml": frozenset({"entries"}),
+}
 # And within them, the steps that use it, each by its name and exactly what it runs: never a step
 # that runs another's code but the tools.
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
+    "pr-entries.yml": {
+        "entries": {
+            # Only the base branch's tools run, on the entries as data: the token never reaches
+            # the pull request's code, and reads only.
+            "Check that each Nuclei template is on its repository's default branch": {
+                "if": "${{ !cancelled() }}",
+                "env": {"GITHUB_TOKEN": "${{ github.token }}"},
+                "run": (
+                    "set -euo pipefail\n"
+                    '[ -f "$RUNNER_TEMP/entries" ] || exit 0  # the entries were never taken\n'
+                    "mapfile -d '' entries < \"$RUNNER_TEMP/entries\"\n"
+                    'if [ "${#entries[@]}" -eq 0 ]; then exit 0; fi\n'
+                    "status=0\n"
+                    "uv run --frozen --no-dev scenario-tools check-templates -- "
+                    '"${entries[@]}" \\\n'
+                    '  > "$RUNNER_TEMP/templates" 2>&1 || status=$?\n'
+                    "{\n"
+                    '  echo "## Nuclei templates"\n'
+                    "  echo\n"
+                    "  sed 's/^/    /' \"$RUNNER_TEMP/templates\"\n"
+                    '} >> "$GITHUB_STEP_SUMMARY"\n'
+                    'cat "$RUNNER_TEMP/templates"\n'
+                    'exit "$status"\n'
+                ),
+            },
+        },
+    },
     "release.yml": {
         "approvals": {
             "Read the channel's previous release": {
@@ -415,7 +446,7 @@ SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
                 ),
             },
         },
-    }
+    },
 }
 
 

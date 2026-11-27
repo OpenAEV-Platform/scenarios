@@ -850,3 +850,15 @@ def test_a_base_catalogue_that_is_no_directory_stops_the_job(tmp_path: Path, sha
 
     assert result.returncode != 0
     assert "the base branch's payloads is no directory" in result.stderr
+
+
+def test_each_nuclei_template_s_commit_is_checked_upstream_with_the_read_only_token() -> None:
+    names = [step.get("name", "") for step in STEPS]
+    named = "Check that each Nuclei template is on its repository's default branch"
+    [step] = [step for step in STEPS if step.get("name") == named]
+
+    assert names.index("Validate the changed entries") < names.index(named)
+    assert step["env"] == {"GITHUB_TOKEN": "${{ github.token }}"}
+    assert DOCUMENT["permissions"] == {"contents": "read"}  # the token reads, never writes
+    assert 'scenario-tools check-templates -- "${entries[@]}"' in step["run"]
+    assert 'exit "$status"' in step["run"]  # what it finds fails the check

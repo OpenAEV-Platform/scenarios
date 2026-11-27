@@ -1,6 +1,7 @@
-"""GitHub's API, read with the standard library, for what the release workflow asks of it: the
-pull requests a commit was merged by, the reviews of a pull request, and whether someone is a
-member of the organisation that owns the repository.
+"""GitHub's API, read with the standard library, for what the workflows ask of it: the pull
+requests a commit was merged by, the reviews of a pull request, and whether someone is a member
+of the organisation that owns the repository, for a release; a repository's default branch, and
+whether a commit is on it, for the Nuclei templates an entry fetches.
 
 Only ``api.github.com``, over HTTPS, with the token the workflow gives; a redirect is never
 followed, as the token would go with it. Answers are read within a limit, each read within a
@@ -27,6 +28,10 @@ _PAGE = 100
 _PAGES = 10  # a pull request with more reviews than this is no pull request of this catalogue
 _REPOSITORY = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
 _TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
+_BRANCH = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,254}")  # one plain name, never a path
+# How GitHub compares a commit with a branch: the same commit, one the branch holds, one that
+# follows the branch, or one off it.
+COMPARED = frozenset({"identical", "behind", "ahead", "diverged"})
 
 OpenUrl = Callable[[urllib.request.Request, float], Any]
 
@@ -61,11 +66,21 @@ class HttpGitHub:
         )
 
     def _get(self, path: str, what: str) -> list[Any]:
-        request = self._request(f"{API}/repos/{self._repository}/{path}")
+        found = self._read(f"/{path}", what)
+        if not isinstance(found, list):
+            raise EnvironmentProblemError(f"GitHub's answer for {what} is not a list")
+        return found
+
+    def _read(self, path: str, what: str, *, may_miss: bool = False) -> Any:
+        """The JSON document GitHub answers for ``path``, under the repository's own URL;
+        ``None`` when GitHub has nothing there and ``may_miss`` says that is an answer."""
+        request = self._request(f"{API}/repos/{self._repository}{path}")
         try:
             with self._open(request, TIMEOUT) as answer:
                 data = answer.read(ANSWER_LIMIT + 1)
         except urllib.error.HTTPError as error:
+            if may_miss and error.code == 404:
+                return None
             raise EnvironmentProblemError(
                 f"cannot read {what} from GitHub: HTTP {error.code}"
             ) from None
@@ -77,12 +92,37 @@ class HttpGitHub:
                 f"GitHub's answer for {what} is larger than {ANSWER_LIMIT} bytes"
             )
         try:
-            found = parse_json(data, path=what)
+            return parse_json(data, path=what)
         except UnsafeInputError as error:
             raise EnvironmentProblemError(f"GitHub's answer for {what} is not JSON") from error
-        if not isinstance(found, list):
-            raise EnvironmentProblemError(f"GitHub's answer for {what} is not a list")
-        return found
+
+    def default_branch(self) -> str:
+        """The name of the repository's default branch: one plain name, or the environment
+        cannot be used."""
+        what = f"the default branch of {self._repository}"
+        found = self._read("", what)
+        branch = found.get("default_branch") if isinstance(found, dict) else None
+        if not isinstance(branch, str) or not _BRANCH.fullmatch(branch):
+            raise EnvironmentProblemError(f"GitHub's answer for {what} names no plain branch")
+        return branch
+
+    def compared(self, branch: str, commit: str) -> str | None:
+        """How ``commit``, a full commit ID, compares with ``branch``, one of ``COMPARED``:
+        ``identical`` or ``behind`` when the branch holds it; ``None`` when no commit of the
+        repository's network has that ID. Only GitHub's word is taken, never its text."""
+        if not _BRANCH.fullmatch(branch):
+            raise EnvironmentProblemError(f"{branch!r} is not a plain branch name")
+        if not is_commit_id(commit):
+            raise EnvironmentProblemError(f"{commit!r} is not a commit ID")
+        what = f"how {commit} compares with {branch} of {self._repository}"
+        # One commit per page: the answer for a commit the branch holds lists none.
+        found = self._read(f"/compare/{branch}...{commit}?per_page=1", what, may_miss=True)
+        if found is None:
+            return None  # no such commit
+        status = found.get("status") if isinstance(found, dict) else None
+        if not isinstance(status, str) or status not in COMPARED:
+            raise EnvironmentProblemError(f"GitHub's answer for {what} gives no known status")
+        return status
 
     def pulls_of(self, commit: str) -> list[Any]:
         """The pull requests GitHub associates with ``commit``, a full commit ID."""

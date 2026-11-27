@@ -13,6 +13,7 @@ from scenario_tools.domain.policy.rules import (
     sources,
     spacing,
     targets,
+    templates,
     vendors,
 )
 from scenario_tools.domain.shared.finding import Finding, Severity
@@ -27,6 +28,7 @@ RULES: tuple[Rule, ...] = (
     elevation.RULE,
     spacing.RULE,
     internal.RULE,
+    templates.RULE,
 )
 
 

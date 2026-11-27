@@ -14,9 +14,11 @@ from scenario_tools.adapters.data_files import (
     write_output,
 )
 from scenario_tools.adapters.git import changed_entries
+from scenario_tools.adapters.github_api import HttpGitHub
 from scenario_tools.adapters.policy_levels import policy_levels
 from scenario_tools.adapters.repository import RepositoryEntries
 from scenario_tools.adapters.safe_readers import read_json_file, read_yaml_file, yaml_bytes
+from scenario_tools.application.check_template_commits import template_commit_findings
 from scenario_tools.application.check_title import check_title as check_title_use_case
 from scenario_tools.application.diff_entry import diff_entry
 from scenario_tools.application.entry_external_id import entry_external_id
@@ -25,6 +27,7 @@ from scenario_tools.application.prepare_entry import prepare_entry
 from scenario_tools.application.render_sheet import SHEET, check_sheet, policy_exceptions, sheet_of
 from scenario_tools.application.report_output import printable
 from scenario_tools.application.repository_root import repository_root
+from scenario_tools.domain.policy.templates import TemplateSources
 from scenario_tools.domain.shared.finding import ERROR_LIMIT, Finding, Report, Severity, shorten
 from scenario_tools.interface.base import (
     EXIT_ENVIRONMENT,
@@ -37,7 +40,11 @@ from scenario_tools.interface.base import (
     _rules,
     main,
 )
-from scenario_tools.ports.errors import EnvironmentProblemError, UsageProblemError
+from scenario_tools.ports.errors import (
+    EnvironmentProblemError,
+    UnsafeInputError,
+    UsageProblemError,
+)
 
 
 @main.command(name="check-title")
@@ -228,6 +235,56 @@ def validate(ctx: click.Context, entries: tuple[Path, ...], previous_root: Path 
         return Report("validate", tuple(findings))
 
     _emit(ctx, "validate", produce, root)
+
+
+@main.command(name="check-templates")
+@click.argument("entries", nargs=-1, required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def check_templates(ctx: click.Context, entries: tuple[Path, ...]) -> None:
+    """Ask GitHub, with the token in GITHUB_TOKEN, whether each Nuclei template ENTRIES, entry
+    directories, fetch from a link is on its repository's default branch; exit with 1 if one is
+    not (POL-012). GitHub serves a commit of any fork of a repository under the repository's own
+    link, so a link POL-012 lets through may name a commit the repository never held. A link
+    validate refuses, or a scenario.json it cannot read, is left to validate.
+
+    No symbolic link inside the repository is followed; the path that leads to the repository
+    may go through one."""
+    root, relatives = _one_repository(ctx, "check-templates", entries)
+
+    def produce() -> Report:
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if not token:
+            raise EnvironmentProblemError("GITHUB_TOKEN is not set: GitHub cannot be asked")
+        source = RepositoryEntries(root)
+        try:
+            loader = YamlDataLoader(source.directory("policy/data"))
+            sources = TemplateSources.from_document(loader.load("nuclei-templates"))
+        except (ValueError, UnsafeInputError, EnvironmentProblemError) as error:
+            raise EnvironmentProblemError(f"policy data cannot be used: {error}") from error
+        scenarios: list[tuple[str, object]] = []
+        for entry in dict.fromkeys(relatives):  # an entry given twice is checked once
+            path = f"{entry}/scenario.json"
+            try:
+                if source.exists(path):
+                    scenarios.append((path, source.read_json(path)[1]))
+            except UnsafeInputError:
+                continue  # validate refuses it
+        repositories: dict[str, HttpGitHub] = {}
+
+        def github(repository: str) -> HttpGitHub:
+            if repository not in repositories:
+                repositories[repository] = HttpGitHub(token, repository)
+            return repositories[repository]
+
+        findings = template_commit_findings(
+            scenarios,
+            sources,
+            default_branch=lambda repository: github(repository).default_branch(),
+            compared=lambda repository, branch, commit: github(repository).compared(branch, commit),
+        )
+        return Report("check-templates", findings)
+
+    _emit(ctx, "check-templates", produce, root)
 
 
 @main.command(name="render")

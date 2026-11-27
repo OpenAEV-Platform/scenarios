@@ -6,8 +6,9 @@ name: Pull request entries
 # taken over, links copied as links, never followed, with the policy exceptions it grants for them,
 # which a code owner approves (none is taken while the base branch names no code owner of the
 # policy data), and its payload catalogue, which the base branch's tools check before the entries
-# are checked against it. No code of the pull request runs. The token is read-only and no
-# secret is used, so a pull request from a fork is judged the same way. Its other changes (tools,
+# are checked against it. No code of the pull request runs. The token is read-only, given to the
+# one step that asks GitHub about the Nuclei templates, and no secret is used, so a pull request
+# from a fork is judged the same way. Its other changes (tools,
 # policy, schemas) are the tools CI's.
 on:  # zizmor: ignore[dangerous-triggers] -- the pull request is read as data, never run
   pull_request_target:
@@ -196,6 +197,28 @@ jobs:
             sed 's/^/    /' "$RUNNER_TEMP/findings"
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/findings"
+          exit "$status"
+
+      - name: Check that each Nuclei template is on its repository's default branch
+        if: ${{ !cancelled() }}
+        env:
+          # The job's read-only token, to ask GitHub how a template's commit compares with the
+          # default branch of its repository: a commit of a fork is served under its link too.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -f "$RUNNER_TEMP/entries" ] || exit 0  # the entries were never taken
+          mapfile -d '' entries < "$RUNNER_TEMP/entries"
+          if [ "${#entries[@]}" -eq 0 ]; then exit 0; fi
+          status=0
+          uv run --frozen --no-dev scenario-tools check-templates -- "${entries[@]}" \
+            > "$RUNNER_TEMP/templates" 2>&1 || status=$?
+          {
+            echo "## Nuclei templates"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/templates"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/templates"
           exit "$status"
 
       - name: Show what changes in each entry

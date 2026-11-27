@@ -4,8 +4,8 @@ it is, with the reason why: a legitimate new attack is never blocked without rec
 exception stays in one reviewed file. An exception names the ``scenario.json`` it was granted for,
 what the scenario runs, by its hash, so that a payload changed under it blocks again until the
 maintainers review the change; a change to ``scenario.yaml`` alone keeps it. Only the rules a
-new attack may need to breach can be excepted; the sources, the recurrence, the allowed targets
-and internal data never can."""
+new attack may need to breach can be excepted; the sources, the recurrence, the allowed targets,
+internal data and the links of Nuclei templates never can."""
 
 import re
 from collections.abc import Mapping

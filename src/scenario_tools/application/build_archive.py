@@ -47,9 +47,11 @@ def build_archive(
         findings = archive_findings(document, path)
         checked_workflow(document, condition_types)
         entry = EntryContent(path.rpartition("/")[0], frozenset(), None, document)
-        # The archive carries no recurrence and names no host outside the allowed targets.
+        # The archive carries no recurrence, names no host outside the allowed targets, and
+        # fetches a Nuclei template only pinned to a commit of an allowed repository.
         findings += rule_findings("POL-002", policy, entry)
         findings += rule_findings("POL-003", policy, entry)
+        findings += rule_findings("POL-012", policy, entry)
         findings += contract_findings(document)
         findings += payload_findings(declared, document, path.rpartition("/")[0], agreed, catalogue)
     except ExportStructureError as error:
