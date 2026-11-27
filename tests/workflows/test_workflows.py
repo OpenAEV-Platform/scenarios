@@ -176,7 +176,7 @@ WRITING_JOBS: dict[str, frozenset[str]] = {"release.yml": frozenset({"publish"})
 # reads the organisation's members, the publication for one that moves the channel.
 ENVIRONMENTS: dict[str, dict[str, str]] = {
     "release.yml": {"approvals": "release", "publish": "release"},
-    # The scenario publish deploys to its protected environment to read the bot token.
+    # The scenario publish deploys to its protected environment to read the publish app's key.
     "scenario-publish.yml": {"publish": "scenario-publish"},
 }
 
@@ -270,8 +270,9 @@ ALLOWED_SECRETS: dict[str, frozenset[str]] = {
             "steps.members.outputs.token",  # a token to read the organisation's members
         }
     ),
-    # The scenario publish: only the bot token for the entry commit (no platform access).
-    "scenario-publish.yml": frozenset({"FILIGRAN_AUTOMATION_TOKEN"}),
+    # The scenario publish: the publish app's key, for a token that commits the entry (no
+    # platform access).
+    "scenario-publish.yml": frozenset({"PUBLISH_APP_PRIVATE_KEY", "steps.app.outputs.token"}),
 }
 # The jobs of a workflow that may use what it is allowed; the others use nothing.
 SECRET_JOBS: dict[str, frozenset[str]] = {
@@ -283,9 +284,18 @@ SECRET_JOBS: dict[str, frozenset[str]] = {
 SECRET_STEPS: dict[str, dict[str, dict[str, dict[str, Any]]]] = {
     "scenario-publish.yml": {
         "publish": {
+            "Take a token of the publish app": {
+                "id": "app",
+                "uses": "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+                "with": {
+                    "client-id": "${{ vars.PUBLISH_APP_ID }}",
+                    "private-key": "${{ secrets.PUBLISH_APP_PRIVATE_KEY }}",
+                    "permission-contents": "write",
+                },
+            },
             "Materialise the entry and commit it": {
                 "env": {
-                    "FILIGRAN_AUTOMATION_TOKEN": "${{ secrets.FILIGRAN_AUTOMATION_TOKEN }}",
+                    "PUBLISH_TOKEN": "${{ steps.app.outputs.token }}",
                     "HEAD_REF": "${{ github.event.pull_request.head.ref }}",
                     "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
                 },

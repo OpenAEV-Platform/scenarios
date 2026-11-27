@@ -14,13 +14,13 @@ request's head is checked out beside the base, in ``pull/``, as data only:
 3. run ``scenario-tools intake`` on the base checkout to write the catalogue
    entry, then ``validate`` it as a smoke check;
 4. commit the entry and the removal of the staging files as ONE commit on top of
-   the pull request's head, through the REST API with the ``filigran-automation``
-   token, so the author is the bot (not a person), the commit is GitHub-verified,
+   the pull request's head, through the REST API with a token of the publish app,
+   so the author is the app (not a person), the commit is GitHub-verified,
    and — unlike ``GITHUB_TOKEN`` — it triggers the pull request's checks. The
    existing checks then judge the entry.
 
 No OpenAEV URL or token is needed here any more; the only secret this uses is the
-``filigran-automation`` GitHub token, sent in an Authorization header.
+publish app's GitHub token, sent in an Authorization header.
 """
 
 from __future__ import annotations
@@ -363,11 +363,11 @@ def main() -> None:
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("HEAD_REF", "")
     head = os.environ.get("HEAD_SHA", "")
-    # The filigran-automation token: its commit triggers the pull request's checks
+    # The publish app's token: its commit triggers the pull request's checks
     # (a GITHUB_TOKEN commit does not), and it keeps the author off a real person.
-    token = os.environ.get("FILIGRAN_AUTOMATION_TOKEN", "")
+    token = os.environ.get("PUBLISH_TOKEN", "")
     if not (repo and branch and head and token):
-        _fail("GITHUB_REPOSITORY, HEAD_REF, HEAD_SHA and FILIGRAN_AUTOMATION_TOKEN are required")
+        _fail("GITHUB_REPOSITORY, HEAD_REF, HEAD_SHA and PUBLISH_TOKEN are required")
     if not branch.startswith("scenario-publish/"):
         _fail(f"refused: {branch} is not a scenario-publish/ branch")
 
