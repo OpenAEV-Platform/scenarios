@@ -143,6 +143,7 @@ The repository includes `scenario-tools`, a command-line tool written in Python.
 | `openaev export`, `openaev import`, `openaev check` | Exports a scenario from a platform, or imports an archive into one; `check` says, importing nothing, whether the platform holds another payload under an identifier the archive gives one ([`docs/consumers.md`](docs/consumers.md), check 9) |
 | `check-title` | Checks a pull request title against the shared convention |
 | `changed-entries` | Lists the entries a pull request adds, changes or removes, for the automated checks |
+| `check-templates` | Asks GitHub whether each Nuclei template an entry fetches is on its repository's default branch, for the automated checks |
 
 To run them, install [uv](https://docs.astral.sh/uv/) 0.12.23, the version `pyproject.toml`
 requires, and Python 3.12, then, from a clone of this repository:

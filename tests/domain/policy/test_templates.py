@@ -11,7 +11,7 @@ import pytest
 from scenario_tools.domain.policy.registry import policy_findings
 from scenario_tools.domain.policy.rule import PolicyData
 from scenario_tools.domain.policy.rules.templates import RULE
-from scenario_tools.domain.policy.templates import TemplateSources
+from scenario_tools.domain.policy.templates import PinnedTemplate, TemplateSources
 from scenario_tools.domain.shared.finding import MESSAGE_LIMIT, Finding, Severity
 from tests.domain.policy.cases import (
     COMMIT,
@@ -125,6 +125,9 @@ def test_the_list_must_hold_distinct_texts(listed: object) -> None:
         "/nuclei-templates",
         "-projectdiscovery/nuclei-templates",  # an account starts with a letter or a digit
         "a" * 40 + "/nuclei-templates",  # an account has 39 characters at most
+        "projectdiscovery-/nuclei-templates",  # an account's hyphen is inside it
+        "project--discovery/nuclei-templates",  # and single
+        "a-" * 19 + "ab/nuclei-templates",  # 40 characters, hyphens included
         "projectdiscovery/" + "a" * 101,  # a repository has 100 characters at most
         "projectdiscovery/.",
         "projectdiscovery/..",
@@ -144,7 +147,15 @@ def test_a_malformed_repository_is_refused(repository: str) -> None:
 
 @pytest.mark.parametrize(
     "repository",
-    ["a/b", "a" * 39 + "/" + "b" * 100, "my-org/.github", "my-org/a..b", "0x/n_u.c-l"],
+    [
+        "a/b",
+        "a" * 39 + "/" + "b" * 100,
+        "a-" * 19 + "a/b",  # 39 characters, hyphens included
+        "my-org/.github",
+        "my-org/a..b",
+        "0x/n_u.c-l",
+        "a-b-c/d",
+    ],
 )
 def test_a_repository_as_github_names_it_is_read(repository: str) -> None:
     assert TemplateSources.from_document({"github_repositories": [repository]}).repositories == (
@@ -413,3 +424,37 @@ def test_a_link_under_another_key_is_still_a_target() -> None:
     assert [(f.code, f.field) for f in findings] == [
         ("POL-003", "/scenario_injects/0/inject_content/template")
     ]
+
+
+# The repository and the commit a link names, for whoever asks GitHub whether it holds it.
+
+
+@pytest.mark.parametrize(
+    "link",
+    [PINNED, f"https://github.com/projectdiscovery/nuclei-templates/raw/{COMMIT}/{PATH}"],
+)
+def test_a_pinned_link_names_its_repository_and_its_commit(link: str) -> None:
+    assert _sources().pinned(link) == PinnedTemplate("projectdiscovery/nuclei-templates", COMMIT)
+
+
+def test_the_repository_named_is_the_allowed_one_the_link_leads_to() -> None:
+    sources = TemplateSources.from_document(
+        {"github_repositories": ["projectdiscovery/nuclei-templates", "my-org/templates"]}
+    )
+    link = f"https://raw.githubusercontent.com/my-org/templates/{COMMIT}/x.yaml"
+
+    assert sources.pinned(link) == PinnedTemplate("my-org/templates", COMMIT)
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        PINNED.replace("https://", "http://"),
+        PINNED.replace("projectdiscovery", "someone"),
+        PINNED.replace(COMMIT, "main"),
+        PINNED.replace("/http/", "/../"),
+    ],
+)
+def test_a_link_this_rule_refuses_names_nothing(link: str) -> None:
+    assert _sources().problem(link) is not None
+    assert _sources().pinned(link) is None
